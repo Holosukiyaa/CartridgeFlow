@@ -313,9 +313,11 @@ class CartridgeRunner:
         # 这是测试台"能检测到数据链断裂"的权威结论——之前这些 bug 在测试台完全隐形。
         data_chain = self._summarize_data_chain(run_id, state_doc, normalized_probe_range)
         run["data_chain"] = data_chain
+        run_event_type = "run_paused" if paused else "run_failed" if lab_failed else "run_completed"
+        run_event_message = "Root Flow 暂停等待用户输入" if paused else "Root Flow 执行失败" if lab_failed else "Root Flow 执行完成"
         self._append_event(
-            run_id, cartridge_id, "run_completed", run["current_state"],
-            "Root Flow 执行完成", {"status": run["status"], "data_chain": data_chain},
+            run_id, cartridge_id, run_event_type, run["current_state"],
+            run_event_message, {"status": run["status"], "data_chain": data_chain},
         )
         self._write_json(run_dir / "root_flow_state.json", state_doc)
         self._write_json(run_dir / "run.json", run)
@@ -1086,12 +1088,14 @@ class CartridgeRunner:
         state_doc["context"]["artifacts"] = run.get("artifacts", [])
         data_chain = self._summarize_data_chain(run_id, state_doc, normalized_probe_range)
         run["data_chain"] = data_chain
+        run_event_type = "run_paused" if paused else "run_failed" if lab_failed else "run_completed"
+        run_event_message = "Root Flow paused waiting for user input" if paused else "Root Flow execution failed" if lab_failed else "Root Flow execution completed"
         self._append_event(
             run_id,
             cartridge_id,
-            "run_completed",
+            run_event_type,
             run["current_state"],
-            "Root Flow execution completed",
+            run_event_message,
             {"status": run["status"], "data_chain": data_chain},
         )
         self._write_json(run_dir / "root_flow_state.json", state_doc)

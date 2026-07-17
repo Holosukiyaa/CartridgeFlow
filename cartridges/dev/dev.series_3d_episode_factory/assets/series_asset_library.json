@@ -1,0 +1,143 @@
+{
+  "schema": "series_asset_library.v1",
+  "policy": "fixed_library_only",
+  "characters": [
+    {
+      "id": "hero_blue_jacket",
+      "name": "蓝夹克少年",
+      "roles": ["hero", "主角", "少年"],
+      "proxy_color": "#2f65d9",
+      "asset_path": ""
+    },
+    {
+      "id": "vendor_uncle",
+      "name": "摊贩大叔",
+      "roles": ["vendor", "摊贩", "大叔"],
+      "proxy_color": "#8b5a2b",
+      "asset_path": ""
+    },
+    {
+      "id": "shadow_observer",
+      "name": "远处观察者",
+      "roles": ["observer", "追踪者", "黑影"],
+      "proxy_color": "#26221f",
+      "asset_path": ""
+    }
+  ],
+  "scenes": [
+    {
+      "id": "subway_entrance_night",
+      "name": "夜晚地铁口",
+      "tags": ["地铁", "入口", "夜晚", "街头"],
+      "proxy_color": "#555b62",
+      "asset_path": ""
+    },
+    {
+      "id": "convenience_store_front",
+      "name": "便利店门口",
+      "tags": ["便利店", "门口", "街边"],
+      "proxy_color": "#d9a441",
+      "asset_path": ""
+    },
+    {
+      "id": "rental_room_small",
+      "name": "狭小出租屋",
+      "tags": ["出租屋", "房间", "室内"],
+      "proxy_color": "#8d7865",
+      "asset_path": ""
+    }
+  ],
+  "props": [
+    {
+      "id": "cigarette_smoke",
+      "name": "烟雾",
+      "tags": ["抽烟", "烟", "烟雾"],
+      "proxy_color": "#c9c0b5",
+      "asset_path": ""
+    },
+    {
+      "id": "warning_red_light",
+      "name": "红色警示灯",
+      "tags": ["红灯", "警示灯", "闪烁"],
+      "proxy_color": "#d94a38",
+      "asset_path": ""
+    },
+    {
+      "id": "phone_glow",
+      "name": "手机冷光",
+      "tags": ["手机", "屏幕", "消息"],
+      "proxy_color": "#74a7d8",
+      "asset_path": ""
+    }
+  ],
+  "actions": [
+    {
+      "id": "idle_talk",
+      "name": "站立说话",
+      "tags": ["说话", "对话", "台词"],
+      "duration": 3.0,
+      "motion_path": ""
+    },
+    {
+      "id": "walk_slow",
+      "name": "慢走",
+      "tags": ["走", "靠近", "经过"],
+      "duration": 3.0,
+      "motion_path": ""
+    },
+    {
+      "id": "turn_head",
+      "name": "回头",
+      "tags": ["回头", "看向", "发现"],
+      "duration": 1.2,
+      "motion_path": ""
+    },
+    {
+      "id": "smoke_idle",
+      "name": "抽烟待机",
+      "tags": ["抽烟", "烟"],
+      "duration": 3.0,
+      "motion_path": ""
+    },
+    {
+      "id": "look_phone",
+      "name": "看手机",
+      "tags": ["手机", "消息"],
+      "duration": 2.0,
+      "motion_path": ""
+    },
+    {
+      "id": "run_short",
+      "name": "短跑",
+      "tags": ["跑", "逃", "追"],
+      "duration": 2.0,
+      "motion_path": ""
+    }
+  ],
+  "camera_templates": [
+    {
+      "id": "slow_push_in",
+      "name": "慢慢推进",
+      "tags": ["推进", "靠近", "压迫"],
+      "duration": 4.0
+    },
+    {
+      "id": "low_angle_hold",
+      "name": "低机位停留",
+      "tags": ["低机位", "仰拍"],
+      "duration": 4.0
+    },
+    {
+      "id": "over_shoulder",
+      "name": "过肩镜头",
+      "tags": ["过肩", "对话"],
+      "duration": 4.0
+    },
+    {
+      "id": "close_up_reveal",
+      "name": "特写揭示",
+      "tags": ["特写", "揭示", "悬念"],
+      "duration": 3.0
+    }
+  ]
+}

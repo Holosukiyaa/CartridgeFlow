@@ -1,0 +1,351 @@
+{
+  "schema_version": "1.0",
+  "id": "dev.series_3d_episode_factory",
+  "name": "3D 连续短剧工厂卡带",
+  "version": "0.1.0-dev",
+  "kind": "runtime_cartridge",
+  "category": "dev_flow",
+  "description": "使用现成角色、场景、道具、动作库，由 LLM 负责剧情、脚本、分镜和调度规划，确定性工具生成 3D 竖屏短剧预演包。",
+  "publisher": {
+    "id": "local",
+    "name": "Local Developer",
+    "type": "local",
+    "verified": false
+  },
+  "branding": {
+    "tags": [
+      "3d",
+      "series",
+      "episode",
+      "storyboard",
+      "blender",
+      "previz",
+      "cf-farp",
+      "protocol-v0.4"
+    ]
+  },
+  "base_contract": {
+    "id": "CF-FARP",
+    "version": "0.4",
+    "declared_for": "cartridgeflow.reference-dev",
+    "compatibility_mode": "protocol_aware"
+  },
+  "runtime_contract": {
+    "protocol": "CF-FARP",
+    "protocol_version": "0.4",
+    "required_profiles": [
+      "runtime_core",
+      "dynamic_decision_runtime",
+      "interactive_decision_runtime"
+    ],
+    "recommended_profiles": [
+      "testbench_core",
+      "dev_authoring"
+    ],
+    "required_capabilities": [
+      "manifest_load",
+      "manifest_validate",
+      "runtime_contract_parse",
+      "compatibility_report",
+      "root_flow_execution",
+      "basic_node_execution",
+      "unified_process_node",
+      "process_node_kind_parse",
+      "process_executor_contract",
+      "process_effect_contract",
+      "decision_process",
+      "mcp_execute_process",
+      "decision_envelope_v1",
+      "decision_envelope_validate",
+      "decision_consume_contract",
+      "decision_consume_projection",
+      "llm_live_mode",
+      "llm_mock_mode",
+      "llm_offline_fallback",
+      "runtime_user_input_request",
+      "paused_waiting_user_status",
+      "pending_interaction_record",
+      "runtime_resume_after_user_input",
+      "builtin_tool_call",
+      "artifact_collect",
+      "delivery_readiness_check",
+      "optional_input"
+    ],
+    "optional_capabilities": [
+      "artifact_preview",
+      "testbench_run",
+      "probe_run",
+      "structure_analysis",
+      "data_chain_diagnostics"
+    ],
+    "required_tools": [
+      "media_match_series_assets",
+      "media_match_series_actions",
+      "media_forge_3d_series_episode"
+    ],
+    "optional_tools": []
+  },
+  "protocol_certification": {
+    "status": "certified",
+    "label": "CF-FARP@0.4",
+    "protocol": "CF-FARP",
+    "protocol_version": "0.4"
+  },
+  "delivery_readiness": {
+    "level": "dev",
+    "certification_target": "CF-FARP@0.4",
+    "notes": "开发预览卡带。第一阶段只做短剧预演和 Blender 编排脚本，不自动生成新美术资产。"
+  },
+  "root_flow": {
+    "entry": "root.flow.json",
+    "mode": "lifecycle",
+    "required": true
+  },
+  "runtime": {
+    "type": "lab",
+    "adapter": "builtin:lab"
+  },
+  "workspace": {
+    "type": "none",
+    "required": false,
+    "open_policy": "manual"
+  },
+  "environment": {
+    "os": [
+      "windows",
+      "macos",
+      "linux"
+    ],
+    "requires": []
+  },
+  "permissions": [
+    {
+      "id": "write_run_artifacts",
+      "level": "safe",
+      "description": "写入 test_output/series_3d_episode 下的预演 HTML、episode plan、Blender Python 脚本和 manifest。"
+    }
+  ],
+  "dependencies": [],
+  "inputs": [
+    {
+      "id": "episode_brief",
+      "label": "本集想法",
+      "type": "textarea",
+      "required": true,
+      "placeholder": "例如：蓝夹克少年在夜晚地铁口抽烟，警示灯闪烁，远处黑影观察他，结尾留下追踪悬念。"
+    },
+    {
+      "id": "episode_id",
+      "label": "单集 ID",
+      "type": "text",
+      "required": false,
+      "placeholder": "subway_hook_ep01"
+    },
+    {
+      "id": "series_notes",
+      "label": "系列设定备注",
+      "type": "textarea",
+      "required": false,
+      "placeholder": "竖屏短剧、悬疑、低成本 3D、每集结尾留钩子。"
+    },
+    {
+      "id": "output_dir",
+      "label": "输出目录",
+      "type": "text",
+      "required": false,
+      "default": "test_output/series_3d_episode"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "series_delivery",
+      "label": "3D 短剧预演交付包",
+      "type": "artifact_bundle",
+      "required": true
+    }
+  ],
+  "mcp_tools": [
+    {
+      "id": "media_match_series_assets",
+      "name": "Media 短剧资产匹配",
+      "type": "builtin",
+      "server": "media",
+      "tool": "match_series_assets",
+      "description": "把脚本和分镜映射到固定资产库，不生成新素材。",
+      "default_params": {
+        "episode_script": "store:episode_script",
+        "shot_list": "store:shot_list",
+        "asset_library_path": "cartridges/dev/dev.series_3d_episode_factory/assets/series_asset_library.json"
+      },
+      "enabled": true,
+      "required": true,
+      "contract": {
+        "capability": "builtin_tool_call",
+        "idempotent": true,
+        "side_effect": "read_only",
+        "timeout_ms": 10000,
+        "retry_policy": {
+          "max_attempts": 1
+        }
+      },
+      "params_schema": {
+        "type": "object",
+        "properties": {
+          "episode_script": {
+            "type": [
+              "object",
+              "string"
+            ]
+          },
+          "shot_list": {
+            "type": [
+              "object",
+              "string"
+            ]
+          },
+          "asset_library_path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "episode_script",
+          "shot_list"
+        ],
+        "additionalProperties": true
+      }
+    },
+    {
+      "id": "media_match_series_actions",
+      "name": "Media 短剧动作匹配",
+      "type": "builtin",
+      "server": "media",
+      "tool": "match_series_actions",
+      "description": "把分镜动作需求映射到固定动作标签和镜头模板。",
+      "default_params": {
+        "episode_script": "store:episode_script",
+        "shot_list": "store:shot_list",
+        "asset_library_path": "cartridges/dev/dev.series_3d_episode_factory/assets/series_asset_library.json"
+      },
+      "enabled": true,
+      "required": true,
+      "contract": {
+        "capability": "builtin_tool_call",
+        "idempotent": true,
+        "side_effect": "read_only",
+        "timeout_ms": 10000,
+        "retry_policy": {
+          "max_attempts": 1
+        }
+      },
+      "params_schema": {
+        "type": "object",
+        "properties": {
+          "episode_script": {
+            "type": [
+              "object",
+              "string"
+            ]
+          },
+          "shot_list": {
+            "type": [
+              "object",
+              "string"
+            ]
+          },
+          "asset_library_path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "episode_script",
+          "shot_list"
+        ],
+        "additionalProperties": true
+      }
+    },
+    {
+      "id": "media_forge_3d_series_episode",
+      "name": "Media 3D 短剧预演编排",
+      "type": "builtin",
+      "server": "media",
+      "tool": "forge_3d_series_episode",
+      "description": "消费脚本、分镜、资产匹配和动作匹配，生成预演 HTML、episode plan 和 Blender Python 脚本。",
+      "default_params": {
+        "episode_script": "store:episode_script",
+        "shot_list": "store:shot_list",
+        "asset_plan": "store:asset_plan",
+        "action_plan": "store:action_plan",
+        "output_dir": "store:episode_inputs.output_dir",
+        "episode_id": "store:episode_inputs.episode_id"
+      },
+      "enabled": true,
+      "required": true,
+      "contract": {
+        "capability": "builtin_tool_call",
+        "idempotent": true,
+        "side_effect": "writes_run_artifacts",
+        "timeout_ms": 30000,
+        "retry_policy": {
+          "max_attempts": 1
+        }
+      },
+      "params_schema": {
+        "type": "object",
+        "properties": {
+          "episode_script": {
+            "type": [
+              "object",
+              "string"
+            ]
+          },
+          "shot_list": {
+            "type": [
+              "object",
+              "string"
+            ]
+          },
+          "asset_plan": {
+            "type": [
+              "object",
+              "string"
+            ]
+          },
+          "action_plan": {
+            "type": [
+              "object",
+              "string"
+            ]
+          },
+          "output_dir": {
+            "type": "string"
+          },
+          "episode_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "episode_script",
+          "shot_list",
+          "asset_plan",
+          "action_plan"
+        ],
+        "additionalProperties": true
+      }
+    }
+  ],
+  "artifacts": {
+    "store_policy": "run_scoped",
+    "visibility_default": "user",
+    "allowed_types": [
+      "json",
+      "html",
+      "text",
+      "video"
+    ]
+  },
+  "delivery": {
+    "type": "summary_with_artifacts",
+    "primary_output": "series_delivery",
+    "show_artifacts": true
+  }
+}

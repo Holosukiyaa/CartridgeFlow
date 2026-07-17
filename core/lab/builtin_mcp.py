@@ -1489,6 +1489,89 @@ class BuiltinMcpRegistry:
             except Exception as exc:
                 return {"ok": False, "error": f"spatial blockout forge failed: {exc}"}
 
+        def match_series_assets(params: dict) -> dict:
+            try:
+                episode_script = params.get("episode_script") or {}
+                shot_list = params.get("shot_list") or {}
+                library = _load_series_asset_library(registry, params.get("asset_library_path"))
+                asset_plan = _match_series_assets(episode_script, shot_list, library)
+                return {
+                    "ok": True,
+                    "path": "",
+                    "content": json.dumps(asset_plan, ensure_ascii=False, indent=2),
+                    "asset_plan": asset_plan,
+                }
+            except Exception as exc:
+                return {"ok": False, "error": f"series asset match failed: {exc}"}
+
+        def match_series_actions(params: dict) -> dict:
+            try:
+                episode_script = params.get("episode_script") or {}
+                shot_list = params.get("shot_list") or {}
+                library = _load_series_asset_library(registry, params.get("asset_library_path"))
+                action_plan = _match_series_actions(episode_script, shot_list, library)
+                return {
+                    "ok": True,
+                    "path": "",
+                    "content": json.dumps(action_plan, ensure_ascii=False, indent=2),
+                    "action_plan": action_plan,
+                }
+            except Exception as exc:
+                return {"ok": False, "error": f"series action match failed: {exc}"}
+
+        def forge_3d_series_episode(params: dict) -> dict:
+            try:
+                episode_script = params.get("episode_script") or {}
+                shot_list = params.get("shot_list") or {}
+                asset_plan = params.get("asset_plan") or {}
+                action_plan = params.get("action_plan") or {}
+                output_dir = str(params.get("output_dir") or "test_output/series_3d_episode").strip()
+                episode_id = _safe_slug(str(params.get("episode_id") or _series_episode_title(episode_script) or "series_episode"))
+                package = _normalize_series_episode_package(episode_script, shot_list, asset_plan, action_plan)
+                target_dir = registry._safe_path(output_dir)
+                target_dir.mkdir(parents=True, exist_ok=True)
+                plan_path = target_dir / f"{episode_id}.episode_plan.json"
+                blender_path = target_dir / f"{episode_id}.blender_scene.py"
+                preview_path = target_dir / f"{episode_id}.preview.html"
+                manifest_path = target_dir / f"{episode_id}.manifest.json"
+
+                plan_path.write_text(json.dumps(package, ensure_ascii=False, indent=2), encoding="utf-8")
+                blender_path.write_text(_render_series_blender_script(package), encoding="utf-8")
+                rel_plan = _workspace_rel(registry, plan_path)
+                rel_blender = _workspace_rel(registry, blender_path)
+                preview_path.write_text(_render_series_episode_preview_html(package, rel_blender), encoding="utf-8")
+                rel_preview = _workspace_rel(registry, preview_path)
+                manifest = {
+                    "schema": "series_3d_episode_manifest.v1",
+                    "status": "previz_created",
+                    "title": package["episode_script"].get("title"),
+                    "provider": "local_series_3d_previz",
+                    "episode_plan": rel_plan,
+                    "blender_script": rel_blender,
+                    "preview": rel_preview,
+                    "duration_seconds": package.get("duration_seconds"),
+                    "shot_count": len(package.get("shots") or []),
+                    "quality_gate": "script_shots_assets_actions_mapped",
+                    "notes": "Uses fixed library IDs and proxy preview. Blender rendering can run later on a stronger GPU machine.",
+                }
+                manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+                rel_manifest = _workspace_rel(registry, manifest_path)
+                return {
+                    "ok": True,
+                    "path": rel_preview,
+                    "project_path": rel_plan,
+                    "preview_path": rel_preview,
+                    "manifest_path": rel_manifest,
+                    "files": [rel_plan, rel_blender, rel_preview, rel_manifest],
+                    "content": json.dumps(manifest, ensure_ascii=False, indent=2),
+                    "series_episode_ok": True,
+                    "provider": "local_series_3d_previz",
+                }
+            except PermissionError as exc:
+                return {"ok": False, "error": str(exc)}
+            except Exception as exc:
+                return {"ok": False, "error": f"series episode forge failed: {exc}"}
+
         self._registry["media"] = {
             "probe": media_probe,
             "extract_keyframes": extract_keyframes,
@@ -1507,6 +1590,9 @@ class BuiltinMcpRegistry:
             "ffmpeg_mux_episode": ffmpeg_mux_episode,
             "generate_short_video": generate_short_video,
             "forge_spatial_blockout": forge_spatial_blockout,
+            "match_series_assets": match_series_assets,
+            "match_series_actions": match_series_actions,
+            "forge_3d_series_episode": forge_3d_series_episode,
         }
 
     def call(self, server: str, tool: str, params: dict) -> dict:
@@ -1748,6 +1834,33 @@ class BuiltinMcpRegistry:
                         "title": "Optional scene title",
                         "output_dir": "Output directory for GLB/preview/manifest",
                         "filename_prefix": "Output filename prefix",
+                    },
+                },
+                "match_series_assets": {
+                    "description": "Map episode script and shot list to a fixed 3D series asset library without generating new visual assets.",
+                    "params": {
+                        "episode_script": "episode_script.v1 JSON object or JSON string",
+                        "shot_list": "shot_list.v1 JSON object or JSON string",
+                        "asset_library_path": "Optional asset library JSON path",
+                    },
+                },
+                "match_series_actions": {
+                    "description": "Map shot list requirements to fixed action tags and camera templates.",
+                    "params": {
+                        "episode_script": "episode_script.v1 JSON object or JSON string",
+                        "shot_list": "shot_list.v1 JSON object or JSON string",
+                        "asset_library_path": "Optional asset library JSON path",
+                    },
+                },
+                "forge_3d_series_episode": {
+                    "description": "Create a 3D series episode previz package: episode plan JSON, playable HTML preview, Blender Python script, and manifest.",
+                    "params": {
+                        "episode_script": "episode_script.v1 JSON object or JSON string",
+                        "shot_list": "shot_list.v1 JSON object or JSON string",
+                        "asset_plan": "series_asset_plan.v1 JSON object or JSON string",
+                        "action_plan": "series_action_plan.v1 JSON object or JSON string",
+                        "output_dir": "Output directory",
+                        "episode_id": "Output filename prefix",
                     },
                 },
             },
@@ -6182,6 +6295,420 @@ window.addEventListener('resize',resize); resize(); loop();
 </script>
 </body>
 </html>"""
+
+
+def _load_series_asset_library(registry, path_value=None) -> dict:
+    if path_value:
+        try:
+            path = registry._safe_path(str(path_value))
+            if path.is_file():
+                data = json.loads(path.read_text(encoding="utf-8"))
+                if isinstance(data, dict):
+                    return _normalize_series_library(data)
+        except Exception:
+            pass
+    return _normalize_series_library(_default_series_asset_library())
+
+
+def _normalize_series_library(value: dict) -> dict:
+    def items(key):
+        raw = value.get(key) if isinstance(value, dict) else []
+        if isinstance(raw, dict):
+            raw = list(raw.values())
+        return [item for item in raw if isinstance(item, dict)]
+
+    return {
+        "schema": "series_asset_library.v1",
+        "characters": items("characters"),
+        "scenes": items("scenes"),
+        "props": items("props"),
+        "actions": items("actions"),
+        "camera_templates": items("camera_templates"),
+    }
+
+
+def _default_series_asset_library() -> dict:
+    return {
+        "schema": "series_asset_library.v1",
+        "characters": [
+            {"id": "hero_blue_jacket", "name": "蓝夹克少年", "roles": ["hero", "主角", "少年"], "proxy_color": "#2f65d9"},
+            {"id": "vendor_uncle", "name": "摊贩大叔", "roles": ["vendor", "摊贩", "大叔"], "proxy_color": "#8b5a2b"},
+            {"id": "shadow_observer", "name": "远处观察者", "roles": ["observer", "追踪者", "黑影"], "proxy_color": "#26221f"},
+        ],
+        "scenes": [
+            {"id": "subway_entrance_night", "name": "夜晚地铁口", "tags": ["地铁", "入口", "夜晚", "街头"], "proxy_color": "#555b62"},
+            {"id": "convenience_store_front", "name": "便利店门口", "tags": ["便利店", "门口", "街边"], "proxy_color": "#d9a441"},
+            {"id": "rental_room_small", "name": "狭小出租屋", "tags": ["出租屋", "房间", "室内"], "proxy_color": "#8d7865"},
+        ],
+        "props": [
+            {"id": "cigarette_smoke", "name": "烟雾", "tags": ["抽烟", "烟", "烟雾"], "proxy_color": "#c9c0b5"},
+            {"id": "warning_red_light", "name": "红色警示灯", "tags": ["红灯", "警示灯", "闪烁"], "proxy_color": "#d94a38"},
+            {"id": "phone_glow", "name": "手机冷光", "tags": ["手机", "屏幕", "消息"], "proxy_color": "#74a7d8"},
+        ],
+        "actions": [
+            {"id": "idle_talk", "name": "站立说话", "tags": ["说话", "对话", "台词"], "duration": 3.0},
+            {"id": "walk_slow", "name": "慢走", "tags": ["走", "靠近", "经过"], "duration": 3.0},
+            {"id": "turn_head", "name": "回头", "tags": ["回头", "看向", "发现"], "duration": 1.2},
+            {"id": "smoke_idle", "name": "抽烟待机", "tags": ["抽烟", "烟"], "duration": 3.0},
+            {"id": "look_phone", "name": "看手机", "tags": ["手机", "消息"], "duration": 2.0},
+            {"id": "run_short", "name": "短跑", "tags": ["跑", "逃", "追"], "duration": 2.0},
+        ],
+        "camera_templates": [
+            {"id": "slow_push_in", "name": "慢慢推进", "tags": ["推进", "靠近", "压迫"], "duration": 4.0},
+            {"id": "low_angle_hold", "name": "低机位停留", "tags": ["低机位", "仰拍"], "duration": 4.0},
+            {"id": "over_shoulder", "name": "过肩镜头", "tags": ["过肩", "对话"], "duration": 4.0},
+            {"id": "close_up_reveal", "name": "特写揭示", "tags": ["特写", "揭示", "悬念"], "duration": 3.0},
+        ],
+    }
+
+
+def _series_parse(value, fallback=None):
+    if isinstance(value, str):
+        text = value.strip()
+        if text:
+            try:
+                return json.loads(text)
+            except Exception:
+                return fallback if fallback is not None else {"text": text}
+        return fallback if fallback is not None else {}
+    return value if isinstance(value, (dict, list)) else (fallback if fallback is not None else {})
+
+
+def _series_episode_title(episode_script) -> str:
+    data = _series_parse(episode_script, {})
+    if isinstance(data, dict):
+        return str(data.get("episode_id") or data.get("title") or "").strip()
+    return ""
+
+
+def _series_shots(shot_list) -> list[dict]:
+    data = _series_parse(shot_list, {})
+    if isinstance(data, list):
+        raw = data
+    elif isinstance(data, dict):
+        raw = data.get("shots") or data.get("shot_list") or []
+    else:
+        raw = []
+    shots = []
+    for index, item in enumerate(raw if isinstance(raw, list) else []):
+        if not isinstance(item, dict):
+            continue
+        shot_id = str(item.get("id") or item.get("shot_id") or f"shot_{index + 1:02d}").strip()
+        shots.append({
+            "id": shot_id,
+            "index": index + 1,
+            "title": str(item.get("title") or item.get("beat") or f"镜头 {index + 1}").strip(),
+            "description": str(item.get("description") or item.get("visual") or item.get("summary") or "").strip(),
+            "dialogue": item.get("dialogue") if isinstance(item.get("dialogue"), list) else [],
+            "characters": _series_list(item.get("characters") or item.get("actors") or item.get("cast")),
+            "props": _series_list(item.get("props") or item.get("objects")),
+            "scene": str(item.get("scene") or item.get("location") or "").strip(),
+            "camera": str(item.get("camera") or item.get("camera_template") or item.get("shot_type") or "").strip(),
+            "action_tags": _series_list(item.get("action_tags") or item.get("actions")),
+            "duration": _clamp_float(item.get("duration"), 1.0, 8.0, 4.0),
+        })
+    if not shots:
+        shots = [
+            {"id": "shot_01", "index": 1, "title": "开场建立", "description": "主角出现在夜晚街头，环境给出悬念。", "dialogue": [], "characters": ["hero"], "props": [], "scene": "地铁入口", "camera": "slow_push_in", "action_tags": ["walk_slow"], "duration": 4.0},
+            {"id": "shot_02", "index": 2, "title": "异常提示", "description": "红色警示灯闪烁，主角停下回头。", "dialogue": [], "characters": ["hero"], "props": ["warning_light"], "scene": "地铁入口", "camera": "close_up_reveal", "action_tags": ["turn_head"], "duration": 4.0},
+            {"id": "shot_03", "index": 3, "title": "结尾钩子", "description": "远处观察者出现，下一集留下追踪线索。", "dialogue": [], "characters": ["hero", "observer"], "props": ["warning_light"], "scene": "地铁入口", "camera": "low_angle_hold", "action_tags": ["idle_talk"], "duration": 4.0},
+        ]
+    return shots
+
+
+def _series_list(value) -> list[str]:
+    if isinstance(value, str):
+        return [item.strip() for item in re.split(r"[,，、\n]+", value) if item.strip()]
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    return []
+
+
+def _match_series_assets(episode_script, shot_list, library: dict) -> dict:
+    shots = _series_shots(shot_list)
+    characters = library.get("characters") or []
+    scenes = library.get("scenes") or []
+    props = library.get("props") or []
+    selected_characters = {}
+    selected_scenes = {}
+    selected_props = {}
+    missing = []
+    for shot in shots:
+        text = " ".join([shot.get("title", ""), shot.get("description", ""), shot.get("scene", ""), " ".join(shot.get("characters") or []), " ".join(shot.get("props") or [])])
+        scene = _series_best_match(text, scenes, "subway_entrance_night")
+        selected_scenes[scene["id"]] = scene
+        requested_chars = shot.get("characters") or ["hero"]
+        for requested in requested_chars:
+            match = _series_best_match(requested + " " + text, characters, "hero_blue_jacket")
+            selected_characters[match["id"]] = match
+        for requested in shot.get("props") or []:
+            match = _series_best_match(requested + " " + text, props, "")
+            if match:
+                selected_props[match["id"]] = match
+            elif requested:
+                missing.append({"type": "prop", "request": requested, "shot_id": shot["id"]})
+        if any(word in text for word in ["烟", "抽烟", "smoke"]):
+            selected_props["cigarette_smoke"] = next(item for item in props if item["id"] == "cigarette_smoke")
+        if any(word in text for word in ["红灯", "警示灯", "闪烁"]):
+            selected_props["warning_red_light"] = next(item for item in props if item["id"] == "warning_red_light")
+    return {
+        "schema": "series_asset_plan.v1",
+        "characters": list(selected_characters.values()),
+        "scenes": list(selected_scenes.values()),
+        "props": list(selected_props.values()),
+        "missing": missing,
+        "policy": "fixed_library_only",
+        "notes": "No new visual assets were generated. Missing items must be supplied by the library later.",
+    }
+
+
+def _match_series_actions(episode_script, shot_list, library: dict) -> dict:
+    shots = _series_shots(shot_list)
+    actions = library.get("actions") or []
+    cameras = library.get("camera_templates") or []
+    per_shot = []
+    missing = []
+    for shot in shots:
+        text = " ".join([shot.get("title", ""), shot.get("description", ""), " ".join(shot.get("action_tags") or []), shot.get("camera", "")])
+        action = _series_best_match(text, actions, "idle_talk")
+        camera = _series_best_match(text + " " + shot.get("camera", ""), cameras, "slow_push_in")
+        if not action:
+            missing.append({"type": "action", "shot_id": shot["id"], "request": text[:80]})
+        if not camera:
+            missing.append({"type": "camera_template", "shot_id": shot["id"], "request": shot.get("camera")})
+        per_shot.append({
+            "shot_id": shot["id"],
+            "duration": shot["duration"],
+            "primary_action": action or {"id": "idle_talk", "name": "站立说话", "duration": shot["duration"]},
+            "camera_template": camera or {"id": "slow_push_in", "name": "慢慢推进", "duration": shot["duration"]},
+            "segments": [
+                {
+                    "actor": (shot.get("characters") or ["hero"])[0],
+                    "action_id": (action or {}).get("id", "idle_talk"),
+                    "start": 0,
+                    "duration": shot["duration"],
+                    "notes": "Matched from fixed action library.",
+                }
+            ],
+        })
+    return {
+        "schema": "series_action_plan.v1",
+        "shots": per_shot,
+        "missing": missing,
+        "policy": "fixed_action_tags_only",
+        "notes": "LLM selected tags; deterministic matcher mapped them to library action IDs.",
+    }
+
+
+def _series_best_match(text: str, items: list[dict], fallback_id: str):
+    text_l = str(text or "").lower()
+    best = None
+    best_score = -1
+    for item in items:
+        hay = " ".join(str(part) for part in [item.get("id"), item.get("name"), " ".join(item.get("tags") or []), " ".join(item.get("roles") or [])]).lower()
+        score = 0
+        for token in re.split(r"[\s,，、;；]+", hay):
+            if token and token in text_l:
+                score += len(token)
+        for tag in item.get("tags") or item.get("roles") or []:
+            tag_text = str(tag).lower()
+            if tag_text and tag_text in text_l:
+                score += 12
+        if score > best_score:
+            best = item
+            best_score = score
+    if best and best_score > 0:
+        return dict(best)
+    if fallback_id:
+        for item in items:
+            if item.get("id") == fallback_id:
+                return dict(item)
+    return None
+
+
+def _normalize_series_episode_package(episode_script, shot_list, asset_plan, action_plan) -> dict:
+    script = _series_parse(episode_script, {})
+    if not isinstance(script, dict):
+        script = {"title": "未命名短剧", "logline": str(script)}
+    shots = _series_shots(shot_list)
+    assets = _series_parse(asset_plan, {})
+    actions = _series_parse(action_plan, {})
+    if isinstance(assets, dict) and isinstance(assets.get("asset_plan"), dict):
+        assets = assets["asset_plan"]
+    if isinstance(actions, dict) and isinstance(actions.get("action_plan"), dict):
+        actions = actions["action_plan"]
+    action_by_shot = {item.get("shot_id"): item for item in (actions.get("shots") or []) if isinstance(item, dict)} if isinstance(actions, dict) else {}
+    normalized_shots = []
+    current = 0.0
+    for shot in shots:
+        duration = shot.get("duration") or 4.0
+        normalized_shots.append({
+            **shot,
+            "start": round(current, 2),
+            "end": round(current + duration, 2),
+            "action_plan": action_by_shot.get(shot["id"], {}),
+        })
+        current += duration
+    return {
+        "schema": "series_3d_episode_package.v1",
+        "episode_script": script,
+        "shots": normalized_shots,
+        "asset_plan": assets if isinstance(assets, dict) else {},
+        "action_plan": actions if isinstance(actions, dict) else {},
+        "duration_seconds": round(current, 2),
+        "render_target": "vertical_9_16",
+    }
+
+
+def _render_series_episode_preview_html(package: dict, blender_script_path: str) -> str:
+    data = html.escape(json.dumps(package, ensure_ascii=False), quote=False)
+    title = html.escape(str((package.get("episode_script") or {}).get("title") or "3D Series Episode"))
+    blender_path = html.escape(blender_script_path)
+    return f"""<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>{title}</title>
+  <style>
+    *{{box-sizing:border-box}}
+    body{{margin:0;background:#15120f;color:#f3ede6;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;}}
+    main{{height:100vh;display:grid;grid-template-columns:minmax(280px,420px) minmax(0,1fr);}}
+    aside{{border-right:1px solid #3a2d24;background:#211a15;padding:18px;overflow:auto;}}
+    h1{{margin:0 0 8px;font-size:20px;line-height:1.25}}
+    p{{margin:0 0 12px;color:#c7b7a7;line-height:1.6;font-size:13px}}
+    .stage{{display:grid;place-items:center;background:radial-gradient(circle at 50% 20%,#403229,#15120f 60%);}}
+    .phone{{width:min(44vh,360px);height:min(78vh,640px);border:1px solid #5b4637;border-radius:18px;background:#0f0d0b;position:relative;overflow:hidden;box-shadow:0 24px 80px rgba(0,0,0,.45)}}
+    .shot{{position:absolute;inset:0;padding:22px;display:grid;grid-template-rows:auto 1fr auto;opacity:0;transition:opacity .25s ease;background:linear-gradient(180deg,#2d302f,#15120f)}}
+    .shot.active{{opacity:1}}
+    .badge{{display:inline-flex;width:max-content;padding:4px 8px;border:1px solid #c46f35;border-radius:999px;color:#ffb27e;font-size:12px}}
+    .visual{{display:grid;place-items:center;position:relative}}
+    .actor{{width:54px;height:128px;background:#2f65d9;border-radius:16px 16px 8px 8px;position:absolute;left:42%;bottom:28%;animation:sway 1.2s infinite ease-in-out}}
+    .actor:before{{content:"";position:absolute;left:12px;top:-34px;width:30px;height:30px;border-radius:50%;background:#d8b58d}}
+    .prop{{position:absolute;right:18%;top:34%;width:40px;height:40px;border-radius:50%;background:#d94a38;box-shadow:0 0 30px #d94a38;animation:pulse .8s infinite alternate}}
+    .observer{{position:absolute;right:28%;bottom:36%;width:30px;height:90px;background:#151515;border-radius:12px;opacity:.75}}
+    .caption{{padding:12px;border:1px solid rgba(255,255,255,.12);background:rgba(0,0,0,.32);border-radius:10px;font-size:14px;line-height:1.45}}
+    .timeline{{display:grid;gap:8px;margin-top:16px}}
+    button{{border:1px solid #c46f35;background:#2b211b;color:#ffd2b7;border-radius:8px;padding:8px 10px;font-weight:700;cursor:pointer}}
+    .row{{padding:10px;border:1px solid #3a2d24;border-radius:8px;margin:8px 0;background:#19130f;color:#d8c8b8;font-size:12px}}
+    code{{color:#ffb27e}}
+    @keyframes sway{{from{{transform:translateX(-8px)}}to{{transform:translateX(8px)}}}}
+    @keyframes pulse{{from{{opacity:.45;transform:scale(.8)}}to{{opacity:1;transform:scale(1.12)}}}}
+  </style>
+</head>
+<body>
+<main>
+  <aside>
+    <h1>{title}</h1>
+    <p id="logline"></p>
+    <p>Blender 编排脚本：<code>{blender_path}</code></p>
+    <button id="play" type="button">暂停</button>
+    <div class="timeline" id="timeline"></div>
+  </aside>
+  <section class="stage"><div class="phone" id="phone"></div></section>
+</main>
+<script id="episode-data" type="application/json">{data}</script>
+<script>
+const pkg = JSON.parse(document.getElementById('episode-data').textContent);
+const shots = pkg.shots || [];
+const phone = document.getElementById('phone');
+const timeline = document.getElementById('timeline');
+document.getElementById('logline').textContent = pkg.episode_script?.logline || pkg.episode_script?.hook || '短剧预演';
+let active = 0, playing = true, started = performance.now();
+shots.forEach((shot, index) => {{
+  const el = document.createElement('article');
+  el.className = 'shot' + (index === 0 ? ' active' : '');
+  el.innerHTML = '<span class="badge">'+shot.id+' · '+(shot.action_plan?.camera_template?.name || shot.camera || '镜头')+'</span><div class="visual"><div class="actor"></div><div class="prop"></div>'+(JSON.stringify(shot).includes('observer') || JSON.stringify(shot).includes('追踪') ? '<div class="observer"></div>' : '')+'</div><div class="caption"><b>'+shot.title+'</b><br>'+shot.description+'</div>';
+  phone.appendChild(el);
+  const row = document.createElement('div');
+  row.className = 'row';
+  row.textContent = shot.start.toFixed(1)+'s-'+shot.end.toFixed(1)+'s · '+shot.title+' · '+(shot.action_plan?.primary_action?.name || '');
+  timeline.appendChild(row);
+}});
+function setActive(index) {{
+  active = index % Math.max(1, shots.length);
+  [...phone.children].forEach((item, i) => item.classList.toggle('active', i === active));
+}}
+function tick(now) {{
+  if (playing && shots.length) {{
+    const t = ((now - started) / 1000) % Math.max(1, pkg.duration_seconds || 12);
+    const idx = Math.max(0, shots.findIndex(s => t >= s.start && t < s.end));
+    setActive(idx < 0 ? shots.length - 1 : idx);
+  }}
+  requestAnimationFrame(tick);
+}}
+document.getElementById('play').addEventListener('click', (event) => {{
+  playing = !playing;
+  event.currentTarget.textContent = playing ? '暂停' : '播放';
+  started = performance.now() - ((shots[active]?.start || 0) * 1000);
+}});
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>"""
+
+
+def _render_series_blender_script(package: dict) -> str:
+    data = json.dumps(package, ensure_ascii=False, indent=2)
+    return f'''# Blender Python script generated by CartridgeFlow.
+# Run inside Blender: blender --python this_file.py
+import json
+import math
+import bpy
+
+DATA = json.loads(r"""{data}""")
+
+def mat(name, color):
+    material = bpy.data.materials.new(name)
+    material.diffuse_color = color
+    return material
+
+def cube(name, location, scale, material):
+    bpy.ops.mesh.primitive_cube_add(size=1, location=location)
+    obj = bpy.context.object
+    obj.name = name
+    obj.scale = scale
+    obj.data.materials.append(material)
+    return obj
+
+bpy.ops.object.select_all(action='SELECT')
+bpy.ops.object.delete()
+
+blue = mat("proxy_blue_actor", (0.18, 0.39, 0.85, 1))
+dark = mat("proxy_dark_actor", (0.05, 0.05, 0.05, 1))
+ground_mat = mat("proxy_ground", (0.28, 0.26, 0.23, 1))
+light_mat = mat("proxy_warning_red", (0.85, 0.18, 0.12, 1))
+
+cube("ground", (0, -0.05, 0), (4.5, 0.05, 7.5), ground_mat)
+hero = cube("hero_blue_jacket", (-0.8, 0.85, 0), (0.28, 0.85, 0.22), blue)
+observer = cube("shadow_observer", (1.4, 0.8, -2.0), (0.22, 0.8, 0.2), dark)
+warning = cube("warning_red_light", (1.8, 1.8, 0.8), (0.2, 0.2, 0.2), light_mat)
+
+fps = 24
+bpy.context.scene.frame_start = 1
+bpy.context.scene.frame_end = max(1, int(DATA.get("duration_seconds", 12) * fps))
+bpy.context.scene.render.fps = fps
+
+for shot in DATA.get("shots", []):
+    start = int(float(shot.get("start", 0)) * fps) + 1
+    end = int(float(shot.get("end", 0)) * fps) + 1
+    hero.location.x = -1.1 + shot.get("index", 1) * 0.35
+    hero.keyframe_insert(data_path="location", frame=start)
+    hero.location.x += 0.35
+    hero.keyframe_insert(data_path="location", frame=end)
+
+bpy.ops.object.light_add(type='AREA', location=(0, 5, 4))
+bpy.context.object.name = "soft_area_light"
+bpy.context.object.data.energy = 450
+bpy.context.object.data.size = 5
+
+bpy.ops.object.camera_add(location=(3.2, 2.4, 5.2), rotation=(math.radians(64), 0, math.radians(34)))
+bpy.context.scene.camera = bpy.context.object
+
+bpy.context.scene.render.resolution_x = 1080
+bpy.context.scene.render.resolution_y = 1920
+print("Series 3D episode previz scene generated:", DATA.get("episode_script", {{}}).get("title"))
+'''
 
 
 def _hex_to_rgb(value: str) -> tuple[int, int, int]:

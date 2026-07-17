@@ -645,9 +645,11 @@ export function TestBenchView({
   const [autoScroll, setAutoScroll] = useState(true)
   const [logPreviewOpen, setLogPreviewOpen] = useState(false)
   const [logHeight, setLogHeight] = useState(150)
+  const [logMaxHeight, setLogMaxHeight] = useState(180)
   const [showUiPreview, setShowUiPreview] = useState(true)
   const logBodyRef = useRef<HTMLDivElement | null>(null)
   const logDragRef = useRef<{ startY: number; startHeight: number } | null>(null)
+  const probePanelRef = useRef<HTMLElement | null>(null)
   const defaultNodeId = detail.graph.nodes[0]?.id || ''
   const [startNodeId, setStartNodeId] = useState(defaultNodeId)
   const [endNodeId, setEndNodeId] = useState(defaultNodeId)
@@ -694,6 +696,26 @@ export function TestBenchView({
   }, [pendingInteraction])
 
   useEffect(() => {
+    const updateLogLimit = () => {
+      const viewportHeight = window.visualViewport?.height || window.innerHeight
+      const probeBottom = probePanelRef.current?.getBoundingClientRect().bottom
+      const availableBelowProbe = probeBottom ? viewportHeight - probeBottom + 10 : viewportHeight * 0.34
+      const nextMax = Math.round(Math.max(112, Math.min(viewportHeight * 0.5, availableBelowProbe)))
+      setLogMaxHeight(nextMax)
+      setLogHeight((current) => Math.min(Math.max(88, current), nextMax))
+    }
+    updateLogLimit()
+    const frame = window.requestAnimationFrame(updateLogLimit)
+    window.addEventListener('resize', updateLogLimit)
+    window.visualViewport?.addEventListener('resize', updateLogLimit)
+    return () => {
+      window.cancelAnimationFrame(frame)
+      window.removeEventListener('resize', updateLogLimit)
+      window.visualViewport?.removeEventListener('resize', updateLogLimit)
+    }
+  }, [runScope])
+
+  useEffect(() => {
     if (!detail.graph.nodes.some((node) => node.id === startNodeId)) {
       setStartNodeId(defaultNodeId)
     }
@@ -708,8 +730,7 @@ export function TestBenchView({
     const onMove = (moveEvent: MouseEvent) => {
       const drag = logDragRef.current
       if (!drag) return
-      const maxHeight = Math.max(88, Math.min(window.innerHeight * 0.18, 160))
-      const nextHeight = Math.max(88, Math.min(maxHeight, drag.startHeight + drag.startY - moveEvent.clientY))
+      const nextHeight = Math.max(88, Math.min(logMaxHeight, drag.startHeight + drag.startY - moveEvent.clientY))
       setLogHeight(nextHeight)
     }
     const onUp = () => {
@@ -808,7 +829,7 @@ export function TestBenchView({
             <p>{DECISION_OPTIONS.find((option) => option.value === decisionMode)?.hint}</p>
           </section>
 
-          <section className="cf-probe-panel">
+          <section className="cf-probe-panel" ref={probePanelRef}>
             <div className="cf-probe-head">运行范围</div>
             <div className="cf-range-choices">
               <button
@@ -903,7 +924,7 @@ export function TestBenchView({
 
       <div
         className={`cf-tb-bottom ${logsOpen ? 'open' : 'closed'}`}
-        style={logsOpen ? ({ '--cf-log-height': `${logHeight}px` } as CSSProperties) : undefined}
+        style={logsOpen ? ({ '--cf-log-height': `${logHeight}px`, '--cf-log-max-height': `${logMaxHeight}px` } as CSSProperties) : undefined}
       >
         <div className="cf-log-resize-handle" onMouseDown={beginLogResize} title="拖动调整日志高度" />
         <div className="cf-bottom-bar">

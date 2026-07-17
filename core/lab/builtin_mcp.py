@@ -1437,6 +1437,56 @@ class BuiltinMcpRegistry:
             except Exception as exc:
                 return {"ok": False, "error": f"短视频生成失败：{exc}"}
 
+        def forge_spatial_blockout(params: dict) -> dict:
+            scene_spec = params.get("scene_spec") or params.get("scene_blockout") or params.get("spec") or {}
+            title = str(params.get("title") or "").strip()
+            output_dir = str(params.get("output_dir") or "test_output/spatial_blockout").strip()
+            filename_prefix = _safe_slug(str(params.get("filename_prefix") or params.get("scene_id") or title or "spatial_blockout"))
+            try:
+                spec = _normalize_spatial_blockout_spec(scene_spec, title or filename_prefix)
+                target_dir = registry._safe_path(output_dir)
+                target_dir.mkdir(parents=True, exist_ok=True)
+                scene_path = target_dir / f"{filename_prefix}.scene_blockout.json"
+                glb_path = target_dir / f"{filename_prefix}.glb"
+                preview_path = target_dir / f"{filename_prefix}.preview.html"
+                manifest_path = target_dir / f"{filename_prefix}.manifest.json"
+
+                scene_path.write_text(json.dumps(spec, ensure_ascii=False, indent=2), encoding="utf-8")
+                _write_spatial_blockout_glb(glb_path, spec)
+                rel_scene = _workspace_rel(registry, scene_path)
+                rel_glb = _workspace_rel(registry, glb_path)
+                preview_path.write_text(_render_spatial_blockout_preview_html(spec, rel_glb), encoding="utf-8")
+                rel_preview = _workspace_rel(registry, preview_path)
+                manifest = {
+                    "schema": "spatial_blockout_manifest.v1",
+                    "status": "draft_created",
+                    "title": spec.get("title"),
+                    "provider": "local_spatial_blockout",
+                    "scene": rel_scene,
+                    "glb": rel_glb,
+                    "preview": rel_preview,
+                    "object_count": len(spec.get("objects") or []),
+                    "quality_gate": "blockout_visible_and_exported",
+                    "notes": "Deterministic low-poly blockout. Use as a 3D sketch, not final art.",
+                }
+                manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+                rel_manifest = _workspace_rel(registry, manifest_path)
+                return {
+                    "ok": True,
+                    "path": rel_glb,
+                    "project_path": rel_scene,
+                    "preview_path": rel_preview,
+                    "manifest_path": rel_manifest,
+                    "files": [rel_glb, rel_scene, rel_preview, rel_manifest],
+                    "content": json.dumps(manifest, ensure_ascii=False, indent=2),
+                    "scene_blockout_ok": True,
+                    "provider": "local_spatial_blockout",
+                }
+            except PermissionError as exc:
+                return {"ok": False, "error": str(exc)}
+            except Exception as exc:
+                return {"ok": False, "error": f"spatial blockout forge failed: {exc}"}
+
         self._registry["media"] = {
             "probe": media_probe,
             "extract_keyframes": extract_keyframes,
@@ -1454,6 +1504,7 @@ class BuiltinMcpRegistry:
             "godot_render_pixel_episode": godot_render_pixel_episode,
             "ffmpeg_mux_episode": ffmpeg_mux_episode,
             "generate_short_video": generate_short_video,
+            "forge_spatial_blockout": forge_spatial_blockout,
         }
 
     def call(self, server: str, tool: str, params: dict) -> dict:
@@ -1686,6 +1737,15 @@ class BuiltinMcpRegistry:
                         "image_provider": "auto/openai/stability/huggingface/local/off",
                         "voice_provider": "auto/openai/local/off",
                         "compose_provider": "auto/ffmpeg/local/off",
+                    },
+                },
+                "forge_spatial_blockout": {
+                    "description": "Generate a deterministic low-poly 3D blockout scene as GLB, scene JSON, manifest, and preview HTML.",
+                    "params": {
+                        "scene_spec": "scene_blockout.v1 JSON object or JSON string",
+                        "title": "Optional scene title",
+                        "output_dir": "Output directory for GLB/preview/manifest",
+                        "filename_prefix": "Output filename prefix",
                     },
                 },
             },
@@ -5648,6 +5708,299 @@ def _draw_text_shadow(draw, pos, text: str, font, fill, shadow=(0, 0, 0, 135)):
     x, y = pos
     draw.text((x + 2, y + 2), text, font=font, fill=shadow)
     draw.text((x, y), text, font=font, fill=fill)
+
+
+def _normalize_spatial_blockout_spec(value, title: str) -> dict:
+    if isinstance(value, str):
+        text = value.strip()
+        if text:
+            try:
+                value = json.loads(text)
+            except Exception:
+                value = {"title": title, "prompt": text}
+        else:
+            value = {}
+    if not isinstance(value, dict):
+        value = {}
+    if isinstance(value.get("scene_blockout"), dict):
+        value = value["scene_blockout"]
+    elif isinstance(value.get("payload"), dict) and isinstance(value["payload"].get("scene_blockout"), dict):
+        value = value["payload"]["scene_blockout"]
+    scene_title = str(value.get("title") or value.get("scene") or title or "Spatial Blockout").strip()
+    raw_objects = value.get("objects") or value.get("assets") or value.get("elements") or []
+    if isinstance(raw_objects, dict):
+        raw_objects = list(raw_objects.values())
+    objects = []
+    for index, item in enumerate(raw_objects if isinstance(raw_objects, list) else []):
+        if isinstance(item, dict):
+            objects.extend(_expand_spatial_blockout_object(item, index))
+    if not objects:
+        objects = _default_spatial_blockout_objects(value)
+    camera = value.get("camera") if isinstance(value.get("camera"), dict) else {}
+    return {
+        "schema": "scene_blockout.v1",
+        "title": scene_title,
+        "unit": "meter",
+        "style": str(value.get("style") or "low_poly_blockout"),
+        "objects": objects,
+        "camera": {
+            "position": _vec3(camera.get("position"), [4.5, 4.0, 6.0]),
+            "look_at": _vec3(camera.get("look_at"), [0.0, 0.8, 0.0]),
+        },
+        "notes": str(value.get("notes") or value.get("prompt") or "Local deterministic 3D blockout."),
+    }
+
+
+def _default_spatial_blockout_objects(value: dict) -> list[dict]:
+    accent = _spatial_color(value.get("accent_color") or "red")
+    return [
+        {"id": "ground", "type": "ground", "name": "Ground plane", "position": [0, -0.04, 0], "size": [7.0, 0.08, 5.0], "color": [0.46, 0.44, 0.40, 1.0]},
+        {"id": "hero", "type": "character", "name": "Hero blockout", "position": [0, 0.85, 0], "size": [0.55, 1.7, 0.38], "color": _spatial_color("blue")},
+        {"id": "entrance", "type": "architecture", "name": "Entrance mass", "position": [0, 1.25, 1.8], "size": [2.8, 2.5, 0.28], "color": [0.32, 0.34, 0.36, 1.0]},
+        {"id": "warning_light", "type": "prop", "name": "Warning light", "position": [2.2, 1.5, -0.8], "size": [0.32, 0.32, 0.32], "color": accent},
+    ]
+
+
+def _expand_spatial_blockout_object(item: dict, index: int) -> list[dict]:
+    raw_type = str(item.get("type") or item.get("kind") or "box").strip().lower()
+    name = str(item.get("name") or item.get("id") or f"object_{index + 1}").strip()
+    obj_id = _safe_slug(str(item.get("id") or name or f"object_{index + 1}"))
+    position = _vec3(item.get("position"), [0.0, 0.0, 0.0])
+    size = _spatial_size(raw_type, item)
+    color = _spatial_color(item.get("color") or item.get("material") or raw_type)
+    if raw_type in {"ground", "floor", "plane"}:
+        position[1] = -abs(size[1]) / 2
+    elif abs(position[1]) < 0.0001:
+        position[1] = abs(size[1]) / 2
+    if "stair" in raw_type:
+        return [
+            {
+                "id": f"{obj_id}_step_{step + 1}",
+                "type": "stair_step",
+                "name": f"{name} step {step + 1}",
+                "position": [position[0], 0.08 + step * 0.16, position[2] + step * 0.34],
+                "size": [size[0], 0.16, 0.34],
+                "color": color,
+            }
+            for step in range(5)
+        ]
+    if raw_type in {"door", "doorway", "entrance", "portal"}:
+        return [
+            {"id": f"{obj_id}_left", "type": "architecture", "name": f"{name} left", "position": [position[0] - size[0] * 0.42, size[1] / 2, position[2]], "size": [size[0] * 0.16, size[1], size[2]], "color": color},
+            {"id": f"{obj_id}_right", "type": "architecture", "name": f"{name} right", "position": [position[0] + size[0] * 0.42, size[1] / 2, position[2]], "size": [size[0] * 0.16, size[1], size[2]], "color": color},
+            {"id": f"{obj_id}_top", "type": "architecture", "name": f"{name} lintel", "position": [position[0], size[1] * 0.92, position[2]], "size": [size[0], size[1] * 0.16, size[2]], "color": color},
+        ]
+    return [{"id": obj_id, "type": raw_type, "name": name, "position": position, "size": size, "color": color}]
+
+
+def _spatial_size(raw_type: str, item: dict) -> list[float]:
+    default = [0.8, 0.8, 0.8]
+    if "character" in raw_type or "person" in raw_type or "hero" in raw_type:
+        default = [0.55, 1.7, 0.38]
+    elif "wall" in raw_type:
+        default = [3.0, 2.2, 0.2]
+    elif raw_type in {"ground", "floor", "plane"}:
+        default = [6.0, 0.08, 4.0]
+    elif "light" in raw_type:
+        default = [0.32, 0.32, 0.32]
+    elif "prop" in raw_type:
+        default = [0.6, 0.6, 0.6]
+    result = _vec3(item.get("size") or item.get("scale") or item.get("dimensions"), default)
+    return [max(0.04, abs(float(part))) for part in result]
+
+
+def _vec3(value, default: list[float]) -> list[float]:
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except Exception:
+            value = [piece.strip() for piece in value.replace(",", " ").split() if piece.strip()]
+    if isinstance(value, dict):
+        value = [value.get("x"), value.get("y"), value.get("z")]
+    if isinstance(value, (list, tuple)):
+        out = []
+        for index in range(3):
+            try:
+                out.append(float(value[index]))
+            except Exception:
+                out.append(float(default[index]))
+        return out
+    return [float(default[0]), float(default[1]), float(default[2])]
+
+
+def _spatial_color(value) -> list[float]:
+    named = {
+        "blue": "#2f65d9", "red": "#d94a38", "green": "#4f9b63", "yellow": "#d7a437",
+        "orange": "#c46f35", "purple": "#7e5cc8", "black": "#26221f", "white": "#f2eee7",
+        "gray": "#77736c", "grey": "#77736c", "ground": "#747067", "wall": "#5a6066",
+        "architecture": "#5a6066", "character": "#2f65d9", "prop": "#9a7757", "light": "#d94a38",
+    }
+    if isinstance(value, (list, tuple)) and len(value) >= 3:
+        vals = []
+        for item in value[:4]:
+            try:
+                vals.append(float(item))
+            except Exception:
+                vals.append(1.0)
+        if max(vals[:3]) > 1:
+            vals[:3] = [item / 255 for item in vals[:3]]
+        while len(vals) < 4:
+            vals.append(1.0)
+        return [min(1.0, max(0.0, item)) for item in vals[:4]]
+    text = str(value or "").strip().lower()
+    hex_value = named.get(text, text)
+    if not hex_value.startswith("#") or len(hex_value) not in {4, 7}:
+        digest = hashlib.sha1(text.encode("utf-8")).digest()
+        return [0.25 + digest[0] / 255 * 0.45, 0.25 + digest[1] / 255 * 0.45, 0.25 + digest[2] / 255 * 0.45, 1.0]
+    if len(hex_value) == 4:
+        hex_value = "#" + "".join(ch * 2 for ch in hex_value[1:])
+    rgb = _hex_to_rgb(hex_value)
+    return [rgb[0] / 255, rgb[1] / 255, rgb[2] / 255, 1.0]
+
+
+def _write_spatial_blockout_glb(path: Path, spec: dict):
+    buffer = bytearray()
+    buffer_views = []
+    accessors = []
+    materials = []
+    meshes = []
+    nodes = []
+
+    def add_view(payload: bytes, target: int) -> int:
+        while len(buffer) % 4:
+            buffer.append(0)
+        offset = len(buffer)
+        buffer.extend(payload)
+        buffer_views.append({"buffer": 0, "byteOffset": offset, "byteLength": len(payload), "target": target})
+        return len(buffer_views) - 1
+
+    def add_accessor(view: int, component_type: int, count: int, type_name: str, min_val=None, max_val=None) -> int:
+        item = {"bufferView": view, "componentType": component_type, "count": count, "type": type_name}
+        if min_val is not None:
+            item["min"] = min_val
+        if max_val is not None:
+            item["max"] = max_val
+        accessors.append(item)
+        return len(accessors) - 1
+
+    for index, obj in enumerate(spec.get("objects") or []):
+        position = _vec3(obj.get("position"), [0, 0, 0])
+        size = _vec3(obj.get("size"), [1, 1, 1])
+        vertices, indices = _spatial_box_geometry(position, size)
+        vertex_bytes = b"".join(struct.pack("<fff", *vertex) for vertex in vertices)
+        index_bytes = b"".join(struct.pack("<H", item) for item in indices)
+        pos_view = add_view(vertex_bytes, 34962)
+        idx_view = add_view(index_bytes, 34963)
+        mins = [min(vertex[axis] for vertex in vertices) for axis in range(3)]
+        maxs = [max(vertex[axis] for vertex in vertices) for axis in range(3)]
+        pos_accessor = add_accessor(pos_view, 5126, len(vertices), "VEC3", mins, maxs)
+        idx_accessor = add_accessor(idx_view, 5123, len(indices), "SCALAR")
+        materials.append({
+            "name": str(obj.get("type") or "material"),
+            "pbrMetallicRoughness": {"baseColorFactor": _spatial_color(obj.get("color")), "metallicFactor": 0.0, "roughnessFactor": 0.86},
+            "doubleSided": True,
+        })
+        meshes.append({
+            "name": str(obj.get("name") or obj.get("id") or f"object_{index + 1}"),
+            "primitives": [{"attributes": {"POSITION": pos_accessor}, "indices": idx_accessor, "material": len(materials) - 1}],
+        })
+        nodes.append({"name": str(obj.get("name") or obj.get("id") or f"object_{index + 1}"), "mesh": len(meshes) - 1})
+
+    if not nodes:
+        vertices, indices = _spatial_box_geometry([0, 0.5, 0], [1, 1, 1])
+        vertex_bytes = b"".join(struct.pack("<fff", *vertex) for vertex in vertices)
+        index_bytes = b"".join(struct.pack("<H", item) for item in indices)
+        pos_accessor = add_accessor(add_view(vertex_bytes, 34962), 5126, len(vertices), "VEC3", [-0.5, 0, -0.5], [0.5, 1, 0.5])
+        idx_accessor = add_accessor(add_view(index_bytes, 34963), 5123, len(indices), "SCALAR")
+        materials.append({"pbrMetallicRoughness": {"baseColorFactor": [0.3, 0.45, 0.8, 1], "metallicFactor": 0, "roughnessFactor": 0.9}})
+        meshes.append({"primitives": [{"attributes": {"POSITION": pos_accessor}, "indices": idx_accessor, "material": 0}]})
+        nodes.append({"name": "fallback_box", "mesh": 0})
+
+    doc = {
+        "asset": {"version": "2.0", "generator": "CartridgeFlow local_spatial_blockout"},
+        "scene": 0,
+        "scenes": [{"name": str(spec.get("title") or "Spatial Blockout"), "nodes": list(range(len(nodes)))}],
+        "nodes": nodes,
+        "meshes": meshes,
+        "materials": materials,
+        "buffers": [{"byteLength": len(buffer)}],
+        "bufferViews": buffer_views,
+        "accessors": accessors,
+    }
+    json_chunk = json.dumps(doc, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    json_chunk += b" " * ((4 - len(json_chunk) % 4) % 4)
+    bin_chunk = bytes(buffer)
+    bin_chunk += b"\x00" * ((4 - len(bin_chunk) % 4) % 4)
+    total_length = 12 + 8 + len(json_chunk) + 8 + len(bin_chunk)
+    with path.open("wb") as fh:
+        fh.write(struct.pack("<III", 0x46546C67, 2, total_length))
+        fh.write(struct.pack("<I4s", len(json_chunk), b"JSON"))
+        fh.write(json_chunk)
+        fh.write(struct.pack("<I4s", len(bin_chunk), b"BIN\x00"))
+        fh.write(bin_chunk)
+
+
+def _spatial_box_geometry(position: list[float], size: list[float]) -> tuple[list[list[float]], list[int]]:
+    x, y, z = position
+    sx, sy, sz = [max(0.04, abs(float(item))) / 2 for item in size]
+    vertices = [
+        [x - sx, y - sy, z - sz], [x + sx, y - sy, z - sz], [x + sx, y + sy, z - sz], [x - sx, y + sy, z - sz],
+        [x - sx, y - sy, z + sz], [x + sx, y - sy, z + sz], [x + sx, y + sy, z + sz], [x - sx, y + sy, z + sz],
+    ]
+    indices = [
+        0, 1, 2, 0, 2, 3, 1, 5, 6, 1, 6, 2, 5, 4, 7, 5, 7, 6,
+        4, 0, 3, 4, 3, 7, 3, 2, 6, 3, 6, 7, 4, 5, 1, 4, 1, 0,
+    ]
+    return vertices, indices
+
+
+def _render_spatial_blockout_preview_html(spec: dict, glb_path: str) -> str:
+    data = html.escape(json.dumps(spec, ensure_ascii=False), quote=False)
+    title = html.escape(str(spec.get("title") or "Spatial Blockout"))
+    glb = html.escape(glb_path)
+    return f"""<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>{title}</title>
+  <style>
+    body{{margin:0;background:#f7f3ec;color:#332b24;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;}}
+    main{{height:100vh;display:grid;grid-template-rows:auto minmax(0,1fr) auto;}}
+    header,footer{{padding:12px 16px;border-bottom:1px solid #dfd2c4;background:#fffaf4;}}
+    footer{{border-top:1px solid #dfd2c4;border-bottom:0;font-size:12px;color:#786b60;display:flex;gap:12px;flex-wrap:wrap;}}
+    h1{{margin:0;font-size:16px;}} p{{margin:4px 0 0;color:#786b60;font-size:12px;}}
+    canvas{{width:100%;height:100%;display:block;background:linear-gradient(#fffaf4,#eee5d9);}}
+    a{{color:#9a4e2f;text-decoration:none;font-weight:700;}}
+  </style>
+</head>
+<body>
+<main>
+  <header><h1>{title}</h1><p>低模 3D 草图预览。GLB 文件：<a href="{glb}" target="_blank" rel="noreferrer">{glb}</a></p></header>
+  <canvas id="view"></canvas>
+  <footer><span id="stats"></span><span>拖拽鼠标旋转视角，滚轮缩放。</span></footer>
+</main>
+<script id="scene-data" type="application/json">{data}</script>
+<script>
+const spec = JSON.parse(document.getElementById('scene-data').textContent);
+const canvas = document.getElementById('view');
+const ctx = canvas.getContext('2d');
+let angle = -0.72, zoom = 72, dragging = false, lastX = 0;
+function resize(){{ const dpr = window.devicePixelRatio || 1; canvas.width = canvas.clientWidth*dpr; canvas.height = canvas.clientHeight*dpr; ctx.setTransform(dpr,0,0,dpr,0,0); draw(); }}
+function color(c){{ if(!Array.isArray(c)) return '#77736c'; const r=Math.round((c[0]||0)*255),g=Math.round((c[1]||0)*255),b=Math.round((c[2]||0)*255); return `rgb(${{r}},${{g}},${{b}})`; }}
+function project(p){{ const ca=Math.cos(angle), sa=Math.sin(angle); const x=p[0]*ca-p[2]*sa; const z=p[0]*sa+p[2]*ca; return [canvas.clientWidth/2+x*zoom, canvas.clientHeight*0.62+z*zoom*.38-p[1]*zoom]; }}
+function boxCorners(o){{ const p=o.position||[0,0,0], s=o.size||[1,1,1]; const hx=s[0]/2, hy=s[1]/2, hz=s[2]/2; return [[p[0]-hx,p[1]-hy,p[2]-hz],[p[0]+hx,p[1]-hy,p[2]-hz],[p[0]+hx,p[1]+hy,p[2]-hz],[p[0]-hx,p[1]+hy,p[2]-hz],[p[0]-hx,p[1]-hy,p[2]+hz],[p[0]+hx,p[1]-hy,p[2]+hz],[p[0]+hx,p[1]+hy,p[2]+hz],[p[0]-hx,p[1]+hy,p[2]+hz]]; }}
+function face(points, fill){{ ctx.beginPath(); points.forEach((p,i)=>{{ const q=project(p); if(i)ctx.lineTo(q[0],q[1]); else ctx.moveTo(q[0],q[1]); }}); ctx.closePath(); ctx.fillStyle=fill; ctx.fill(); ctx.strokeStyle='rgba(65,52,42,.35)'; ctx.stroke(); }}
+function shade(fill, k){{ const m=fill.match(/\\d+/g)||[120,120,120]; return `rgb(${{Math.max(0,Math.min(255,Math.round(m[0]*k)))}},${{Math.max(0,Math.min(255,Math.round(m[1]*k)))}},${{Math.max(0,Math.min(255,Math.round(m[2]*k)))}})`; }}
+function draw(){{ ctx.clearRect(0,0,canvas.clientWidth,canvas.clientHeight); const objs=[...(spec.objects||[])].sort((a,b)=>((a.position?.[0]||0)+(a.position?.[2]||0))-((b.position?.[0]||0)+(b.position?.[2]||0))); objs.forEach(o=>{{ const c=boxCorners(o), base=color(o.color); face([c[4],c[5],c[6],c[7]], shade(base,.9)); face([c[1],c[5],c[6],c[2]], shade(base,.78)); face([c[3],c[2],c[6],c[7]], shade(base,1.08)); const label=project([o.position[0],o.position[1]+(o.size?.[1]||1)/2+.18,o.position[2]]); ctx.fillStyle='rgba(255,250,244,.85)'; ctx.fillRect(label[0]-42,label[1]-15,84,18); ctx.fillStyle='#4a4038'; ctx.font='11px monospace'; ctx.textAlign='center'; ctx.fillText(o.name||o.id||o.type,label[0],label[1]-2); }}); document.getElementById('stats').textContent=`对象 ${{objs.length}} 个 · style ${{spec.style||'blockout'}}`; }}
+canvas.addEventListener('mousedown',e=>{{dragging=true;lastX=e.clientX;}});
+window.addEventListener('mouseup',()=>dragging=false);
+window.addEventListener('mousemove',e=>{{ if(!dragging)return; angle+=(e.clientX-lastX)*.01; lastX=e.clientX; draw(); }});
+canvas.addEventListener('wheel',e=>{{ e.preventDefault(); zoom=Math.max(32,Math.min(160,zoom-e.deltaY*.08)); draw(); }},{{passive:false}});
+window.addEventListener('resize',resize); resize();
+</script>
+</body>
+</html>"""
 
 
 def _hex_to_rgb(value: str) -> tuple[int, int, int]:

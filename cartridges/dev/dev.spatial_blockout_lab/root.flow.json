@@ -1,0 +1,473 @@
+{
+  "schema_version": 1,
+  "id": "dev.spatial_blockout_lab.root.v1",
+  "name": "3D 草图实验室 RootFlow",
+  "mode": "standard",
+  "cartridge_id": "dev.spatial_blockout_lab",
+  "protocol": {
+    "id": "CF-FARP",
+    "version": "0.4"
+  },
+  "start": "start",
+  "states": {
+    "start": {
+      "type": "system",
+      "title": "开始",
+      "action": "start",
+      "layout": {
+        "x": 60,
+        "y": 180
+      },
+      "next": "welcome_ui"
+    },
+    "welcome_ui": {
+      "type": "process",
+      "title": "工程看板：3D 草图实验室",
+      "action": "show_ui",
+      "kind": "ui",
+      "executor": "deterministic",
+      "effect": "writes_store",
+      "protocol_version": "0.4",
+      "display": {
+        "suffix": "展示",
+        "label": "展示节点"
+      },
+      "output": "welcome_ui",
+      "params": {
+        "description": "展示 3D blockout 草图卡带入口。",
+        "output": "welcome_ui",
+        "ui_type": "html",
+        "path": "assets/welcome.html"
+      },
+      "layout": {
+        "x": 350,
+        "y": 180
+      },
+      "next": "collect_scene_brief"
+    },
+    "collect_scene_brief": {
+      "type": "process",
+      "title": "入料口：3D 场景想法",
+      "kind": "input",
+      "executor": "user",
+      "effect": "writes_store",
+      "protocol_version": "0.4",
+      "display": {
+        "suffix": "输入",
+        "label": "输入节点"
+      },
+      "input_kind": "initial",
+      "source": "user_form",
+      "input_schema": {
+        "schema": "spatial_blockout.input.v1",
+        "fields": [
+          "scene_brief",
+          "scene_id",
+          "style_notes",
+          "output_dir"
+        ]
+      },
+      "output": "scene_inputs",
+      "params": {
+        "description": "收集用户对 3D 草图的空间、角色、道具、镜头和输出目录要求。",
+        "output": "scene_inputs"
+      },
+      "layout": {
+        "x": 660,
+        "y": 180
+      },
+      "next": "decide_scene_blockout"
+    },
+    "decide_scene_blockout": {
+      "type": "process",
+      "title": "AI决策：生成 3D 草图规格",
+      "kind": "decision",
+      "executor": "llm",
+      "effect": "none",
+      "protocol_version": "0.4",
+      "display": {
+        "suffix": "AI决策",
+        "label": "AI决策节点"
+      },
+      "input": "scene_inputs",
+      "optional_input": "scene_plan_reply,blockout_rework_feedback",
+      "output": "scene_blockout_decision",
+      "output_contract": "decision_envelope.v1",
+      "decision_contract": {
+        "schema": "decision_envelope.v1",
+        "allowed_statuses": [
+          "resolved",
+          "needs_user_input",
+          "blocked"
+        ],
+        "on_needs_user_input": "pause",
+        "interaction": {
+          "store_key": "scene_plan_reply",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "approval": {
+                "type": "string",
+                "title": "规格确认",
+                "enum": [
+                  "approve",
+                  "revise"
+                ],
+                "enumNames": [
+                  "确认生成",
+                  "修改规格"
+                ]
+              },
+              "feedback": {
+                "type": "string",
+                "title": "修改意见",
+                "description": "如果选择修改规格，请说明需要调整的空间、角色、道具、镜头或风格。"
+              }
+            },
+            "required": [
+              "approval"
+            ]
+          },
+          "resume_policy": "resume_same_node",
+          "live_collaboration": true
+        },
+        "consume": {
+          "mode": "payload_path",
+          "path": "payload.scene_blockout",
+          "as": "scene_blockout",
+          "on_missing": "fail_closed"
+        },
+        "offline_decision": {
+          "schema": "decision_envelope.v1",
+          "status": "resolved",
+          "summary": "离线兜底：生成一个可执行的低模 3D 草图规格。",
+          "payload": {
+            "scene_blockout": {
+              "schema": "scene_blockout.v1",
+              "title": "废弃地铁站入口 3D 草图",
+              "style": "low_poly_blockout",
+              "objects": [
+                {
+                  "id": "ground",
+                  "type": "ground",
+                  "name": "地面基准",
+                  "position": [
+                    0,
+                    0,
+                    0
+                  ],
+                  "size": [
+                    7,
+                    0.08,
+                    5
+                  ],
+                  "color": "gray"
+                },
+                {
+                  "id": "hero",
+                  "type": "character",
+                  "name": "蓝色夹克少年",
+                  "position": [
+                    0,
+                    0,
+                    0
+                  ],
+                  "color": "blue"
+                },
+                {
+                  "id": "subway_entrance",
+                  "type": "entrance",
+                  "name": "废弃地铁站入口",
+                  "position": [
+                    0,
+                    0,
+                    1.7
+                  ],
+                  "size": [
+                    2.8,
+                    2.4,
+                    0.28
+                  ],
+                  "color": "wall"
+                },
+                {
+                  "id": "warning_light",
+                  "type": "warning_light",
+                  "name": "红色警示灯",
+                  "position": [
+                    2.2,
+                    1.5,
+                    -0.9
+                  ],
+                  "color": "red"
+                }
+              ],
+              "camera": {
+                "position": [
+                  4.5,
+                  3.8,
+                  6
+                ],
+                "look_at": [
+                  0,
+                  0.8,
+                  0
+                ]
+              },
+              "notes": "低模草图，只验证空间关系、角色站位、入口体块和警示灯。"
+            }
+          }
+        }
+      },
+      "params": {
+        "description": "把用户的自然语言需求转成 scene_blockout.v1。先让用户确认规格，再允许工具写入产物。",
+        "system_prompt": "你是 3D blockout 导演，只负责把想法转成可执行的粗模场景规格。不要追求最终美术，要追求空间关系清楚、对象少、可生成。",
+        "prompt": "根据 scene_inputs 生成 scene_blockout.v1。必须输出 decision_envelope.v1，resolved 时 payload.scene_blockout 必须包含：schema、title、style、objects、camera、notes。objects 只使用可粗模表达的对象，字段包含 id/type/name/position/size/color。position/size 是 [x,y,z]，y 为垂直高度。对象数量控制在 4-10 个。若用户在 scene_plan_reply 或 blockout_rework_feedback 中要求修改，请吸收修改后再 resolved。",
+        "input": "scene_inputs",
+        "optional_input": "scene_plan_reply,blockout_rework_feedback",
+        "output": "scene_blockout_decision",
+        "output_contract": "decision_envelope.v1"
+      },
+      "layout": {
+        "x": 980,
+        "y": 180
+      },
+      "next": "forge_blockout"
+    },
+    "forge_blockout": {
+      "type": "process",
+      "title": "粗模工坊：生成 GLB 草图",
+      "kind": "mcp_execute",
+      "executor": "mcp",
+      "effect": "writes_artifacts",
+      "protocol_version": "0.4",
+      "display": {
+        "suffix": "MCP执行",
+        "label": "MCP执行节点"
+      },
+      "tool_binding": "static_params",
+      "allowed_tools": [
+        "media_forge_spatial_blockout"
+      ],
+      "permission": "write_run_artifacts",
+      "failure_policy": "fail_closed",
+      "audit_log": true,
+      "input": "scene_blockout",
+      "output": "blockout_bundle",
+      "params": {
+        "description": "消费 scene_blockout.v1，生成 GLB、场景 JSON、manifest 和 HTML 预览。",
+        "input": "scene_blockout",
+        "output": "blockout_bundle",
+        "tool_params": {
+          "scene_spec": "store:scene_blockout",
+          "title": "store:scene_blockout.title",
+          "output_dir": "store:scene_inputs.output_dir",
+          "filename_prefix": "store:scene_inputs.scene_id"
+        }
+      },
+      "layout": {
+        "x": 1310,
+        "y": 180
+      },
+      "next": "review_blockout"
+    },
+    "review_blockout": {
+      "type": "process",
+      "title": "AI决策：草图复核",
+      "kind": "decision",
+      "executor": "llm",
+      "effect": "none",
+      "protocol_version": "0.4",
+      "display": {
+        "suffix": "AI决策",
+        "label": "AI决策节点"
+      },
+      "input": "scene_inputs,scene_blockout,blockout_bundle",
+      "optional_input": "blockout_review_reply",
+      "output": "blockout_review_decision",
+      "output_contract": "decision_envelope.v1",
+      "decision_contract": {
+        "schema": "decision_envelope.v1",
+        "allowed_statuses": [
+          "resolved",
+          "needs_user_input",
+          "blocked"
+        ],
+        "on_needs_user_input": "pause",
+        "interaction": {
+          "store_key": "blockout_review_reply",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "approval": {
+                "type": "string",
+                "title": "草图复核",
+                "enum": [
+                  "approve",
+                  "revise"
+                ],
+                "enumNames": [
+                  "通过",
+                  "不满意，重做"
+                ]
+              },
+              "feedback": {
+                "type": "string",
+                "title": "调整意见",
+                "description": "如果不满意，请说明需要改动的对象、比例、空间、镜头或颜色。"
+              }
+            },
+            "required": [
+              "approval"
+            ]
+          },
+          "resume_policy": "resume_same_node",
+          "live_collaboration": true,
+          "answer_routes": [
+            {
+              "match": {
+                "field": "approval",
+                "equals": "revise"
+              },
+              "target_node": "decide_scene_blockout",
+              "policy": "resume_target_node",
+              "replay_from_target": true,
+              "copy_answer_to": "blockout_rework_feedback",
+              "clear_store_keys": [
+                "scene_plan_reply",
+                "scene_blockout_decision",
+                "scene_blockout",
+                "blockout_bundle",
+                "blockout_review_reply",
+                "blockout_review_decision",
+                "blockout_review",
+                "spatial_delivery"
+              ]
+            }
+          ]
+        },
+        "consume": {
+          "mode": "payload_path",
+          "path": "payload.review",
+          "as": "blockout_review",
+          "on_missing": "fail_closed"
+        },
+        "offline_decision": {
+          "schema": "decision_envelope.v1",
+          "status": "resolved",
+          "summary": "离线兜底：草图可作为空间验证稿进入交付。",
+          "payload": {
+            "review": {
+              "schema": "blockout_review.v1",
+              "approved": true,
+              "notes": "离线兜底自动通过。正式协作模式应由用户查看预览后确认。"
+            }
+          }
+        }
+      },
+      "params": {
+        "description": "让用户查看 GLB/HTML 预览后确认是否通过；不满意则回到规格节点局部重做。",
+        "system_prompt": "你是 3D 草图复核助手。你的任务是根据用户复核意见决定通过或重做，不要直接执行工具。",
+        "prompt": "若 optional_input blockout_review_reply 不存在，必须输出 needs_user_input，提醒用户打开产物预览后选择通过或重做。若用户 approval=revise 或文本表示不满意，输出 needs_user_input 或遵循 answer_routes 回到 decide_scene_blockout；若用户 approval=approve，输出 resolved，并在 payload.review 中写入 {schema:'blockout_review.v1', approved:true, notes:string}。",
+        "input": "scene_inputs,scene_blockout,blockout_bundle",
+        "optional_input": "blockout_review_reply",
+        "output": "blockout_review_decision",
+        "output_contract": "decision_envelope.v1"
+      },
+      "layout": {
+        "x": 1640,
+        "y": 180
+      },
+      "next": "delivery_summary"
+    },
+    "delivery_summary": {
+      "type": "process",
+      "title": "交付汇总：3D 草图包",
+      "kind": "delivery",
+      "executor": "deterministic",
+      "effect": "writes_store",
+      "protocol_version": "0.4",
+      "display": {
+        "suffix": "交付",
+        "label": "交付节点"
+      },
+      "input": "scene_inputs,scene_blockout,blockout_bundle,blockout_review",
+      "output": "spatial_delivery",
+      "primary_output": "spatial_delivery",
+      "params": {
+        "description": "汇总输入、AI 规格、工具产物和用户复核结果。",
+        "input": "scene_inputs,scene_blockout,blockout_bundle,blockout_review",
+        "output": "spatial_delivery",
+        "preset_config": {
+          "items": "scene_inputs,scene_blockout,blockout_bundle,blockout_review",
+          "output_name": "spatial_delivery"
+        }
+      },
+      "layout": {
+        "x": 1970,
+        "y": 180
+      },
+      "next": "delivery"
+    },
+    "delivery": {
+      "type": "system",
+      "title": "交付",
+      "action": "delivery",
+      "layout": {
+        "x": 2290,
+        "y": 180
+      },
+      "next": "complete"
+    },
+    "complete": {
+      "type": "terminal",
+      "title": "完成",
+      "layout": {
+        "x": 2580,
+        "y": 180
+      }
+    }
+  },
+  "edges": [
+    {
+      "from": "start",
+      "to": "welcome_ui",
+      "scope": "root"
+    },
+    {
+      "from": "welcome_ui",
+      "to": "collect_scene_brief",
+      "scope": "root"
+    },
+    {
+      "from": "collect_scene_brief",
+      "to": "decide_scene_blockout",
+      "scope": "root"
+    },
+    {
+      "from": "decide_scene_blockout",
+      "to": "forge_blockout",
+      "scope": "root"
+    },
+    {
+      "from": "forge_blockout",
+      "to": "review_blockout",
+      "scope": "root"
+    },
+    {
+      "from": "review_blockout",
+      "to": "delivery_summary",
+      "scope": "root"
+    },
+    {
+      "from": "delivery_summary",
+      "to": "delivery",
+      "scope": "root"
+    },
+    {
+      "from": "delivery",
+      "to": "complete",
+      "scope": "root"
+    }
+  ]
+}

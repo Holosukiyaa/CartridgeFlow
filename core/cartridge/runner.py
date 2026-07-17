@@ -708,6 +708,8 @@ class CartridgeRunner:
             return "audio"
         if suffix in {".png", ".jpg", ".jpeg", ".gif", ".webp"}:
             return "image"
+        if suffix in {".glb", ".gltf", ".obj", ".fbx"}:
+            return "model"
         return "text"
 
     def _mime_type_for_path(self, path: Path) -> str:
@@ -744,6 +746,14 @@ class CartridgeRunner:
             return "image/gif"
         if suffix == ".webp":
             return "image/webp"
+        if suffix == ".glb":
+            return "model/gltf-binary"
+        if suffix == ".gltf":
+            return "model/gltf+json"
+        if suffix == ".obj":
+            return "model/obj"
+        if suffix == ".fbx":
+            return "application/octet-stream"
         return "text/plain"
 
     def list_runs(self) -> list[dict]:

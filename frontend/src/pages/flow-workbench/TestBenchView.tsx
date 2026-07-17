@@ -681,6 +681,7 @@ export function TestBenchView({
   const [logHeight, setLogHeight] = useState(150)
   const [logMaxHeight, setLogMaxHeight] = useState(180)
   const [showUiPreview, setShowUiPreview] = useState(true)
+  const [lockedPendingId, setLockedPendingId] = useState('')
   const logBodyRef = useRef<HTMLDivElement | null>(null)
   const logDragRef = useRef<{ startY: number; startHeight: number } | null>(null)
   const probePanelRef = useRef<HTMLElement | null>(null)
@@ -696,7 +697,9 @@ export function TestBenchView({
   const selectedArtifacts = selectedNode
     ? (latestRun?.artifacts || []).filter((artifact: any) => artifact?.source?.node_id === selectedNode.id)
     : []
-  const pendingInteraction = latestRun?.status === 'paused_waiting_user' && latestRun.pending_interaction ? latestRun.pending_interaction : null
+  const rawPendingInteraction = latestRun?.status === 'paused_waiting_user' && latestRun.pending_interaction ? latestRun.pending_interaction : null
+  const rawPendingId = String(rawPendingInteraction?.interaction_id || rawPendingInteraction?.node_id || '')
+  const pendingInteraction = rawPendingInteraction && rawPendingId !== lockedPendingId ? rawPendingInteraction : null
   const pendingNode = useMemo(() => {
     for (const [nodeId, state] of nodeRunStates.entries()) {
       if (state.status === 'paused' && state.pendingInteraction) return nodeById.get(nodeId) || null
@@ -728,6 +731,11 @@ export function TestBenchView({
   useEffect(() => {
     if (!pendingInteraction) setPendingModalOpen(false)
   }, [pendingInteraction])
+
+  useEffect(() => {
+    if (!rawPendingInteraction) setLockedPendingId('')
+    else if (rawPendingId && rawPendingId !== lockedPendingId) setLockedPendingId('')
+  }, [lockedPendingId, rawPendingId, rawPendingInteraction])
 
   useEffect(() => {
     const updateLogLimit = () => {
@@ -808,6 +816,8 @@ export function TestBenchView({
 
   const answerPending = (values: Record<string, any>) => {
     if (!latestRun?.run_id || !onAnswerPendingInteraction) return
+    const pendingId = String(pendingInteraction?.interaction_id || pendingInteraction?.node_id || '')
+    if (pendingId) setLockedPendingId(pendingId)
     setIsRunning(true)
     setLogsOpen(true)
     setLogTab('log')
@@ -816,6 +826,9 @@ export function TestBenchView({
       setIsRunning(false)
     }, 900)
     void Promise.resolve(onAnswerPendingInteraction(latestRun.run_id, values))
+      .catch(() => {
+        setLockedPendingId('')
+      })
       .finally(() => {
         window.clearTimeout(releaseTimer)
         setIsRunning(false)

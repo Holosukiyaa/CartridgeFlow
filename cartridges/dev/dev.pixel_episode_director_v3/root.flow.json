@@ -17,7 +17,8 @@
       "layout": {
         "x": 60,
         "y": 120
-      }
+      },
+      "next": "welcome_ui"
     },
     "welcome_ui": {
       "type": "process",
@@ -40,7 +41,8 @@
       "layout": {
         "x": 366,
         "y": 120
-      }
+      },
+      "next": "collect_project_brief"
     },
     "collect_project_brief": {
       "type": "process",
@@ -83,7 +85,8 @@
       "layout": {
         "x": 672,
         "y": 120
-      }
+      },
+      "next": "decide_project_direction"
     },
     "decide_project_direction": {
       "type": "process",
@@ -171,9 +174,10 @@
         "output": "project_direction_decision"
       },
       "layout": {
-        "x": 1024,
-        "y": 221
-      }
+        "x": 974,
+        "y": 88
+      },
+      "next": "load_reference_materials"
     },
     "load_reference_materials": {
       "type": "process",
@@ -206,9 +210,10 @@
         }
       },
       "layout": {
-        "x": 1344,
-        "y": -56
-      }
+        "x": 1354,
+        "y": 44
+      },
+      "next": "inspect_asset_readiness"
     },
     "probe_media_environment": {
       "type": "process",
@@ -243,9 +248,10 @@
         }
       },
       "layout": {
-        "x": 1590,
-        "y": 120
-      }
+        "x": 1472,
+        "y": 239
+      },
+      "next": "planning_fork"
     },
     "inspect_asset_readiness": {
       "type": "process",
@@ -278,9 +284,10 @@
         }
       },
       "layout": {
-        "x": 1730,
-        "y": -61
-      }
+        "x": 1732,
+        "y": -22
+      },
+      "next": "planning_fork"
     },
     "planning_fork": {
       "type": "process",
@@ -305,9 +312,10 @@
         }
       },
       "layout": {
-        "x": 2421,
-        "y": -113
-      }
+        "x": 1793,
+        "y": 165
+      },
+      "next": "plan_story_beats"
     },
     "plan_story_beats": {
       "type": "process",
@@ -433,9 +441,10 @@
         "output": "story_plan_decision"
       },
       "layout": {
-        "x": 2428,
-        "y": 137
-      }
+        "x": 2095,
+        "y": 19
+      },
+      "next": "assemble_creation_packet"
     },
     "plan_asset_specs": {
       "type": "process",
@@ -591,9 +600,10 @@
         "output": "asset_specs_decision"
       },
       "layout": {
-        "x": 2081,
-        "y": 168
-      }
+        "x": 2344,
+        "y": 238
+      },
+      "next": "forge_draft_assets"
     },
     "plan_camera_language": {
       "type": "process",
@@ -721,9 +731,10 @@
         "output": "camera_plan_decision"
       },
       "layout": {
-        "x": 2771,
-        "y": 16
-      }
+        "x": 1815,
+        "y": 611
+      },
+      "next": "assemble_creation_packet"
     },
     "forge_draft_assets": {
       "type": "process",
@@ -763,9 +774,10 @@
         }
       },
       "layout": {
-        "x": 2424,
-        "y": 358
-      }
+        "x": 2260,
+        "y": 570
+      },
+      "next": "review_draft_assets"
     },
     "review_draft_assets": {
       "type": "process",
@@ -920,9 +932,10 @@
         "output": "asset_review_decision"
       },
       "layout": {
-        "x": 2845,
-        "y": 504
-      }
+        "x": 2462,
+        "y": 562
+      },
+      "next": "review_draft_assets_external_tool_mroweam2_0"
     },
     "assemble_creation_packet": {
       "type": "process",
@@ -947,9 +960,10 @@
         }
       },
       "layout": {
-        "x": 2774,
-        "y": 248
-      }
+        "x": 2079,
+        "y": 395
+      },
+      "next": "generate_shot_plan"
     },
     "generate_shot_plan": {
       "type": "process",
@@ -991,9 +1005,10 @@
         }
       },
       "layout": {
-        "x": 3158,
-        "y": 346
-      }
+        "x": 1509,
+        "y": 457
+      },
+      "next": "validate_shot_plan"
     },
     "validate_shot_plan": {
       "type": "process",
@@ -1029,9 +1044,10 @@
         }
       },
       "layout": {
-        "x": 3127,
-        "y": 712
-      }
+        "x": 1167,
+        "y": 392
+      },
+      "next": "approve_render_plan"
     },
     "approve_render_plan": {
       "type": "process",
@@ -1113,9 +1129,10 @@
         "output": "render_approval_decision"
       },
       "layout": {
-        "x": 2630,
-        "y": 741
-      }
+        "x": 773,
+        "y": 364
+      },
+      "next": "render_godot_episode"
     },
     "render_godot_episode": {
       "type": "process",
@@ -1151,9 +1168,10 @@
         }
       },
       "layout": {
-        "x": 2144,
-        "y": 673
-      }
+        "x": 401,
+        "y": 359
+      },
+      "next": "mux_episode_delivery"
     },
     "mux_episode_delivery": {
       "type": "process",
@@ -1191,9 +1209,10 @@
         }
       },
       "layout": {
-        "x": 1778,
-        "y": 520
-      }
+        "x": 17,
+        "y": 381
+      },
+      "next": "decide_continuity_update"
     },
     "decide_continuity_update": {
       "type": "process",
@@ -1274,9 +1293,10 @@
         "output": "continuity_decision"
       },
       "layout": {
-        "x": 1389,
-        "y": 363
-      }
+        "x": 235,
+        "y": 596
+      },
+      "next": "update_world_state"
     },
     "update_world_state": {
       "type": "process",
@@ -1313,9 +1333,10 @@
         }
       },
       "layout": {
-        "x": 902,
-        "y": 391
-      }
+        "x": 721,
+        "y": 652
+      },
+      "next": "delivery_summary"
     },
     "delivery_summary": {
       "type": "process",
@@ -1341,132 +1362,189 @@
         }
       },
       "layout": {
-        "x": 489,
-        "y": 318
-      }
+        "x": 1232,
+        "y": 727
+      },
+      "next": "delivery"
     },
     "delivery": {
       "type": "system",
       "title": "交付",
       "action": "delivery",
       "layout": {
-        "x": 738,
-        "y": 585
-      }
+        "x": 1755,
+        "y": 834
+      },
+      "next": "complete"
     },
     "complete": {
       "type": "terminal",
       "title": "完成",
       "layout": {
-        "x": 1306,
-        "y": 596
+        "x": 2385,
+        "y": 902
       }
+    },
+    "review_draft_assets_external_tool_mroweam2_0": {
+      "type": "process",
+      "kind": "transfer",
+      "executor": "deterministic",
+      "effect": "writes_store",
+      "display": {
+        "suffix": "传递",
+        "label": "处理节点-传递"
+      },
+      "title": "外部工具占位",
+      "action": "pass_result",
+      "params": {
+        "node_category": "transfer"
+      },
+      "scope": "sub_flow",
+      "entry_kind": "sub_flow",
+      "template_id": "runtime",
+      "locked": false,
+      "layout": {
+        "x": 2605,
+        "y": 732
+      },
+      "next": "assemble_creation_packet"
     }
   },
   "edges": [
     {
+      "from": "review_draft_assets",
+      "to": "review_draft_assets_external_tool_mroweam2_0",
+      "scope": "root"
+    },
+    {
+      "from": "review_draft_assets_external_tool_mroweam2_0",
+      "to": "assemble_creation_packet",
+      "scope": "root"
+    },
+    {
       "from": "start",
-      "to": "welcome_ui"
+      "to": "welcome_ui",
+      "scope": "root"
     },
     {
       "from": "welcome_ui",
-      "to": "collect_project_brief"
+      "to": "collect_project_brief",
+      "scope": "root"
     },
     {
       "from": "collect_project_brief",
-      "to": "decide_project_direction"
+      "to": "decide_project_direction",
+      "scope": "root"
     },
     {
       "from": "decide_project_direction",
-      "to": "load_reference_materials"
+      "to": "load_reference_materials",
+      "scope": "root"
     },
     {
       "from": "decide_project_direction",
-      "to": "probe_media_environment"
+      "to": "probe_media_environment",
+      "scope": "root"
     },
     {
       "from": "load_reference_materials",
-      "to": "inspect_asset_readiness"
+      "to": "inspect_asset_readiness",
+      "scope": "root"
     },
     {
       "from": "inspect_asset_readiness",
-      "to": "planning_fork"
+      "to": "planning_fork",
+      "scope": "root"
     },
     {
       "from": "probe_media_environment",
-      "to": "planning_fork"
+      "to": "planning_fork",
+      "scope": "root"
     },
     {
       "from": "planning_fork",
-      "to": "plan_story_beats"
+      "to": "plan_story_beats",
+      "scope": "root"
     },
     {
       "from": "planning_fork",
-      "to": "plan_asset_specs"
+      "to": "plan_asset_specs",
+      "scope": "root"
     },
     {
       "from": "planning_fork",
-      "to": "plan_camera_language"
+      "to": "plan_camera_language",
+      "scope": "root"
     },
     {
       "from": "plan_asset_specs",
-      "to": "forge_draft_assets"
+      "to": "forge_draft_assets",
+      "scope": "root"
     },
     {
       "from": "plan_story_beats",
-      "to": "assemble_creation_packet"
+      "to": "assemble_creation_packet",
+      "scope": "root"
     },
     {
       "from": "forge_draft_assets",
-      "to": "review_draft_assets"
-    },
-    {
-      "from": "review_draft_assets",
-      "to": "assemble_creation_packet"
+      "to": "review_draft_assets",
+      "scope": "root"
     },
     {
       "from": "plan_camera_language",
-      "to": "assemble_creation_packet"
+      "to": "assemble_creation_packet",
+      "scope": "root"
     },
     {
       "from": "assemble_creation_packet",
-      "to": "generate_shot_plan"
+      "to": "generate_shot_plan",
+      "scope": "root"
     },
     {
       "from": "generate_shot_plan",
-      "to": "validate_shot_plan"
+      "to": "validate_shot_plan",
+      "scope": "root"
     },
     {
       "from": "validate_shot_plan",
-      "to": "approve_render_plan"
+      "to": "approve_render_plan",
+      "scope": "root"
     },
     {
       "from": "approve_render_plan",
-      "to": "render_godot_episode"
+      "to": "render_godot_episode",
+      "scope": "root"
     },
     {
       "from": "render_godot_episode",
-      "to": "mux_episode_delivery"
+      "to": "mux_episode_delivery",
+      "scope": "root"
     },
     {
       "from": "mux_episode_delivery",
-      "to": "decide_continuity_update"
+      "to": "decide_continuity_update",
+      "scope": "root"
     },
     {
       "from": "decide_continuity_update",
-      "to": "update_world_state"
+      "to": "update_world_state",
+      "scope": "root"
     },
     {
       "from": "update_world_state",
-      "to": "delivery_summary"
+      "to": "delivery_summary",
+      "scope": "root"
     },
     {
       "from": "delivery_summary",
-      "to": "delivery"
+      "to": "delivery",
+      "scope": "root"
     },
     {
       "from": "delivery",
-      "to": "complete"
+      "to": "complete",
+      "scope": "root"
     }
   ]
 }

@@ -1073,15 +1073,18 @@ class BuiltinMcpRegistry:
             assets = specs.get("assets") if isinstance(specs, dict) else None
             if not isinstance(assets, list) or not assets:
                 return {"ok": False, "error": "asset_spec_batch.v1 requires a non-empty assets array"}
+            spec_policy = specs.get("policy") if isinstance(specs.get("policy"), dict) else {}
+            if isinstance(specs.get("policy"), str):
+                spec_policy = {"asset_policy": specs.get("policy")}
 
             output_root = str(params.get("output_dir") or "cartridges/dev/dev.pixel_episode_director/assets/pixel_stage").strip()
             draft_output_dir = str(params.get("draft_output_dir") or (output_root.rstrip("/\\") + "/drafts")).strip()
             asset_manifest_path = str(params.get("asset_manifest_path") or "cartridges/dev/dev.pixel_episode_director/assets/asset_manifest.json").strip()
             report_path = str(params.get("report_path") or params.get("output_path") or "test_output/pixel_episode_v2/asset_forge_batch.json").strip()
-            asset_policy = str(params.get("asset_policy") or (specs.get("policy") or {}).get("asset_policy") or "").strip().lower()
-            provider = str(params.get("provider") or (specs.get("policy") or {}).get("provider") or "local_pixel_forge").strip()
-            image_provider = str(params.get("image_provider") or (specs.get("policy") or {}).get("image_provider") or "auto").strip()
-            register_mode_default = str(params.get("register_mode") or (specs.get("policy") or {}).get("register_mode") or "draft").strip().lower()
+            asset_policy = str(params.get("asset_policy") or spec_policy.get("asset_policy") or "").strip().lower()
+            provider = str(params.get("provider") or spec_policy.get("provider") or "local_pixel_forge").strip()
+            image_provider = str(params.get("image_provider") or spec_policy.get("image_provider") or "auto").strip()
+            register_mode_default = str(params.get("register_mode") or spec_policy.get("register_mode") or "draft").strip().lower()
             if register_mode_default not in {"approved", "draft"}:
                 register_mode_default = "draft"
             style_notes = str(params.get("style_notes") or specs.get("style_notes") or "").strip()

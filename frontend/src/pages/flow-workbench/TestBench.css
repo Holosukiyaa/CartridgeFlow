@@ -1246,7 +1246,7 @@
 .cf-inspector-body {
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -1312,6 +1312,186 @@
   color: var(--muted);
   font-size: 10px;
   font-family: var(--mono, monospace);
+}
+
+.cf-inspector-sections {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.cf-inspector-empty {
+  padding: 18px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.cf-node-inspector .cf-inspector-section {
+  flex: 0 0 auto;
+}
+
+.cf-node-inspector .cf-inspector-section.open {
+  flex: 1 1 auto;
+  min-height: 130px;
+}
+
+.cf-node-inspector .cf-inspector-section.closed {
+  flex: 0 0 auto;
+}
+
+.cf-inspector-section-head {
+  flex: 0 0 auto;
+  padding: 0;
+}
+
+.cf-inspector-section-toggle {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.cf-inspector-section-toggle strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cf-inspector-section-toggle code {
+  flex: 0 1 auto;
+}
+
+.cf-inspector-section-toggle span {
+  margin-left: auto;
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.cf-inspector-popout {
+  flex: 0 0 auto;
+  margin-right: 8px;
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--paper);
+  color: var(--muted);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.cf-inspector-popout:hover {
+  border-color: var(--muted);
+  color: var(--text);
+}
+
+.cf-inspector-value {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+}
+
+.cf-inspector-html {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto;
+  border: 0;
+  border-radius: 0;
+}
+
+.cf-inspector-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1250;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(37, 31, 27, .28);
+}
+
+.cf-inspector-modal {
+  width: min(920px, calc(100vw - 48px));
+  height: min(760px, calc(100vh - 48px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-top: 2px solid var(--accent);
+  border-radius: 8px;
+  background: var(--paper);
+  box-shadow: 0 24px 80px rgba(37, 31, 27, .26);
+}
+
+.cf-inspector-modal-head {
+  flex: 0 0 auto;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.cf-inspector-modal-head strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+}
+
+.cf-inspector-modal-head button {
+  width: 28px;
+  height: 28px;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.cf-inspector-modal-head button:hover {
+  border-color: var(--line);
+  background: var(--accent-soft);
+  color: var(--accent-dark);
+}
+
+.cf-inspector-modal-value {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
+  padding: 14px;
+  overflow: auto;
+  color: var(--text);
+  font-family: var(--mono, monospace);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.cf-inspector-modal-html {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  border: 0;
+  background: #fff;
 }
 
 .cf-drawer-body {

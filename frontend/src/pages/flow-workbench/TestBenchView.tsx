@@ -262,7 +262,7 @@ function InputForm({
                       {uploadingFile && uploadFieldId === input.id ? '上传中...' : '上传本地文件'}
                     </button>
                     <span>
-                      {uploadInfo?.fieldId === input.id ? `已上传：${uploadInfo.filename}` : '上传后自动填入工作区路径'}
+                      {uploadInfo && uploadInfo.fieldId === input.id ? `已上传：${uploadInfo.filename}` : '上传后自动填入工作区路径'}
                     </span>
                   </div>
                 )}
@@ -373,6 +373,15 @@ function PendingInteractionForm({
   )
 }
 
+type InspectorSection = {
+  key: string
+  title: string
+  keyName?: string
+  value: any
+  variant?: 'default' | 'error' | 'success'
+  kind?: 'data' | 'html'
+}
+
 function NodeInspector({
   node,
   state,
@@ -385,6 +394,30 @@ function NodeInspector({
   onClose: () => void
 }) {
   const label = getProcessDisplayLabel(node) || getProtocolKind(node) || node.action || node.type || 'node'
+  const sections = useMemo<InspectorSection[]>(() => {
+    const items: InspectorSection[] = []
+    if (state.pendingInteraction) items.push({ key: 'pending', title: '待用户输入', value: state.pendingInteraction })
+    if (state.errorMsg) items.push({ key: 'error', title: '执行错误', value: state.errorMsg, variant: 'error' })
+    if (state.decisionValidationErrors?.length) items.push({ key: 'decision_validation', title: 'Decision validation', value: state.decisionValidationErrors, variant: 'error' })
+    if (state.inputValue || state.inputKey) items.push({ key: 'input', title: '输入数据', keyName: state.inputKey, value: state.inputValue || '(missing input value)' })
+    if (state.decisionConsume) items.push({ key: 'decision_consume', title: '决策消费', value: state.decisionConsume, variant: state.decisionConsume.status === 'failed' ? 'error' : 'success' })
+    if (state.outputValue || state.outputKey) items.push({ key: 'output', title: '输出数据', keyName: state.outputKey, value: state.outputValue || '(empty output)' })
+    if (state.toolResults?.length) items.push({ key: 'tools', title: '工具结果', value: state.toolResults })
+    if (artifacts.length > 0) items.push({ key: 'artifacts', title: '产物', value: artifacts })
+    if (state.uiHtml) items.push({ key: 'ui_html', title: 'UI HTML 预览', value: state.uiHtml, kind: 'html' })
+    if (state.uiMarkdown) items.push({ key: 'ui_markdown', title: 'UI Markdown', value: state.uiMarkdown })
+    if (state.events.length > 0) items.push({ key: 'events', title: '节点事件', value: state.events.map((event) => ({ type: event.type, message: event.message, data: event.data })) })
+    return items
+  }, [artifacts, state.decisionConsume, state.decisionValidationErrors, state.errorMsg, state.events, state.inputKey, state.inputValue, state.outputKey, state.outputValue, state.pendingInteraction, state.toolResults, state.uiHtml, state.uiMarkdown])
+  const defaultOpenKey = sections[0]?.key || ''
+  const [openKey, setOpenKey] = useState(defaultOpenKey)
+  const [modalSection, setModalSection] = useState<InspectorSection | null>(null)
+
+  useEffect(() => {
+    setOpenKey(defaultOpenKey)
+    setModalSection(null)
+  }, [defaultOpenKey, node.id])
+
   return (
     <aside className="cf-node-inspector" style={{ width: 520 }}>
       <div className="cf-inspector-head">
@@ -399,43 +432,69 @@ function NodeInspector({
           <span>{label}</span>
           {state.action && <code>{state.action}</code>}
         </div>
-        {state.pendingInteraction && <DataSection title="待用户输入" value={state.pendingInteraction} />}
-        {state.errorMsg && <DataSection title="执行错误" value={state.errorMsg} variant="error" />}
-        {state.decisionValidationErrors?.length && <DataSection title="Decision validation" value={state.decisionValidationErrors} variant="error" />}
-        {(state.inputValue || state.inputKey) && <DataSection title="输入数据" keyName={state.inputKey} value={state.inputValue || '(missing input value)'} />}
-        {state.decisionConsume && <DataSection title="决策消费" value={state.decisionConsume} variant={state.decisionConsume.status === 'failed' ? 'error' : 'success'} />}
-        {(state.outputValue || state.outputKey) && <DataSection title="输出数据" keyName={state.outputKey} value={state.outputValue || '(empty output)'} />}
-        {state.toolResults?.length && <DataSection title="工具结果" value={state.toolResults} />}
-        {artifacts.length > 0 && <DataSection title="产物" value={artifacts} />}
-        {state.uiHtml && (
-          <section className="cf-drawer-section">
-            <div className="cf-drawer-section-head">
-              <strong>UI HTML 预览</strong>
-            </div>
-            <iframe className="cf-ui-preview" title={`${node.id}-ui-preview`} srcDoc={state.uiHtml} sandbox="" />
-          </section>
-        )}
-        {state.uiMarkdown && <DataSection title="UI Markdown" value={state.uiMarkdown} />}
-        {state.events.length > 0 && <DataSection title="节点事件" value={state.events.map((event) => ({ type: event.type, message: event.message, data: event.data }))} />}
+        <div className="cf-inspector-sections">
+          {sections.length ? sections.map((section) => (
+            <InspectorSectionPanel
+              key={section.key}
+              section={section}
+              expanded={openKey === section.key}
+              onToggle={() => setOpenKey(openKey === section.key ? '' : section.key)}
+              onPopout={() => setModalSection(section)}
+            />
+          )) : <div className="cf-inspector-empty">这个节点还没有运行数据。</div>}
+        </div>
       </div>
+      {modalSection && <InspectorValueModal section={modalSection} onClose={() => setModalSection(null)} />}
     </aside>
   )
 }
 
-function DataSection({ title, keyName, value, variant = 'default' }: {
-  title: string
-  keyName?: string
-  value: any
-  variant?: 'default' | 'error' | 'success'
+function InspectorSectionPanel({
+  section,
+  expanded,
+  onToggle,
+  onPopout,
+}: {
+  section: InspectorSection
+  expanded: boolean
+  onToggle: () => void
+  onPopout: () => void
 }) {
   return (
-    <section className={`cf-drawer-section ${variant}`}>
-      <div className="cf-drawer-section-head">
-        <strong>{title}</strong>
-        {keyName && <code>{keyName}</code>}
+    <section className={`cf-drawer-section cf-inspector-section ${section.variant || 'default'} ${expanded ? 'open' : 'closed'}`}>
+      <div className="cf-drawer-section-head cf-inspector-section-head">
+        <button type="button" className="cf-inspector-section-toggle" onClick={onToggle}>
+          <strong>{section.title}</strong>
+          {section.keyName && <code>{section.keyName}</code>}
+          <span>{expanded ? '收起' : '展开'}</span>
+        </button>
+        <button type="button" className="cf-inspector-popout" onClick={onPopout}>弹窗</button>
       </div>
-      <pre className="cf-field-value">{pretty(value)}</pre>
+      {expanded && (
+        section.kind === 'html'
+          ? <iframe className="cf-ui-preview cf-inspector-html" title={`${section.key}-preview`} srcDoc={String(section.value || '')} sandbox="" />
+          : <pre className="cf-field-value cf-inspector-value">{pretty(section.value)}</pre>
+      )}
     </section>
+  )
+}
+
+function InspectorValueModal({ section, onClose }: {
+  section: InspectorSection
+  onClose: () => void
+}) {
+  return (
+    <div className="cf-inspector-modal-backdrop" onClick={onClose}>
+      <div className="cf-inspector-modal" onClick={(event) => event.stopPropagation()}>
+        <div className="cf-inspector-modal-head">
+          <strong>{section.title}</strong>
+          <button type="button" onClick={onClose}>x</button>
+        </div>
+        {section.kind === 'html'
+          ? <iframe className="cf-inspector-modal-html" title={`${section.key}-modal-preview`} srcDoc={String(section.value || '')} sandbox="" />
+          : <pre className="cf-inspector-modal-value">{pretty(section.value)}</pre>}
+      </div>
+    </div>
   )
 }
 

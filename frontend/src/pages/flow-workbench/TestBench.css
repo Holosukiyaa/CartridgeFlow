@@ -62,7 +62,7 @@
   overscroll-behavior: contain;
 }
 
-.cf-op-actions {
+.cf-probe-actions {
   display: flex;
   align-items: stretch;
   gap: 8px;

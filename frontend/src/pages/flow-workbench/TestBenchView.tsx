@@ -707,13 +707,6 @@ export function TestBenchView({
             </div>
           )}
 
-          <div className="cf-op-actions">
-            <button type="button" className="cf-btn-accent" disabled={!canRun} onClick={() => cartridgeInputs.length ? setShowInputForm(true) : runWithInputs({})}>
-              {isRunning ? '运行中...' : runScope === 'full' ? '运行全流程' : '运行探针范围'}
-            </button>
-            <button type="button" className="cf-btn-outline" disabled={isRunning} onClick={onRefresh}>刷新</button>
-          </div>
-
           <section className="cf-op-section">
             <strong>决策模式</strong>
             <div className="cf-segment">
@@ -762,6 +755,12 @@ export function TestBenchView({
                 <b>探针范围</b>
                 <span>拖动 S/E 到节点后只运行选中区间</span>
               </button>
+            </div>
+            <div className="cf-probe-actions">
+              <button type="button" className="cf-btn-accent" disabled={!canRun} onClick={() => cartridgeInputs.length ? setShowInputForm(true) : runWithInputs({})}>
+                {isRunning ? '运行中...' : runScope === 'full' ? '运行全流程' : '运行探针范围'}
+              </button>
+              <button type="button" className="cf-btn-outline" disabled={isRunning} onClick={onRefresh}>刷新</button>
             </div>
             <div className="cf-probe-chips">
               <ProbeChip

@@ -35,7 +35,17 @@ const DECISION_OPTIONS: Array<{ value: DecisionTestMode; label: string; hint: st
 
 function pretty(value: any) {
   if (value === undefined || value === null || value === '') return ''
-  if (typeof value === 'string') return value
+  if (typeof value === 'string') {
+    const text = value.trim()
+    if (text.startsWith('{') || text.startsWith('[')) {
+      try {
+        return JSON.stringify(JSON.parse(text), null, 2)
+      } catch {
+        return value
+      }
+    }
+    return value
+  }
   try {
     return JSON.stringify(value, null, 2)
   } catch {

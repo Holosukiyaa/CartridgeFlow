@@ -105,9 +105,13 @@ class RootFlowEngine:
         start_state: str | None = None,
         visited: set[str] | list[str] | None = None,
         completed_parents: dict[str, set[str] | list[str]] | None = None,
+        initial_queue: list[str] | None = None,
     ) -> dict:
         start_state = start_state or self.root_flow.get("start", "load")
-        queue = [start_state] if start_state in self.states else []
+        if initial_queue is not None:
+            queue = [state for state in initial_queue if state in self.states]
+        else:
+            queue = [start_state] if start_state in self.states else []
         visited = set(visited or [])
         completed_parents = {
             key: set(value or [])

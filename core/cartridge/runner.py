@@ -830,6 +830,7 @@ class CartridgeRunner:
             include_paused_node=include_paused_parent,
             exclude_states=replay_exclusions,
         )
+        initial_queue = self._resume_initial_queue(root_flow, start_state, visited, completed_parents)
 
         self._write_json(state_path, state_doc)
         self._write_json(run_dir / "run.json", run)
@@ -866,6 +867,7 @@ class CartridgeRunner:
             start_state=start_state,
             visited=visited,
             completed_parents=completed_parents,
+            initial_queue=initial_queue,
         )
 
     def _continue_run(
@@ -881,6 +883,7 @@ class CartridgeRunner:
         start_state: str,
         visited: set[str] | None = None,
         completed_parents: dict[str, set[str]] | None = None,
+        initial_queue: list[str] | None = None,
     ) -> dict:
         run_id = run["run_id"]
         cartridge_id = run["cartridge_id"]
@@ -1064,6 +1067,7 @@ class CartridgeRunner:
             start_state=start_state,
             visited=visited,
             completed_parents=completed_parents,
+            initial_queue=initial_queue,
         )
 
         run["current_state"] = state_doc["current_state"]
@@ -1251,6 +1255,33 @@ class CartridgeRunner:
             if source in completed and target in states:
                 result.setdefault(target, set()).add(source)
         return result
+
+    def _resume_initial_queue(
+        self,
+        root_flow: dict,
+        start_state: str,
+        visited: set[str] | None,
+        completed_parents: dict[str, set[str]] | None,
+    ) -> list[str]:
+        states = root_flow.get("states") or {}
+        if start_state not in states:
+            return []
+        engine = RootFlowEngine(root_flow)
+        incoming_counts = engine._incoming_counts()
+        completed_parents = completed_parents or {}
+        visited = visited or set()
+        queue = [start_state]
+        queued = {start_state}
+        for state_id in states:
+            if state_id in queued or state_id in visited:
+                continue
+            waiting_for = incoming_counts.get(state_id, 0)
+            if waiting_for <= 0:
+                continue
+            if waiting_for <= len(completed_parents.get(state_id, set())):
+                queue.append(state_id)
+                queued.add(state_id)
+        return queue
 
     def _completed_visited_from_history(
         self,

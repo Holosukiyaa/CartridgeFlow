@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "dev.spatial_blockout_lab.root.v1",
-  "name": "3D 草图实验室 RootFlow",
+  "name": "3D 动画预演实验室 RootFlow",
   "mode": "standard",
   "cartridge_id": "dev.spatial_blockout_lab",
   "protocol": {
@@ -22,7 +22,7 @@
     },
     "welcome_ui": {
       "type": "process",
-      "title": "工程看板：3D 草图实验室",
+      "title": "工程看板：3D 动画预演实验室",
       "action": "show_ui",
       "kind": "ui",
       "executor": "deterministic",
@@ -34,7 +34,7 @@
       },
       "output": "welcome_ui",
       "params": {
-        "description": "展示 3D blockout 草图卡带入口。",
+        "description": "展示 3D 动画预演卡带入口。",
         "output": "welcome_ui",
         "ui_type": "html",
         "path": "assets/welcome.html"
@@ -47,7 +47,7 @@
     },
     "collect_scene_brief": {
       "type": "process",
-      "title": "入料口：3D 场景想法",
+      "title": "入料口：3D 动画想法",
       "kind": "input",
       "executor": "user",
       "effect": "writes_store",
@@ -59,7 +59,7 @@
       "input_kind": "initial",
       "source": "user_form",
       "input_schema": {
-        "schema": "spatial_blockout.input.v1",
+        "schema": "spatial_animation.input.v1",
         "fields": [
           "scene_brief",
           "scene_id",
@@ -69,7 +69,7 @@
       },
       "output": "scene_inputs",
       "params": {
-        "description": "收集用户对 3D 草图的空间、角色、道具、镜头和输出目录要求。",
+        "description": "收集用户对 3D 动画预演的空间、角色、动作、镜头和输出目录要求。",
         "output": "scene_inputs"
       },
       "layout": {
@@ -80,7 +80,7 @@
     },
     "decide_scene_blockout": {
       "type": "process",
-      "title": "AI决策：生成 3D 草图规格",
+      "title": "AI决策：生成 3D 动画预演规格",
       "kind": "decision",
       "executor": "llm",
       "effect": "none",
@@ -140,12 +140,12 @@
         "offline_decision": {
           "schema": "decision_envelope.v1",
           "status": "resolved",
-          "summary": "离线兜底：生成一个可执行的低模 3D 草图规格。",
+          "summary": "离线兜底：生成一个可执行的低模 3D 动画预演规格。",
           "payload": {
             "scene_blockout": {
-              "schema": "scene_blockout.v1",
-              "title": "废弃地铁站入口 3D 草图",
-              "style": "low_poly_blockout",
+              "schema": "scene_animation.v1",
+              "title": "废弃地铁站入口 3D 动画预演",
+              "style": "low_poly_animation_previz",
               "objects": [
                 {
                   "id": "ground",
@@ -214,15 +214,101 @@
                   0
                 ]
               },
-              "notes": "低模草图，只验证空间关系、角色站位、入口体块和警示灯。"
+              "timeline": {
+                "duration_seconds": 6,
+                "fps": 24,
+                "tracks": [
+                  {
+                    "target": "hero",
+                    "property": "offset",
+                    "keyframes": [
+                      {
+                        "time": 0,
+                        "value": [
+                          -0.7,
+                          0,
+                          0.35
+                        ]
+                      },
+                      {
+                        "time": 2.8,
+                        "value": [
+                          0,
+                          0,
+                          0
+                        ]
+                      },
+                      {
+                        "time": 6,
+                        "value": [
+                          0.15,
+                          0,
+                          -0.08
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "target": "hero",
+                    "property": "pose",
+                    "keyframes": [
+                      {
+                        "time": 0,
+                        "value": "walk"
+                      },
+                      {
+                        "time": 3,
+                        "value": "smoke"
+                      },
+                      {
+                        "time": 6,
+                        "value": "idle"
+                      }
+                    ]
+                  },
+                  {
+                    "target": "warning_light",
+                    "property": "pulse",
+                    "keyframes": [
+                      {
+                        "time": 0,
+                        "value": 0.2
+                      },
+                      {
+                        "time": 3,
+                        "value": 1
+                      },
+                      {
+                        "time": 6,
+                        "value": 0.35
+                      }
+                    ]
+                  }
+                ],
+                "events": [
+                  {
+                    "time": 3.4,
+                    "type": "smoke_puff",
+                    "target": "hero",
+                    "label": "少年抽烟"
+                  },
+                  {
+                    "time": 4.6,
+                    "type": "warning_light",
+                    "target": "warning_light",
+                    "label": "红灯闪烁"
+                  }
+                ]
+              },
+              "notes": "低模动画预演，只验证动作节奏、镜头推进、角色站位、入口体块和警示灯事件。"
             }
           }
         }
       },
       "params": {
-        "description": "把用户的自然语言需求转成 scene_blockout.v1。先让用户确认规格，再允许工具写入产物。",
-        "system_prompt": "你是 3D blockout 导演，只负责把想法转成可执行的粗模场景规格。不要追求最终美术，要追求空间关系清楚、对象少、可生成。",
-        "prompt": "根据 scene_inputs 生成 scene_blockout.v1。必须输出 decision_envelope.v1，resolved 时 payload.scene_blockout 必须包含：schema、title、style、objects、camera、notes。objects 只使用可粗模表达的对象，字段包含 id/type/name/position/size/color。position/size 是 [x,y,z]，y 为垂直高度。对象数量控制在 4-10 个。若用户在 scene_plan_reply 或 blockout_rework_feedback 中要求修改，请吸收修改后再 resolved。",
+        "description": "把用户的自然语言需求转成 scene_animation.v1。先让用户确认动作和镜头规格，再允许工具写入产物。",
+        "system_prompt": "你是 3D 动画预演导演，只负责把想法转成可执行的低模动画规格。不要追求最终建模质量，要追求动作节奏、镜头调度、角色站位和关键事件清楚。",
+        "prompt": "根据 scene_inputs 生成 scene_animation.v1，并放在 payload.scene_blockout 中以供现有工具消费。必须输出 decision_envelope.v1，resolved 时 payload.scene_blockout 必须包含：schema='scene_animation.v1'、title、style、objects、camera、timeline、notes。objects 是低模代理对象，字段包含 id/type/name/position/size/color。timeline 必须包含 duration_seconds、tracks、events；tracks 至少包含主角位移或姿态、关键道具闪烁或运动；camera 或 timeline.camera 应描述镜头起止。position/size 是 [x,y,z]，y 为垂直高度。对象数量控制在 4-12 个。若用户在 scene_plan_reply 或 blockout_rework_feedback 中要求修改，请吸收修改后再 resolved。",
         "input": "scene_inputs",
         "optional_input": "scene_plan_reply,blockout_rework_feedback",
         "output": "scene_blockout_decision",
@@ -236,7 +322,7 @@
     },
     "forge_blockout": {
       "type": "process",
-      "title": "粗模工坊：生成 GLB 草图",
+      "title": "动画预演工坊：生成可播放 3D 预览",
       "kind": "mcp_execute",
       "executor": "mcp",
       "effect": "writes_artifacts",
@@ -255,7 +341,7 @@
       "input": "scene_blockout",
       "output": "blockout_bundle",
       "params": {
-        "description": "消费 scene_blockout.v1，生成 GLB、场景 JSON、manifest 和 HTML 预览。",
+        "description": "消费 scene_animation.v1，生成 GLB 代理、动画 JSON、manifest 和可播放 HTML 预览。",
         "input": "scene_blockout",
         "output": "blockout_bundle",
         "tool_params": {
@@ -273,7 +359,7 @@
     },
     "review_blockout": {
       "type": "process",
-      "title": "AI决策：草图复核",
+      "title": "AI决策：动画预演复核",
       "kind": "decision",
       "executor": "llm",
       "effect": "none",
@@ -366,9 +452,9 @@
         }
       },
       "params": {
-        "description": "让用户查看 GLB/HTML 预览后确认是否通过；不满意则回到规格节点局部重做。",
-        "system_prompt": "你是 3D 草图复核助手。你的任务是根据用户复核意见决定通过或重做，不要直接执行工具。",
-        "prompt": "若 optional_input blockout_review_reply 不存在，必须输出 needs_user_input，提醒用户打开产物预览后选择通过或重做。若用户 approval=revise 或文本表示不满意，输出 needs_user_input 或遵循 answer_routes 回到 decide_scene_blockout；若用户 approval=approve，输出 resolved，并在 payload.review 中写入 {schema:'blockout_review.v1', approved:true, notes:string}。",
+        "description": "让用户查看动画 HTML 预览后确认动作、镜头和节奏是否通过；不满意则回到规格节点局部重做。",
+        "system_prompt": "你是 3D 动画预演复核助手。你的任务是根据用户复核意见决定通过或重做，不要直接执行工具。",
+        "prompt": "若 optional_input blockout_review_reply 不存在，必须输出 needs_user_input，提醒用户打开动画预览后选择通过或重做。若用户 approval=revise 或文本表示不满意，输出 needs_user_input 或遵循 answer_routes 回到 decide_scene_blockout；若用户 approval=approve，输出 resolved，并在 payload.review 中写入 {schema:'blockout_review.v1', approved:true, notes:string}。",
         "input": "scene_inputs,scene_blockout,blockout_bundle",
         "optional_input": "blockout_review_reply",
         "output": "blockout_review_decision",
@@ -382,7 +468,7 @@
     },
     "delivery_summary": {
       "type": "process",
-      "title": "交付汇总：3D 草图包",
+      "title": "交付汇总：3D 动画预演包",
       "kind": "delivery",
       "executor": "deterministic",
       "effect": "writes_store",

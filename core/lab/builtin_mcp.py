@@ -1446,7 +1446,7 @@ class BuiltinMcpRegistry:
                 spec = _normalize_spatial_blockout_spec(scene_spec, title or filename_prefix)
                 target_dir = registry._safe_path(output_dir)
                 target_dir.mkdir(parents=True, exist_ok=True)
-                scene_path = target_dir / f"{filename_prefix}.scene_blockout.json"
+                scene_path = target_dir / f"{filename_prefix}.scene_animation.json"
                 glb_path = target_dir / f"{filename_prefix}.glb"
                 preview_path = target_dir / f"{filename_prefix}.preview.html"
                 manifest_path = target_dir / f"{filename_prefix}.manifest.json"
@@ -1458,16 +1458,17 @@ class BuiltinMcpRegistry:
                 preview_path.write_text(_render_spatial_blockout_preview_html(spec, rel_glb), encoding="utf-8")
                 rel_preview = _workspace_rel(registry, preview_path)
                 manifest = {
-                    "schema": "spatial_blockout_manifest.v1",
-                    "status": "draft_created",
+                    "schema": "spatial_animation_manifest.v1",
+                    "status": "animation_preview_created",
                     "title": spec.get("title"),
-                    "provider": "local_spatial_blockout",
-                    "scene": rel_scene,
+                    "provider": "local_spatial_animation_previz",
+                    "scene_animation": rel_scene,
                     "glb": rel_glb,
                     "preview": rel_preview,
+                    "duration_seconds": (spec.get("timeline") or {}).get("duration_seconds"),
                     "object_count": len(spec.get("objects") or []),
-                    "quality_gate": "blockout_visible_and_exported",
-                    "notes": "Deterministic low-poly blockout. Use as a 3D sketch, not final art.",
+                    "quality_gate": "animated_proxy_preview_visible",
+                    "notes": "Deterministic proxy animation preview. Use to judge timing, staging, camera and spatial blocking, not final model quality.",
                 }
                 manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
                 rel_manifest = _workspace_rel(registry, manifest_path)
@@ -1480,7 +1481,8 @@ class BuiltinMcpRegistry:
                     "files": [rel_glb, rel_scene, rel_preview, rel_manifest],
                     "content": json.dumps(manifest, ensure_ascii=False, indent=2),
                     "scene_blockout_ok": True,
-                    "provider": "local_spatial_blockout",
+                    "animation_preview_ok": True,
+                    "provider": "local_spatial_animation_previz",
                 }
             except PermissionError as exc:
                 return {"ok": False, "error": str(exc)}
@@ -1740,9 +1742,9 @@ class BuiltinMcpRegistry:
                     },
                 },
                 "forge_spatial_blockout": {
-                    "description": "Generate a deterministic low-poly 3D blockout scene as GLB, scene JSON, manifest, and preview HTML.",
+                    "description": "Generate a deterministic low-poly 3D animation previz as GLB proxy, animation JSON, manifest, and playable preview HTML.",
                     "params": {
-                        "scene_spec": "scene_blockout.v1 JSON object or JSON string",
+                        "scene_spec": "scene_animation.v1 JSON object or JSON string",
                         "title": "Optional scene title",
                         "output_dir": "Output directory for GLB/preview/manifest",
                         "filename_prefix": "Output filename prefix",
@@ -5737,18 +5739,157 @@ def _normalize_spatial_blockout_spec(value, title: str) -> dict:
     if not objects:
         objects = _default_spatial_blockout_objects(value)
     camera = value.get("camera") if isinstance(value.get("camera"), dict) else {}
+    camera_spec = {
+        "position": _vec3(camera.get("position"), [4.5, 4.0, 6.0]),
+        "look_at": _vec3(camera.get("look_at"), [0.0, 0.8, 0.0]),
+    }
+    timeline = _normalize_spatial_animation_timeline(value, objects, camera_spec)
     return {
-        "schema": "scene_blockout.v1",
+        "schema": "scene_animation.v1",
         "title": scene_title,
         "unit": "meter",
-        "style": str(value.get("style") or "low_poly_blockout"),
+        "style": str(value.get("style") or "low_poly_animation_previz"),
         "objects": objects,
-        "camera": {
-            "position": _vec3(camera.get("position"), [4.5, 4.0, 6.0]),
-            "look_at": _vec3(camera.get("look_at"), [0.0, 0.8, 0.0]),
-        },
-        "notes": str(value.get("notes") or value.get("prompt") or "Local deterministic 3D blockout."),
+        "camera": camera_spec,
+        "timeline": timeline,
+        "notes": str(value.get("notes") or value.get("prompt") or "Local deterministic 3D animation preview."),
     }
+
+
+def _normalize_spatial_animation_timeline(value: dict, objects: list[dict], camera: dict) -> dict:
+    raw = value.get("timeline") or value.get("animation") or value.get("motion") or {}
+    if not isinstance(raw, dict):
+        raw = {}
+    try:
+        duration = float(raw.get("duration_seconds") or raw.get("duration") or value.get("duration_seconds") or 6.0)
+    except Exception:
+        duration = 6.0
+    duration = max(2.0, min(30.0, duration))
+    tracks = raw.get("tracks") if isinstance(raw.get("tracks"), list) else []
+    normalized_tracks = []
+    for item in tracks:
+        if not isinstance(item, dict):
+            continue
+        target = str(item.get("target") or item.get("id") or "").strip()
+        prop = str(item.get("property") or item.get("prop") or "position").strip()
+        frames = item.get("keyframes") if isinstance(item.get("keyframes"), list) else []
+        keyframes = []
+        for frame in frames:
+            if not isinstance(frame, dict):
+                continue
+            keyframes.append({
+                "time": _clamp_float(frame.get("time"), 0.0, duration, 0.0),
+                "value": _timeline_value(frame.get("value")),
+            })
+        if target and keyframes:
+            normalized_tracks.append({"target": target, "property": prop, "keyframes": keyframes})
+    if not normalized_tracks:
+        normalized_tracks = _default_spatial_animation_tracks(objects, duration)
+
+    camera_track = raw.get("camera") if isinstance(raw.get("camera"), list) else []
+    normalized_camera = []
+    for frame in camera_track:
+        if not isinstance(frame, dict):
+            continue
+        normalized_camera.append({
+            "time": _clamp_float(frame.get("time"), 0.0, duration, 0.0),
+            "position": _vec3(frame.get("position"), camera.get("position") or [4.5, 4.0, 6.0]),
+            "look_at": _vec3(frame.get("look_at"), camera.get("look_at") or [0.0, 0.8, 0.0]),
+        })
+    if not normalized_camera:
+        normalized_camera = [
+            {"time": 0.0, "position": camera.get("position") or [4.5, 4.0, 6.0], "look_at": camera.get("look_at") or [0.0, 0.8, 0.0]},
+            {"time": duration, "position": [3.2, 2.8, 4.2], "look_at": [0.0, 0.9, 0.2]},
+        ]
+
+    events = raw.get("events") if isinstance(raw.get("events"), list) else []
+    normalized_events = []
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        normalized_events.append({
+            "time": _clamp_float(event.get("time"), 0.0, duration, 0.0),
+            "type": str(event.get("type") or "beat").strip(),
+            "target": str(event.get("target") or "").strip(),
+            "label": str(event.get("label") or event.get("name") or "").strip(),
+        })
+    if not normalized_events:
+        hero_id = _spatial_primary_object_id(objects, {"character", "hero", "person"}) or "hero"
+        normalized_events = [
+            {"time": duration * 0.34, "type": "gesture", "target": hero_id, "label": "抬手"},
+            {"time": duration * 0.56, "type": "smoke_puff", "target": hero_id, "label": "烟雾"},
+            {"time": duration * 0.78, "type": "warning_light", "target": "warning_light", "label": "警示灯闪烁"},
+        ]
+
+    return {
+        "duration_seconds": duration,
+        "fps": int(raw.get("fps") or 24),
+        "tracks": normalized_tracks,
+        "camera": normalized_camera,
+        "events": normalized_events,
+    }
+
+
+def _default_spatial_animation_tracks(objects: list[dict], duration: float) -> list[dict]:
+    hero_id = _spatial_primary_object_id(objects, {"character", "hero", "person"}) or "hero"
+    light_id = _spatial_primary_object_id(objects, {"warning_light", "light", "lamp"}) or "warning_light"
+    hero_obj = next((item for item in objects if str(item.get("id")) == hero_id), None) or {}
+    start = _vec3(hero_obj.get("position"), [0.0, 0.85, 0.0])
+    return [
+        {
+            "target": hero_id,
+            "property": "offset",
+            "keyframes": [
+                {"time": 0.0, "value": [-0.65, 0.0, 0.35]},
+                {"time": duration * 0.45, "value": [0.0, 0.0, 0.0]},
+                {"time": duration, "value": [0.18, 0.0, -0.08]},
+            ],
+        },
+        {
+            "target": hero_id,
+            "property": "pose",
+            "keyframes": [
+                {"time": 0.0, "value": "walk"},
+                {"time": duration * 0.46, "value": "smoke"},
+                {"time": duration, "value": "idle"},
+            ],
+        },
+        {
+            "target": light_id,
+            "property": "pulse",
+            "keyframes": [
+                {"time": 0.0, "value": 0.2},
+                {"time": duration * 0.5, "value": 1.0},
+                {"time": duration, "value": 0.35},
+            ],
+        },
+    ]
+
+
+def _spatial_primary_object_id(objects: list[dict], type_hints: set[str]) -> str:
+    for item in objects:
+        raw = f"{item.get('id', '')} {item.get('type', '')} {item.get('name', '')}".lower()
+        if any(hint in raw for hint in type_hints):
+            return str(item.get("id") or "").strip()
+    return ""
+
+
+def _timeline_value(value):
+    if isinstance(value, (int, float, str)):
+        return value
+    if isinstance(value, dict):
+        return {str(k): _timeline_value(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_timeline_value(item) for item in value]
+    return value
+
+
+def _clamp_float(value, minimum: float, maximum: float, fallback: float) -> float:
+    try:
+        number = float(value)
+    except Exception:
+        number = fallback
+    return max(minimum, min(maximum, number))
 
 
 def _default_spatial_blockout_objects(value: dict) -> list[dict]:
@@ -5956,7 +6097,7 @@ def _spatial_box_geometry(position: list[float], size: list[float]) -> tuple[lis
 
 def _render_spatial_blockout_preview_html(spec: dict, glb_path: str) -> str:
     data = html.escape(json.dumps(spec, ensure_ascii=False), quote=False)
-    title = html.escape(str(spec.get("title") or "Spatial Blockout"))
+    title = html.escape(str(spec.get("title") or "Spatial Animation Previz"))
     glb = html.escape(glb_path)
     return f"""<!doctype html>
 <html lang="zh-CN">
@@ -5965,39 +6106,79 @@ def _render_spatial_blockout_preview_html(spec: dict, glb_path: str) -> str:
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>{title}</title>
   <style>
+    *{{box-sizing:border-box}}
     body{{margin:0;background:#f7f3ec;color:#332b24;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;}}
     main{{height:100vh;display:grid;grid-template-rows:auto minmax(0,1fr) auto;}}
     header,footer{{padding:12px 16px;border-bottom:1px solid #dfd2c4;background:#fffaf4;}}
-    footer{{border-top:1px solid #dfd2c4;border-bottom:0;font-size:12px;color:#786b60;display:flex;gap:12px;flex-wrap:wrap;}}
+    footer{{border-top:1px solid #dfd2c4;border-bottom:0;font-size:12px;color:#786b60;display:grid;grid-template-columns:auto minmax(180px,1fr) auto auto;gap:10px;align-items:center;}}
     h1{{margin:0;font-size:16px;}} p{{margin:4px 0 0;color:#786b60;font-size:12px;}}
     canvas{{width:100%;height:100%;display:block;background:linear-gradient(#fffaf4,#eee5d9);}}
     a{{color:#9a4e2f;text-decoration:none;font-weight:700;}}
+    button{{border:1px solid #d5bba6;background:#fff7ed;color:#8d472b;border-radius:6px;padding:6px 10px;font-weight:700;cursor:pointer;}}
+    input[type=range]{{width:100%;accent-color:#c46f35;}}
+    code{{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;color:#8d472b;}}
   </style>
 </head>
 <body>
 <main>
-  <header><h1>{title}</h1><p>低模 3D 草图预览。GLB 文件：<a href="{glb}" target="_blank" rel="noreferrer">{glb}</a></p></header>
+  <header><h1>{title}</h1><p>3D 动画预演。GLB 代理文件：<a href="{glb}" target="_blank" rel="noreferrer">{glb}</a></p></header>
   <canvas id="view"></canvas>
-  <footer><span id="stats"></span><span>拖拽鼠标旋转视角，滚轮缩放。</span></footer>
+  <footer>
+    <button id="play" type="button">暂停</button>
+    <input id="scrub" type="range" min="0" max="1000" value="0" />
+    <code id="time">0.00s</code>
+    <span id="stats"></span>
+  </footer>
 </main>
 <script id="scene-data" type="application/json">{data}</script>
 <script>
 const spec = JSON.parse(document.getElementById('scene-data').textContent);
 const canvas = document.getElementById('view');
 const ctx = canvas.getContext('2d');
-let angle = -0.72, zoom = 72, dragging = false, lastX = 0;
+const timeline = spec.timeline || {{}};
+const duration = Math.max(2, Number(timeline.duration_seconds || 6));
+const tracks = Array.isArray(timeline.tracks) ? timeline.tracks : [];
+const events = Array.isArray(timeline.events) ? timeline.events : [];
+const playButton = document.getElementById('play');
+const scrub = document.getElementById('scrub');
+const timeLabel = document.getElementById('time');
+let angle = -0.78, zoom = 72, dragging = false, lastX = 0, manualCamera = false;
+let playing = true, startMs = performance.now(), pausedAt = 0;
+function nowTime(){{ return playing ? ((performance.now() - startMs) / 1000) % duration : pausedAt; }}
+function setTime(t){{ pausedAt = Math.max(0, Math.min(duration, t)); startMs = performance.now() - pausedAt * 1000; }}
 function resize(){{ const dpr = window.devicePixelRatio || 1; canvas.width = canvas.clientWidth*dpr; canvas.height = canvas.clientHeight*dpr; ctx.setTransform(dpr,0,0,dpr,0,0); draw(); }}
-function color(c){{ if(!Array.isArray(c)) return '#77736c'; const r=Math.round((c[0]||0)*255),g=Math.round((c[1]||0)*255),b=Math.round((c[2]||0)*255); return `rgb(${{r}},${{g}},${{b}})`; }}
-function project(p){{ const ca=Math.cos(angle), sa=Math.sin(angle); const x=p[0]*ca-p[2]*sa; const z=p[0]*sa+p[2]*ca; return [canvas.clientWidth/2+x*zoom, canvas.clientHeight*0.62+z*zoom*.38-p[1]*zoom]; }}
+function color(c){{ if(!Array.isArray(c)) return '#77736c'; const r=Math.round((c[0]||0)*255),g=Math.round((c[1]||0)*255),b=Math.round((c[2]||0)*255); return 'rgb('+r+','+g+','+b+')'; }}
+function shade(fill, k){{ const m=fill.match(/\\d+/g)||[120,120,120]; return 'rgb('+Math.max(0,Math.min(255,Math.round(m[0]*k)))+','+Math.max(0,Math.min(255,Math.round(m[1]*k)))+','+Math.max(0,Math.min(255,Math.round(m[2]*k)))+')'; }}
+function cameraAngle(t){{ if(manualCamera) return angle; const p=t/duration; return -0.92 + p*.45 + Math.sin(p*Math.PI)*.12; }}
+function cameraZoom(t){{ return zoom + Math.sin((t/duration)*Math.PI)*8; }}
+function project(p,t){{ const a=cameraAngle(t), z=cameraZoom(t), ca=Math.cos(a), sa=Math.sin(a); const x=p[0]*ca-p[2]*sa; const depth=p[0]*sa+p[2]*ca; return [canvas.clientWidth/2+x*z, canvas.clientHeight*.64+depth*z*.38-p[1]*z]; }}
 function boxCorners(o){{ const p=o.position||[0,0,0], s=o.size||[1,1,1]; const hx=s[0]/2, hy=s[1]/2, hz=s[2]/2; return [[p[0]-hx,p[1]-hy,p[2]-hz],[p[0]+hx,p[1]-hy,p[2]-hz],[p[0]+hx,p[1]+hy,p[2]-hz],[p[0]-hx,p[1]+hy,p[2]-hz],[p[0]-hx,p[1]-hy,p[2]+hz],[p[0]+hx,p[1]-hy,p[2]+hz],[p[0]+hx,p[1]+hy,p[2]+hz],[p[0]-hx,p[1]+hy,p[2]+hz]]; }}
-function face(points, fill){{ ctx.beginPath(); points.forEach((p,i)=>{{ const q=project(p); if(i)ctx.lineTo(q[0],q[1]); else ctx.moveTo(q[0],q[1]); }}); ctx.closePath(); ctx.fillStyle=fill; ctx.fill(); ctx.strokeStyle='rgba(65,52,42,.35)'; ctx.stroke(); }}
-function shade(fill, k){{ const m=fill.match(/\\d+/g)||[120,120,120]; return `rgb(${{Math.max(0,Math.min(255,Math.round(m[0]*k)))}},${{Math.max(0,Math.min(255,Math.round(m[1]*k)))}},${{Math.max(0,Math.min(255,Math.round(m[2]*k)))}})`; }}
-function draw(){{ ctx.clearRect(0,0,canvas.clientWidth,canvas.clientHeight); const objs=[...(spec.objects||[])].sort((a,b)=>((a.position?.[0]||0)+(a.position?.[2]||0))-((b.position?.[0]||0)+(b.position?.[2]||0))); objs.forEach(o=>{{ const c=boxCorners(o), base=color(o.color); face([c[4],c[5],c[6],c[7]], shade(base,.9)); face([c[1],c[5],c[6],c[2]], shade(base,.78)); face([c[3],c[2],c[6],c[7]], shade(base,1.08)); const label=project([o.position[0],o.position[1]+(o.size?.[1]||1)/2+.18,o.position[2]]); ctx.fillStyle='rgba(255,250,244,.85)'; ctx.fillRect(label[0]-42,label[1]-15,84,18); ctx.fillStyle='#4a4038'; ctx.font='11px monospace'; ctx.textAlign='center'; ctx.fillText(o.name||o.id||o.type,label[0],label[1]-2); }}); document.getElementById('stats').textContent=`对象 ${{objs.length}} 个 · style ${{spec.style||'blockout'}}`; }}
-canvas.addEventListener('mousedown',e=>{{dragging=true;lastX=e.clientX;}});
+function face(points, fill, t){{ ctx.beginPath(); points.forEach((p,i)=>{{ const q=project(p,t); if(i)ctx.lineTo(q[0],q[1]); else ctx.moveTo(q[0],q[1]); }}); ctx.closePath(); ctx.fillStyle=fill; ctx.fill(); ctx.strokeStyle='rgba(65,52,42,.35)'; ctx.stroke(); }}
+function mix(a,b,p){{ if(Array.isArray(a)&&Array.isArray(b)) return a.map((v,i)=>Number(v)+(Number(b[i]||0)-Number(v))*p); if(typeof a==='number'&&typeof b==='number') return a+(b-a)*p; return p < .5 ? a : b; }}
+function keyValue(frames,t){{ const ks=[...frames].sort((a,b)=>Number(a.time||0)-Number(b.time||0)); if(!ks.length) return null; if(t<=Number(ks[0].time||0)) return ks[0].value; for(let i=0;i<ks.length-1;i++){{ const a=ks[i], b=ks[i+1], ta=Number(a.time||0), tb=Number(b.time||ta); if(t>=ta&&t<=tb){{ const p=tb===ta?1:(t-ta)/(tb-ta); return mix(a.value,b.value,p); }} }} return ks[ks.length-1].value; }}
+function trackValue(id, prop, t){{ const track = tracks.find(item => String(item.target||'')===String(id) && String(item.property||'')===prop); return track ? keyValue(track.keyframes||[],t) : null; }}
+function animatedObject(o,t){{ const next={{...o, position:[...(o.position||[0,0,0])], size:[...(o.size||[1,1,1])]}}; const offset=trackValue(o.id,'offset',t); const pos=trackValue(o.id,'position',t); if(Array.isArray(pos)) next.position=pos; if(Array.isArray(offset)) next.position=next.position.map((v,i)=>v+Number(offset[i]||0)); next.pose=trackValue(o.id,'pose',t)||''; next.pulse=Number(trackValue(o.id,'pulse',t)||0); return next; }}
+function drawBox(o,t,label=true){{ const c=boxCorners(o), base=color(o.color); const pulse=Number(o.pulse||0); const lit=pulse>0?shade(base,1+.7*Math.abs(Math.sin(t*7))*pulse):base; face([c[4],c[5],c[6],c[7]], shade(lit,.9),t); face([c[1],c[5],c[6],c[2]], shade(lit,.78),t); face([c[3],c[2],c[6],c[7]], shade(lit,1.08),t); if(label) drawLabel(o,t); }}
+function drawLabel(o,t){{ const p=o.position||[0,0,0], s=o.size||[1,1,1]; const q=project([p[0],p[1]+s[1]/2+.18,p[2]],t); ctx.fillStyle='rgba(255,250,244,.82)'; ctx.fillRect(q[0]-44,q[1]-15,88,18); ctx.fillStyle='#4a4038'; ctx.font='11px monospace'; ctx.textAlign='center'; ctx.fillText(o.name||o.id||o.type,q[0],q[1]-2); }}
+function drawCharacter(o,t){{ const p=o.position||[0,0,0], base=o.size||[.55,1.7,.38], c=o.color||[.2,.38,.85,1]; const sway=Math.sin(t*7)*.08; const smokePose=String(o.pose||'').includes('smoke'); const parts=[
+  {{id:o.id+'_body', position:[p[0],p[1]+base[1]*.48,p[2]], size:[base[0]*.62,base[1]*.42,base[2]*.78], color:c}},
+  {{id:o.id+'_head', position:[p[0],p[1]+base[1]*.82,p[2]], size:[base[0]*.42,base[0]*.42,base[0]*.42], color:[.88,.72,.56,1]}},
+  {{id:o.id+'_leg_l', position:[p[0]-base[0]*.16,p[1]+base[1]*.19,p[2]+sway], size:[base[0]*.18,base[1]*.38,base[2]*.28], color:[.18,.18,.2,1]}},
+  {{id:o.id+'_leg_r', position:[p[0]+base[0]*.16,p[1]+base[1]*.19,p[2]-sway], size:[base[0]*.18,base[1]*.38,base[2]*.28], color:[.18,.18,.2,1]}},
+  {{id:o.id+'_arm_l', position:[p[0]-base[0]*.42,p[1]+base[1]*.52,p[2]], size:[base[0]*.14,base[1]*.38,base[2]*.22], color:c}},
+  {{id:o.id+'_arm_r', position:[p[0]+base[0]*.42,p[1]+base[1]*(smokePose ? .66 : .52),p[2]-base[2]*(smokePose ? .42 : 0)], size:[base[0]*.14,base[1]*(smokePose ? .26 : .38),base[2]*.22], color:c}},
+]; parts.forEach(part=>drawBox(part,t,false)); if(smokePose) drawSmoke([p[0]+base[0]*.52,p[1]+base[1]*.78,p[2]-base[2]*.46],t); drawLabel(o,t); }}
+function drawSmoke(origin,t){{ for(let i=0;i<4;i++){{ const age=((t*1.1+i*.22)%1); const q=project([origin[0]+age*.22,origin[1]+age*.48,origin[2]-age*.16],t); ctx.beginPath(); ctx.arc(q[0],q[1],6+age*11,0,Math.PI*2); ctx.fillStyle='rgba(190,180,168,'+(0.22*(1-age))+')'; ctx.fill(); }} }}
+function drawEvents(t){{ events.forEach(ev=>{{ const dt=Math.abs(t-Number(ev.time||0)); if(dt>.45) return; if(String(ev.type||'').includes('smoke')){{ const hero=(spec.objects||[]).find(o=>String(o.id||'').includes(String(ev.target||'hero'))) || (spec.objects||[]).find(o=>String(o.type||'').includes('character')); if(hero) drawSmoke([(hero.position||[0,0,0])[0]+.35,(hero.position||[0,.8,0])[1]+1.25,(hero.position||[0,0,0])[2]-.2],t); }} }}); }}
+function draw(){{ const t=nowTime(); ctx.clearRect(0,0,canvas.clientWidth,canvas.clientHeight); const objs=(spec.objects||[]).map(o=>animatedObject(o,t)).sort((a,b)=>((a.position[0]||0)+(a.position[2]||0))-((b.position[0]||0)+(b.position[2]||0))); objs.forEach(o=>{{ const type=String(o.type||'').toLowerCase(); if(type.includes('character')||type.includes('person')||type.includes('hero')) drawCharacter(o,t); else drawBox(o,t,true); }}); drawEvents(t); scrub.value=String(Math.round(t/duration*1000)); timeLabel.textContent=t.toFixed(2)+'s / '+duration.toFixed(1)+'s'; document.getElementById('stats').textContent='对象 '+objs.length+' 个 · 动画轨道 '+tracks.length+' 条 · 拖拽旋转，滚轮缩放'; }}
+function loop(){{ draw(); requestAnimationFrame(loop); }}
+playButton.addEventListener('click',()=>{{ if(playing){{ pausedAt=nowTime(); playing=false; playButton.textContent='播放'; }} else {{ startMs=performance.now()-pausedAt*1000; playing=true; playButton.textContent='暂停'; }} }});
+scrub.addEventListener('input',()=>{{ setTime(Number(scrub.value)/1000*duration); if(playing){{ playing=false; playButton.textContent='播放'; }} draw(); }});
+canvas.addEventListener('mousedown',e=>{{dragging=true;lastX=e.clientX;manualCamera=true;}});
 window.addEventListener('mouseup',()=>dragging=false);
 window.addEventListener('mousemove',e=>{{ if(!dragging)return; angle+=(e.clientX-lastX)*.01; lastX=e.clientX; draw(); }});
-canvas.addEventListener('wheel',e=>{{ e.preventDefault(); zoom=Math.max(32,Math.min(160,zoom-e.deltaY*.08)); draw(); }},{{passive:false}});
-window.addEventListener('resize',resize); resize();
+canvas.addEventListener('wheel',e=>{{ e.preventDefault(); zoom=Math.max(32,Math.min(160,zoom-e.deltaY*.08)); manualCamera=true; draw(); }},{{passive:false}});
+window.addEventListener('resize',resize); resize(); loop();
 </script>
 </body>
 </html>"""

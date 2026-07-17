@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
-import type { FlowEvent, FlowGraph, FlowLabDetail, FlowNode, RunResult, TestProbeRange } from '../../api.ts'
+import type { ArtifactItem, FlowEvent, FlowGraph, FlowLabDetail, FlowNode, RunResult, TestProbeRange } from '../../api.ts'
 import { uploadWorkspaceFile } from '../../api.ts'
+import { showToast } from '../../toast.tsx'
 import { FlowGraphView } from './FlowGraphView.tsx'
 import { getProcessDisplayLabel, getProtocolKind } from './nodeModel.ts'
 import './TestBench.css'
@@ -58,6 +59,44 @@ function compact(value: any, limit = 180) {
   return text.length > limit ? `${text.slice(0, limit)}...` : text
 }
 
+function collectRunArtifacts(run?: RunResult | null): ArtifactItem[] {
+  const deliveryArtifacts = run?.delivery?.artifacts || []
+  const runArtifacts = run?.artifacts || []
+  return (deliveryArtifacts.length ? deliveryArtifacts : runArtifacts).filter((item): item is ArtifactItem => !!item?.name)
+}
+
+function artifactPath(item: ArtifactItem) {
+  return item.display_path || item.path || item.url || item.name
+}
+
+function artifactTypeLabel(item: ArtifactItem) {
+  const type = (item.type || '').toLowerCase()
+  const mime = (item.mime_type || '').toLowerCase()
+  if (type === 'html' || mime.includes('html') || item.name.endsWith('.html')) return 'HTML'
+  if (type === 'image' || mime.startsWith('image/')) return '图片'
+  if (type === 'video' || mime.startsWith('video/')) return '视频'
+  if (type === 'json' || mime.includes('json') || item.name.endsWith('.json')) return 'JSON'
+  if (type === 'text' || mime.startsWith('text/')) return '文本'
+  return item.type || '文件'
+}
+
+function artifactSourceLabel(item: ArtifactItem, nodeById?: Map<string, FlowNode>) {
+  const source = item.source || {}
+  const nodeId = String(source.node_id || source.state || '')
+  if (!nodeId) return ''
+  return nodeById?.get(nodeId)?.title || nodeId
+}
+
+async function copyArtifactPath(item: ArtifactItem) {
+  const text = artifactPath(item)
+  try {
+    await navigator.clipboard.writeText(text)
+    showToast({ title: '路径已复制', description: text, type: 'success' })
+  } catch (error: any) {
+    showToast({ title: '复制失败', description: error?.message || String(error), type: 'error' })
+  }
+}
+
 function extractUiHtml(data: any) {
   if (typeof data?.ui_html === 'string' && data.ui_html.trim()) return data.ui_html
   const output = data?.output_value
@@ -98,6 +137,76 @@ function getWelcomeHtml(detail: FlowLabDetail) {
 function getNodeTitle(node?: FlowNode | null) {
   if (!node) return ''
   return node.title || node.id
+}
+
+function ArtifactList({
+  artifacts,
+  nodeById,
+  compact = false,
+}: {
+  artifacts: ArtifactItem[]
+  nodeById?: Map<string, FlowNode>
+  compact?: boolean
+}) {
+  if (!artifacts.length) return null
+  return (
+    <div className={`cf-artifact-list ${compact ? 'compact' : ''}`}>
+      {artifacts.map((item, index) => {
+        const source = artifactSourceLabel(item, nodeById)
+        const path = artifactPath(item)
+        return (
+          <div className="cf-artifact-card" key={`${item.artifact_id || item.name}-${index}`}>
+            <div className="cf-artifact-main">
+              <div className="cf-artifact-title-row">
+                <strong>{item.name}</strong>
+                <span>{artifactTypeLabel(item)}</span>
+              </div>
+              {source && <em>{source}</em>}
+              <code title={path}>{path}</code>
+            </div>
+            <div className="cf-artifact-actions">
+              <a
+                className={`cf-artifact-action ${item.url ? '' : 'disabled'}`}
+                href={item.url || '#'}
+                target="_blank"
+                rel="noreferrer"
+                onClick={(event) => {
+                  if (!item.url) event.preventDefault()
+                }}
+              >
+                打开
+              </a>
+              <button type="button" className="cf-artifact-action" onClick={() => void copyArtifactPath(item)}>
+                复制
+              </button>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function DeliveryArtifactsPanel({
+  run,
+  artifacts,
+  nodeById,
+}: {
+  run?: RunResult
+  artifacts: ArtifactItem[]
+  nodeById: Map<string, FlowNode>
+}) {
+  if (!run || artifacts.length === 0) return null
+  return (
+    <section className="cf-delivery-panel">
+      <div className="cf-delivery-head">
+        <strong>交付产物</strong>
+        <span>{artifacts.length}</span>
+      </div>
+      {run.delivery?.summary && <p>{run.delivery.summary}</p>}
+      <ArtifactList artifacts={artifacts} nodeById={nodeById} compact />
+    </section>
+  )
 }
 
 function buildNodeRunStates(graph: FlowGraph, events: FlowEvent[]) {
@@ -413,18 +522,20 @@ type InspectorSection = {
   keyName?: string
   value: any
   variant?: 'default' | 'error' | 'success'
-  kind?: 'data' | 'html'
+  kind?: 'data' | 'html' | 'artifacts'
 }
 
 function NodeInspector({
   node,
   state,
   artifacts,
+  nodeById,
   onClose,
 }: {
   node: FlowNode
   state: NodeRunState
-  artifacts: any[]
+  artifacts: ArtifactItem[]
+  nodeById: Map<string, FlowNode>
   onClose: () => void
 }) {
   const label = getProcessDisplayLabel(node) || getProtocolKind(node) || node.action || node.type || 'node'
@@ -437,7 +548,7 @@ function NodeInspector({
     if (state.decisionConsume) items.push({ key: 'decision_consume', title: '决策消费', value: state.decisionConsume, variant: state.decisionConsume.status === 'failed' ? 'error' : 'success' })
     if (state.outputValue || state.outputKey) items.push({ key: 'output', title: '输出数据', keyName: state.outputKey, value: state.outputValue || '(empty output)' })
     if (state.toolResults?.length) items.push({ key: 'tools', title: '工具结果', value: state.toolResults })
-    if (artifacts.length > 0) items.push({ key: 'artifacts', title: '产物', value: artifacts })
+    if (artifacts.length > 0) items.push({ key: 'artifacts', title: '产物', value: artifacts, kind: 'artifacts' })
     if (state.uiHtml) items.push({ key: 'ui_html', title: 'UI HTML 预览', value: state.uiHtml, kind: 'html' })
     if (state.uiMarkdown) items.push({ key: 'ui_markdown', title: 'UI Markdown', value: state.uiMarkdown })
     if (state.events.length > 0) items.push({ key: 'events', title: '节点事件', value: state.events.map((event) => ({ type: event.type, message: event.message, data: event.data })) })
@@ -474,11 +585,12 @@ function NodeInspector({
               expanded={openKey === section.key}
               onToggle={() => setOpenKey(openKey === section.key ? '' : section.key)}
               onPopout={() => setModalSection(section)}
+              nodeById={nodeById}
             />
           )) : <div className="cf-inspector-empty">这个节点还没有运行数据。</div>}
         </div>
       </div>
-      {modalSection && <InspectorValueModal section={modalSection} onClose={() => setModalSection(null)} />}
+      {modalSection && <InspectorValueModal section={modalSection} nodeById={nodeById} onClose={() => setModalSection(null)} />}
     </aside>
   )
 }
@@ -488,11 +600,13 @@ function InspectorSectionPanel({
   expanded,
   onToggle,
   onPopout,
+  nodeById,
 }: {
   section: InspectorSection
   expanded: boolean
   onToggle: () => void
   onPopout: () => void
+  nodeById: Map<string, FlowNode>
 }) {
   return (
     <section className={`cf-drawer-section cf-inspector-section ${section.variant || 'default'} ${expanded ? 'open' : 'closed'}`}>
@@ -507,14 +621,17 @@ function InspectorSectionPanel({
       {expanded && (
         section.kind === 'html'
           ? <iframe className="cf-ui-preview cf-inspector-html" title={`${section.key}-preview`} srcDoc={String(section.value || '')} sandbox="" />
-          : <pre className="cf-field-value cf-inspector-value">{pretty(section.value)}</pre>
+          : section.kind === 'artifacts'
+            ? <ArtifactList artifacts={section.value as ArtifactItem[]} nodeById={nodeById} />
+            : <pre className="cf-field-value cf-inspector-value">{pretty(section.value)}</pre>
       )}
     </section>
   )
 }
 
-function InspectorValueModal({ section, onClose }: {
+function InspectorValueModal({ section, nodeById, onClose }: {
   section: InspectorSection
+  nodeById: Map<string, FlowNode>
   onClose: () => void
 }) {
   return (
@@ -526,7 +643,9 @@ function InspectorValueModal({ section, onClose }: {
         </div>
         {section.kind === 'html'
           ? <iframe className="cf-inspector-modal-html" title={`${section.key}-modal-preview`} srcDoc={String(section.value || '')} sandbox="" />
-          : <pre className="cf-inspector-modal-value">{pretty(section.value)}</pre>}
+          : section.kind === 'artifacts'
+            ? <div className="cf-inspector-modal-value"><ArtifactList artifacts={section.value as ArtifactItem[]} nodeById={nodeById} /></div>
+            : <pre className="cf-inspector-modal-value">{pretty(section.value)}</pre>}
       </div>
     </div>
   )
@@ -691,11 +810,12 @@ export function TestBenchView({
 
   const cartridgeInputs = detail.cartridge.inputs || []
   const nodeById = useMemo(() => new Map(detail.graph.nodes.map((node) => [node.id, node])), [detail.graph.nodes])
+  const runArtifacts = useMemo(() => collectRunArtifacts(latestRun), [latestRun])
   const nodeRunStates = useMemo(() => buildNodeRunStates(detail.graph, events), [detail.graph, events])
   const diagnostics = useMemo(() => buildDiagnostics(events, latestRun), [events, latestRun])
   const selectedState = selectedNode ? nodeRunStates.get(selectedNode.id) : null
   const selectedArtifacts = selectedNode
-    ? (latestRun?.artifacts || []).filter((artifact: any) => artifact?.source?.node_id === selectedNode.id)
+    ? runArtifacts.filter((artifact) => artifact?.source?.node_id === selectedNode.id)
     : []
   const rawPendingInteraction = latestRun?.status === 'paused_waiting_user' && latestRun.pending_interaction ? latestRun.pending_interaction : null
   const rawPendingId = String(rawPendingInteraction?.interaction_id || rawPendingInteraction?.node_id || '')
@@ -862,6 +982,8 @@ export function TestBenchView({
             </div>
           )}
 
+          <DeliveryArtifactsPanel run={latestRun} artifacts={runArtifacts} nodeById={nodeById} />
+
           <section className="cf-op-section">
             <strong>决策模式</strong>
             <div className="cf-segment">
@@ -955,7 +1077,7 @@ export function TestBenchView({
             } : undefined}
           />
           {selectedNode && selectedState && (
-            <NodeInspector node={selectedNode} state={selectedState} artifacts={selectedArtifacts} onClose={() => setSelectedNode(null)} />
+            <NodeInspector node={selectedNode} state={selectedState} artifacts={selectedArtifacts} nodeById={nodeById} onClose={() => setSelectedNode(null)} />
           )}
           {latestUiHtml && showUiPreview && (
             <div className="cf-welcome-preview">

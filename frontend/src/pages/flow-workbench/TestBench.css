@@ -872,7 +872,7 @@
 
 .cf-diag-item {
   display: grid;
-  grid-template-columns: 12px auto 1fr;
+  grid-template-columns: minmax(72px, 120px) minmax(96px, 180px) minmax(0, 1fr);
   align-items: start;
   gap: 8px;
   padding: 8px 10px;
@@ -883,12 +883,46 @@
   cursor: pointer;
   text-align: left;
   width: 100%;
+  min-width: 0;
 }
 
 .cf-diag-item:hover { background: var(--bg); }
 .cf-diag-item.error { border-left-color: #c0392b; }
 .cf-diag-item.warning { border-left-color: #b9770e; }
 .cf-diag-item.info { border-left-color: #6f8374; }
+
+.cf-diag-item > span,
+.cf-diag-item > strong,
+.cf-diag-item > p {
+  min-width: 0;
+  margin: 0;
+  line-height: 1.45;
+}
+
+.cf-diag-item > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.cf-diag-item > strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono, monospace);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.cf-diag-item > p {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  font-size: 11px;
+  color: var(--muted);
+}
 
 .cf-diag-dot {
   width: 8px;
@@ -943,7 +977,7 @@
 
 .cf-log-row {
   display: grid;
-  grid-template-columns: 28px 64px minmax(0, 1fr);
+  grid-template-columns: 28px minmax(96px, 180px) minmax(0, 1fr);
   align-items: start;
   gap: 8px;
   padding: 6px;
@@ -952,7 +986,7 @@
 }
 
 .cf-log-timeline.expanded .cf-log-row {
-  grid-template-columns: 32px 72px minmax(0, 1fr);
+  grid-template-columns: 32px minmax(120px, 220px) minmax(0, 1fr);
   padding: 8px 10px;
 }
 
@@ -962,12 +996,17 @@
 }
 
 .cf-log-idx {
+  min-width: 0;
   font-family: var(--mono, monospace);
   font-size: 10px;
   color: var(--muted);
 }
 
 .cf-log-tag {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 11px;
   color: var(--muted);
 }
@@ -997,6 +1036,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  overflow-wrap: anywhere;
   color: var(--muted);
   font-size: 11px;
   line-height: 1.45;
@@ -1005,6 +1045,7 @@
 .cf-log-timeline.expanded .cf-log-detail {
   white-space: normal;
   overflow: visible;
+  word-break: break-word;
 }
 
 .cf-log-meta {

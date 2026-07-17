@@ -320,6 +320,10 @@ function InputForm({
     })
     return initial
   })
+  const missingRequiredInputs = useMemo(() => {
+    return inputs.filter((input) => input.required && !String(values[input.id] || '').trim())
+  }, [inputs, values])
+  const canStart = !disabled && !uploadingFile && missingRequiredInputs.length === 0
   const pickUploadFile = (id: string) => {
     setUploadFieldId(id)
     setUploadError('')
@@ -382,6 +386,9 @@ function InputForm({
                   </div>
                 )}
                 {uploadError && isFilePathInput && <div className="cf-upload-error">{uploadError}</div>}
+                {input.required && !String(values[input.id] || '').trim() && (
+                  <div className="cf-upload-error">该字段不能为空。</div>
+                )}
                 {input.type === 'textarea' ? (
                   <textarea
                     id={`cf-input-${input.id}`}
@@ -413,7 +420,7 @@ function InputForm({
           </div>
           <div className="cf-input-actions">
             <button type="button" className="cf-btn-outline" onClick={onCancel}>取消</button>
-            <button type="button" className="cf-btn-accent" disabled={disabled} onClick={() => onSubmit(values)}>开始运行</button>
+            <button type="button" className="cf-btn-accent" disabled={!canStart} onClick={() => canStart && onSubmit(values)}>开始运行</button>
           </div>
         </div>
       </div>

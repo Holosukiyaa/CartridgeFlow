@@ -33,6 +33,39 @@ class CartridgeRunner:
         self.runs_dir = self.root / ".data" / "cartridge_runs"
         self.runs_dir.mkdir(parents=True, exist_ok=True)
 
+    def _normalize_run_inputs(self, manifest: dict, inputs: dict | None) -> dict:
+        normalized = dict(inputs or {})
+        for item in manifest.get("inputs") or []:
+            if not isinstance(item, dict):
+                continue
+            input_id = str(item.get("id") or "").strip()
+            if not input_id:
+                continue
+            if input_id not in normalized and "default" in item:
+                normalized[input_id] = item.get("default")
+        return normalized
+
+    def _missing_required_inputs(self, manifest: dict, inputs: dict) -> list[str]:
+        missing: list[str] = []
+        for item in manifest.get("inputs") or []:
+            if not isinstance(item, dict) or not item.get("required"):
+                continue
+            input_id = str(item.get("id") or "").strip()
+            if not input_id:
+                continue
+            if self._is_blank_input_value(inputs.get(input_id)):
+                missing.append(input_id)
+        return missing
+
+    def _is_blank_input_value(self, value) -> bool:
+        if value is None:
+            return True
+        if isinstance(value, str):
+            return not value.strip()
+        if isinstance(value, (list, dict)):
+            return len(value) == 0
+        return False
+
     def create_run(
         self,
         cartridge_id: str,
@@ -43,6 +76,10 @@ class CartridgeRunner:
     ) -> dict:
         cartridge = self.registry.get_cartridge(cartridge_id)
         manifest = cartridge["manifest"]
+        inputs = self._normalize_run_inputs(manifest, inputs)
+        missing_required_inputs = self._missing_required_inputs(manifest, inputs)
+        if missing_required_inputs:
+            raise ValueError(f"Required run input missing: {', '.join(missing_required_inputs)}")
         source_root_flow = cartridge.get("root_flow") or {}
         compatibility = self.build_compatibility_report(manifest, source_root_flow)
         if not compatibility.get("ok"):
@@ -61,7 +98,7 @@ class CartridgeRunner:
             "cartridge_version": manifest.get("version"),
             "status": "created",
             "current_state": "created",
-            "inputs": inputs or {},
+            "inputs": inputs,
             "test_mode": normalized_test_mode,
             "permissions": self.permission_manager.init_permission_state(manifest),
             "environment": self.environment_checker.init_environment_state(manifest),
@@ -89,16 +126,16 @@ class CartridgeRunner:
             "updated_at": created_at,
         }
         engine = RootFlowEngine(root_flow)
-        state_doc = engine.create_state(run_id, inputs or {})
+        state_doc = engine.create_state(run_id, inputs)
         if normalized_test_mode:
             state_doc["context"]["test_mode"] = normalized_test_mode
         if normalized_probe_range:
             state_doc["context"]["probe_range"] = normalized_probe_range
-            self._seed_probe_driver_context(state_doc, root_flow, normalized_probe_range, inputs or {})
+            self._seed_probe_driver_context(state_doc, root_flow, normalized_probe_range, inputs)
         self._write_json(run_dir / "run.json", run)
         self._write_json(run_dir / "root_flow_state.json", state_doc)
         self._append_event(run_id, cartridge_id, "compatibility_checked", "created", "Compatibility report generated", compatibility)
-        self._append_event(run_id, cartridge_id, "run_created", "created", "CartridgeRun 已创建", {"inputs": inputs or {}, "test_mode": normalized_test_mode})
+        self._append_event(run_id, cartridge_id, "run_created", "created", "CartridgeRun 已创建", {"inputs": inputs, "test_mode": normalized_test_mode})
 
         # 运行前结构检查（纯拓扑）：针对完整流程图检测孤立节点，区分故意隔离与意外断链。
         # 用 source_root_flow 而非探针裁剪后的图，这样结论反映整张流程的真实结构。
@@ -174,7 +211,7 @@ class CartridgeRunner:
             "permission": handle_permission,
             "environment_check": handle_environment,
             "dependency_resolution": handle_dependencies,
-            "input_collect": lambda _state_doc: self._append_event(run_id, cartridge_id, "input_collected", "input_collect", "输入已收集", {"inputs": inputs or {}}),
+            "input_collect": lambda _state_doc: self._append_event(run_id, cartridge_id, "input_collected", "input_collect", "输入已收集", {"inputs": inputs}),
             "run": handle_run,
             "workspace_open": handle_workspace,
             "artifact_collect": lambda _state_doc: self._append_event(run_id, cartridge_id, "artifact_collected", "artifact_collect", "Artifact 已整理", {"artifacts": run.get("artifacts", [])}),

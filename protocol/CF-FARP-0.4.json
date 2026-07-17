@@ -1,0 +1,15 @@
+{
+  "schema_version": "0.4",
+  "id": "CF-FARP",
+  "version": "0.4",
+  "name": "CartridgeFlow Flow Authoring Runtime Protocol",
+  "status": "active",
+  "supersedes": {
+    "id": "CF-FARP",
+    "version": "0.3"
+  },
+  "profiles_file": "profiles.json",
+  "capabilities_file": "capabilities.json",
+  "tool_packs_file": "tool_packs.json",
+  "document": "docs/protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.4.md"
+}

@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8" />
+<title>night_alley pixel location asset</title>
+<style>
+body{margin:0;background:#12151d;color:#f5efe6;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;}
+main{max-width:1120px;margin:0 auto;padding:24px;}
+.stage{position:relative;aspect-ratio:16/9;background:#070a10;border:1px solid #313843;overflow:hidden;image-rendering:pixelated;}
+.stage img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;image-rendering:pixelated;}
+code{color:#8ecdf6;}
+</style>
+<main>
+  <h1>night_alley location asset</h1>
+  <p>Resolution <code>1280x720</code>, 4 Godot parallax layers.</p>
+  <div class="stage"><img src="layers/background_buildings.png" alt="background_buildings" /><img src="layers/market_stalls.png" alt="market_stalls" /><img src="layers/walkable_ground.png" alt="walkable_ground" /><img src="layers/foreground_lamps.png" alt="foreground_lamps" /></div>
+  <ul><li><b>background_buildings</b> parallax 0.25</li>
+<li><b>market_stalls</b> parallax 0.55</li>
+<li><b>walkable_ground</b> parallax 1.0</li>
+<li><b>foreground_lamps</b> parallax 1.25</li></ul>
+</main>
+</html>

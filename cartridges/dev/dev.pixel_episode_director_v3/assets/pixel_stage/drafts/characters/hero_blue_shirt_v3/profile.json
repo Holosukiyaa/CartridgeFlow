@@ -1,0 +1,31 @@
+{
+  "id": "hero_blue_shirt_v3",
+  "name": "蓝色衬衫人物草稿",
+  "role": "hero_candidate",
+  "status": "draft",
+  "provider": "local_pixel_forge",
+  "palette": {
+    "body": "#2f80d8",
+    "skin": "#e8b586",
+    "shadow": "#191c24",
+    "trim": "#7fc7ff",
+    "hair": "#201818"
+  },
+  "actions": [
+    "idle",
+    "walk_right",
+    "talk_idle",
+    "look_around"
+  ],
+  "asset": {
+    "spritesheet": "cartridges/dev/dev.pixel_episode_director_v3/assets/pixel_stage/drafts/characters/hero_blue_shirt_v3/hero_blue_shirt_v3.spritesheet.png",
+    "metadata": "cartridges/dev/dev.pixel_episode_director_v3/assets/pixel_stage/drafts/characters/hero_blue_shirt_v3/hero_blue_shirt_v3.spritesheet.json"
+  },
+  "render_contract": {
+    "min_screen_height_px": 128,
+    "preferred_frame_size": "128x192",
+    "animation_min_frames": 6,
+    "format": "spritesheet_json"
+  },
+  "stage_notes": "蓝色衬衫的人物角色，适合夜市像素短剧主角候选；清晰轮廓，低机位 2.5D 像素风。"
+}

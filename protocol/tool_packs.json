@@ -1,0 +1,15 @@
+{
+  "schema_version": "0.1",
+  "tool_packs": [
+    {
+      "id": "builtin.filesystem",
+      "type": "builtin",
+      "servers": ["filesystem"]
+    },
+    {
+      "id": "builtin.media",
+      "type": "builtin",
+      "servers": ["media"]
+    }
+  ]
+}

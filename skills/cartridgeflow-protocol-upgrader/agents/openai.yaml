@@ -1,0 +1,4 @@
+interface:
+  display_name: "CartridgeFlow Protocol Upgrader"
+  short_description: "Upgrade CartridgeFlow protocol versions safely."
+  default_prompt: "Use this skill to plan and apply a versioned CartridgeFlow protocol upgrade without breaking existing certified cartridges."

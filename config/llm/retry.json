@@ -1,0 +1,8 @@
+{
+  "max_retries": 1,
+  "initial_delay": 0.5,
+  "max_delay": 5.0,
+  "exponential_base": 2,
+  "retry_on_status": [429],
+  "retry_on_errors": ["timeout", "connection"]
+}

@@ -1,0 +1,1222 @@
+{
+  "schema_version": "1.0",
+  "id": "dev.pixel_episode_director.root.v2",
+  "name": "像素短剧工程 Root Flow v2.0",
+  "mode": "lifecycle",
+  "cartridge_id": "dev.pixel_episode_director",
+  "protocol": {
+    "id": "CF-FARP",
+    "version": "0.4"
+  },
+  "start": "start",
+  "states": {
+    "start": {
+      "type": "system",
+      "title": "开始",
+      "action": "start",
+      "next": "welcome_ui",
+      "layout": {
+        "x": 60,
+        "y": 120
+      }
+    },
+    "welcome_ui": {
+      "type": "process",
+      "title": "工程看板：像素短剧导演",
+      "kind": "ui",
+      "executor": "deterministic",
+      "effect": "writes_store",
+      "protocol_version": "0.4",
+      "display": {
+        "suffix": "展示",
+        "label": "展示节点"
+      },
+      "output": "welcome_ui",
+      "params": {
+        "path": "assets/welcome.html",
+        "ui_type": "html",
+        "description": "展示 v2.0 像素短剧工程卡带的用途、输入和交付方向。",
+        "output": "welcome_ui"
+      },
+      "next": "collect_project_brief",
+      "layout": {
+        "x": 360,
+        "y": 120
+      }
+    },
+    "collect_project_brief": {
+      "type": "process",
+      "title": "入料口：项目需求卡",
+      "kind": "input",
+      "executor": "user",
+      "effect": "writes_store",
+      "protocol_version": "0.4",
+      "display": {
+        "suffix": "输入",
+        "label": "输入节点"
+      },
+      "input_kind": "initial",
+      "source": "user_form",
+      "input_schema": {
+        "schema": "episode_brief.input.v1",
+        "fields": [
+          "project_brief",
+          "episode_id",
+          "episode_goal",
+          "source_materials",
+          "asset_requests",
+          "style_notes",
+          "shot_count",
+          "target_product",
+          "continuity_policy",
+          "asset_policy",
+          "output_dir",
+          "compose_provider",
+          "comfyui_url"
+        ]
+      },
+      "output": "episode_brief",
+      "params": {
+        "description": "收集用户对本集短剧、资产策略、连续性策略和交付格式的要求。",
+        "output": "episode_brief"
+      },
+      "next": "decide_brief_readiness",
+      "layout": {
+        "x": 660,
+        "y": 120
+      }
+    },
+    "decide_brief_readiness": {
+      "type": "process",
+      "title": "AI决策：判断入料是否足够",
+      "kind": "decision",
+      "executor": "llm",
+      "effect": "none",
+      "protocol_version": "0.4",
+      "display": {
+        "suffix": "AI决策",
+        "label": "AI决策节点"
+      },
+      "input": "episode_brief",
+      "output": "brief_decision",
+      "output_contract": "decision_envelope.v1",
+      "decision_contract": {
+        "schema": "decision_envelope.v1",
+        "allowed_statuses": [
+          "resolved",
+          "needs_user_input",
+          "blocked"
+        ],
+        "on_needs_user_input": "pause",
+        "interaction": {
+          "store_key": "brief_decision_reply",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "answer": {
+                "type": "string",
+                "title": "补充说明",
+                "description": "补充必须保留的剧情、禁用内容或风格偏好。"
+              }
+            },
+            "required": [
+              "answer"
+            ]
+          },
+          "resume_policy": "resume_next_node"
+        },
+        "offline_decision": {
+          "schema": "decision_envelope.v1",
+          "status": "resolved",
+          "summary": "离线兜底：入料已足够进入资料读取与工程规划。",
+          "payload": {
+            "decision": {
+              "approved": true,
+              "source": "offline_fallback"
+            }
+          }
+        },
+        "consume": {
+          "mode": "payload_path",
+          "path": "payload.decision",
+          "as": "brief_decision_payload",
+          "required": true,
+          "on_missing": "fail_closed"
+        }
+      },
+      "mock_decision_envelope": {
+        "schema": "decision_envelope.v1",
+        "status": "needs_user_input",
+        "summary": "需要确认本集方向。",
+        "question": {
+          "id": "brief_direction_question",
+          "prompt": "请补充本集必须保留的情节、禁用内容或风格偏好。",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "answer": {
+                "type": "string",
+                "title": "补充说明"
+              }
+            },
+            "required": [
+              "answer"
+            ]
+          },
+          "store_key": "brief_decision_reply"
+        },
+        "resume": {
+          "policy": "resume_next_node"
+        }
+      },
+      "params": {
+        "model_role": "runtime",
+        "system_prompt": "你是像素短剧工程导演节点。你必须只输出 decision_envelope.v1 JSON，不要输出额外文本。",
+        "prompt": "请判断用户入料是否足够进入工程链路。若信息足够，输出 status=resolved，并在 payload.decision 中给出本集制作重点；若缺少关键剧情、目标产物或限制条件，输出 status=needs_user_input，并提供 question；若需求不可执行，输出 status=blocked。",
+        "description": "判断入料是否足够，并在需要时向用户追问。",
+        "input": "episode_brief",
+        "output": "brief_decision"
+      },
+      "next": "load_reference_materials",
+      "layout": {
+        "x": 960,
+        "y": 120
+      }
+    },
+    "load_reference_materials": {
+      "type": "process",
+      "title": "资料入库：读取设定和资产",
+      "kind": "mcp_read",
+      "executor": "mcp",
+      "effect": "read_only",
+      "protocol_version": "0.4",
+      "display": {
+        "suffix": "MCP读取",
+        "label": "MCP读取节点"
+      },
+      "mcp_binding": {
+        "mode": "read_only",
+        "allowed_tools": [
+          "filesystem_read"
+        ]
+      },
+      "allowed_tools": [
+        "filesystem_read"
+      ],
+      "input": "brief_decision_payload",
+      "output": "reference_materials",
+      "params": {
+        "description": "读取系列圣经、连续性状态、镜头预设和资产清单，作为后续决策与工具节点的事实基底。",
+        "input": "brief_decision_payload",
+        "output": "reference_materials",
+        "tool_params": {
+          "path": "cartridges/dev/dev.pixel_episode_director/assets/series_bible.json\ncartridges/dev/dev.pixel_episode_director/assets/world_state.json\ncartridges/dev/dev.pixel_episode_director/assets/shot_presets.json\ncartridges/dev/dev.pixel_episode_director/assets/asset_manifest.json"
+        }
+      },
+      "next": "probe_media_environment",
+      "layout": {
+        "x": 1260,
+        "y": 120
+      }
+    },
+    "probe_media_environment": {
+      "type": "process",
+      "title": "环境探测：Godot 与 FFmpeg",
+      "kind": "mcp_read",
+      "executor": "mcp",
+      "effect": "read_only",
+      "protocol_version": "0.4",
+      "display": {
+        "suffix": "MCP读取",
+        "label": "MCP读取节点"
+      },
+      "mcp_binding": {
+        "mode": "read_only",
+        "allowed_tools": [
+          "media_probe"
+        ]
+      },
+      "allowed_tools": [
+        "media_probe"
+      ],
+      "input": "episode_brief",
+      "output": "media_environment",
+      "params": {
+        "description": "探测本地渲染与合成环境，决策节点可据此判断是否使用 Godot 原生渲染或 fallback。",
+        "input": "episode_brief",
+        "output": "media_environment",
+        "tool_params": {
+          "providers": "local,ffmpeg,comfyui,godot",
+          "comfyui_url": "store:episode_brief.comfyui_url",
+          "timeout": 3
+        }
+      },
+      "next": "inspect_asset_readiness",
+      "layout": {
+        "x": 1560,
+        "y": 120
+      }
+    },
+    "inspect_asset_readiness": {
+      "type": "process",
+      "title": "资产门禁：检查片场资产",
+      "kind": "mcp_execute",
+      "executor": "mcp",
+      "effect": "writes_artifacts",
+      "protocol_version": "0.4",
+      "display": {
+        "suffix": "MCP执行",
+        "label": "MCP执行节点"
+      },
+      "tool_binding": "static_params",
+      "allowed_tools": [
+        "media_check_pixel_assets"
+      ],
+      "permission": "write_run_artifacts",
+      "failure_policy": "continue_with_report",
+      "audit_log": true,
+      "input": "reference_materials",
+      "output": "asset_report",
+      "params": {
+        "description": "输出资产门禁报告，但不直接修改卡带资产。",
+        "input": "reference_materials",
+        "output": "asset_report",
+        "tool_params": {
+          "series_bible_path": "cartridges/dev/dev.pixel_episode_director/assets/series_bible.json",
+          "asset_manifest_path": "cartridges/dev/dev.pixel_episode_director/assets/asset_manifest.json",
+          "output_path": "test_output/pixel_episode_v2/asset_check.json"
+        }
+      },
+      "next": "decide_asset_strategy",
+      "layout": {
+        "x": 1860,
+        "y": 120
+      }
+    },
+    "decide_asset_strategy": {
+      "type": "process",
+      "title": "AI决策：资产策略与草稿许可",
+      "kind": "decision",
+      "executor": "llm",
+      "effect": "none",
+      "protocol_version": "0.4",
+      "display": {
+        "suffix": "AI决策",
+        "label": "AI决策节点"
+      },
+      "input": "episode_brief,reference_materials,media_environment,asset_report",
+      "output": "asset_strategy_decision",
+      "output_contract": "decision_envelope.v1",
+      "decision_contract": {
+        "schema": "decision_envelope.v1",
+        "allowed_statuses": [
+          "resolved",
+          "needs_user_input",
+          "blocked"
+        ],
+        "on_needs_user_input": "pause",
+        "interaction": {
+          "store_key": "asset_strategy_reply",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "approved_assets": {
+                "type": "string",
+                "title": "资产确认",
+                "description": "确认是否只使用已批准资产，或说明允许的草稿资产。"
+              }
+            },
+            "required": [
+              "approved_assets"
+            ]
+          },
+          "resume_policy": "resume_next_node"
+        },
+        "offline_decision": {
+          "schema": "decision_envelope.v1",
+          "status": "resolved",
+          "summary": "离线兜底：按用户 asset_policy 执行；允许时只生成草稿资产，不自动转正。",
+          "payload": {
+            "decision": {
+              "asset_policy": "respect_user_input",
+              "forge_assets": "draft_only_when_allowed",
+              "approved_assets_locked": true,
+              "source": "offline_fallback"
+            }
+          }
+        },
+        "consume": {
+          "mode": "payload_path",
+          "path": "payload.decision",
+          "as": "asset_strategy_payload",
+          "required": true,
+          "on_missing": "fail_closed"
+        }
+      },
+      "mock_decision_envelope": {
+        "schema": "decision_envelope.v1",
+        "status": "needs_user_input",
+        "summary": "需要用户确认是否允许生成草稿资产。",
+        "question": {
+          "id": "asset_strategy_question",
+          "prompt": "是否允许根据素材制作要求生成草稿资产？草稿只会进入 draft_assets，满意后再由后续流程转正。",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "approved_assets": {
+                "type": "string",
+                "title": "资产确认"
+              }
+            },
+            "required": [
+              "approved_assets"
+            ]
+          },
+          "store_key": "asset_strategy_reply"
+        },
+        "resume": {
+          "policy": "resume_next_node"
+        }
+      },
+      "params": {
+        "model_role": "runtime",
+        "system_prompt": "你是像素短剧资产制片决策节点。你必须只输出 decision_envelope.v1 JSON，不要输出额外文本。",
+        "prompt": "请根据用户入料、资产报告和环境探测结果判断素材策略。你只能输出决策，不得执行工具副作用。若用户要求制作新素材，应允许后续素材规格节点生成 asset_spec_batch.v1；但所有新素材必须先进入 draft_assets，未经用户复核不得写入 approved_assets。",
+        "description": "决定是否允许把用户素材要求转成草稿资产制作规格。",
+        "input": "episode_brief,reference_materials,media_environment,asset_report",
+        "output": "asset_strategy_decision"
+      },
+      "next": "plan_asset_specs",
+      "layout": {
+        "x": 2160,
+        "y": 120
+      }
+    },
+    "plan_asset_specs": {
+      "type": "process",
+      "title": "AI决策：生成素材规格",
+      "kind": "decision",
+      "executor": "llm",
+      "effect": "none",
+      "protocol_version": "0.4",
+      "display": {
+        "suffix": "AI决策",
+        "label": "AI决策节点"
+      },
+      "input": "episode_brief,reference_materials,media_environment,asset_report,asset_strategy_payload",
+      "output": "asset_specs_decision",
+      "output_contract": "decision_envelope.v1",
+      "decision_contract": {
+        "schema": "decision_envelope.v1",
+        "allowed_statuses": [
+          "resolved",
+          "needs_user_input",
+          "blocked"
+        ],
+        "on_needs_user_input": "pause",
+        "interaction": {
+          "store_key": "asset_specs_reply",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "asset_request": {
+                "type": "string",
+                "title": "素材补充要求",
+                "description": "补充要生成的角色、地点、道具、颜色、动作或风格限制。"
+              }
+            },
+            "required": [
+              "asset_request"
+            ]
+          },
+          "resume_policy": "resume_next_node"
+        },
+        "offline_decision": {
+          "schema": "decision_envelope.v1",
+          "status": "resolved",
+          "summary": "离线兜底：生成一个蓝色衬衫人物草稿规格。",
+          "payload": {
+            "asset_specs": {
+              "schema": "asset_spec_batch.v1",
+              "source": "episode_brief.asset_requests",
+              "policy": {
+                "asset_policy": "draft_allowed",
+                "register_mode": "draft",
+                "requires_user_review": true,
+                "approved_assets_locked": true,
+                "provider": "local_pixel_forge",
+                "image_provider": "auto"
+              },
+              "style_notes": "2.5D pixel stage, crisp silhouette, readable animation, no watermark",
+              "assets": [
+                {
+                  "id": "hero_blue_shirt",
+                  "kind": "character",
+                  "name": "蓝色衬衫人物草稿",
+                  "role": "hero_candidate",
+                  "visual_prompt": "蓝色衬衫的人物角色，适合夜市像素短剧主角候选；清晰轮廓，低机位 2.5D 像素风。",
+                  "target_status": "draft",
+                  "actions": [
+                    "idle",
+                    "walk_right",
+                    "talk_idle",
+                    "look_around"
+                  ],
+                  "palette": {
+                    "body": "#2f80d8",
+                    "trim": "#7fc7ff",
+                    "skin": "#e8b586",
+                    "hair": "#201818",
+                    "shadow": "#191c24"
+                  },
+                  "requirements": {
+                    "frame_size": "128x192",
+                    "frames_per_action": 6,
+                    "approval_required": true
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "consume": {
+          "mode": "payload_path",
+          "path": "payload.asset_specs",
+          "as": "asset_specs_payload",
+          "required": true,
+          "on_missing": "fail_closed"
+        }
+      },
+      "mock_decision_envelope": {
+        "schema": "decision_envelope.v1",
+        "status": "resolved",
+        "summary": "Mock：生成蓝色衬衫人物草稿规格。",
+        "payload": {
+          "asset_specs": {
+            "schema": "asset_spec_batch.v1",
+            "source": "episode_brief.asset_requests",
+            "policy": {
+              "asset_policy": "draft_allowed",
+              "register_mode": "draft",
+              "requires_user_review": true,
+              "approved_assets_locked": true,
+              "provider": "local_pixel_forge",
+              "image_provider": "auto"
+            },
+            "style_notes": "2.5D pixel stage, crisp silhouette, readable animation, no watermark",
+            "assets": [
+              {
+                "id": "hero_blue_shirt",
+                "kind": "character",
+                "name": "蓝色衬衫人物草稿",
+                "role": "hero_candidate",
+                "visual_prompt": "蓝色衬衫的人物角色，适合夜市像素短剧主角候选；清晰轮廓，低机位 2.5D 像素风。",
+                "target_status": "draft",
+                "actions": [
+                  "idle",
+                  "walk_right",
+                  "talk_idle",
+                  "look_around"
+                ],
+                "palette": {
+                  "body": "#2f80d8",
+                  "trim": "#7fc7ff",
+                  "skin": "#e8b586",
+                  "hair": "#201818",
+                  "shadow": "#191c24"
+                },
+                "requirements": {
+                  "frame_size": "128x192",
+                  "frames_per_action": 6,
+                  "approval_required": true
+                }
+              }
+            ]
+          }
+        }
+      },
+      "params": {
+        "model_role": "runtime",
+        "system_prompt": "你是像素短剧素材规格设计节点。你必须只输出 decision_envelope.v1 JSON，不要输出额外文本。",
+        "prompt": "请根据 episode_brief.asset_requests、source_materials、episode_goal、style_notes 和 asset_strategy_payload 生成可被素材工坊消费的固定结构。信息足够时输出 status=resolved，并且必须在 payload.asset_specs 中提供 asset_spec_batch.v1：{schema, source, policy, style_notes, assets[]}。assets[] 每项必须包含 id、kind(character/location/background/prop)、name、visual_prompt、target_status=draft；角色素材还应包含 actions、palette 或 requirements。若用户没有写清楚要做什么素材，输出 needs_user_input 并询问缺失信息。不得执行工具，不得把草稿标为 approved。",
+        "description": "把用户素材要求转换为 asset_spec_batch.v1，而不是只做通过/不通过判断。",
+        "input": "episode_brief,reference_materials,media_environment,asset_report,asset_strategy_payload",
+        "output": "asset_specs_decision"
+      },
+      "next": "forge_draft_assets",
+      "layout": {
+        "x": 2460,
+        "y": 120
+      }
+    },
+    "forge_draft_assets": {
+      "type": "process",
+      "title": "素材工坊：生成草稿资产",
+      "kind": "mcp_execute",
+      "executor": "mcp",
+      "effect": "mutates_state",
+      "protocol_version": "0.4",
+      "display": {
+        "suffix": "MCP执行",
+        "label": "MCP执行节点"
+      },
+      "tool_binding": "static_params",
+      "allowed_tools": [
+        "media_forge_pixel_asset_batch"
+      ],
+      "permission": "write_draft_assets",
+      "failure_policy": "fail_closed",
+      "audit_log": true,
+      "input": "asset_specs_payload,episode_brief",
+      "output": "draft_asset_bundle",
+      "params": {
+        "description": "消费 AI 生成的素材规格，写入 draft_assets 和本次运行报告；不写 approved_assets。",
+        "abort_on_failed": true,
+        "input": "asset_specs_payload,episode_brief",
+        "output": "draft_asset_bundle",
+        "tool_params": {
+          "asset_specs": "store:asset_specs_payload",
+          "asset_policy": "store:episode_brief.asset_policy",
+          "provider": "local_pixel_forge",
+          "image_provider": "auto",
+          "comfyui_url": "store:episode_brief.comfyui_url",
+          "style_notes": "store:episode_brief.style_notes",
+          "output_dir": "cartridges/dev/dev.pixel_episode_director/assets/pixel_stage",
+          "asset_manifest_path": "cartridges/dev/dev.pixel_episode_director/assets/asset_manifest.json",
+          "report_path": "test_output/pixel_episode_v2/asset_forge_batch.json"
+        }
+      },
+      "next": "review_draft_assets",
+      "layout": {
+        "x": 2460,
+        "y": 340
+      }
+    },
+    "review_draft_assets": {
+      "type": "process",
+      "title": "AI决策：素材草稿复核",
+      "kind": "decision",
+      "executor": "llm",
+      "effect": "none",
+      "protocol_version": "0.4",
+      "display": {
+        "suffix": "AI决策",
+        "label": "AI决策节点"
+      },
+      "input": "episode_brief,asset_specs_payload,draft_asset_bundle",
+      "output": "asset_review_decision",
+      "output_contract": "decision_envelope.v1",
+      "decision_contract": {
+        "schema": "decision_envelope.v1",
+        "allowed_statuses": [
+          "resolved",
+          "needs_user_input",
+          "blocked"
+        ],
+        "on_needs_user_input": "pause",
+        "interaction": {
+          "store_key": "asset_review_reply",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "review": {
+                "type": "string",
+                "title": "素材复核意见",
+                "description": "确认草稿是否满意，或说明颜色、动作、轮廓、风格等修改意见。"
+              }
+            },
+            "required": [
+              "review"
+            ]
+          },
+          "resume_policy": "resume_next_node"
+        },
+        "offline_decision": {
+          "schema": "decision_envelope.v1",
+          "status": "resolved",
+          "summary": "离线兜底：草稿保留为待复核状态，仅作为镜头计划素材方向参考。",
+          "payload": {
+            "decision": {
+              "drafts_created": true,
+              "approved_for_planning": true,
+              "approved_for_production": false,
+              "use_for_story_direction_only": true,
+              "requires_user_review": true,
+              "source": "offline_fallback"
+            }
+          }
+        },
+        "consume": {
+          "mode": "payload_path",
+          "path": "payload.decision",
+          "as": "asset_review_payload",
+          "required": true,
+          "on_missing": "fail_closed"
+        }
+      },
+      "mock_decision_envelope": {
+        "schema": "decision_envelope.v1",
+        "status": "needs_user_input",
+        "summary": "需要用户复核素材草稿。",
+        "question": {
+          "id": "asset_review_question",
+          "prompt": "素材草稿已经生成，请确认是否满意；如果不满意，请写明需要修改的颜色、动作、轮廓或风格。",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "review": {
+                "type": "string",
+                "title": "素材复核意见"
+              }
+            },
+            "required": [
+              "review"
+            ]
+          },
+          "store_key": "asset_review_reply"
+        },
+        "resume": {
+          "policy": "resume_next_node"
+        }
+      },
+      "params": {
+        "model_role": "runtime",
+        "system_prompt": "你是像素短剧素材复核节点。你必须只输出 decision_envelope.v1 JSON，不要输出额外文本。",
+        "prompt": "请检查 draft_asset_bundle 和 asset_specs_payload。若草稿已生成，优先询问用户是否满意，输出 needs_user_input 并提供复核问题；若当前运行需要自动继续，可输出 resolved，但必须在 payload.decision 中说明 approved_for_production=false，草稿只能作为镜头计划方向参考，未经用户复核不得转正。",
+        "description": "让用户确认素材草稿是否满意，并把复核结果交给后续镜头计划。",
+        "input": "episode_brief,asset_specs_payload,draft_asset_bundle",
+        "output": "asset_review_decision"
+      },
+      "next": "generate_shot_plan",
+      "layout": {
+        "x": 2160,
+        "y": 340
+      }
+    },
+    "generate_shot_plan": {
+      "type": "process",
+      "title": "导演工单：生成镜头计划",
+      "kind": "mcp_execute",
+      "executor": "mcp",
+      "effect": "writes_artifacts",
+      "protocol_version": "0.4",
+      "display": {
+        "suffix": "MCP执行",
+        "label": "MCP执行节点"
+      },
+      "tool_binding": "static_params",
+      "allowed_tools": [
+        "media_generate_pixel_shot_plan"
+      ],
+      "permission": "write_run_artifacts",
+      "failure_policy": "fail_closed",
+      "audit_log": true,
+      "input": "episode_brief,asset_strategy_payload,asset_specs_payload,draft_asset_bundle,asset_review_payload",
+      "output": "shot_plan_json",
+      "params": {
+        "description": "根据用户目标和已读资料生成可执行镜头表。",
+        "abort_on_failed": true,
+        "input": "episode_brief,asset_strategy_payload,asset_specs_payload,draft_asset_bundle,asset_review_payload",
+        "output": "shot_plan_json",
+        "tool_params": {
+          "episode_id": "store:episode_brief.episode_id",
+          "episode_goal": "store:episode_brief.episode_goal",
+          "style_notes": "store:episode_brief.style_notes",
+          "shot_count": "store:episode_brief.shot_count",
+          "output_path": "test_output/pixel_episode_v2/shot_plan.json",
+          "world_state_path": "cartridges/dev/dev.pixel_episode_director/assets/world_state.json",
+          "shot_presets_path": "cartridges/dev/dev.pixel_episode_director/assets/shot_presets.json",
+          "asset_specs": "store:asset_specs_payload",
+          "draft_asset_bundle": "store:draft_asset_bundle"
+        }
+      },
+      "next": "validate_shot_plan",
+      "layout": {
+        "x": 1860,
+        "y": 340
+      }
+    },
+    "validate_shot_plan": {
+      "type": "process",
+      "title": "规则校验：镜头表可执行性",
+      "kind": "mcp_execute",
+      "executor": "mcp",
+      "effect": "writes_artifacts",
+      "protocol_version": "0.4",
+      "display": {
+        "suffix": "MCP执行",
+        "label": "MCP执行节点"
+      },
+      "tool_binding": "static_params",
+      "allowed_tools": [
+        "media_validate_pixel_shot_plan"
+      ],
+      "permission": "write_run_artifacts",
+      "failure_policy": "continue_with_report",
+      "audit_log": true,
+      "input": "shot_plan_json",
+      "output": "validation_report",
+      "params": {
+        "description": "校验镜头表是否符合设定、资产和镜头预设。",
+        "input": "shot_plan_json",
+        "output": "validation_report",
+        "tool_params": {
+          "shot_plan_path": "test_output/pixel_episode_v2/shot_plan.json",
+          "shot_plan_content": "store:shot_plan_json",
+          "series_bible_path": "cartridges/dev/dev.pixel_episode_director/assets/series_bible.json",
+          "asset_manifest_path": "cartridges/dev/dev.pixel_episode_director/assets/asset_manifest.json",
+          "shot_presets_path": "cartridges/dev/dev.pixel_episode_director/assets/shot_presets.json",
+          "output_path": "test_output/pixel_episode_v2/shot_plan.validation.json"
+        }
+      },
+      "next": "decide_plan_approval",
+      "layout": {
+        "x": 1260,
+        "y": 340
+      }
+    },
+    "decide_plan_approval": {
+      "type": "process",
+      "title": "AI决策：镜头计划复核",
+      "kind": "decision",
+      "executor": "llm",
+      "effect": "none",
+      "protocol_version": "0.4",
+      "display": {
+        "suffix": "AI决策",
+        "label": "AI决策节点"
+      },
+      "input": "episode_brief,shot_plan_json,validation_report",
+      "output": "plan_approval_decision",
+      "output_contract": "decision_envelope.v1",
+      "decision_contract": {
+        "schema": "decision_envelope.v1",
+        "allowed_statuses": [
+          "resolved",
+          "needs_user_input",
+          "blocked"
+        ],
+        "on_needs_user_input": "pause",
+        "interaction": {
+          "store_key": "plan_approval_reply",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "approval": {
+                "type": "string",
+                "title": "复核意见",
+                "description": "确认继续渲染，或写出必须调整的镜头。"
+              }
+            },
+            "required": [
+              "approval"
+            ]
+          },
+          "resume_policy": "resume_next_node"
+        },
+        "offline_decision": {
+          "schema": "decision_envelope.v1",
+          "status": "resolved",
+          "summary": "离线兜底：镜头计划进入渲染阶段。",
+          "payload": {
+            "decision": {
+              "approved_for_render": true,
+              "source": "offline_fallback"
+            }
+          }
+        },
+        "consume": {
+          "mode": "payload_path",
+          "path": "payload.decision",
+          "as": "plan_approval_payload",
+          "required": true,
+          "on_missing": "fail_closed"
+        }
+      },
+      "mock_decision_envelope": {
+        "schema": "decision_envelope.v1",
+        "status": "needs_user_input",
+        "summary": "需要复核镜头计划。",
+        "question": {
+          "id": "plan_approval_question",
+          "prompt": "请确认是否按当前镜头计划进入 Godot 渲染；如需调整，请写明镜头编号和修改方向。",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "approval": {
+                "type": "string",
+                "title": "复核意见"
+              }
+            },
+            "required": [
+              "approval"
+            ]
+          },
+          "store_key": "plan_approval_reply"
+        },
+        "resume": {
+          "policy": "resume_next_node"
+        }
+      },
+      "params": {
+        "model_role": "runtime",
+        "system_prompt": "你是像素短剧导演复核节点。你必须只输出 decision_envelope.v1 JSON，不要输出额外文本。",
+        "prompt": "请复核镜头表和校验报告。若可渲染，输出 resolved；若需要用户确认镜头或风格，输出 needs_user_input；若镜头表不可执行且无法自动修复，输出 blocked。",
+        "description": "在正式渲染前复核镜头表。",
+        "input": "episode_brief,shot_plan_json,validation_report",
+        "output": "plan_approval_decision"
+      },
+      "next": "render_godot_episode",
+      "layout": {
+        "x": 960,
+        "y": 340
+      }
+    },
+    "render_godot_episode": {
+      "type": "process",
+      "title": "Godot 舞台：渲染像素短剧",
+      "kind": "mcp_execute",
+      "executor": "mcp",
+      "effect": "writes_artifacts",
+      "protocol_version": "0.4",
+      "display": {
+        "suffix": "MCP执行",
+        "label": "MCP执行节点"
+      },
+      "tool_binding": "static_params",
+      "allowed_tools": [
+        "media_godot_render_pixel_episode"
+      ],
+      "permission": "write_run_artifacts",
+      "failure_policy": "fail_closed",
+      "audit_log": true,
+      "input": "shot_plan_json,plan_approval_payload",
+      "output": "render_bundle",
+      "params": {
+        "description": "调用 Godot 像素舞台；本地没有 Godot 时使用 Python fallback 生成 AVI 和预览。",
+        "abort_on_failed": true,
+        "input": "shot_plan_json,plan_approval_payload",
+        "output": "render_bundle",
+        "tool_params": {
+          "shot_plan_path": "test_output/pixel_episode_v2/shot_plan.json",
+          "shot_plan_content": "store:shot_plan_json",
+          "output_dir": "test_output/pixel_episode_v2/render",
+          "filename_prefix": "store:episode_brief.episode_id",
+          "require_godot_native": false
+        }
+      },
+      "next": "mux_episode_delivery",
+      "layout": {
+        "x": 660,
+        "y": 340
+      }
+    },
+    "mux_episode_delivery": {
+      "type": "process",
+      "title": "成品合成：MP4 与预览页",
+      "kind": "mcp_execute",
+      "executor": "mcp",
+      "effect": "writes_artifacts",
+      "protocol_version": "0.4",
+      "display": {
+        "suffix": "MCP执行",
+        "label": "MCP执行节点"
+      },
+      "tool_binding": "static_params",
+      "allowed_tools": [
+        "media_ffmpeg_mux_episode"
+      ],
+      "permission": "write_run_artifacts",
+      "failure_policy": "continue_with_report",
+      "audit_log": true,
+      "input": "render_bundle,shot_plan_json",
+      "output": "episode_video",
+      "params": {
+        "description": "将渲染源视频合成为目标产物，并生成预览页。",
+        "abort_on_failed": true,
+        "input": "render_bundle,shot_plan_json",
+        "output": "episode_video",
+        "tool_params": {
+          "video_path": "store:render_bundle.video_path",
+          "shot_plan_path": "test_output/pixel_episode_v2/shot_plan.json",
+          "shot_plan_content": "store:shot_plan_json",
+          "output_path": "test_output/pixel_episode_v2/final/episode.mp4",
+          "preview_path": "test_output/pixel_episode_v2/final/episode.preview.html",
+          "compose_provider": "store:episode_brief.compose_provider",
+          "target_product": "store:episode_brief.target_product"
+        }
+      },
+      "next": "decide_continuity_update",
+      "layout": {
+        "x": 360,
+        "y": 340
+      }
+    },
+    "decide_continuity_update": {
+      "type": "process",
+      "title": "AI决策：连续性处理",
+      "kind": "decision",
+      "executor": "llm",
+      "effect": "none",
+      "protocol_version": "0.4",
+      "display": {
+        "suffix": "AI决策",
+        "label": "AI决策节点"
+      },
+      "input": "episode_brief,shot_plan_json,episode_video",
+      "output": "continuity_decision",
+      "output_contract": "decision_envelope.v1",
+      "decision_contract": {
+        "schema": "decision_envelope.v1",
+        "allowed_statuses": [
+          "resolved",
+          "needs_user_input",
+          "blocked"
+        ],
+        "on_needs_user_input": "pause",
+        "interaction": {
+          "store_key": "continuity_reply",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "continuity": {
+                "type": "string",
+                "title": "连续性意见",
+                "description": "确认是否回写连续性状态，或说明需要记录的开放线索。"
+              }
+            },
+            "required": [
+              "continuity"
+            ]
+          },
+          "resume_policy": "resume_next_node"
+        },
+        "offline_decision": {
+          "schema": "decision_envelope.v1",
+          "status": "resolved",
+          "summary": "离线兜底：按用户选择的 continuity_policy 处理连续性。",
+          "payload": {
+            "decision": {
+              "follow_user_policy": true,
+              "source": "offline_fallback"
+            }
+          }
+        },
+        "consume": {
+          "mode": "payload_path",
+          "path": "payload.decision",
+          "as": "continuity_decision_payload",
+          "required": true,
+          "on_missing": "fail_closed"
+        }
+      },
+      "mock_decision_envelope": {
+        "schema": "decision_envelope.v1",
+        "status": "needs_user_input",
+        "summary": "需要确认连续性处理。",
+        "question": {
+          "id": "continuity_question",
+          "prompt": "请确认本集结尾需要记录的开放线索；如果不希望回写 world_state，请保持 continuity_policy=read_only 或 off。",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "continuity": {
+                "type": "string",
+                "title": "连续性意见"
+              }
+            },
+            "required": [
+              "continuity"
+            ]
+          },
+          "store_key": "continuity_reply"
+        },
+        "resume": {
+          "policy": "resume_next_node"
+        }
+      },
+      "params": {
+        "model_role": "runtime",
+        "system_prompt": "你是像素短剧连续性决策节点。你必须只输出 decision_envelope.v1 JSON，不要输出额外文本。",
+        "prompt": "请根据用户连续性策略、镜头表和成品摘要判断是否需要回写 world_state。不得直接修改文件，只能输出决策。",
+        "description": "决定是否按用户策略进入连续性回写节点。",
+        "input": "episode_brief,shot_plan_json,episode_video",
+        "output": "continuity_decision"
+      },
+      "next": "update_world_state",
+      "layout": {
+        "x": 60,
+        "y": 340
+      }
+    },
+    "update_world_state": {
+      "type": "process",
+      "title": "连续性工单：状态回写",
+      "kind": "mcp_execute",
+      "executor": "mcp",
+      "effect": "mutates_state",
+      "protocol_version": "0.4",
+      "display": {
+        "suffix": "MCP执行",
+        "label": "MCP执行节点"
+      },
+      "tool_binding": "static_params",
+      "allowed_tools": [
+        "media_update_pixel_world_state"
+      ],
+      "permission": "write_world_state",
+      "failure_policy": "continue_with_report",
+      "audit_log": true,
+      "input": "continuity_decision_payload,shot_plan_json",
+      "output": "continuity_report",
+      "params": {
+        "description": "根据 continuity_policy 执行回写或生成跳过报告。默认 read_only 不修改原始 world_state。",
+        "input": "continuity_decision_payload,shot_plan_json",
+        "output": "continuity_report",
+        "tool_params": {
+          "world_state_path": "cartridges/dev/dev.pixel_episode_director/assets/world_state.json",
+          "shot_plan_path": "test_output/pixel_episode_v2/shot_plan.json",
+          "shot_plan_content": "store:shot_plan_json",
+          "episode_id": "store:episode_brief.episode_id",
+          "episode_goal": "store:episode_brief.episode_goal",
+          "continuity_policy": "store:episode_brief.continuity_policy",
+          "output_path": "test_output/pixel_episode_v2/world_state_update.json"
+        }
+      },
+      "next": "delivery_summary",
+      "layout": {
+        "x": 60,
+        "y": 560
+      }
+    },
+    "delivery_summary": {
+      "type": "process",
+      "title": "交付汇总：短剧工程包",
+      "kind": "delivery",
+      "executor": "deterministic",
+      "effect": "writes_store",
+      "protocol_version": "0.4",
+      "display": {
+        "suffix": "交付",
+        "label": "交付节点"
+      },
+      "input": "episode_brief,brief_decision_payload,reference_materials,media_environment,asset_report,asset_strategy_payload,asset_specs_payload,draft_asset_bundle,asset_review_payload,shot_plan_json,validation_report,plan_approval_payload,render_bundle,episode_video,continuity_decision_payload,continuity_report",
+      "output": "episode_delivery",
+      "primary_output": "episode_delivery",
+      "params": {
+        "description": "汇总用户入料、AI 决策、工具报告、渲染包和连续性处理结果。",
+        "input": "episode_brief,brief_decision_payload,reference_materials,media_environment,asset_report,asset_strategy_payload,asset_specs_payload,draft_asset_bundle,asset_review_payload,shot_plan_json,validation_report,plan_approval_payload,render_bundle,episode_video,continuity_decision_payload,continuity_report",
+        "output": "episode_delivery",
+        "preset_config": {
+          "items": "episode_brief,brief_decision_payload,reference_materials,media_environment,asset_report,asset_strategy_payload,asset_specs_payload,draft_asset_bundle,asset_review_payload,shot_plan_json,validation_report,plan_approval_payload,render_bundle,episode_video,continuity_decision_payload,continuity_report",
+          "output_name": "episode_delivery"
+        }
+      },
+      "next": "delivery",
+      "layout": {
+        "x": 360,
+        "y": 560
+      }
+    },
+    "delivery": {
+      "type": "system",
+      "title": "交付整理",
+      "action": "delivery",
+      "next": "complete",
+      "layout": {
+        "x": 660,
+        "y": 560
+      }
+    },
+    "complete": {
+      "type": "terminal",
+      "title": "完成",
+      "layout": {
+        "x": 960,
+        "y": 560
+      }
+    }
+  },
+  "edges": [
+    {
+      "from": "start",
+      "to": "welcome_ui"
+    },
+    {
+      "from": "welcome_ui",
+      "to": "collect_project_brief"
+    },
+    {
+      "from": "collect_project_brief",
+      "to": "decide_brief_readiness"
+    },
+    {
+      "from": "decide_brief_readiness",
+      "to": "load_reference_materials"
+    },
+    {
+      "from": "load_reference_materials",
+      "to": "probe_media_environment"
+    },
+    {
+      "from": "probe_media_environment",
+      "to": "inspect_asset_readiness"
+    },
+    {
+      "from": "inspect_asset_readiness",
+      "to": "decide_asset_strategy"
+    },
+    {
+      "from": "decide_asset_strategy",
+      "to": "plan_asset_specs"
+    },
+    {
+      "from": "plan_asset_specs",
+      "to": "forge_draft_assets"
+    },
+    {
+      "from": "forge_draft_assets",
+      "to": "review_draft_assets"
+    },
+    {
+      "from": "review_draft_assets",
+      "to": "generate_shot_plan"
+    },
+    {
+      "from": "generate_shot_plan",
+      "to": "validate_shot_plan"
+    },
+    {
+      "from": "validate_shot_plan",
+      "to": "decide_plan_approval"
+    },
+    {
+      "from": "decide_plan_approval",
+      "to": "render_godot_episode"
+    },
+    {
+      "from": "render_godot_episode",
+      "to": "mux_episode_delivery"
+    },
+    {
+      "from": "mux_episode_delivery",
+      "to": "decide_continuity_update"
+    },
+    {
+      "from": "decide_continuity_update",
+      "to": "update_world_state"
+    },
+    {
+      "from": "update_world_state",
+      "to": "delivery_summary"
+    },
+    {
+      "from": "delivery_summary",
+      "to": "delivery"
+    },
+    {
+      "from": "delivery",
+      "to": "complete"
+    }
+  ]
+}

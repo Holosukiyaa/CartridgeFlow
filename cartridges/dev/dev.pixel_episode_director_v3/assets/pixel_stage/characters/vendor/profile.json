@@ -1,0 +1,29 @@
+{
+  "id": "vendor",
+  "name": "Vendor",
+  "role": "clue_provider",
+  "status": "approved",
+  "provider": "local_pixel_forge",
+  "palette": {
+    "body": "#d67c3c",
+    "skin": "#e8b586",
+    "shadow": "#191c24",
+    "trim": "#f4b24a",
+    "hair": "#36261b"
+  },
+  "actions": [
+    "idle",
+    "talk_idle"
+  ],
+  "asset": {
+    "spritesheet": "assets/pixel_stage/characters/vendor/vendor.spritesheet.png",
+    "metadata": "assets/pixel_stage/characters/vendor/vendor.spritesheet.json"
+  },
+  "render_contract": {
+    "min_screen_height_px": 128,
+    "preferred_frame_size": "128x192",
+    "animation_min_frames": 6,
+    "format": "spritesheet_json"
+  },
+  "stage_notes": "Locally forged pixel character spritesheet for Godot native animation."
+}

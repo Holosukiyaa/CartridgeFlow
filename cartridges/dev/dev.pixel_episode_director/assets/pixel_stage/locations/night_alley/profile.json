@@ -1,0 +1,41 @@
+{
+  "id": "night_alley",
+  "name": "Night Alley",
+  "status": "approved",
+  "provider": "local_pixel_forge",
+  "resolution": "1280x720",
+  "layers": [
+    {
+      "id": "background_buildings",
+      "image": "assets/pixel_stage/locations/night_alley/layers/background_buildings.png",
+      "parallax": 0.25,
+      "z_index": 0
+    },
+    {
+      "id": "market_stalls",
+      "image": "assets/pixel_stage/locations/night_alley/layers/market_stalls.png",
+      "parallax": 0.55,
+      "z_index": 10
+    },
+    {
+      "id": "walkable_ground",
+      "image": "assets/pixel_stage/locations/night_alley/layers/walkable_ground.png",
+      "parallax": 1.0,
+      "z_index": 20
+    },
+    {
+      "id": "foreground_lamps",
+      "image": "assets/pixel_stage/locations/night_alley/layers/foreground_lamps.png",
+      "parallax": 1.25,
+      "z_index": 30
+    }
+  ],
+  "render_contract": {
+    "min_layers": 4,
+    "target_resolution": "1280x720",
+    "format": "godot_2d_layers",
+    "requires_layer_images": true
+  },
+  "walkable_y": 6,
+  "stage_notes": "Forged parallax pixel stage layers for Godot native rendering."
+}

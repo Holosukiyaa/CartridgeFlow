@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "description": "Deterministic camera grammar for the pixel 2.5D episode renderer.",
+  "presets": {
+    "wide_establishing": {
+      "description": "Wide shot for location and layer readability.",
+      "required_params": [],
+      "optional_params": ["position", "zoom", "note"],
+      "defaults": {
+        "position": [0, 0],
+        "zoom": 0.85
+      }
+    },
+    "push_in": {
+      "description": "Slow push toward a target for realization or clue emphasis.",
+      "required_params": ["target"],
+      "optional_params": ["zoom_from", "zoom_to", "note"],
+      "defaults": {
+        "zoom_from": 1.0,
+        "zoom_to": 1.45
+      }
+    },
+    "tracking_side": {
+      "description": "Side-tracking camera for walking or stall-to-stall movement.",
+      "required_params": ["target", "from", "to"],
+      "optional_params": ["zoom", "note"],
+      "defaults": {
+        "zoom": 1.0
+      }
+    },
+    "close_up": {
+      "description": "Close framing on a target face or small clue.",
+      "required_params": ["target"],
+      "optional_params": ["zoom", "note"],
+      "defaults": {
+        "zoom": 1.55
+      }
+    },
+    "over_shoulder": {
+      "description": "Foreground shoulder framing to imply surveillance or pursuit.",
+      "required_params": ["target", "shoulder_actor"],
+      "optional_params": ["from", "to", "zoom", "note"],
+      "defaults": {
+        "from": [5, 0],
+        "to": [7, 0],
+        "zoom": 1.25
+      }
+    },
+    "reveal": {
+      "description": "Foreground wipe or parallax reveal for keys, doors, notes, and hidden clues.",
+      "required_params": ["target"],
+      "optional_params": ["zoom_from", "zoom_to", "reveal_axis", "note"],
+      "defaults": {
+        "zoom_from": 1.05,
+        "zoom_to": 1.35,
+        "reveal_axis": "foreground_left"
+      }
+    }
+  }
+}

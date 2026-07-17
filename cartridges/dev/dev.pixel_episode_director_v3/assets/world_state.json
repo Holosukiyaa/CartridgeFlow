@@ -1,0 +1,283 @@
+{
+  "series_id": "pixel_alley",
+  "version": 23,
+  "current_location": "night_alley",
+  "last_episode_id": "ep_factory_test",
+  "characters": {
+    "hero": {
+      "location": "night_alley",
+      "position": [
+        9.0,
+        6.0,
+        1.0
+      ],
+      "emotion": "suspicious",
+      "inventory": [],
+      "costume": "blue jacket",
+      "last_animation": "look_around"
+    },
+    "vendor": {
+      "location": "night_alley",
+      "position": [
+        11.0,
+        6.0,
+        1.0
+      ],
+      "emotion": "neutral",
+      "inventory": [],
+      "costume": "market apron",
+      "last_animation": "talk_idle"
+    }
+  },
+  "props": {},
+  "relationships": {
+    "hero.vendor": "cautious"
+  },
+  "open_threads": [
+    "unresolved_alley_clue",
+    "someone_is_following_hero",
+    "flickering_lamp_signal"
+  ],
+  "episode_history": [
+    {
+      "episode_id": "ep001",
+      "title": "闪烁路灯下的预感",
+      "goal": "主角在夜市小巷发现异常闪烁的灯，并意识到有人在跟踪他。",
+      "final_location": "night_alley",
+      "final_camera": "over_shoulder",
+      "open_thread": "someone_is_following_hero",
+      "characters": [
+        "hero",
+        "vendor"
+      ]
+    },
+    {
+      "episode_id": "ep_factory_test",
+      "title": "工厂流水线测试短片",
+      "goal": "主角在夜市小巷发现一盏异常闪烁的灯，并意识到有人在跟踪他。",
+      "final_location": "night_alley",
+      "final_camera": "push_in",
+      "open_thread": "unresolved_alley_clue",
+      "characters": [
+        "hero",
+        "vendor"
+      ]
+    },
+    {
+      "episode_id": "ep_factory_test",
+      "title": "主角在夜市小巷发现异常闪灯",
+      "goal": "主角在夜市小巷发现异常闪灯，结尾留下追踪者线索。",
+      "final_location": "night_alley",
+      "final_camera": "over_shoulder",
+      "open_thread": "flickering_lamp_signal",
+      "characters": [
+        "hero",
+        "vendor"
+      ]
+    },
+    {
+      "episode_id": "ep_factory_test",
+      "title": "主角在夜市小巷发现异常闪灯",
+      "goal": "主角在夜市小巷发现异常闪灯，结尾留下追踪者线索。",
+      "final_location": "night_alley",
+      "final_camera": "over_shoulder",
+      "open_thread": "flickering_lamp_signal",
+      "characters": [
+        "hero",
+        "vendor"
+      ]
+    },
+    {
+      "episode_id": "ep_factory_test",
+      "title": "主角在夜市小巷发现异常闪灯",
+      "goal": "主角在夜市小巷发现异常闪灯，结尾留下追踪者线索。",
+      "final_location": "night_alley",
+      "final_camera": "over_shoulder",
+      "open_thread": "flickering_lamp_signal",
+      "characters": [
+        "hero",
+        "vendor"
+      ]
+    },
+    {
+      "episode_id": "ep_factory_test",
+      "title": "主角在夜市小巷发现异常闪灯",
+      "goal": "主角在夜市小巷发现异常闪灯，结尾留下追踪者线索。",
+      "final_location": "night_alley",
+      "final_camera": "over_shoulder",
+      "open_thread": "flickering_lamp_signal",
+      "characters": [
+        "hero",
+        "vendor"
+      ]
+    },
+    {
+      "episode_id": "ep_factory_test",
+      "title": "主角在夜市小巷发现异常闪灯",
+      "goal": "主角在夜市小巷发现异常闪灯，结尾留下追踪者线索。",
+      "final_location": "night_alley",
+      "final_camera": "over_shoulder",
+      "open_thread": "flickering_lamp_signal",
+      "characters": [
+        "hero",
+        "vendor"
+      ]
+    },
+    {
+      "episode_id": "ep_factory_test",
+      "title": "主角在夜市小巷发现异常闪灯",
+      "goal": "主角在夜市小巷发现异常闪灯，结尾留下追踪者线索。",
+      "final_location": "night_alley",
+      "final_camera": "over_shoulder",
+      "open_thread": "flickering_lamp_signal",
+      "characters": [
+        "hero",
+        "vendor"
+      ]
+    },
+    {
+      "episode_id": "ep_factory_test",
+      "title": "主角在夜市小巷发现异常闪灯",
+      "goal": "主角在夜市小巷发现异常闪灯，结尾留下追踪者线索。",
+      "final_location": "night_alley",
+      "final_camera": "over_shoulder",
+      "open_thread": "flickering_lamp_signal",
+      "characters": [
+        "hero",
+        "vendor"
+      ]
+    },
+    {
+      "episode_id": "ep_factory_test",
+      "title": "主角在夜市小巷发现异常闪灯",
+      "goal": "主角在夜市小巷发现异常闪灯，结尾留下追踪者线索。",
+      "final_location": "night_alley",
+      "final_camera": "over_shoulder",
+      "open_thread": "flickering_lamp_signal",
+      "characters": [
+        "hero",
+        "vendor"
+      ]
+    },
+    {
+      "episode_id": "ep_factory_test",
+      "title": "主角在夜市小巷发现异常闪灯",
+      "goal": "主角在夜市小巷发现异常闪灯，结尾留下追踪者线索。",
+      "final_location": "night_alley",
+      "final_camera": "over_shoulder",
+      "open_thread": "flickering_lamp_signal",
+      "characters": [
+        "hero",
+        "vendor"
+      ]
+    },
+    {
+      "episode_id": "ep_factory_test",
+      "title": "主角在夜市小巷发现异常闪灯",
+      "goal": "主角在夜市小巷发现异常闪灯，结尾留下追踪者线索。",
+      "final_location": "night_alley",
+      "final_camera": "over_shoulder",
+      "open_thread": "flickering_lamp_signal",
+      "characters": [
+        "hero",
+        "vendor"
+      ]
+    },
+    {
+      "episode_id": "ep001",
+      "title": "主角在夜市小巷发现异常线索",
+      "goal": "主角在夜市小巷发现异常线索。",
+      "final_location": "night_alley",
+      "final_camera": "push_in",
+      "open_thread": "unresolved_alley_clue",
+      "characters": [
+        "hero",
+        "vendor"
+      ]
+    },
+    {
+      "episode_id": "ep001",
+      "title": "主角在夜市小巷发现异常线索",
+      "goal": "主角在夜市小巷发现异常线索。",
+      "final_location": "night_alley",
+      "final_camera": "push_in",
+      "open_thread": "unresolved_alley_clue",
+      "characters": [
+        "hero",
+        "vendor"
+      ]
+    },
+    {
+      "episode_id": "ep001",
+      "title": "主角在夜市小巷发现异常线索",
+      "goal": "主角在夜市小巷发现异常线索。",
+      "final_location": "night_alley",
+      "final_camera": "push_in",
+      "open_thread": "unresolved_alley_clue",
+      "characters": [
+        "hero",
+        "vendor"
+      ]
+    },
+    {
+      "episode_id": "ep001",
+      "title": "主角在夜市小巷发现异常线索",
+      "goal": "主角在夜市小巷发现异常线索。",
+      "final_location": "night_alley",
+      "final_camera": "push_in",
+      "open_thread": "unresolved_alley_clue",
+      "characters": [
+        "hero",
+        "vendor"
+      ]
+    },
+    {
+      "episode_id": "ep001",
+      "title": "主角在夜市小巷发现异常线索",
+      "goal": "主角在夜市小巷发现异常线索。",
+      "final_location": "night_alley",
+      "final_camera": "push_in",
+      "open_thread": "unresolved_alley_clue",
+      "characters": [
+        "hero",
+        "vendor"
+      ]
+    },
+    {
+      "episode_id": "ep001",
+      "title": "主角在夜市小巷发现异常线索",
+      "goal": "主角在夜市小巷发现异常线索。",
+      "final_location": "night_alley",
+      "final_camera": "push_in",
+      "open_thread": "unresolved_alley_clue",
+      "characters": [
+        "hero",
+        "vendor"
+      ]
+    },
+    {
+      "episode_id": "ep_factory_test",
+      "title": "主角在夜市小巷发现异常闪灯",
+      "goal": "主角在夜市小巷发现异常闪灯，结尾留下追踪者线索。",
+      "final_location": "night_alley",
+      "final_camera": "over_shoulder",
+      "open_thread": "flickering_lamp_signal",
+      "characters": [
+        "hero",
+        "vendor"
+      ]
+    },
+    {
+      "episode_id": "ep_factory_test",
+      "title": "主角在夜市小巷发现异常闪灯",
+      "goal": "主角在夜市小巷发现异常闪灯，结尾留下追踪者线索。",
+      "final_location": "night_alley",
+      "final_camera": "over_shoulder",
+      "open_thread": "flickering_lamp_signal",
+      "characters": [
+        "hero",
+        "vendor"
+      ]
+    }
+  ]
+}

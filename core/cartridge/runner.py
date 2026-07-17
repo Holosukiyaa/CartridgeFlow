@@ -748,8 +748,13 @@ class CartridgeRunner:
 
     def list_runs(self) -> list[dict]:
         runs = []
-        for run_path in sorted(self.runs_dir.glob("*/run.json"), reverse=True):
-            runs.append(self._read_json(run_path))
+        for run_path in self.runs_dir.glob("*/run.json"):
+            run = self._read_json(run_path)
+            run["_sort_mtime"] = run_path.stat().st_mtime
+            runs.append(run)
+        runs.sort(key=lambda item: (str(item.get("updated_at") or item.get("created_at") or ""), item.get("_sort_mtime") or 0), reverse=True)
+        for run in runs:
+            run.pop("_sort_mtime", None)
         return runs
 
     def get_run(self, run_id: str) -> dict:

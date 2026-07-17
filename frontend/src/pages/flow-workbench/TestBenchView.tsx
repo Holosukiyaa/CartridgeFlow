@@ -579,6 +579,7 @@ export function TestBenchView({
   const [runScope, setRunScope] = useState<RunScope>('full')
   const [decisionMode, setDecisionMode] = useState<DecisionTestMode>('live_collaboration')
   const [showInputForm, setShowInputForm] = useState(false)
+  const [pendingModalOpen, setPendingModalOpen] = useState(false)
   const [isRunning, setIsRunning] = useState(false)
   const [logsOpen, setLogsOpen] = useState(true)
   const [logTab, setLogTab] = useState<'diag' | 'log'>('diag')
@@ -600,6 +601,14 @@ export function TestBenchView({
   const selectedArtifacts = selectedNode
     ? (latestRun?.artifacts || []).filter((artifact: any) => artifact?.source?.node_id === selectedNode.id)
     : []
+  const pendingInteraction = latestRun?.status === 'paused_waiting_user' && latestRun.pending_interaction ? latestRun.pending_interaction : null
+  const pendingNode = useMemo(() => {
+    for (const [nodeId, state] of nodeRunStates.entries()) {
+      if (state.status === 'paused' && state.pendingInteraction) return nodeById.get(nodeId) || null
+    }
+    const pausedEvent = [...events].reverse().find((event) => event.type === 'lab_node_paused' && event.state)
+    return pausedEvent?.state ? nodeById.get(pausedEvent.state) || null : null
+  }, [events, nodeById, nodeRunStates])
   const startNode = nodeById.get(startNodeId)
   const endNode = nodeById.get(endNodeId)
   const probePayload = useMemo(() => getProbePayload(detail.graph, startNodeId, endNodeId), [detail.graph, startNodeId, endNodeId])
@@ -620,6 +629,10 @@ export function TestBenchView({
     if (!autoScroll || !logsOpen || !logBodyRef.current) return
     logBodyRef.current.scrollTo({ top: logBodyRef.current.scrollHeight, behavior: 'smooth' })
   }, [autoScroll, events, logsOpen, logTab])
+
+  useEffect(() => {
+    if (!pendingInteraction) setPendingModalOpen(false)
+  }, [pendingInteraction])
 
   useEffect(() => {
     if (!detail.graph.nodes.some((node) => node.id === startNodeId)) {
@@ -691,6 +704,19 @@ export function TestBenchView({
     }
   }
 
+  const openPendingInteraction = () => {
+    if (!pendingInteraction) return
+    if (pendingNode) setSelectedNode(pendingNode)
+    setPendingModalOpen(true)
+  }
+
+  const selectRunNode = (node: FlowNode) => {
+    setSelectedNode(node)
+    if (pendingInteraction && pendingNode?.id === node.id) {
+      setPendingModalOpen(true)
+    }
+  }
+
   return (
     <div className="cf-tb">
       <div className="cf-tb-top">
@@ -722,14 +748,6 @@ export function TestBenchView({
             </div>
             <p>{DECISION_OPTIONS.find((option) => option.value === decisionMode)?.hint}</p>
           </section>
-
-          {latestRun?.status === 'paused_waiting_user' && latestRun.pending_interaction && (
-            <PendingInteractionForm
-              pending={latestRun.pending_interaction}
-              disabled={isRunning || !onAnswerPendingInteraction}
-              onSubmit={answerPending}
-            />
-          )}
 
           <section className="cf-probe-panel">
             <div className="cf-probe-head">运行范围</div>
@@ -779,12 +797,18 @@ export function TestBenchView({
           </section>
         </aside>
 
-        <div className="cf-tb-graph">
+        <div className={`cf-tb-graph ${pendingInteraction ? 'has-pending' : ''}`}>
+          {pendingInteraction && (
+            <button type="button" className="cf-pending-bubble" onClick={openPendingInteraction}>
+              <strong>等待交互</strong>
+              <span>{pendingNode ? `点击与 ${getNodeTitle(pendingNode)} 交互` : '点击打开交互界面'}</span>
+            </button>
+          )}
           <FlowGraphView
             graph={detail.graph}
             selectedNode={selectedNode}
             focusNodeId={null}
-            onSelectNode={setSelectedNode}
+            onSelectNode={selectRunNode}
             readOnlyGraph
             nodeRunStates={nodeRunStates}
             testProbeState={runScope === 'probe' ? {
@@ -849,7 +873,7 @@ export function TestBenchView({
         {logsOpen && (
           <div className="cf-bottom-body" ref={logBodyRef}>
             {logTab === 'diag'
-              ? <DiagnosticsPanel items={diagnostics} graph={detail.graph} onSelectNode={setSelectedNode} />
+              ? <DiagnosticsPanel items={diagnostics} graph={detail.graph} onSelectNode={selectRunNode} />
               : <LogTimeline events={events} />}
           </div>
         )}
@@ -861,9 +885,28 @@ export function TestBenchView({
           diagnostics={diagnostics}
           tab={logTab}
           graph={detail.graph}
-          onSelectNode={setSelectedNode}
+          onSelectNode={selectRunNode}
           onClose={() => setLogPreviewOpen(false)}
         />
+      )}
+
+      {pendingModalOpen && pendingInteraction && (
+        <div className="cf-pending-modal-backdrop" onClick={() => setPendingModalOpen(false)}>
+          <div className="cf-pending-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="cf-pending-modal-head">
+              <strong>{pendingNode ? `与 ${getNodeTitle(pendingNode)} 交互` : '等待用户交互'}</strong>
+              <button type="button" onClick={() => setPendingModalOpen(false)}>x</button>
+            </div>
+            <PendingInteractionForm
+              pending={pendingInteraction}
+              disabled={isRunning || !onAnswerPendingInteraction}
+              onSubmit={async (values) => {
+                await answerPending(values)
+                setPendingModalOpen(false)
+              }}
+            />
+          </div>
+        </div>
       )}
 
       {showInputForm && (

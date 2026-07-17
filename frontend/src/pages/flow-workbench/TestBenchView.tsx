@@ -324,10 +324,17 @@ function PendingInteractionForm({
   const properties = schema?.type === 'object' && schema.properties ? schema.properties : { answer: { type: 'string', title: '回复' } }
   const required = new Set<string>(Array.isArray(schema.required) ? schema.required : [])
   const [values, setValues] = useState<Record<string, any>>({})
-  const canSubmit = Object.keys(properties).every((key) => !required.has(key) || values[key] !== undefined && values[key] !== '')
+  const canSubmitValues = (candidate: Record<string, any>) => Object.keys(properties).every((key) => !required.has(key) || candidate[key] !== undefined && candidate[key] !== '')
+  const canSubmit = canSubmitValues(values)
+  const isConfirmValue = (item: string) => ['approve', 'approved', 'confirm', 'confirmed', 'yes', '通过'].includes(item.trim().toLowerCase())
+  const submitValue = (key: string, value: any, immediate = false) => {
+    const next = { ...values, [key]: value }
+    setValues(next)
+    if (immediate && !disabled && canSubmitValues(next)) onSubmit(next)
+  }
   const choiceLabel = (item: string) => {
     const value = item.trim().toLowerCase()
-    if (['approve', 'approved', 'confirm', 'confirmed', 'yes', '通过'].includes(value)) return '确认决策'
+    if (isConfirmValue(item)) return '确认决策'
     if (['reject', 'rejected', 'revise', 'revision', 'modify', 'no', '驳回'].includes(value)) return '驳回决策'
     return item
   }
@@ -355,8 +362,9 @@ function PendingInteractionForm({
                     <button
                       key={item}
                       type="button"
+                      disabled={disabled}
                       className={values[key] === item ? 'active' : ''}
-                      onClick={() => setValues((current) => ({ ...current, [key]: item }))}
+                      onClick={() => submitValue(key, item, isConfirmValue(item))}
                     >
                       {choiceLabel(item)}
                     </button>
@@ -372,10 +380,10 @@ function PendingInteractionForm({
                 <>
                   {showDecisionQuickActions && (
                     <div className="cf-pending-choice cf-pending-quick">
-                      <button type="button" className={values[key] === '通过' ? 'active' : ''} onClick={() => setValues((current) => ({ ...current, [key]: '通过' }))}>
+                      <button type="button" disabled={disabled} className={values[key] === '通过' ? 'active' : ''} onClick={() => submitValue(key, '通过', true)}>
                         确认决策
                       </button>
-                      <button type="button" className={String(values[key] || '').startsWith('驳回') ? 'active' : ''} onClick={() => setValues((current) => ({ ...current, [key]: '驳回：' }))}>
+                      <button type="button" disabled={disabled} className={String(values[key] || '').startsWith('驳回') ? 'active' : ''} onClick={() => submitValue(key, '驳回：')}>
                         驳回决策
                       </button>
                     </div>

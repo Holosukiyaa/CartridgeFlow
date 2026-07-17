@@ -313,6 +313,12 @@ function PendingInteractionForm({
   const required = new Set<string>(Array.isArray(schema.required) ? schema.required : [])
   const [values, setValues] = useState<Record<string, any>>({})
   const canSubmit = Object.keys(properties).every((key) => !required.has(key) || values[key] !== undefined && values[key] !== '')
+  const choiceLabel = (item: string) => {
+    const value = item.trim().toLowerCase()
+    if (['approve', 'approved', 'confirm', 'confirmed', 'yes', '通过'].includes(value)) return '确认决策'
+    if (['reject', 'rejected', 'revise', 'revision', 'modify', 'no', '驳回'].includes(value)) return '驳回决策'
+    return item
+  }
   return (
     <div className="cf-pending-card">
       <div className="cf-pending-head">
@@ -324,6 +330,10 @@ function PendingInteractionForm({
         {Object.entries(properties).map(([key, config]: [string, any]) => {
           const enumValues = Array.isArray(config?.enum) ? config.enum.map((item: any) => String(item)) : []
           const label = String(config?.title || config?.label || key)
+          const decisionText = `${label} ${question.prompt || ''}`
+          const showDecisionQuickActions = !enumValues.length
+            && config?.type !== 'boolean'
+            && /(确认|批准|通过|意见|review|approval|confirm|decision)/i.test(decisionText)
           return (
             <label key={key} className="cf-pending-field">
               <span>{label}{required.has(key) && <b>*</b>}</span>
@@ -336,7 +346,7 @@ function PendingInteractionForm({
                       className={values[key] === item ? 'active' : ''}
                       onClick={() => setValues((current) => ({ ...current, [key]: item }))}
                     >
-                      {item === 'approve' ? '满意，继续' : item === 'revise' ? '不满意，重做' : item}
+                      {choiceLabel(item)}
                     </button>
                   ))}
                 </div>
@@ -347,12 +357,24 @@ function PendingInteractionForm({
                   onChange={(event) => setValues((current) => ({ ...current, [key]: event.target.checked }))}
                 />
               ) : (
-                <textarea
-                  rows={3}
-                  value={values[key] || ''}
-                  placeholder={config?.description || ''}
-                  onChange={(event) => setValues((current) => ({ ...current, [key]: event.target.value }))}
-                />
+                <>
+                  {showDecisionQuickActions && (
+                    <div className="cf-pending-choice cf-pending-quick">
+                      <button type="button" className={values[key] === '通过' ? 'active' : ''} onClick={() => setValues((current) => ({ ...current, [key]: '通过' }))}>
+                        确认决策
+                      </button>
+                      <button type="button" className={String(values[key] || '').startsWith('驳回') ? 'active' : ''} onClick={() => setValues((current) => ({ ...current, [key]: '驳回：' }))}>
+                        驳回决策
+                      </button>
+                    </div>
+                  )}
+                  <textarea
+                    rows={3}
+                    value={values[key] || ''}
+                    placeholder={config?.description || ''}
+                    onChange={(event) => setValues((current) => ({ ...current, [key]: event.target.value }))}
+                  />
+                </>
               )}
             </label>
           )

@@ -120,23 +120,6 @@
   cursor: not-allowed;
 }
 
-.cf-probe-selects {
-  display: grid;
-  gap: 6px;
-}
-
-.cf-probe-selects select {
-  width: 100%;
-  min-width: 0;
-  padding: 6px 8px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--paper);
-  color: var(--text);
-  font: inherit;
-  font-size: 11px;
-}
-
 .cf-mock-mode-card {
   display: flex;
   flex-direction: column;

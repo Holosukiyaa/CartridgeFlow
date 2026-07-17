@@ -778,17 +778,7 @@ export function TestBenchView({
               />
             </div>
             {runScope === 'probe' && (
-              <>
-                <div className="cf-probe-selects">
-                  <select value={startNodeId} disabled={isRunning} onChange={(event) => setStartNodeId(event.target.value)}>
-                    {detail.graph.nodes.map((node) => <option key={node.id} value={node.id}>{node.title || node.id}</option>)}
-                  </select>
-                  <select value={endNodeId} disabled={isRunning} onChange={(event) => setEndNodeId(event.target.value)}>
-                    {detail.graph.nodes.map((node) => <option key={node.id} value={node.id}>{node.title || node.id}</option>)}
-                  </select>
-                </div>
-                <p className="cf-probe-hint">也可以直接拖动左侧 S/E 探针或节点上的 S/E 标记来调整范围。</p>
-              </>
+              <p className="cf-probe-hint">拖动 S/E 探针或节点上的 S/E 标记来调整范围。</p>
             )}
           </section>
         </aside>

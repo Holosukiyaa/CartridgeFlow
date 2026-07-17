@@ -23,17 +23,14 @@ export type NodeRunState = {
 }
 
 type RunScope = 'full' | 'probe'
-type DecisionTestMode = 'live' | 'live_collaboration' | 'mock_resolved' | 'mock_interaction' | 'mock_blocked'
+type DecisionTestMode = 'live_collaboration' | 'mock_resolved'
 type ProbeKind = 'start' | 'end'
 
 const TEST_PROBE_MIME = 'application/x-cf-test-probe'
 
 const DECISION_OPTIONS: Array<{ value: DecisionTestMode; label: string; hint: string }> = [
-  { value: 'live', label: '真实决策', hint: '按节点配置真实运行，不强制协作暂停。' },
   { value: 'live_collaboration', label: '真实协作', hint: '真实调用 LLM，协作节点先暂停等待确认。' },
-  { value: 'mock_resolved', label: '决策 Mock', hint: 'AI 决策节点直接 resolved。' },
-  { value: 'mock_interaction', label: '交互 Mock', hint: 'AI 决策节点强制暂停提问。' },
-  { value: 'mock_blocked', label: '阻塞 Mock', hint: 'AI 决策节点强制 blocked。' },
+  { value: 'mock_resolved', label: 'Mock', hint: 'AI 决策节点直接 resolved，用于快速跑通流程。' },
 ]
 
 function pretty(value: any) {
@@ -670,7 +667,7 @@ export function TestBenchView({
     setLogsOpen(true)
     setLogTab('log')
     setIsRunning(true)
-    const testMode = decisionMode === 'live' ? undefined : { decision: decisionMode }
+    const testMode = { decision: decisionMode }
     try {
       if (runScope === 'probe') {
         await onTestRun(inputs, probePayload || undefined, 'probe', testMode)
@@ -703,7 +700,7 @@ export function TestBenchView({
               <span>最近</span>
               <b>{latestRun.status}</b>
               <em>{latestRun.run_mode || 'full_flow'}</em>
-              <em>{latestRun.test_mode?.decision || 'live'}</em>
+              <em>{latestRun.test_mode?.decision || 'live_collaboration'}</em>
             </div>
           )}
 

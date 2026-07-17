@@ -18,48 +18,48 @@ async def openai_chat(
 ) -> dict:
     from openai import AsyncOpenAI
 
-    client = AsyncOpenAI(api_key=cfg.api_key, base_url=cfg.base_url, timeout=cfg.timeout)
-    kwargs = {"model": cfg.model, "messages": messages, "temperature": cfg.temperature, "max_tokens": cfg.max_tokens}
-    if tools:
-        kwargs["tools"] = tools
-        kwargs["tool_choice"] = "auto"
+    async with AsyncOpenAI(api_key=cfg.api_key, base_url=cfg.base_url, timeout=cfg.timeout) as client:
+        kwargs = {"model": cfg.model, "messages": messages, "temperature": cfg.temperature, "max_tokens": cfg.max_tokens}
+        if tools:
+            kwargs["tools"] = tools
+            kwargs["tool_choice"] = "auto"
 
-    if on_token:
-        kwargs["stream"] = True
-        try:
-            kwargs["stream_options"] = {"include_usage": True}
-        except Exception:
-            pass
-        return await _stream_chat(client, kwargs, on_token, on_usage)
+        if on_token:
+            kwargs["stream"] = True
+            try:
+                kwargs["stream_options"] = {"include_usage": True}
+            except Exception:
+                pass
+            return await _stream_chat(client, kwargs, on_token, on_usage)
 
-    response = await client.chat.completions.create(**kwargs)
+        response = await client.chat.completions.create(**kwargs)
 
-    # 某些非标准 API 网关可能返回字符串（如 HTML 错误页），需要防御
-    if isinstance(response, str):
-        snippet = response[:200].replace("\n", " ").strip()
-        raise LLMError(
-            f"API 返回了非预期格式（字符串而非 JSON 对象）。"
-            f"请检查 base_url 是否正确（通常需要以 /v1 结尾）。"
-            f"返回内容前 200 字：{snippet}",
-            retryable=False,
-        )
+        # 某些非标准 API 网关可能返回字符串（如 HTML 错误页），需要防御
+        if isinstance(response, str):
+            snippet = response[:200].replace("\n", " ").strip()
+            raise LLMError(
+                f"API 返回了非预期格式（字符串而非 JSON 对象）。"
+                f"请检查 base_url 是否正确（通常需要以 /v1 结尾）。"
+                f"返回内容前 200 字：{snippet}",
+                retryable=False,
+            )
 
-    if not hasattr(response, "choices") or not response.choices:
-        raise LLMError(
-            f"API 返回了无效响应：没有 choices 字段。response type={type(response).__name__}",
-            retryable=False,
-        )
+        if not hasattr(response, "choices") or not response.choices:
+            raise LLMError(
+                f"API 返回了无效响应：没有 choices 字段。response type={type(response).__name__}",
+                retryable=False,
+            )
 
-    if on_usage and response.usage:
-        on_usage(response.usage.prompt_tokens, response.usage.completion_tokens)
-    message = response.choices[0].message
-    result = {"role": "assistant", "content": message.content or ""}
-    if message.tool_calls:
-        result["tool_calls"] = [
-            {"id": item.id, "type": "function", "function": {"name": item.function.name, "arguments": item.function.arguments}}
-            for item in message.tool_calls
-        ]
-    return result
+        if on_usage and response.usage:
+            on_usage(response.usage.prompt_tokens, response.usage.completion_tokens)
+        message = response.choices[0].message
+        result = {"role": "assistant", "content": message.content or ""}
+        if message.tool_calls:
+            result["tool_calls"] = [
+                {"id": item.id, "type": "function", "function": {"name": item.function.name, "arguments": item.function.arguments}}
+                for item in message.tool_calls
+            ]
+        return result
 
 
 async def _stream_chat(client, kwargs: dict, on_token: Callable[[str], None], on_usage: Callable[[int, int], None] | None) -> dict:

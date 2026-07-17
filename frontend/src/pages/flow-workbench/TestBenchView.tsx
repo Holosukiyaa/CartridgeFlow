@@ -198,12 +198,14 @@ function DeliveryArtifactsPanel({
 }) {
   if (!run || artifacts.length === 0) return null
   return (
-    <section className="cf-delivery-panel">
-      <div className="cf-delivery-head">
-        <strong>交付产物</strong>
-        <span>{artifacts.length}</span>
+    <section className="cf-artifacts-preview">
+      <div className="cf-artifacts-preview-head">
+        <div>
+          <strong>交付产物</strong>
+          <span>{artifacts.length} 个文件</span>
+        </div>
       </div>
-      {run.delivery?.summary && <p>{run.delivery.summary}</p>}
+      {run.delivery?.summary && <p className="cf-artifacts-summary">{run.delivery.summary}</p>}
       <ArtifactList artifacts={artifacts} nodeById={nodeById} compact />
     </section>
   )
@@ -800,6 +802,7 @@ export function TestBenchView({
   const [logHeight, setLogHeight] = useState(150)
   const [logMaxHeight, setLogMaxHeight] = useState(180)
   const [showUiPreview, setShowUiPreview] = useState(true)
+  const [showArtifactsPreview, setShowArtifactsPreview] = useState(false)
   const [lockedPendingId, setLockedPendingId] = useState('')
   const logBodyRef = useRef<HTMLDivElement | null>(null)
   const logDragRef = useRef<{ startY: number; startHeight: number } | null>(null)
@@ -843,6 +846,14 @@ export function TestBenchView({
     }
     return getWelcomeHtml(detail)
   }, [detail, events])
+  useEffect(() => {
+    setShowArtifactsPreview(false)
+  }, [latestRun?.run_id])
+
+  useEffect(() => {
+    if (!runArtifacts.length) setShowArtifactsPreview(false)
+  }, [runArtifacts.length])
+
   useEffect(() => {
     if (!autoScroll || !logsOpen || !logBodyRef.current) return
     logBodyRef.current.scrollTo({ top: logBodyRef.current.scrollHeight, behavior: 'smooth' })
@@ -982,8 +993,6 @@ export function TestBenchView({
             </div>
           )}
 
-          <DeliveryArtifactsPanel run={latestRun} artifacts={runArtifacts} nodeById={nodeById} />
-
           <section className="cf-op-section">
             <strong>决策模式</strong>
             <div className="cf-segment">
@@ -1079,6 +1088,32 @@ export function TestBenchView({
           {selectedNode && selectedState && (
             <NodeInspector node={selectedNode} state={selectedState} artifacts={selectedArtifacts} nodeById={nodeById} onClose={() => setSelectedNode(null)} />
           )}
+          <div className="cf-graph-actions">
+            {latestUiHtml && !showUiPreview && (
+              <button
+                type="button"
+                className="cf-graph-action"
+                onClick={() => {
+                  setShowArtifactsPreview(false)
+                  setShowUiPreview(true)
+                }}
+              >
+                查看 UI
+              </button>
+            )}
+            {runArtifacts.length > 0 && !showArtifactsPreview && (
+              <button
+                type="button"
+                className="cf-graph-action"
+                onClick={() => {
+                  setShowUiPreview(false)
+                  setShowArtifactsPreview(true)
+                }}
+              >
+                查看产物
+              </button>
+            )}
+          </div>
           {latestUiHtml && showUiPreview && (
             <div className="cf-welcome-preview">
               <div className="cf-welcome-preview-head">
@@ -1088,10 +1123,14 @@ export function TestBenchView({
               <iframe className="cf-welcome-frame" title="latest-ui-preview" srcDoc={latestUiHtml} sandbox="" />
             </div>
           )}
-          {latestUiHtml && !showUiPreview && (
-            <button type="button" className="cf-welcome-reopen" onClick={() => setShowUiPreview(true)}>
-              查看 UI
-            </button>
+          {latestRun && showArtifactsPreview && runArtifacts.length > 0 && (
+            <div className="cf-artifacts-preview-shell">
+              <div className="cf-artifacts-preview-shell-head">
+                <strong>本次运行交付</strong>
+                <button type="button" onClick={() => setShowArtifactsPreview(false)}>x</button>
+              </div>
+              <DeliveryArtifactsPanel run={latestRun} artifacts={runArtifacts} nodeById={nodeById} />
+            </div>
           )}
         </div>
       </div>

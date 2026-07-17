@@ -145,14 +145,6 @@ function buildDiagnostics(events: FlowEvent[], latestRun?: RunResult) {
       detail: `${item.node} requires store key "${item.key}", but it was not produced.`,
     })
   })
-  ;(dataChain?.missing_optional || []).forEach((item: any) => {
-    items.push({
-      severity: 'info',
-      nodeId: item.node,
-      title: '可选输入缺失',
-      detail: `${item.node} optional input "${item.key}" was not present.`,
-    })
-  })
   events.forEach((event) => {
     if (event.type !== 'lab_node_failed') return
     const data = (event.data || {}) as any
@@ -772,16 +764,21 @@ export function TestBenchView({
     }
   }
 
-  const answerPending = async (values: Record<string, any>) => {
+  const answerPending = (values: Record<string, any>) => {
     if (!latestRun?.run_id || !onAnswerPendingInteraction) return
     setIsRunning(true)
     setLogsOpen(true)
     setLogTab('log')
-    try {
-      await onAnswerPendingInteraction(latestRun.run_id, values)
-    } finally {
+    setPendingModalOpen(false)
+    const releaseTimer = window.setTimeout(() => {
       setIsRunning(false)
-    }
+    }, 900)
+    void Promise.resolve(onAnswerPendingInteraction(latestRun.run_id, values))
+      .finally(() => {
+        window.clearTimeout(releaseTimer)
+        setIsRunning(false)
+        void onRefresh()
+      })
   }
 
   const openPendingInteraction = () => {
@@ -980,10 +977,7 @@ export function TestBenchView({
             <PendingInteractionForm
               pending={pendingInteraction}
               disabled={isRunning || !onAnswerPendingInteraction}
-              onSubmit={async (values) => {
-                await answerPending(values)
-                setPendingModalOpen(false)
-              }}
+              onSubmit={answerPending}
             />
           </div>
         </div>

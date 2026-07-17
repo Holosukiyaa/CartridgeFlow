@@ -305,7 +305,7 @@ class CartridgeRunner:
             "paused_waiting_user" if paused
             else "failed" if lab_failed
             else "completed" if normalized_probe_range or state_doc["current_state"] == "complete"
-            else run.get("status", state_doc["status"])
+            else "completed"
         )
         run["updated_at"] = now_iso()
         state_doc["context"]["artifacts"] = run.get("artifacts", [])
@@ -1076,7 +1076,7 @@ class CartridgeRunner:
             "paused_waiting_user" if paused
             else "failed" if lab_failed
             else "completed" if normalized_probe_range or state_doc["current_state"] == "complete"
-            else run.get("status", state_doc["status"])
+            else "completed"
         )
         run["updated_at"] = now_iso()
         state_doc["context"]["artifacts"] = run.get("artifacts", [])

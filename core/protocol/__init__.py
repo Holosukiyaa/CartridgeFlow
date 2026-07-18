@@ -10,6 +10,13 @@ from .creative_recast import (
     validate_run_snapshot,
     validate_shot_control_bundle,
 )
+from .creative_recast_runtime import (
+    ALLOWED_TRANSITIONS,
+    CRCP_STATES,
+    FAILURE_LABELS,
+    transition_crcp_run,
+    validate_failure_record,
+)
 from .tool_plan import validate_tool_plan
 
 __all__ = [
@@ -20,6 +27,9 @@ __all__ = [
     "apply_protocol_certification_label",
     "build_protocol_certification_report",
     "build_creative_recast_certification_report",
+    "ALLOWED_TRANSITIONS",
+    "CRCP_STATES",
+    "FAILURE_LABELS",
     "build_compatibility_report",
     "build_v02_flow_contract_report",
     "build_v03_flow_contract_report",
@@ -28,6 +38,8 @@ __all__ = [
     "parse_decision_envelope",
     "validate_creative_spec",
     "validate_run_snapshot",
+    "validate_failure_record",
+    "transition_crcp_run",
     "validate_shot_control_bundle",
     "validate_decision_envelope",
     "validate_tool_plan",

@@ -32,7 +32,7 @@ core/lab/
     series_3d.py                 # 真实 3D 资产匹配、动作匹配、Blender
 ```
 
-协议层的 `core/protocol/creative_recast.py` 提供 Shot Control Bundle、CreativeSpec、RunSnapshot 的只读校验，以及独立的 CRCP certification report。独立的 `core/lab/mcp/creative_recast.py` 已加入 `_EXTENSION_MODULES`，但只有 manifest 声明、基座同时支持 `CF-CRCP@0.1` 且完整 capability 集满足时才会注册三个校验入口；默认 FARP 基座不会加载它，也不会产生 artifact 副作用。
+协议层的 `core/protocol/creative_recast.py` 和 `core/protocol/creative_recast_runtime.py` 提供 Shot Control Bundle、CreativeSpec、RunSnapshot、FailureRecord、状态转换和独立 CRCP certification report 的只读校验。独立的 `core/lab/mcp/creative_recast.py` 已加入 `_EXTENSION_MODULES`，但只有 manifest 声明、基座同时支持 `CF-CRCP@0.1` 且完整 capability 集满足时才会注册三个校验入口；默认 FARP 基座不会加载它，也不会产生 artifact 副作用。
 
 模块只能通过 `register(registry)` 暴露工具。模块导入和注册阶段不得执行 Blender、ComfyUI、Godot、网络请求或文件生产副作用。
 

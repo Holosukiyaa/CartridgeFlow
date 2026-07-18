@@ -41,7 +41,7 @@ def validate_shot_control_bundle(
     """Validate a Shot Control Bundle manifest without mutating the workspace."""
     findings: list[dict] = []
     if not isinstance(bundle, dict):
-        return _result(findings, "control_bundle_invalid", "Shot Control Bundle must be an object")
+        return _invalid(findings, "control_bundle_invalid", "Shot Control Bundle must be an object")
 
     if bundle.get("schema") != CONTROL_BUNDLE_SCHEMA:
         _block(findings, "control_bundle_schema", f"schema must be {CONTROL_BUNDLE_SCHEMA}")
@@ -112,7 +112,7 @@ def validate_creative_spec(spec: dict, *, deliverable: bool = True) -> dict:
     """Validate CreativeSpec boundaries and user approval metadata."""
     findings: list[dict] = []
     if not isinstance(spec, dict):
-        return _result(findings, "creative_spec_invalid", "CreativeSpec must be an object")
+        return _invalid(findings, "creative_spec_invalid", "CreativeSpec must be an object")
     if spec.get("schema") != CREATIVE_SPEC_SCHEMA:
         _block(findings, "creative_spec_schema", f"schema must be {CREATIVE_SPEC_SCHEMA}")
     _required_string(spec, "spec_id", findings, "creative_spec_identity")
@@ -165,7 +165,7 @@ def validate_run_snapshot(snapshot: dict) -> dict:
     """Validate the immutable inputs captured for one CRCP run."""
     findings: list[dict] = []
     if not isinstance(snapshot, dict):
-        return _result(findings, "run_snapshot_invalid", "RunSnapshot must be an object")
+        return _invalid(findings, "run_snapshot_invalid", "RunSnapshot must be an object")
     if snapshot.get("schema") != RUN_SNAPSHOT_SCHEMA:
         _block(findings, "run_snapshot_schema", f"schema must be {RUN_SNAPSHOT_SCHEMA}")
     for field in ["snapshot_id", "run_id"]:
@@ -288,6 +288,11 @@ def _result(findings: list[dict], ok_code: str, ok_message: str) -> dict:
     if not blockers:
         findings.append({"severity": "info", "code": ok_code, "message": ok_message})
     return {"ok": not blockers, "findings": findings}
+
+
+def _invalid(findings: list[dict], code: str, message: str) -> dict:
+    _block(findings, code, message)
+    return _result(findings, code, message)
 
 
 def _block(findings: list[dict], code: str, message: str) -> None:

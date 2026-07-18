@@ -38,7 +38,7 @@ def _param(params: dict, primary: str, fallback: str):
 def _validate_change_proposal(proposal: dict) -> dict:
     findings: list[dict] = []
     if not isinstance(proposal, dict):
-        return _proposal_result(findings, "change_proposal_invalid", "ChangeProposal must be an object")
+        return _proposal_invalid(findings, "change_proposal_invalid", "ChangeProposal must be an object")
     if proposal.get("schema") != "cartridgeflow.change_proposal.v1":
         _proposal_block(findings, "change_proposal_schema", "schema must be cartridgeflow.change_proposal.v1")
     for field in ["proposal_id", "reason", "expected_benefit", "cost_and_risk", "rollback", "question"]:
@@ -70,6 +70,11 @@ def _proposal_result(findings: list[dict], ok_code: str, ok_message: str) -> dic
     if not blockers:
         findings.append({"severity": "info", "code": ok_code, "message": ok_message})
     return {"ok": not blockers, "findings": findings}
+
+
+def _proposal_invalid(findings: list[dict], code: str, message: str) -> dict:
+    _proposal_block(findings, code, message)
+    return _proposal_result(findings, code, message)
 
 
 def _proposal_block(findings: list[dict], code: str, message: str) -> None:

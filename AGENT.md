@@ -15,6 +15,8 @@
 - 不修改已发布协议版本。
 - 协议语义确需变化时，先与用户讨论，再建立新版本。
 - 不为了单个卡带让底座能力或协议语义漂移。
+- 系列视频创作控制以 `docs/protocol/CARTRIDGEFLOW_CREATIVE_RECAST_CONTROL_PROTOCOL_v0.1.md` 为规范来源；行动指南只是实施说明。
+- 在该协议下，LLM 或 Agent 不得静默改变锁定项、自由度边界、模型、工作流或生产方向；必须先提出 ChangeProposal 并等待用户批准。
 
 ## 当前重点
 

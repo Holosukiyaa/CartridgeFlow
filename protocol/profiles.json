@@ -28,6 +28,18 @@
     {
       "id": "interactive_decision_runtime",
       "description": "Run protocol-aware AI decision nodes with decision_envelope.v1 output, explicit user-input pauses, LLM test modes, and declared resume semantics."
+    },
+    {
+      "id": "creative_control_runtime",
+      "description": "Validate and execute approved Shot Control Bundles, CreativeSpec revisions, workflow allowlists, run snapshots, and creative quality gates."
+    },
+    {
+      "id": "creative_control_testbench",
+      "description": "Run bounded creative replacement experiments with explicit approvals, failure records, artifacts, and comparison reports."
+    },
+    {
+      "id": "creative_control_authoring",
+      "description": "Author CastPack, WorldPack, StylePack, CreativeSpec, and ChangeProposal documents without changing approved revisions."
     }
   ]
 }

@@ -80,6 +80,20 @@
 - 基座不得通过隐式命名规则自动推断消费 key。
 - 测试台必须展示完整 envelope、consume path、consume as 和实际消费值。
 
+### 2.6 `CARTRIDGEFLOW_CREATIVE_RECAST_CONTROL_PROTOCOL_v0.1.md`
+
+该文件定义系列视频生产的创作控制协议，协议编号为 `CF-CRCP-0.1`，状态为 active，作为 `CF-FARP@0.4` 的 companion protocol。它重点约束：
+
+- Blender 数字替身、Shot Control Bundle、ComfyUI 创作重绘和用户复核之间的边界。
+- `CreativeSpec` 中显式的 `locked`、`free`、`bounds`、`anchors` 和 revision。
+- conservative、character_replace、creative_recast、exploration 四种创作模式。
+- CastPack、WorldPack、StylePack、workflow/model allowlist 和 RunSnapshot。
+- LLM 只能生成创作决策和 ChangeProposal，不能未经用户批准改变锁定项、切换模型或修改生产方向。
+- 协议正文和已批准 revision 使用只读追加式治理；语义变化必须建立新协议版本。
+- 失败标签、镜头级回滚、原始 Blender 片回退和用户质量门。
+
+当前参考基座尚未声明支持 `CF-CRCP@0.1`，因此不能为 CRCP 卡带添加认证标签。行动指南 `docs/production/DIGITAL_SURROGATE_COMFYUI_COMPLEMENT_ACTION_PLAN.md` 是实施说明，不是协议来源。
+
 ## 3. 后续 Agent 必读规则
 
 1. 修改协议、基座、兼容性检测、认证标签、manifest 语义、root flow 语义、节点执行语义、运行时边界前，必须先阅读本文件。
@@ -89,6 +103,7 @@
 5. 协议变更必须走版本化路径。破坏性调整应形成新协议版本，而不是直接覆盖 v0.1 的含义。
 6. 新增协议版本时，必须同步机器可读声明、协议目录入口、能力词表和后续 AI 升级技能。
 7. 新建 AI 交互式流程时，默认以 `CF-FARP@0.4` 为基准；只有维护旧卡带时才回看 v0.1、v0.2 或 v0.3。
+8. 涉及创作自由度、锁定项、ComfyUI 工作流、参考资产、控制包或用户批准的工作，必须阅读并遵守 `CF-CRCP@0.1`；任何改变其基线的想法都必须先生成 ChangeProposal 并请求用户批准。
 
 ## 4. 相关实现入口
 

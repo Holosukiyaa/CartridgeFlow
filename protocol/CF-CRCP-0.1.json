@@ -1,0 +1,20 @@
+{
+  "schema_version": "0.1",
+  "id": "CF-CRCP",
+  "version": "0.1",
+  "name": "CartridgeFlow Creative Recast Control Protocol",
+  "status": "active",
+  "extends": {
+    "id": "CF-FARP",
+    "version": "0.4"
+  },
+  "profiles_file": "profiles.json",
+  "capabilities_file": "capabilities.json",
+  "tool_packs_file": "tool_packs.json",
+  "document": "docs/protocol/CARTRIDGEFLOW_CREATIVE_RECAST_CONTROL_PROTOCOL_v0.1.md",
+  "governance": {
+    "read_only": true,
+    "amendment_policy": "new_version_after_user_approval",
+    "approval_authority": "user"
+  }
+}

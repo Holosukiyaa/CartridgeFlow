@@ -5,6 +5,8 @@
 
 本文件是从“真实 3D 资产 -> Blender 单镜头 -> ComfyUI 创作重绘”继续推进时的执行规范。它补充 `GOAL.md`、`TODO.md` 和 `ENVIRONMENT_BASELINE.md`，不修改 CartridgeFlow 协议语义。
 
+> 文档性质：非规范实施指南。创作自由度、锁定项、批准、工作流变更和回滚规则以 [`CF-CRCP@0.1`](../protocol/CARTRIDGEFLOW_CREATIVE_RECAST_CONTROL_PROTOCOL_v0.1.md) 为唯一规范来源。本文件不得被解释为协议的替代版本。
+
 ## 一、核心决定
 
 数字替身化和 ComfyUI 互补不是两个互斥方向，而是一条生产链的两端：

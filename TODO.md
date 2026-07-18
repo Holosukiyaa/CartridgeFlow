@@ -1,5 +1,7 @@
 # CartridgeFlow TODO
 
+- [x] 清理旧卡带，只保留 `dev.series_3d_episode_factory`。
+
 长期方向和验收标准见 `GOAL.md`。这里不保留历史完成项，只记录当前里程碑的下一步。
 
 ## 当前里程碑：M0 本机生产基线

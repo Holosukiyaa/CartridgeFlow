@@ -351,7 +351,13 @@ class CartridgeRunner:
             return item
         engine.enter = enter_and_sync
 
-        engine.run_standard_flow(state_doc, handlers)
+        engine.run_standard_flow(
+            state_doc,
+            handlers,
+            edge_handler=lambda source, target, _doc: self._append_flow_edge_event(
+                run_id, cartridge_id, source, target
+            ),
+        )
         run["current_state"] = state_doc["current_state"]
         paused = (state_doc.get("context") or {}).get("_pause_flow")
         if paused:
@@ -939,6 +945,9 @@ class CartridgeRunner:
                 "store_key": store_key,
             },
         )
+        resume_source = str(pending.get("node_id") or "").strip()
+        if resume_source and resume_source != start_state:
+            self._append_flow_edge_event(run_id, cartridge_id, resume_source, start_state, reason="resume_route")
 
         return self._continue_run(
             run=run,
@@ -1170,6 +1179,9 @@ class CartridgeRunner:
             visited=visited,
             completed_parents=completed_parents,
             initial_queue=initial_queue,
+            edge_handler=lambda source, target, _doc: self._append_flow_edge_event(
+                run_id, cartridge_id, source, target
+            ),
         )
 
         run["current_state"] = state_doc["current_state"]
@@ -1466,6 +1478,23 @@ class CartridgeRunner:
         path = self.runs_dir / run_id / "events.jsonl"
         with path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(event, ensure_ascii=False) + "\n")
+
+    def _append_flow_edge_event(
+        self,
+        run_id: str,
+        cartridge_id: str,
+        source: str,
+        target: str,
+        reason: str = "flow_progress",
+    ) -> None:
+        self._append_event(
+            run_id,
+            cartridge_id,
+            "flow_edge_traversed",
+            target,
+            f"Flow edge traversed: {source} -> {target}",
+            {"from": source, "to": target, "reason": reason},
+        )
 
     def _read_json(self, path: Path) -> dict:
         with path.open("r", encoding="utf-8") as f:

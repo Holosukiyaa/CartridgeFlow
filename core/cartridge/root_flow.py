@@ -106,6 +106,7 @@ class RootFlowEngine:
         visited: set[str] | list[str] | None = None,
         completed_parents: dict[str, set[str] | list[str]] | None = None,
         initial_queue: list[str] | None = None,
+        edge_handler=None,
     ) -> dict:
         start_state = start_state or self.root_flow.get("start", "load")
         if initial_queue is not None:
@@ -154,6 +155,8 @@ class RootFlowEngine:
                     break
             for target in next_states:
                 completed_parents.setdefault(target, set()).add(state_name)
+                if edge_handler:
+                    edge_handler(state_name, target, state_doc)
                 if target not in visited and target not in queue:
                     queue.append(target)
         return state_doc

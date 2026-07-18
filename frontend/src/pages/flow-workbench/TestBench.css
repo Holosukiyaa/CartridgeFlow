@@ -294,19 +294,9 @@
   color: #9a3f1d;
 }
 
-.cf-pending-quick {
-  margin-bottom: 2px;
-}
-
-.cf-pending-quick button:first-child {
-  border-color: rgba(65, 128, 88, .48);
-  background: rgba(232, 243, 236, .82);
-  color: #2e7d4f;
-}
-
-.cf-pending-quick button:first-child.active {
-  border-color: rgba(46, 125, 79, .82);
-  background: rgba(83, 167, 111, .18);
+.cf-pending-card .cf-pending-validation {
+  color: #a33f25;
+  font-weight: 600;
 }
 
 .cf-pending-draft-entry {

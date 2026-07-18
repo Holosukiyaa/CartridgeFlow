@@ -166,19 +166,34 @@ function normalizeGraphEdges(edges: FlowEdge[] = []) {
 
 function buildRunEdgeStates(graphEdges: FlowEdge[], runEvents: FlowEvent[] = EMPTY_FLOW_EVENTS) {
   const edgePairs = new Set(graphEdges.map((edge) => `${edge.from}->${edge.to}`))
+  const explicitEdges = runEvents.reduce<string[]>((result, event) => {
+    if (event.type !== 'flow_edge_traversed') return result
+    const source = String((event.data as any)?.from || '').trim()
+    const target = String((event.data as any)?.to || '').trim()
+    const key = `${source}->${target}`
+    if (source && target && edgePairs.has(key)) result.push(key)
+    return result
+  }, [])
+  if (explicitEdges.length) {
+    const edgeStates = new Map<string, RunEdgeStatus>()
+    explicitEdges.forEach((key) => edgeStates.set(key, 'visited'))
+    edgeStates.set(explicitEdges[explicitEdges.length - 1], 'active')
+    return edgeStates
+  }
+
   const enteredStates = runEvents.reduce<string[]>((result, event) => {
     if (event.type === 'state_entered' && event.state) result.push(event.state)
     return result
   }, [])
   const edgeStates = new Map<string, RunEdgeStatus>()
-  let lastKey = ''
-  for (let index = 1; index < enteredStates.length; index += 1) {
-    const key = `${enteredStates[index - 1]}->${enteredStates[index]}`
-    if (!edgePairs.has(key)) continue
-    edgeStates.set(key, 'visited')
-    lastKey = key
-  }
-  if (lastKey) edgeStates.set(lastKey, 'active')
+  const latestEnteredState = enteredStates[enteredStates.length - 1] || ''
+  graphEdges.forEach((edge) => {
+    const sourceIndexes = enteredStates.flatMap((state, index) => state === edge.from ? [index] : [])
+    const targetIndexes = enteredStates.flatMap((state, index) => state === edge.to ? [index] : [])
+    const traversed = sourceIndexes.some((sourceIndex) => targetIndexes.some((targetIndex) => targetIndex > sourceIndex))
+    if (!traversed) return
+    edgeStates.set(`${edge.from}->${edge.to}`, edge.to === latestEnteredState ? 'active' : 'visited')
+  })
   return edgeStates
 }
 

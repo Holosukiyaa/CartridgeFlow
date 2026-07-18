@@ -235,7 +235,9 @@ function buildNodeRunStates(graph: FlowGraph, events: FlowEvent[]) {
     state.events.push(event)
     const data = (event.data || {}) as any
     if (event.type === 'state_entered') {
-      if (state.status === 'idle') state.status = 'running'
+      state.status = 'running'
+      state.pendingInteraction = undefined
+      state.errorMsg = undefined
       state.action = data.action || state.action
       return
     }
@@ -461,18 +463,29 @@ function PendingInteractionForm({
   const [values, setValues] = useState<Record<string, any>>({})
   const [showArtifacts, setShowArtifacts] = useState(false)
   const canSubmitValues = (candidate: Record<string, any>) => Object.keys(properties).every((key) => !required.has(key) || candidate[key] !== undefined && candidate[key] !== '')
-  const canSubmit = canSubmitValues(values)
   const isConfirmValue = (item: string) => ['approve', 'approved', 'confirm', 'confirmed', 'yes', '通过'].includes(item.trim().toLowerCase())
-  const submitValue = (key: string, value: any, immediate = false) => {
-    const next = { ...values, [key]: value }
-    setValues(next)
-    if (immediate && !disabled && canSubmitValues(next)) onSubmit(next)
+  const isRevisionValue = (item: any) => {
+    const value = String(item || '').trim().toLowerCase()
+    return value.startsWith('revise') || ['reject', 'rejected', 'revision', 'modify', 'no', '驳回'].includes(value)
   }
-  const choiceLabel = (item: string) => {
-    const value = item.trim().toLowerCase()
-    if (isConfirmValue(item)) return '确认决策'
-    if (['reject', 'rejected', 'revise', 'revision', 'modify', 'no', '驳回'].includes(value)) return '驳回决策'
-    return item
+  const revisionSelected = Object.entries(properties).some(([key, config]: [string, any]) => {
+    return Array.isArray(config?.enum) && isRevisionValue(values[key])
+  })
+  const revisionFeedbackKey = Object.entries(properties).find(([key, config]: [string, any]) => {
+    return !Array.isArray(config?.enum) && config?.type !== 'boolean' && /feedback|意见|reason|原因/i.test(`${key} ${config?.title || ''}`)
+  })?.[0]
+  const hasRevisionFeedback = !revisionFeedbackKey || String(values[revisionFeedbackKey] || '').trim().length > 0
+  const canSubmit = canSubmitValues(values) && (!revisionSelected || hasRevisionFeedback)
+  const submitValue = (key: string, value: any) => setValues((current) => ({ ...current, [key]: value }))
+  const choiceLabel = (key: string, item: string, configuredLabel = '') => {
+    if (isConfirmValue(item)) return configuredLabel || '确认决策'
+    if (!isRevisionValue(item)) return configuredLabel || item
+    const route = (pending?.resume?.answer_routes || []).find((candidate: any) => {
+      const match = candidate?.match || {}
+      return match.field === key && String(match.equals || '').toLowerCase() === item.toLowerCase()
+    })
+    if (route?.policy === 'resume_target_node') return configuredLabel ? `${configuredLabel}（回到上一步）` : '回到上一步重做'
+    return configuredLabel || '修改决策'
   }
   useEffect(() => {
     setValues({})
@@ -511,25 +524,23 @@ function PendingInteractionForm({
       <div className="cf-pending-fields">
         {Object.entries(properties).map(([key, config]: [string, any]) => {
           const enumValues = Array.isArray(config?.enum) ? config.enum.map((item: any) => String(item)) : []
+          const enumNames = Array.isArray(config?.enumNames) ? config.enumNames.map((item: any) => String(item)) : []
           const label = String(config?.title || config?.label || key)
-          const decisionText = `${label} ${question.prompt || ''}`
-          const showDecisionQuickActions = !enumValues.length
-            && config?.type !== 'boolean'
-            && /(确认|批准|通过|意见|review|approval|confirm|decision)/i.test(decisionText)
+          const feedbackRequired = revisionSelected && key === revisionFeedbackKey
           return (
             <label key={key} className="cf-pending-field">
-              <span>{label}{required.has(key) && <b>*</b>}</span>
+              <span>{label}{(required.has(key) || feedbackRequired) && <b>*</b>}</span>
               {enumValues.length ? (
                 <div className="cf-pending-choice">
-                  {enumValues.map((item: string) => (
+                  {enumValues.map((item: string, index: number) => (
                     <button
                       key={item}
                       type="button"
                       disabled={disabled}
                       className={values[key] === item ? 'active' : ''}
-                      onClick={() => submitValue(key, item, isConfirmValue(item))}
+                      onClick={() => submitValue(key, item)}
                     >
-                      {choiceLabel(item)}
+                      {choiceLabel(key, item, enumNames[index])}
                     </button>
                   ))}
                 </div>
@@ -540,29 +551,20 @@ function PendingInteractionForm({
                   onChange={(event) => setValues((current) => ({ ...current, [key]: event.target.checked }))}
                 />
               ) : (
-                <>
-                  {showDecisionQuickActions && (
-                    <div className="cf-pending-choice cf-pending-quick">
-                      <button type="button" disabled={disabled} className={values[key] === '通过' ? 'active' : ''} onClick={() => submitValue(key, '通过', true)}>
-                        确认决策
-                      </button>
-                      <button type="button" disabled={disabled} className={String(values[key] || '').startsWith('驳回') ? 'active' : ''} onClick={() => submitValue(key, '驳回：')}>
-                        驳回决策
-                      </button>
-                    </div>
-                  )}
-                  <textarea
-                    rows={3}
-                    value={values[key] || ''}
-                    placeholder={config?.description || ''}
-                    onChange={(event) => setValues((current) => ({ ...current, [key]: event.target.value }))}
-                  />
-                </>
+                <textarea
+                  rows={3}
+                  value={values[key] || ''}
+                  placeholder={config?.description || ''}
+                  onChange={(event) => setValues((current) => ({ ...current, [key]: event.target.value }))}
+                />
               )}
             </label>
           )
         })}
       </div>
+      {revisionSelected && !hasRevisionFeedback && (
+        <p className="cf-pending-validation">回到上一步前，请填写本次不满意的原因或具体修改要求。</p>
+      )}
       <button type="button" className="cf-btn-accent" disabled={disabled || !canSubmit} onClick={() => onSubmit(values)}>
         提交并继续
       </button>
@@ -769,11 +771,10 @@ function LogTimeline({ events, expanded = false }: { events: FlowEvent[]; expand
   )
 }
 
-function ProbeChip({ kind, node, disabled, onActivate }: {
+function ProbeChip({ kind, node, disabled }: {
   kind: ProbeKind
   node?: FlowNode
   disabled?: boolean
-  onActivate: () => void
 }) {
   const label = kind === 'start' ? '开始' : '结束'
   return (
@@ -782,10 +783,8 @@ function ProbeChip({ kind, node, disabled, onActivate }: {
       className="cf-probe-chip"
       draggable={!disabled}
       disabled={disabled}
-      onClick={onActivate}
       onDragStart={(event) => {
         if (disabled) return
-        onActivate()
         event.dataTransfer.setData(TEST_PROBE_MIME, kind)
         event.dataTransfer.effectAllowed = 'move'
       }}
@@ -1113,22 +1112,14 @@ export function TestBenchView({
               </button>
               <button type="button" className="cf-btn-outline" disabled={isRunning} onClick={onRefresh}>刷新</button>
             </div>
-            <div className="cf-probe-chips">
-              <ProbeChip
-                kind="start"
-                node={startNode}
-                disabled={isRunning}
-                onActivate={() => setRunScope('probe')}
-              />
-              <ProbeChip
-                kind="end"
-                node={endNode}
-                disabled={isRunning}
-                onActivate={() => setRunScope('probe')}
-              />
-            </div>
             {runScope === 'probe' && (
-              <p className="cf-probe-hint">拖动 S/E 探针或节点上的 S/E 标记来调整范围。</p>
+              <>
+                <div className="cf-probe-chips">
+                  <ProbeChip kind="start" node={startNode} disabled={isRunning} />
+                  <ProbeChip kind="end" node={endNode} disabled={isRunning} />
+                </div>
+                <p className="cf-probe-hint">拖动 S/E 探针或节点上的 S/E 标记来调整范围。</p>
+              </>
             )}
           </section>
         </aside>

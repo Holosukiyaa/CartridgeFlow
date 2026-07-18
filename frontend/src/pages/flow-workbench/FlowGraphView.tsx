@@ -19,7 +19,7 @@ import {
   type ReactFlowInstance,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import type { FlowEdge, FlowGraph, FlowNode } from '../../api.ts'
+import type { FlowEdge, FlowEvent, FlowGraph, FlowNode } from '../../api.ts'
 import { showToast } from '../../toast.tsx'
 import type { CreateNodeHandler } from './types.ts'
 import { NODE_CATEGORIES, buildAutoAlignLayout, buildBalancedLayout, buildFactoryLayout, buildZigzagLayout, getNodeCategory, getProcessDisplayLabel, getProtocolKind, isStartNode } from './nodeModel.ts'
@@ -31,6 +31,7 @@ type PortSide = 'left' | 'right' | 'top' | 'bottom'
 type SidePortCounts = Record<PortSide, number>
 type PortCounts = { incoming: SidePortCounts; outgoing: SidePortCounts }
 type EdgePortAssignment = { sourceSide: PortSide; targetSide: PortSide; sourceIndex: number; targetIndex: number }
+type RunEdgeStatus = 'visited' | 'active'
 type TestProbeKind = 'start' | 'end'
 type TestProbeState = {
   startNodeId: string
@@ -162,7 +163,25 @@ function normalizeGraphEdges(edges: FlowEdge[] = []) {
   }, [])
 }
 
-export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, onLayoutSave, onEdgesSave, onCreateNode, onDeleteNode, compactStatic = false, readOnlyGraph = false, nodeRunStates, testProbeState }: {
+function buildRunEdgeStates(graphEdges: FlowEdge[], runEvents: FlowEvent[] = []) {
+  const edgePairs = new Set(graphEdges.map((edge) => `${edge.from}->${edge.to}`))
+  const enteredStates = runEvents.reduce<string[]>((result, event) => {
+    if (event.type === 'state_entered' && event.state) result.push(event.state)
+    return result
+  }, [])
+  const edgeStates = new Map<string, RunEdgeStatus>()
+  let lastKey = ''
+  for (let index = 1; index < enteredStates.length; index += 1) {
+    const key = `${enteredStates[index - 1]}->${enteredStates[index]}`
+    if (!edgePairs.has(key)) continue
+    edgeStates.set(key, 'visited')
+    lastKey = key
+  }
+  if (lastKey) edgeStates.set(lastKey, 'active')
+  return edgeStates
+}
+
+export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, onLayoutSave, onEdgesSave, onCreateNode, onDeleteNode, compactStatic = false, readOnlyGraph = false, nodeRunStates, runEvents = [], testProbeState }: {
   graph: FlowGraph
   selectedNode: FlowNode | null
   focusNodeId: string | null
@@ -174,6 +193,7 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
   compactStatic?: boolean
   readOnlyGraph?: boolean
   nodeRunStates?: Map<string, NodeRunState>
+  runEvents?: FlowEvent[]
   testProbeState?: TestProbeState
 }) {
   const [fullscreen, setFullscreen] = useState(false)
@@ -186,6 +206,7 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
   const nodeById = useMemo(() => new Map(graph.nodes.map((node) => [node.id, node])), [graph.nodes])
   const probeSelectedNodeIds = useMemo(() => new Set(testProbeState?.selectedNodeIds || []), [testProbeState?.selectedNodeIds])
   const graphEdges = useMemo(() => normalizeGraphEdges(graph.edges), [graph.edges])
+  const runEdgeStates = useMemo(() => buildRunEdgeStates(graphEdges, runEvents), [graphEdges, runEvents])
   const renderGraph = useMemo(() => ({ ...graph, edges: graphEdges }), [graph, graphEdges])
   const layout = useMemo(() => buildBalancedLayout(renderGraph), [renderGraph])
   const edgePortPlan = useMemo(() => {
@@ -358,6 +379,9 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
     const branchLaneBySource = new Map<string, number>()
     return graphEdges.map((edge, index) => {
       const branch = edge.scope === 'branch'
+      const runEdgeStatus = runEdgeStates.get(`${edge.from}->${edge.to}`)
+      const isRunActive = runEdgeStatus === 'active'
+      const isRunVisited = runEdgeStatus === 'visited'
       const lane = branch ? (branchLaneBySource.get(edge.from) || 0) : 0
       if (branch) branchLaneBySource.set(edge.from, lane + 1)
       const ports = edgePortPlan.edgePorts.get(`${index}:${edge.from}->${edge.to}`) || { sourceSide: 'right', targetSide: 'left', sourceIndex: 0, targetIndex: 0 }
@@ -370,16 +394,20 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
         target: edge.to,
         sourceHandle: getPortHandleId('source', ports.sourceSide, ports.sourceIndex),
         targetHandle: getPortHandleId('target', ports.targetSide, ports.targetIndex),
-        animated: branch,
+        animated: branch || isRunActive,
         type: 'default',
         label: branch ? edge.label || '分支' : undefined,
-        data: { scope: edge.scope || 'root', label: edge.label || '', lane, loopY },
-        zIndex: 0,
-        style: { stroke: branch ? '#5e8bd8' : '#ba6440', strokeWidth: branch ? 2.4 : 2.8, strokeDasharray: branch ? '6 5' : undefined },
-        markerEnd: { type: MarkerType.ArrowClosed, color: branch ? '#5e8bd8' : '#ba6440' },
+        data: { scope: edge.scope || 'root', label: edge.label || '', lane, loopY, runEdgeStatus: runEdgeStatus || '' },
+        zIndex: isRunActive ? 3 : isRunVisited ? 2 : 0,
+        style: {
+          stroke: isRunActive ? '#d05b2f' : isRunVisited ? '#2f9e63' : branch ? '#5e8bd8' : '#ba6440',
+          strokeWidth: isRunActive ? 4.2 : isRunVisited ? 3.4 : branch ? 2.4 : 2.8,
+          strokeDasharray: branch && !isRunActive ? '6 5' : undefined,
+        },
+        markerEnd: { type: MarkerType.ArrowClosed, color: isRunActive ? '#d05b2f' : isRunVisited ? '#2f9e63' : branch ? '#5e8bd8' : '#ba6440' },
       }
     })
-  }, [edgePortPlan, graphEdges, layout])
+  }, [edgePortPlan, graphEdges, layout, runEdgeStates])
 
   const [nodes, setNodes] = useState<FlowGraphNode[]>(initialNodes)
   const [edges, setEdges] = useState<FlowGraphEdge[]>(initialEdges)

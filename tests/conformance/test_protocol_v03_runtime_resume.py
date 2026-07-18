@@ -165,7 +165,7 @@ class ProtocolV03RuntimeResumeTest(unittest.TestCase):
 
             event_types = [event["type"] for event in runner.get_events(run["run_id"])]
             self.assertIn("pending_interaction_answered", event_types)
-            self.assertGreaterEqual(event_types.count("run_completed"), 2)
+            self.assertEqual(1, event_types.count("run_completed"))
 
 
 if __name__ == "__main__":

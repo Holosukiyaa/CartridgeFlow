@@ -432,16 +432,23 @@ function PendingInteractionForm({
   pending,
   disabled,
   onSubmit,
+  artifacts = [],
+  nodeById,
+  artifactScopeLabel,
 }: {
   pending: any
   disabled?: boolean
   onSubmit: (values: Record<string, any>) => void
+  artifacts?: ArtifactItem[]
+  nodeById?: Map<string, FlowNode>
+  artifactScopeLabel?: string
 }) {
   const question = pending?.question || {}
   const schema = question.input_schema || {}
   const properties = schema?.type === 'object' && schema.properties ? schema.properties : { answer: { type: 'string', title: '回复' } }
   const required = new Set<string>(Array.isArray(schema.required) ? schema.required : [])
   const [values, setValues] = useState<Record<string, any>>({})
+  const [showArtifacts, setShowArtifacts] = useState(false)
   const canSubmitValues = (candidate: Record<string, any>) => Object.keys(properties).every((key) => !required.has(key) || candidate[key] !== undefined && candidate[key] !== '')
   const canSubmit = canSubmitValues(values)
   const isConfirmValue = (item: string) => ['approve', 'approved', 'confirm', 'confirmed', 'yes', '通过'].includes(item.trim().toLowerCase())
@@ -456,6 +463,10 @@ function PendingInteractionForm({
     if (['reject', 'rejected', 'revise', 'revision', 'modify', 'no', '驳回'].includes(value)) return '驳回决策'
     return item
   }
+  useEffect(() => {
+    setValues({})
+    setShowArtifacts(false)
+  }, [pending?.interaction_id])
   return (
     <div className="cf-pending-card">
       <div className="cf-pending-head">
@@ -463,6 +474,29 @@ function PendingInteractionForm({
         <code>{question.store_key || pending?.interaction_id || 'user_reply'}</code>
       </div>
       <p>{question.prompt || '该节点需要用户输入后继续。'}</p>
+      <div className="cf-pending-draft-entry">
+        <div className="cf-pending-draft-copy">
+          <strong>草稿作品</strong>
+          <span>{artifacts.length > 0 ? '确认前可查看 ' + artifacts.length + ' 个相关产物' : '当前没有可查看的草稿产物'}</span>
+        </div>
+        <button
+          type="button"
+          className="cf-btn-outline cf-pending-draft-toggle"
+          disabled={artifacts.length === 0}
+          onClick={() => setShowArtifacts((value) => !value)}
+        >
+          {showArtifacts ? '收起草稿' : '查看草稿'}
+        </button>
+      </div>
+      {showArtifacts && artifacts.length > 0 && (
+        <div className="cf-pending-draft-panel">
+          <div className="cf-pending-draft-panel-head">
+            <strong>{artifactScopeLabel || '本次草稿'}</strong>
+            <span>{artifacts.length} 项</span>
+          </div>
+          <ArtifactList artifacts={artifacts} nodeById={nodeById} compact />
+        </div>
+      )}
       <div className="cf-pending-fields">
         {Object.entries(properties).map(([key, config]: [string, any]) => {
           const enumValues = Array.isArray(config?.enum) ? config.enum.map((item: any) => String(item)) : []
@@ -694,27 +728,32 @@ function LogTimeline({ events, expanded = false }: { events: FlowEvent[]; expand
   if (!events.length) return <div className="cf-log-empty">暂无运行日志。</div>
   return (
     <div className={`cf-log-timeline ${expanded ? 'expanded' : ''}`}>
-      {events.map((event, index) => (
-        <div
-          key={`${event.type}-${event.state}-${index}`}
-          className={`cf-log-row ${event.type?.includes('fail') || event.type?.includes('error') ? 'error' : ''}`}
-        >
-          <span className="cf-log-idx">{index + 1}</span>
-          <span className="cf-log-tag">{event.state || 'system'}</span>
-          <div className="cf-log-main">
-            <div className="cf-log-label">{event.type || 'event'}</div>
-            <div className="cf-log-detail">{event.message || compact(event.data)}</div>
-            {expanded && (
-              <div className="cf-log-meta">
-                {(event.data as any)?.action && <code>{(event.data as any).action}</code>}
-                {(event.data as any)?.input_key && <code>in:{(event.data as any).input_key}</code>}
-                {(event.data as any)?.output && <code>out:{(event.data as any).output}</code>}
-                {(event.data as any)?.decision_validation_errors && <code>decision_validation_errors</code>}
-              </div>
-            )}
+      {events.map((event, index) => {
+        const isThinking = event.type === 'lab_node_llm_started'
+        const isError = event.type?.includes('fail') || event.type?.includes('error')
+        return (
+          <div
+            key={`${event.type}-${event.state}-${index}`}
+            className={`cf-log-row ${isThinking ? 'thinking' : ''} ${isError ? 'error' : ''}`}
+          >
+            <span className="cf-log-idx">{index + 1}</span>
+            <span className="cf-log-tag">{event.state || 'system'}</span>
+            <div className="cf-log-main">
+              <div className="cf-log-label">{isThinking ? 'AI 思考中' : (event.type || 'event')}</div>
+              <div className="cf-log-detail">{event.message || (isThinking ? '正在等待模型响应' : compact(event.data))}</div>
+              {expanded && (
+                <div className="cf-log-meta">
+                  {(event.data as any)?.action && <code>{(event.data as any).action}</code>}
+                  {(event.data as any)?.input_key && <code>in:{(event.data as any).input_key}</code>}
+                  {(event.data as any)?.output && <code>out:{(event.data as any).output}</code>}
+                  {isThinking && <code>thinking</code>}
+                  {(event.data as any)?.decision_validation_errors && <code>decision_validation_errors</code>}
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
@@ -810,7 +849,7 @@ export function TestBenchView({
   const [logMaxHeight, setLogMaxHeight] = useState(180)
   const [showUiPreview, setShowUiPreview] = useState(true)
   const [showArtifactsPreview, setShowArtifactsPreview] = useState(false)
-  const [lockedPendingId, setLockedPendingId] = useState('')
+  const [lockedPendingKey, setLockedPendingKey] = useState('')
   const logBodyRef = useRef<HTMLDivElement | null>(null)
   const logDragRef = useRef<{ startY: number; startHeight: number } | null>(null)
   const probePanelRef = useRef<HTMLElement | null>(null)
@@ -829,7 +868,10 @@ export function TestBenchView({
     : []
   const rawPendingInteraction = latestRun?.status === 'paused_waiting_user' && latestRun.pending_interaction ? latestRun.pending_interaction : null
   const rawPendingId = String(rawPendingInteraction?.interaction_id || rawPendingInteraction?.node_id || '')
-  const pendingInteraction = rawPendingInteraction && rawPendingId !== lockedPendingId ? rawPendingInteraction : null
+  const rawPendingKey = rawPendingInteraction
+    ? `${rawPendingId}:${latestRun?.updated_at || ''}:${events.length}`
+    : ''
+  const pendingInteraction = rawPendingInteraction && rawPendingKey !== lockedPendingKey ? rawPendingInteraction : null
   const pendingNode = useMemo(() => {
     for (const [nodeId, state] of nodeRunStates.entries()) {
       if (state.status === 'paused' && state.pendingInteraction) return nodeById.get(nodeId) || null
@@ -837,6 +879,16 @@ export function TestBenchView({
     const pausedEvent = [...events].reverse().find((event) => event.type === 'lab_node_paused' && event.state)
     return pausedEvent?.state ? nodeById.get(pausedEvent.state) || null : null
   }, [events, nodeById, nodeRunStates])
+  const pendingArtifactNodeId = pendingNode?.id || ''
+  const pendingArtifacts = useMemo(() => {
+    if (!runArtifacts.length) return []
+    if (!pendingArtifactNodeId) return runArtifacts
+    const scoped = runArtifacts.filter((artifact) => artifact?.source?.node_id === pendingArtifactNodeId)
+    return scoped.length > 0 ? scoped : runArtifacts
+  }, [pendingArtifactNodeId, runArtifacts])
+  const pendingArtifactsLabel = pendingArtifactNodeId && runArtifacts.some((artifact) => artifact?.source?.node_id === pendingArtifactNodeId)
+    ? getNodeTitle(pendingNode)
+    : '本次运行'
   const startNode = nodeById.get(startNodeId)
   const endNode = nodeById.get(endNodeId)
   const probePayload = useMemo(() => getProbePayload(detail.graph, startNodeId, endNodeId), [detail.graph, startNodeId, endNodeId])
@@ -871,9 +923,9 @@ export function TestBenchView({
   }, [pendingInteraction])
 
   useEffect(() => {
-    if (!rawPendingInteraction) setLockedPendingId('')
-    else if (rawPendingId && rawPendingId !== lockedPendingId) setLockedPendingId('')
-  }, [lockedPendingId, rawPendingId, rawPendingInteraction])
+    if (!rawPendingInteraction) setLockedPendingKey('')
+    else if (rawPendingKey && rawPendingKey !== lockedPendingKey) setLockedPendingKey('')
+  }, [lockedPendingKey, rawPendingInteraction, rawPendingKey])
 
   useEffect(() => {
     const updateLogLimit = () => {
@@ -954,8 +1006,7 @@ export function TestBenchView({
 
   const answerPending = (values: Record<string, any>) => {
     if (!latestRun?.run_id || !onAnswerPendingInteraction) return
-    const pendingId = String(pendingInteraction?.interaction_id || pendingInteraction?.node_id || '')
-    if (pendingId) setLockedPendingId(pendingId)
+    if (rawPendingKey) setLockedPendingKey(rawPendingKey)
     setIsRunning(true)
     setLogsOpen(true)
     setLogTab('log')
@@ -965,7 +1016,7 @@ export function TestBenchView({
     }, 900)
     void Promise.resolve(onAnswerPendingInteraction(latestRun.run_id, values))
       .catch(() => {
-        setLockedPendingId('')
+        setLockedPendingKey('')
       })
       .finally(() => {
         window.clearTimeout(releaseTimer)
@@ -1081,6 +1132,7 @@ export function TestBenchView({
             onSelectNode={selectRunNode}
             readOnlyGraph
             nodeRunStates={nodeRunStates}
+            runEvents={events}
             testProbeState={runScope === 'probe' ? {
               startNodeId,
               endNodeId,
@@ -1201,6 +1253,9 @@ export function TestBenchView({
               pending={pendingInteraction}
               disabled={isRunning || !onAnswerPendingInteraction}
               onSubmit={answerPending}
+              artifacts={pendingArtifacts}
+              nodeById={nodeById}
+              artifactScopeLabel={pendingArtifactsLabel}
             />
           </div>
         </div>

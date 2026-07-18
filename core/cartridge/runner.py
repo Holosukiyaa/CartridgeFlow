@@ -263,6 +263,23 @@ class CartridgeRunner:
                 try:
                     if state_.get("action") == "tool_call" and not self._is_v02_mcp_process(state_) and not normalized_probe_range and not self._tool_has_process_parent(root_flow, state_name_):
                         raise RuntimeError("工具节点必须直接挂在 AI 处理节点之后；请把 MCP/filesystem 工具节点连接到 action=llm_prompt 的处理节点后面。")
+                    if self._is_llm_process(state_):
+                        self._append_event(
+                            run_id,
+                            cartridge_id,
+                            "lab_node_llm_started",
+                            state_name_,
+                            f"AI 节点 {state_name_} 已开始，正在等待模型响应",
+                            {
+                                "action": "llm_prompt",
+                                "input_key": input_key,
+                                "input_value": input_value,
+                                "output": params_.get("output") or preset_config_.get("output_name") or state_.get("output"),
+                                "model_role": state_.get("model_role") or params_.get("model_role"),
+                                "decision_test_mode": (run.get("test_mode") or {}).get("decision") or params_.get("decision_test_mode"),
+                                "phase": "awaiting_model",
+                            },
+                        )
                     result = self.lab_node_executor.execute(state_name_, state_, _state_doc, run, run_dir)
                     skipped = result.get("skipped", False)
                     output_key = result.get("output")
@@ -396,6 +413,13 @@ class CartridgeRunner:
 
     def _is_v02_mcp_process(self, state: dict) -> bool:
         return state.get("type") == "process" and self._node_kind(state) in {"mcp_read", "mcp_execute", "remote_call"}
+
+    def _is_llm_process(self, state: dict) -> bool:
+        return state.get("action") == "llm_prompt" or (
+            state.get("type") == "process"
+            and self._node_kind(state) == "decision"
+            and state.get("executor") == "llm"
+        )
 
     def _is_probe_driver_process(self, state: dict) -> bool:
         kind = self._node_kind(state)
@@ -1043,6 +1067,23 @@ class CartridgeRunner:
                 try:
                     if state_.get("action") == "tool_call" and not self._is_v02_mcp_process(state_) and not normalized_probe_range and not self._tool_has_process_parent(root_flow, state_name_):
                         raise RuntimeError("Tool nodes must be connected after a process node.")
+                    if self._is_llm_process(state_):
+                        self._append_event(
+                            run_id,
+                            cartridge_id,
+                            "lab_node_llm_started",
+                            state_name_,
+                            f"AI 节点 {state_name_} 已开始，正在等待模型响应",
+                            {
+                                "action": "llm_prompt",
+                                "input_key": input_key,
+                                "input_value": input_value,
+                                "output": params_.get("output") or preset_config_.get("output_name") or state_.get("output"),
+                                "model_role": state_.get("model_role") or params_.get("model_role"),
+                                "decision_test_mode": (run.get("test_mode") or {}).get("decision") or params_.get("decision_test_mode"),
+                                "phase": "awaiting_model",
+                            },
+                        )
                     result = self.lab_node_executor.execute(state_name_, state_, _state_doc, run, run_dir)
                     skipped = result.get("skipped", False)
                     output_key = result.get("output")

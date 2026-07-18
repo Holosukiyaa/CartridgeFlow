@@ -969,10 +969,30 @@ export default function FlowWorkbench({ flowId, onBack, onSwitchFlow }: { flowId
             }}
             onAnswerPendingInteraction={async (runId: string, values: Record<string, any>) => {
               try {
-                const result = await answerPendingInteraction(runId, values)
+                let answerSettled = false
+                let liveLatest: RunResult | null = null
+                const answerPromise = answerPendingInteraction(runId, values)
+                  .finally(() => {
+                    answerSettled = true
+                  })
+                while (!answerSettled) {
+                  await sleep(800)
+                  try {
+                    const [runData, eventData] = await Promise.all([
+                      fetchCartridgeRun(runId),
+                      fetchCartridgeRunEvents(runId),
+                    ])
+                    liveLatest = runData
+                    setRuns([runData])
+                    setEvents(eventData.items || [])
+                  } catch {
+                    // The answer request may still be updating run files.
+                  }
+                }
+                const result = await answerPromise
                 setRuns([result.run])
                 setEvents(result.events || [])
-                const latest = await pollRunUntilStable(runId) || result.run
+                const latest = await pollRunUntilStable(runId) || liveLatest || result.run
                 showToast({
                   title: latest.status === 'paused_waiting_user'
                     ? '流程再次暂停，等待补充信息'

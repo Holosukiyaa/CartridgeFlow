@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from core.lab.mcp import creative_recast
 from core.protocol.creative_recast import validate_creative_spec, validate_shot_control_bundle
 
 
@@ -90,6 +91,47 @@ class CreativeRecastContractTest(unittest.TestCase):
 
     def test_approved_creative_spec_passes(self):
         result = validate_creative_spec(self._spec())
+        self.assertTrue(result["ok"], result)
+
+    def test_opt_in_mcp_module_exposes_only_read_only_validators(self):
+        class RegistryStub:
+            def __init__(self, root):
+                self._workspace_root = root
+                self._registry = {"media": {}}
+
+        registry = RegistryStub(Path.cwd())
+        creative_recast.register(registry)
+        self.assertEqual(set(creative_recast.TOOLS), set(registry._registry["media"]))
+        result = registry._registry["media"]["validate_change_proposal"]({"proposal": {}})
+        self.assertFalse(result["ok"])
+        self.assertFalse(any(path for path in Path.cwd().glob("change_proposal*")))
+
+    def test_change_proposal_requires_explicit_user_approval_metadata(self):
+        proposal = {
+            "schema": "cartridgeflow.change_proposal.v1",
+            "proposal_id": "crcp-proposal-0001",
+            "protocol": "CF-CRCP@0.1",
+            "reason": "Test proposal",
+            "current": {"workflow": "wan21_vace_1_3b_v2v"},
+            "proposed": {"workflow": "wan21_vace_1_3b_character_replace"},
+            "affected_locks": ["character.silhouette"],
+            "expected_benefit": "Test benefit",
+            "cost_and_risk": "Test risk",
+            "rollback": "Return to current workflow",
+            "question": "Approve this change?",
+            "status": "approved",
+            "approved_by": "user",
+            "approved_revision": 1,
+            "approved_at": "2026-07-18T00:00:00Z",
+        }
+        class RegistryStub:
+            def __init__(self):
+                self._workspace_root = Path.cwd()
+                self._registry = {"media": {}}
+
+        registry = RegistryStub()
+        creative_recast.register(registry)
+        result = registry._registry["media"]["validate_change_proposal"]({"proposal": proposal})
         self.assertTrue(result["ok"], result)
 
 

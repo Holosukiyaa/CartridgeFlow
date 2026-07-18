@@ -462,6 +462,26 @@ class BuiltinMcpRegistry:
                         "render_samples": "EEVEE render samples",
                     },
                 },
+                "validate_shot_control_bundle": {
+                    "description": "Read-only validation of a CF-CRCP Shot Control Bundle manifest, hashes, and optional workspace files.",
+                    "params": {
+                        "bundle": "cartridgeflow.shot_control_bundle.v1 JSON object or JSON string",
+                        "check_files": "Check referenced files and SHA-256 values under the workspace",
+                    },
+                },
+                "validate_creative_spec": {
+                    "description": "Read-only validation of CreativeSpec locked/free bounds, allowlist, and user approval revision.",
+                    "params": {
+                        "spec": "cartridgeflow.creative_spec.v1 JSON object or JSON string",
+                        "deliverable": "Whether missing bounds should block delivery",
+                    },
+                },
+                "validate_change_proposal": {
+                    "description": "Read-only validation of a CF-CRCP ChangeProposal and its explicit user approval metadata.",
+                    "params": {
+                        "proposal": "cartridgeflow.change_proposal.v1 JSON object or JSON string",
+                    },
+                },
             },
         }
         result = []

@@ -31,6 +31,7 @@ class BuiltinMcpDlcModuleTest(unittest.TestCase):
     def test_crcp_is_metadata_only_until_an_extension_module_is_enabled(self):
         registry = BuiltinMcpRegistry(ROOT)
         self.assertNotIn("creative_recast", registry.list_tools().get("media", []))
+        self.assertNotIn("validate_creative_spec", registry.list_tools().get("media", []))
         self.assertNotIn("CF-CRCP@0.1", [item.get("protocol") for item in registry.describe() if item.get("tool") == "forge_3d_series_episode"])
         self.assertEqual("CF-CRCP@0.1", next(item for item in registry.describe() if item.get("tool") == "forge_3d_series_episode")["dlc"]["optional_extension"])
 
@@ -47,8 +48,20 @@ class BuiltinMcpDlcModuleTest(unittest.TestCase):
         series = next(item for item in blocked.dlc_report() if item["id"] == "dlc.series_3d_episode_factory")
         self.assertEqual("blocked_missing_capabilities", series["extension"]["status"])
         self.assertEqual(
-            ["control_bundle_validate", "creative_approval_gate"],
-            series["extension"]["missing_capabilities"],
+            {
+                "control_bundle_v1",
+                "control_bundle_validate",
+                "creative_spec_v1",
+                "creative_mode_policy",
+                "creative_workflow_allowlist",
+                "creative_change_proposal",
+                "creative_approval_gate",
+                "creative_run_snapshot",
+                "creative_failure_record",
+                "creative_quality_gates",
+                "creative_artifact_audit",
+            },
+            set(series["extension"]["missing_capabilities"]),
         )
         self.assertNotIn("creative_recast", blocked.list_tools().get("media", []))
 

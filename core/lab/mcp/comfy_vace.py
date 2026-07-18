@@ -17,6 +17,7 @@ from copy import deepcopy
 from pathlib import Path
 
 from core.protocol.creative_recast import (
+    validate_cast_pack,
     validate_creative_spec,
     validate_run_snapshot,
     validate_shot_control_bundle,
@@ -299,22 +300,27 @@ def run_vace_character_replace(registry, params: dict) -> dict:
     """Execute the one allowlisted VACE workflow and preserve a reproducible report."""
     try:
         spec = _json_object(params.get("creative_spec"), "creative_spec")
+        cast_pack = _json_object(params.get("cast_pack"), "cast_pack")
         bundle = _json_object(params.get("control_bundle"), "control_bundle")
         snapshot = _json_object(params.get("run_snapshot"), "run_snapshot")
         spec_check = validate_creative_spec(spec)
+        cast_pack_check = validate_cast_pack(cast_pack, registry._workspace_root, check_files=True, deliverable=True)
         bundle_check = validate_shot_control_bundle(bundle, registry._workspace_root, check_files=True)
         snapshot_check = validate_run_snapshot(snapshot)
-        if not spec_check.get("ok") or not bundle_check.get("ok") or not snapshot_check.get("ok"):
+        if not spec_check.get("ok") or not cast_pack_check.get("ok") or not bundle_check.get("ok") or not snapshot_check.get("ok"):
             return {
                 "ok": False,
                 "stage": "validation",
                 "error": "CRCP artifacts failed VACE preflight validation",
                 "creative_spec": spec_check,
+                "cast_pack": cast_pack_check,
                 "control_bundle": bundle_check,
                 "run_snapshot": snapshot_check,
             }
         if spec.get("mode") != "character_replace":
             raise ValueError("the allowlisted VACE adapter only supports character_replace mode")
+        if spec.get("cast_pack") != cast_pack.get("pack_id"):
+            raise ValueError("CreativeSpec cast_pack does not match the approved CastPack")
         if WORKFLOW_ID not in (spec.get("allowed_workflows") or []):
             raise ValueError(f"CreativeSpec does not allow workflow {WORKFLOW_ID}")
         workflow_ref = snapshot.get("workflow") or {}
@@ -341,7 +347,8 @@ def run_vace_character_replace(registry, params: dict) -> dict:
         controls = bundle["controls"]
         preview_path = _require_file(registry, source["preview"], "control_bundle.source.preview")
         mask_path = _require_file(registry, controls["character_mask"], "control_bundle.controls.character_mask")
-        reference_path = _require_file(registry, params.get("reference_image"), "reference_image")
+        reference_value = (cast_pack.get("references") or {}).get("primary")
+        reference_path = _require_file(registry, reference_value, "cast_pack.references.primary")
         parameters = _snapshot_parameters(snapshot, spec, bundle)
 
         run_token = _safe_token(params.get("run_id") or snapshot.get("run_id"), uuid.uuid4().hex[:12])
@@ -426,7 +433,13 @@ def run_vace_character_replace(registry, params: dict) -> dict:
                 "character_mask": {"path": controls["character_mask"], "sha256": _sha256(mask_path)},
                 "depth": {"path": controls["depth"], "sha256": bundle["sha256"][controls["depth"]]},
                 "pose": {"path": controls["pose"], "sha256": bundle["sha256"][controls["pose"]]},
-                "character_reference": {"path": str(params.get("reference_image")), "sha256": _sha256(reference_path)},
+                "character_reference": {"path": reference_value, "sha256": _sha256(reference_path)},
+            },
+            "cast_pack": {
+                "pack_id": cast_pack["pack_id"],
+                "revision": cast_pack["revision"],
+                "character_id": cast_pack["character_id"],
+                "primary_reference": reference_value,
             },
             "control_usage": {
                 "preview": "consumed_by_vace_control_video",

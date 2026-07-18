@@ -7,6 +7,7 @@ import json
 from .comfy_vace import run_vace_character_replace as _run_vace_character_replace
 
 from core.protocol.creative_recast import (
+    validate_cast_pack as _validate_cast_pack,
     validate_creative_spec as _validate_creative_spec,
     validate_run_snapshot as _validate_run_snapshot,
     validate_shot_control_bundle as _validate_shot_control_bundle,
@@ -19,6 +20,7 @@ from core.protocol.creative_recast_runtime import (
 DLC_ID = "dlc.series_3d_episode_factory"
 DLC_PROTOCOL = "CF-CRCP@0.1"
 TOOLS = [
+    "validate_cast_pack",
     "validate_shot_control_bundle",
     "validate_creative_spec",
     "validate_change_proposal",
@@ -109,18 +111,21 @@ def _failure_record(params: dict, label: str, result: dict, snapshot: dict) -> d
 def _run_creative_recast(registry, params: dict) -> dict:
     current_state = str(params.get("current_state") or "control_ready").strip()
     raw_spec = _json_object(_param(params, "creative_spec", "spec"), "creative_spec")
+    raw_cast_pack = _json_object(params.get("cast_pack"), "cast_pack")
     raw_bundle = _json_object(_param(params, "shot_control_bundle", "bundle"), "shot_control_bundle")
     raw_snapshot = _json_object(_param(params, "run_snapshot", "snapshot"), "run_snapshot")
     spec_result = _validate_creative_spec(raw_spec)
+    cast_pack_result = _validate_cast_pack(raw_cast_pack, registry._workspace_root, check_files=True, deliverable=True)
     bundle_result = _validate_shot_control_bundle(raw_bundle)
     snapshot_result = _validate_run_snapshot(raw_snapshot)
-    if not spec_result.get("ok") or not bundle_result.get("ok") or not snapshot_result.get("ok"):
+    if not spec_result.get("ok") or not cast_pack_result.get("ok") or not bundle_result.get("ok") or not snapshot_result.get("ok"):
         return {
             "ok": False,
             "state": current_state,
             "stage": "validation",
             "error": "CRCP artifacts failed validation",
             "creative_spec": spec_result,
+            "cast_pack": cast_pack_result,
             "shot_control_bundle": bundle_result,
             "run_snapshot": snapshot_result,
         }
@@ -196,6 +201,7 @@ def _run_creative_recast(registry, params: dict) -> dict:
     comfy_params["control_bundle"] = actual_bundle
     comfy_params["control_bundle_path"] = blender_result.get("control_bundle_path") or ""
     comfy_params["creative_spec"] = raw_spec
+    comfy_params["cast_pack"] = raw_cast_pack
     comfy_params["run_snapshot"] = raw_snapshot
     comfy_result = registry.call("media", "run_vace_character_replace", comfy_params)
     if not comfy_result.get("ok"):
@@ -243,6 +249,19 @@ def register(registry):
         except Exception as exc:
             return {"ok": False, "validation_ok": False, "error": f"creative spec validation failed: {exc}"}
 
+    def validate_cast_pack(params: dict) -> dict:
+        try:
+            pack = _json_object(_param(params, "cast_pack", "content"), "cast_pack")
+            result = _validate_cast_pack(
+                pack,
+                registry._workspace_root,
+                check_files=bool(params.get("check_files", False)),
+                deliverable=params.get("deliverable", True) is not False,
+            )
+            return {"ok": result["ok"], "validation_ok": result["ok"], "report": result, "content": json.dumps(result, ensure_ascii=False, indent=2)}
+        except Exception as exc:
+            return {"ok": False, "validation_ok": False, "error": f"cast pack validation failed: {exc}"}
+
     def validate_change_proposal(params: dict) -> dict:
         try:
             proposal = _json_object(_param(params, "proposal", "content"), "proposal")
@@ -261,6 +280,7 @@ def register(registry):
         return _run_vace_character_replace(registry, params)
 
     registry._registry["media"].update({
+        "validate_cast_pack": validate_cast_pack,
         "validate_shot_control_bundle": validate_shot_control_bundle,
         "validate_creative_spec": validate_creative_spec,
         "validate_change_proposal": validate_change_proposal,

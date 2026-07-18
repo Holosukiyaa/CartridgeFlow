@@ -474,6 +474,14 @@ class BuiltinMcpRegistry:
                         "check_files": "Check referenced files and SHA-256 values under the workspace",
                     },
                 },
+                "validate_cast_pack": {
+                    "description": "Read-only validation of an approved CRCP CastPack, reference hashes, appearance anchors, and public-delivery license.",
+                    "params": {
+                        "cast_pack": "cartridgeflow.cast_pack.v1 JSON object or JSON string",
+                        "check_files": "Check reference images and SHA-256 values under the workspace",
+                        "deliverable": "Require a license that allows public delivery",
+                    },
+                },
                 "validate_creative_spec": {
                     "description": "Read-only validation of CreativeSpec locked/free bounds, allowlist, and user approval revision.",
                     "params": {
@@ -492,6 +500,7 @@ class BuiltinMcpRegistry:
                     "params": {
                         "current_state": "approved or control_ready",
                         "creative_spec": "Approved CreativeSpec JSON object or JSON string",
+                        "cast_pack": "Approved CastPack JSON object or JSON string",
                         "shot_control_bundle": "Validated Shot Control Bundle JSON object or JSON string",
                         "run_snapshot": "Locked RunSnapshot JSON object or JSON string",
                         "blender_params": "Parameters for the existing Blender series episode tool",
@@ -502,9 +511,9 @@ class BuiltinMcpRegistry:
                     "description": "Run the allowlisted Wan2.1 VACE 1.3B character-replacement workflow from a validated CRCP control bundle.",
                     "params": {
                         "creative_spec": "Approved CreativeSpec JSON object or JSON string",
+                        "cast_pack": "Approved CastPack JSON object or JSON string; its primary reference is the only identity input",
                         "control_bundle": "Validated Shot Control Bundle JSON object or JSON string",
                         "run_snapshot": "Locked RunSnapshot with exact workflow and model hashes",
-                        "reference_image": "Workspace-relative approved character reference image",
                         "prompt_fields": "Auditable content, identity, style, continuity, and negative prompt fields",
                         "comfyui_root": "Optional ComfyUI portable root",
                         "comfyui_url": "Optional ComfyUI API URL",

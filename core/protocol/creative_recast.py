@@ -13,6 +13,7 @@ from pathlib import Path
 
 CONTROL_BUNDLE_SCHEMA = "cartridgeflow.shot_control_bundle.v1"
 CREATIVE_SPEC_SCHEMA = "cartridgeflow.creative_spec.v1"
+CAST_PACK_SCHEMA = "cartridgeflow.cast_pack.v1"
 RUN_SNAPSHOT_SCHEMA = "cartridgeflow.run_snapshot.v1"
 CREATIVE_MODES = {"conservative", "character_replace", "creative_recast", "exploration"}
 CRCP_REQUIRED_PROFILES = ["creative_control_runtime"]
@@ -161,6 +162,100 @@ def validate_creative_spec(spec: dict, *, deliverable: bool = True) -> dict:
     return _result(findings, "creative_spec_valid", "CreativeSpec is valid")
 
 
+def validate_cast_pack(
+    pack: dict,
+    workspace_root: str | Path | None = None,
+    *,
+    check_files: bool = False,
+    deliverable: bool = True,
+) -> dict:
+    """Validate the approved identity references consumed by character replacement."""
+    findings: list[dict] = []
+    if not isinstance(pack, dict):
+        return _invalid(findings, "cast_pack_invalid", "CastPack must be an object")
+    if pack.get("schema") != CAST_PACK_SCHEMA:
+        _block(findings, "cast_pack_schema", f"schema must be {CAST_PACK_SCHEMA}")
+    for field in ["pack_id", "character_id", "display_name"]:
+        _required_string(pack, field, findings, "cast_pack_identity")
+    _positive_int(pack, "revision", findings, "cast_pack_revision")
+
+    references = pack.get("references")
+    if not isinstance(references, dict):
+        _block(findings, "cast_pack_references", "references must be an object")
+        references = {}
+    _required_string(references, "primary", findings, "cast_pack_references")
+    additional = references.get("additional", [])
+    if not isinstance(additional, list) or any(not isinstance(item, str) or not item.strip() for item in additional):
+        _block(findings, "cast_pack_references", "references.additional must be an array of non-empty paths")
+        additional = []
+    reference_paths = [references.get("primary"), *additional]
+    reference_paths = [str(item).strip() for item in reference_paths if isinstance(item, str) and item.strip()]
+    if len(reference_paths) != len(set(reference_paths)):
+        _block(findings, "cast_pack_references", "reference image paths must be unique")
+
+    appearance = pack.get("appearance")
+    if not isinstance(appearance, dict):
+        _block(findings, "cast_pack_appearance", "appearance must be an object")
+        appearance = {}
+    wardrobe = _nonempty_string_list(appearance, "wardrobe", findings, "cast_pack_appearance")
+    if not wardrobe:
+        _block(findings, "cast_pack_appearance", "appearance.wardrobe must contain at least one item")
+    _required_string(appearance, "hair", findings, "cast_pack_appearance")
+    immutable = _nonempty_string_list(appearance, "immutable_features", findings, "cast_pack_appearance")
+    if not immutable:
+        _block(findings, "cast_pack_appearance", "appearance.immutable_features must contain at least one item")
+    fixed_colors = appearance.get("fixed_colors")
+    if not isinstance(fixed_colors, dict) or not fixed_colors:
+        _block(findings, "cast_pack_appearance", "appearance.fixed_colors must be a non-empty object")
+    elif any(not isinstance(key, str) or not key.strip() or not isinstance(value, str) or not value.strip() for key, value in fixed_colors.items()):
+        _block(findings, "cast_pack_appearance", "appearance.fixed_colors keys and values must be non-empty strings")
+
+    license_info = pack.get("license")
+    if not isinstance(license_info, dict):
+        _block(findings, "cast_pack_license", "license must be an object")
+        license_info = {}
+    for field in ["name", "source"]:
+        _required_string(license_info, field, findings, "cast_pack_license")
+    if not isinstance(license_info.get("public_delivery_allowed"), bool):
+        _block(findings, "cast_pack_license", "license.public_delivery_allowed must be boolean")
+    elif deliverable and not license_info["public_delivery_allowed"]:
+        _block(findings, "cast_pack_license", "CastPack license does not allow public delivery")
+
+    hashes = pack.get("sha256")
+    if not isinstance(hashes, dict):
+        _block(findings, "cast_pack_hashes", "sha256 must be an object")
+        hashes = {}
+    root = Path(workspace_root).resolve() if workspace_root else None
+    for relative_path in reference_paths:
+        digest = hashes.get(relative_path)
+        if not isinstance(digest, str) or not _SHA256_RE.fullmatch(digest):
+            _block(findings, "cast_pack_hashes", f"sha256 entry is missing or invalid: {relative_path}")
+            continue
+        if check_files:
+            target = _safe_artifact_path(root, relative_path, findings, "cast_pack")
+            if target is None:
+                continue
+            if not target.is_file():
+                _block(findings, "cast_pack_file_missing", f"reference image does not exist: {relative_path}")
+                continue
+            actual = hashlib.sha256(target.read_bytes()).hexdigest()
+            if actual.lower() != digest.lower():
+                _block(findings, "cast_pack_hash_mismatch", f"sha256 mismatch: {relative_path}")
+
+    status = pack.get("status")
+    if status != "approved":
+        _block(findings, "cast_pack_status", "status must be approved before character replacement")
+    approval = pack.get("approval")
+    if not isinstance(approval, dict):
+        _block(findings, "cast_pack_approval", "approval must be an object")
+    else:
+        if approval.get("status") != "approved" or approval.get("approved_by") != "user":
+            _block(findings, "cast_pack_approval", "approval must record explicit user approval")
+        if approval.get("approved_revision") != pack.get("revision"):
+            _block(findings, "cast_pack_approval", "approval.approved_revision must equal revision")
+    return _result(findings, "cast_pack_valid", "CastPack is valid and approved")
+
+
 def validate_run_snapshot(snapshot: dict) -> dict:
     """Validate the immutable inputs captured for one CRCP run."""
     findings: list[dict] = []
@@ -256,6 +351,7 @@ def build_creative_recast_certification_report(base: dict, manifest: dict, artif
             _block(findings, "crcp_required_capability_missing", f"Base is missing CRCP capability: {capability}")
 
     validators = {
+        "cast_pack": validate_cast_pack,
         "creative_spec": validate_creative_spec,
         "shot_control_bundle": validate_shot_control_bundle,
         "run_snapshot": validate_run_snapshot,
@@ -354,14 +450,28 @@ def _string_array(value: dict, field: str, findings: list[dict]) -> list[str]:
     return result
 
 
-def _safe_artifact_path(root: Path | None, relative_path: str, findings: list[dict]) -> Path | None:
+def _nonempty_string_list(value: dict, field: str, findings: list[dict], code: str) -> list[str]:
+    raw = value.get(field)
+    if not isinstance(raw, list):
+        _block(findings, code, f"{field} must be an array")
+        return []
+    result = []
+    for index, item in enumerate(raw):
+        if not isinstance(item, str) or not item.strip():
+            _block(findings, code, f"{field}[{index}] must be a non-empty string")
+        else:
+            result.append(item.strip())
+    return result
+
+
+def _safe_artifact_path(root: Path | None, relative_path: str, findings: list[dict], code_prefix: str = "control_bundle") -> Path | None:
     if root is None:
-        _block(findings, "control_bundle_file_check", "workspace_root is required when check_files is true")
+        _block(findings, f"{code_prefix}_file_check", "workspace_root is required when check_files is true")
         return None
     target = (root / relative_path).resolve()
     try:
         target.relative_to(root)
     except ValueError:
-        _block(findings, "control_bundle_path_escape", f"artifact path escapes workspace: {relative_path}")
+        _block(findings, f"{code_prefix}_path_escape", f"artifact path escapes workspace: {relative_path}")
         return None
     return target

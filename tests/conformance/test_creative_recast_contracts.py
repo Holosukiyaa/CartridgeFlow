@@ -5,10 +5,35 @@ from pathlib import Path
 
 from core.lab.mcp import creative_recast
 from core.protocol import build_creative_recast_certification_report, validate_failure_record, validate_run_snapshot
-from core.protocol.creative_recast import CRCP_REQUIRED_CAPABILITIES, validate_creative_spec, validate_shot_control_bundle
+from core.protocol.creative_recast import CRCP_REQUIRED_CAPABILITIES, validate_cast_pack, validate_creative_spec, validate_shot_control_bundle
+
+
+ROOT = Path(__file__).resolve().parents[2]
 
 
 class CreativeRecastContractTest(unittest.TestCase):
+    def _cast_pack(self):
+        reference = "frontend/src/assets/hero.png"
+        digest = hashlib.sha256((ROOT / reference).read_bytes()).hexdigest()
+        return {
+            "schema": "cartridgeflow.cast_pack.v1",
+            "pack_id": "cast.original_anime_male.v1",
+            "revision": 1,
+            "character_id": "hero_male",
+            "display_name": "Approved male hero",
+            "references": {"primary": reference, "additional": []},
+            "appearance": {
+                "wardrobe": ["dark hero outfit"],
+                "hair": "short dark hair",
+                "fixed_colors": {"hair": "#202020", "outfit": "#303840"},
+                "immutable_features": ["adult male", "athletic build"],
+            },
+            "license": {"name": "test fixture", "source": "repository fixture", "public_delivery_allowed": True},
+            "sha256": {reference: digest},
+            "status": "approved",
+            "approval": {"status": "approved", "approved_by": "user", "approved_revision": 1},
+        }
+
     def _bundle(self):
         return {
             "schema": "cartridgeflow.shot_control_bundle.v1",
@@ -94,6 +119,18 @@ class CreativeRecastContractTest(unittest.TestCase):
         result = validate_creative_spec(self._spec())
         self.assertTrue(result["ok"], result)
 
+    def test_approved_cast_pack_checks_identity_license_and_reference_hash(self):
+        pack = self._cast_pack()
+        result = validate_cast_pack(pack, ROOT, check_files=True)
+        self.assertTrue(result["ok"], result)
+        pack["license"]["public_delivery_allowed"] = False
+        pack["sha256"][pack["references"]["primary"]] = "0" * 64
+        result = validate_cast_pack(pack, ROOT, check_files=True)
+        self.assertFalse(result["ok"])
+        codes = [item["code"] for item in result["findings"]]
+        self.assertIn("cast_pack_license", codes)
+        self.assertIn("cast_pack_hash_mismatch", codes)
+
     def test_opt_in_mcp_module_exposes_only_its_declared_tools(self):
         class RegistryStub:
             def __init__(self, root):
@@ -168,6 +205,7 @@ class CreativeRecastContractTest(unittest.TestCase):
             load_base_implementation(Path(__file__).resolve().parents[2]),
             {"protocol_extensions": [{"id": "CF-CRCP", "version": "0.1"}]},
             {
+                "cast_pack": self._cast_pack(),
                 "creative_spec": self._spec(),
                 "shot_control_bundle": self._bundle(),
                 "run_snapshot": self._snapshot(),
@@ -196,6 +234,7 @@ class CreativeRecastContractTest(unittest.TestCase):
             base,
             manifest,
             {
+                "cast_pack": self._cast_pack(),
                 "creative_spec": self._spec(),
                 "shot_control_bundle": self._bundle(),
                 "run_snapshot": self._snapshot(),
@@ -225,6 +264,7 @@ class CreativeRecastContractTest(unittest.TestCase):
         result = registry._registry["media"]["run_creative_recast"]({
             "current_state": "control_ready",
             "creative_spec": self._spec(),
+            "cast_pack": self._cast_pack(),
             "shot_control_bundle": self._bundle(),
             "run_snapshot": self._snapshot(),
             "blender_params": {"episode_id": "pilot_01"},
@@ -237,6 +277,7 @@ class CreativeRecastContractTest(unittest.TestCase):
         self.assertTrue(registry.calls[0][2]["render_control_passes"])
         self.assertEqual(control_bundle, registry.calls[1][2]["control_bundle"])
         self.assertEqual(self._spec(), registry.calls[1][2]["creative_spec"])
+        self.assertEqual(self._cast_pack(), registry.calls[1][2]["cast_pack"])
         self.assertEqual(self._snapshot(), registry.calls[1][2]["run_snapshot"])
 
     def test_runtime_failure_returns_rejected_failure_record(self):
@@ -253,6 +294,7 @@ class CreativeRecastContractTest(unittest.TestCase):
         result = registry._registry["media"]["run_creative_recast"]({
             "current_state": "control_ready",
             "creative_spec": self._spec(),
+            "cast_pack": self._cast_pack(),
             "shot_control_bundle": self._bundle(),
             "run_snapshot": self._snapshot(),
         })

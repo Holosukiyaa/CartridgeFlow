@@ -7,6 +7,7 @@ from unittest.mock import patch
 from core.cartridge.registry import CartridgeRegistry
 from core.cartridge.runner import CartridgeRunner
 from core.cartridge.validator import ManifestValidator
+from core.lab import FlowGraphBuilder
 from core.lab.builtin_mcp import BuiltinMcpRegistry
 from core.lab.flow_analyzer import analyze_flow_structure
 from core.lab.node_executor import LabNodeExecutor
@@ -42,7 +43,8 @@ class PixelEpisodeDirectorV3Test(unittest.TestCase):
         self.assertIn(("planning_fork", "plan_camera_language"), edges)
         self.assertIn(("plan_story_beats", "assemble_creation_packet"), edges)
         self.assertIn(("forge_draft_assets", "review_draft_assets"), edges)
-        self.assertIn(("review_draft_assets", "assemble_creation_packet"), edges)
+        self.assertIn(("review_draft_assets", "review_draft_assets_external_tool_mroweam2_0"), edges)
+        self.assertIn(("review_draft_assets_external_tool_mroweam2_0", "assemble_creation_packet"), edges)
         self.assertIn(("plan_camera_language", "assemble_creation_packet"), edges)
 
         for node_id, consume_key in {
@@ -62,6 +64,20 @@ class PixelEpisodeDirectorV3Test(unittest.TestCase):
         self.assertEqual("plan_asset_specs", routes[0]["target_node"])
         self.assertTrue(routes[0]["replay_from_target"])
         self.assertEqual("asset_rework_feedback", routes[0]["copy_answer_to"])
+
+    def test_review_answer_route_is_rendered_as_branch_edge(self):
+        _, root_flow = self._load()
+        graph = FlowGraphBuilder().build({
+            "id": "dev.pixel_episode_director_v3",
+            "root_flow": root_flow,
+        })
+
+        branch_edges = {
+            (edge.get("from"), edge.get("to"), edge.get("scope"), edge.get("label"))
+            for edge in graph.get("edges") or []
+            if edge.get("scope") == "branch"
+        }
+        self.assertIn(("review_draft_assets", "plan_asset_specs", "branch", "回跳"), branch_edges)
 
     def test_asset_review_revise_route_replays_asset_lane(self):
         _, root_flow = self._load()

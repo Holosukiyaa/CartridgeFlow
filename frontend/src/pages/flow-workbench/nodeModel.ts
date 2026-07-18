@@ -1,5 +1,5 @@
 import dagre from '@dagrejs/dagre'
-import type { FlowGraph, FlowNode } from '../../api.ts'
+import type { FlowEdge, FlowGraph, FlowNode } from '../../api.ts'
 import type { NodeCategory, NodeDraft, NodePreset, NodeCategoryId } from './types.ts'
 
 export const FILE_TABS = [
@@ -597,12 +597,16 @@ function resolveLayoutCollisions(layout: Record<string, { x: number; y: number }
   return layout
 }
 
+function isStructuralEdge(edge?: FlowEdge) {
+  return String(edge?.scope || 'root') !== 'branch'
+}
+
 function getExecutionOrder(graph: FlowGraph): FlowNode[] {
   const nodes = graph.nodes || []
   const byId = new Map(nodes.map((node) => [node.id, node]))
   const nextBySource = new Map<string, string>()
 
-  ;(graph.edges || []).forEach((edge) => {
+  ;(graph.edges || []).filter(isStructuralEdge).forEach((edge) => {
     if (!edge.from || !edge.to || edge.from === edge.to) return
     if (!byId.has(edge.from) || !byId.has(edge.to)) return
     if (!nextBySource.has(edge.from)) nextBySource.set(edge.from, edge.to)
@@ -685,7 +689,7 @@ export function buildFactoryLayout(graph: FlowGraph): Record<string, { x: number
     if (!anchorId || !nodeById.has(anchorId)) return
     moduleByAnchor.set(anchorId, [...(moduleByAnchor.get(anchorId) || []), node])
   })
-  ;(graph.edges || []).forEach((edge) => {
+  ;(graph.edges || []).filter(isStructuralEdge).forEach((edge) => {
     if (!edge.from || !edge.to || edge.from === edge.to) return
     outgoingBySource.set(edge.from, [...(outgoingBySource.get(edge.from) || []), edge.to])
     incomingByTarget.set(edge.to, [...(incomingByTarget.get(edge.to) || []), edge.from])
@@ -792,7 +796,7 @@ export function buildAutoAlignLayout(graph: FlowGraph): Record<string, { x: numb
     layoutGraph.setNode(node.id, { width: nodeWidth, height: nodeHeight })
   })
 
-  ;(graph.edges || []).forEach((edge) => {
+  ;(graph.edges || []).filter(isStructuralEdge).forEach((edge) => {
     if (!edge.from || !edge.to || edge.from === edge.to) return
     if (!nodeIds.has(edge.from) || !nodeIds.has(edge.to)) return
     layoutGraph.setEdge(edge.from, edge.to)

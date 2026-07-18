@@ -59,6 +59,7 @@ class FlowGraphBuilder:
             })
             if state.get("next"):
                 edges.append({"from": state_id, "to": state.get("next"), "scope": "root"})
+            edges.extend(self._answer_route_edges(state_id, state))
         for edge in root_flow.get("edges") or []:
             source = edge.get("from") or edge.get("source")
             target = edge.get("to") or edge.get("target")
@@ -74,6 +75,26 @@ class FlowGraphBuilder:
             "edges": edges,
             "sub_flows": [],
         }
+
+    def _answer_route_edges(self, state_id: str, state: dict) -> list[dict]:
+        decision_contract = state.get("decision_contract") if isinstance(state.get("decision_contract"), dict) else {}
+        interaction = decision_contract.get("interaction") if isinstance(decision_contract.get("interaction"), dict) else {}
+        routes = interaction.get("answer_routes")
+        if not isinstance(routes, list):
+            return []
+
+        edges: list[dict] = []
+        seen_targets = set()
+        for route in routes:
+            if not isinstance(route, dict):
+                continue
+            target = str(route.get("target_node") or "").strip()
+            if not target or target == state_id or target in seen_targets:
+                continue
+            seen_targets.add(target)
+            edge = {"from": state_id, "to": target, "scope": "branch", "label": "回跳"}
+            edges.append(edge)
+        return edges
 
     def _ordered_states(self, root_flow: dict) -> list[str]:
         states = root_flow.get("states") or {}

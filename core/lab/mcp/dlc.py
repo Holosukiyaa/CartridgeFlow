@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 
-from . import media_core, pixel_episode, short_video, spatial, series_3d
+from . import creative_recast, media_core, pixel_episode, short_video, spatial, series_3d
 
 
 DLC_DESCRIPTORS = {
@@ -42,10 +42,9 @@ DLC_DESCRIPTORS = {
     },
 }
 _MODULES = [media_core, pixel_episode, short_video, spatial, series_3d]
-# Extension modules intentionally stay out of the default import/registration
-# path. A module is added here only after its companion protocol is implemented
-# and certified by the base.
-_EXTENSION_MODULES: dict[str, object] = {}
+# Extension modules are imported as inert Python code, but registration remains
+# gated by explicit protocol declaration, base protocol support, and capabilities.
+_EXTENSION_MODULES: dict[str, object] = {"creative_recast": creative_recast}
 
 
 def _protocol_key(value) -> str:
@@ -79,15 +78,27 @@ def normalize_capabilities(value) -> set[str]:
     return {str(item).strip() for item in value if str(item).strip()}
 
 
-def resolve_dlc_load_report(protocol_extensions=None, capabilities=None) -> list[dict]:
+def normalize_protocols(value) -> set[str]:
+    if isinstance(value, Mapping):
+        value = value.get("supported_protocols") or value.get("protocols") or []
+    if isinstance(value, str):
+        value = [value]
+    if not isinstance(value, Iterable):
+        return set()
+    return {key for item in value if (key := _protocol_key(item))}
+
+
+def resolve_dlc_load_report(protocol_extensions=None, capabilities=None, supported_protocols=None) -> list[dict]:
     """Return deterministic DLC/extension loading decisions.
 
     Base modules are always eligible. Companion protocol modules require both
-    an explicit manifest declaration and every capability listed by the DLC
-    descriptor. The report is metadata only; it never executes a tool.
+    an explicit manifest declaration, base protocol support, and every
+    capability listed by the DLC descriptor. The report is metadata only; it
+    never executes a tool.
     """
     requested = normalize_protocol_extensions(protocol_extensions)
     available_capabilities = normalize_capabilities(capabilities)
+    supported = normalize_protocols(supported_protocols)
     report = []
     for descriptor in DLC_DESCRIPTORS.values():
         item = dict(descriptor)
@@ -100,9 +111,12 @@ def resolve_dlc_load_report(protocol_extensions=None, capabilities=None) -> list
         required = [str(cap).strip() for cap in descriptor.get("optional_extension_required_capabilities") or [] if str(cap).strip()]
         missing = [cap for cap in required if cap not in available_capabilities]
         declared = _protocol_key(extension) in requested
+        protocol_supported = _protocol_key(extension) in supported
         module_name = descriptor.get("optional_extension_module")
         if not declared:
             status = "not_requested"
+        elif not protocol_supported:
+            status = "blocked_missing_protocol"
         elif missing:
             status = "blocked_missing_capabilities"
         elif module_name not in _EXTENSION_MODULES:
@@ -113,6 +127,7 @@ def resolve_dlc_load_report(protocol_extensions=None, capabilities=None) -> list
         item["extension"] = {
             "id": extension,
             "declared": declared,
+            "protocol_supported": protocol_supported,
             "module": module_name,
             "required_capabilities": required,
             "missing_capabilities": missing,
@@ -122,8 +137,8 @@ def resolve_dlc_load_report(protocol_extensions=None, capabilities=None) -> list
     return report
 
 
-def register_media_modules(registry, protocol_extensions=None, capabilities=None):
-    registry._dlc_report = resolve_dlc_load_report(protocol_extensions, capabilities)
+def register_media_modules(registry, protocol_extensions=None, capabilities=None, supported_protocols=None):
+    registry._dlc_report = resolve_dlc_load_report(protocol_extensions, capabilities, supported_protocols)
     for module in _MODULES:
         module.register(registry)
         descriptor = DLC_DESCRIPTORS.get(module.DLC_ID, {})
@@ -146,3 +161,10 @@ def register_media_modules(registry, protocol_extensions=None, capabilities=None
         if not decision or decision.get("status") != "enabled":
             continue
         module.register(registry)
+        for tool_name in module.TOOLS:
+            registry._tool_dlc[tool_name] = {
+                "id": descriptor.get("id"),
+                "kind": descriptor.get("kind", "dlc"),
+                "protocol": module.DLC_PROTOCOL,
+                "extends": descriptor.get("protocol"),
+            }

@@ -32,7 +32,7 @@ core/lab/
     series_3d.py                 # 真实 3D 资产匹配、动作匹配、Blender
 ```
 
-协议层的 `core/protocol/creative_recast.py` 提供 Shot Control Bundle、CreativeSpec、RunSnapshot 的只读校验，以及独立的 CRCP certification report。独立的 `core/lab/mcp/creative_recast.py` 已准备好三个 opt-in 校验入口，但当前仍未加入 `_EXTENSION_MODULES`，因此不会注册工具，也不会写入或生成任何 artifact；只有 CRCP 基座能力完成声明后才能接入运行时。
+协议层的 `core/protocol/creative_recast.py` 提供 Shot Control Bundle、CreativeSpec、RunSnapshot 的只读校验，以及独立的 CRCP certification report。独立的 `core/lab/mcp/creative_recast.py` 已加入 `_EXTENSION_MODULES`，但只有 manifest 声明、基座同时支持 `CF-CRCP@0.1` 且完整 capability 集满足时才会注册三个校验入口；默认 FARP 基座不会加载它，也不会产生 artifact 副作用。
 
 模块只能通过 `register(registry)` 暴露工具。模块导入和注册阶段不得执行 Blender、ComfyUI、Godot、网络请求或文件生产副作用。
 
@@ -72,6 +72,7 @@ core/lab/
 `dlc_report()` 中返回每个 companion protocol 的决定：
 
 - `not_requested`：manifest 没有声明扩展；
+- `blocked_missing_protocol`：manifest 声明了扩展，但基座没有在 `supported_protocols` 中声明该协议；
 - `blocked_missing_capabilities`：声明了扩展，但当前基座缺少所需 capability；
 - `unimplemented`：声明和 capability 都满足，但实现模块尚未加入；
 - `enabled`：实现模块、显式声明和 capability 均满足。

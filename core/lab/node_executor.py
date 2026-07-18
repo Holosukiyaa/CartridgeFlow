@@ -40,13 +40,21 @@ class LabNodeExecutor:
         from core.protocol import load_base_implementation
 
         capabilities = run.get("base_capabilities") if isinstance(run, dict) else None
-        if not capabilities:
+        supported_protocols = run.get("base_supported_protocols") if isinstance(run, dict) else None
+        if not capabilities or not supported_protocols:
             try:
-                capabilities = load_base_implementation(self.workspace_root).get("capabilities") or []
+                base = load_base_implementation(self.workspace_root)
+                capabilities = capabilities or base.get("capabilities") or []
+                supported_protocols = supported_protocols or base.get("supported_protocols") or []
             except Exception:
                 capabilities = []
+                supported_protocols = []
         cache_key = json.dumps(
-            {"extensions": extensions, "capabilities": sorted(str(item) for item in capabilities)},
+            {
+                "extensions": extensions,
+                "capabilities": sorted(str(item) for item in capabilities),
+                "supported_protocols": supported_protocols,
+            },
             ensure_ascii=True,
             sort_keys=True,
             default=str,
@@ -57,6 +65,7 @@ class LabNodeExecutor:
                 self.workspace_root,
                 protocol_extensions=extensions,
                 capabilities=capabilities,
+                supported_protocols=supported_protocols,
             )
             self._scoped_mcp_registries[cache_key] = registry
         return registry

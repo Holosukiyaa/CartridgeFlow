@@ -39,10 +39,12 @@ class BuiltinMcpRegistry:
         *,
         protocol_extensions=None,
         capabilities=None,
+        supported_protocols=None,
     ):
         self._workspace_root = Path(workspace_root) if workspace_root else Path.cwd()
         self._protocol_extensions = protocol_extensions
         self._capabilities = capabilities
+        self._supported_protocols = supported_protocols
         self._registry: dict[str, dict[str, callable]] = {}
         self._tool_dlc: dict[str, dict] = {}
         self._dlc_report: list[dict] = []
@@ -50,7 +52,7 @@ class BuiltinMcpRegistry:
         self._register_media()
 
     @classmethod
-    def for_manifest(cls, workspace_root: str | Path | None, manifest: dict, capabilities=None):
+    def for_manifest(cls, workspace_root: str | Path | None, manifest: dict, capabilities=None, supported_protocols=None):
         """Build an explicitly scoped registry for one cartridge manifest.
 
         Ordinary callers should keep using ``BuiltinMcpRegistry(root)``. This
@@ -62,6 +64,7 @@ class BuiltinMcpRegistry:
             workspace_root,
             protocol_extensions=manifest.get("protocol_extensions") or [],
             capabilities=capabilities,
+            supported_protocols=supported_protocols,
         )
     def _safe_path(self, path_str: str) -> Path:
         resolved = (self._workspace_root / path_str).resolve()
@@ -183,6 +186,7 @@ class BuiltinMcpRegistry:
             self,
             protocol_extensions=self._protocol_extensions,
             capabilities=self._capabilities,
+            supported_protocols=self._supported_protocols,
         )
 
     def call(self, server: str, tool: str, params: dict) -> dict:

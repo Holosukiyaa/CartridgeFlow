@@ -3,6 +3,7 @@ from pathlib import Path
 
 from core.lab.builtin_mcp import BuiltinMcpRegistry
 from core.lab.mcp.dlc import DLC_DESCRIPTORS
+from core.protocol.creative_recast import CRCP_REQUIRED_CAPABILITIES
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -44,6 +45,7 @@ class BuiltinMcpDlcModuleTest(unittest.TestCase):
             ROOT,
             protocol_extensions=[{"id": "CF-CRCP", "version": "0.1"}],
             capabilities=[],
+            supported_protocols=[{"id": "CF-CRCP", "version": "0.1"}],
         )
         series = next(item for item in blocked.dlc_report() if item["id"] == "dlc.series_3d_episode_factory")
         self.assertEqual("blocked_missing_capabilities", series["extension"]["status"])
@@ -67,10 +69,39 @@ class BuiltinMcpDlcModuleTest(unittest.TestCase):
 
     def test_manifest_factory_keeps_extension_scope_explicit(self):
         manifest = {"protocol_extensions": [{"id": "CF-CRCP", "version": "0.1"}]}
-        registry = BuiltinMcpRegistry.for_manifest(ROOT, manifest, capabilities=[])
+        registry = BuiltinMcpRegistry.for_manifest(
+            ROOT,
+            manifest,
+            capabilities=[],
+            supported_protocols=[{"id": "CF-CRCP", "version": "0.1"}],
+        )
         series = next(item for item in registry.dlc_report() if item["id"] == "dlc.series_3d_episode_factory")
         self.assertTrue(series["extension"]["declared"])
         self.assertEqual("blocked_missing_capabilities", series["extension"]["status"])
+
+    def test_extension_requires_base_protocol_support(self):
+        registry = BuiltinMcpRegistry(
+            ROOT,
+            protocol_extensions=[{"id": "CF-CRCP", "version": "0.1"}],
+            capabilities=CRCP_REQUIRED_CAPABILITIES,
+            supported_protocols=[],
+        )
+        series = next(item for item in registry.dlc_report() if item["id"] == "dlc.series_3d_episode_factory")
+        self.assertEqual("blocked_missing_protocol", series["extension"]["status"])
+        self.assertNotIn("validate_creative_spec", registry.list_tools().get("media", []))
+
+    def test_complete_base_fixture_can_enable_crcp_module(self):
+        registry = BuiltinMcpRegistry(
+            ROOT,
+            protocol_extensions=[{"id": "CF-CRCP", "version": "0.1"}],
+            capabilities=CRCP_REQUIRED_CAPABILITIES,
+            supported_protocols=[{"id": "CF-CRCP", "version": "0.1"}],
+        )
+        series = next(item for item in registry.dlc_report() if item["id"] == "dlc.series_3d_episode_factory")
+        self.assertEqual("enabled", series["extension"]["status"])
+        self.assertIn("validate_creative_spec", registry.list_tools().get("media", []))
+        description = {item["tool"]: item for item in registry.describe()}
+        self.assertEqual("CF-CRCP@0.1", description["validate_creative_spec"]["dlc"]["protocol"])
 
 
 if __name__ == "__main__":

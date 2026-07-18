@@ -13,7 +13,22 @@ from pathlib import Path
 
 CONTROL_BUNDLE_SCHEMA = "cartridgeflow.shot_control_bundle.v1"
 CREATIVE_SPEC_SCHEMA = "cartridgeflow.creative_spec.v1"
+RUN_SNAPSHOT_SCHEMA = "cartridgeflow.run_snapshot.v1"
 CREATIVE_MODES = {"conservative", "character_replace", "creative_recast", "exploration"}
+CRCP_REQUIRED_PROFILES = ["creative_control_runtime"]
+CRCP_REQUIRED_CAPABILITIES = [
+    "control_bundle_v1",
+    "control_bundle_validate",
+    "creative_spec_v1",
+    "creative_mode_policy",
+    "creative_workflow_allowlist",
+    "creative_change_proposal",
+    "creative_approval_gate",
+    "creative_run_snapshot",
+    "creative_failure_record",
+    "creative_quality_gates",
+    "creative_artifact_audit",
+]
 _SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 
 
@@ -146,6 +161,128 @@ def validate_creative_spec(spec: dict, *, deliverable: bool = True) -> dict:
     return _result(findings, "creative_spec_valid", "CreativeSpec is valid")
 
 
+def validate_run_snapshot(snapshot: dict) -> dict:
+    """Validate the immutable inputs captured for one CRCP run."""
+    findings: list[dict] = []
+    if not isinstance(snapshot, dict):
+        return _result(findings, "run_snapshot_invalid", "RunSnapshot must be an object")
+    if snapshot.get("schema") != RUN_SNAPSHOT_SCHEMA:
+        _block(findings, "run_snapshot_schema", f"schema must be {RUN_SNAPSHOT_SCHEMA}")
+    for field in ["snapshot_id", "run_id"]:
+        _required_string(snapshot, field, findings, "run_snapshot_identity")
+    _positive_int(snapshot, "revision", findings, "run_snapshot_revision")
+
+    protocol = snapshot.get("protocol")
+    if not isinstance(protocol, dict) or protocol.get("id") != "CF-CRCP" or protocol.get("version") != "0.1":
+        _block(findings, "run_snapshot_protocol", "protocol must be CF-CRCP@0.1")
+
+    _revision_ref(snapshot, "creative_spec", "spec_id", findings)
+    _revision_ref(snapshot, "control_bundle", "bundle_id", findings)
+    _hashed_ref(snapshot, "workflow", findings)
+    _hashed_ref(snapshot, "model", findings)
+
+    seed = snapshot.get("seed")
+    if isinstance(seed, bool) or not isinstance(seed, (int, str)) or (isinstance(seed, str) and not seed.strip()):
+        _block(findings, "run_snapshot_seed", "seed must be a non-empty string or integer")
+    if not isinstance(snapshot.get("parameters"), dict):
+        _block(findings, "run_snapshot_parameters", "parameters must be an object")
+
+    outputs = snapshot.get("outputs")
+    if not isinstance(outputs, list):
+        _block(findings, "run_snapshot_outputs", "outputs must be an array")
+        outputs = []
+    for index, output in enumerate(outputs):
+        if not isinstance(output, dict) or not isinstance(output.get("path"), str) or not output.get("path").strip():
+            _block(findings, "run_snapshot_outputs", f"outputs[{index}].path is required")
+            continue
+        digest = output.get("sha256")
+        if not isinstance(digest, str) or not _SHA256_RE.fullmatch(digest):
+            _block(findings, "run_snapshot_outputs", f"outputs[{index}].sha256 must be a SHA-256 digest")
+
+    status = snapshot.get("status")
+    valid_statuses = {"locked", "running", "review_required", "accepted", "rejected", "blocked"}
+    if status not in valid_statuses:
+        _block(findings, "run_snapshot_status", f"status must be one of: {', '.join(sorted(valid_statuses))}")
+    if status in {"review_required", "accepted", "rejected", "blocked"} and not outputs:
+        _block(findings, "run_snapshot_outputs", "a completed snapshot must record at least one output")
+
+    approval = snapshot.get("approval")
+    if not isinstance(approval, dict):
+        _block(findings, "run_snapshot_approval", "approval must be an object")
+    else:
+        if approval.get("status") != "approved":
+            _block(findings, "run_snapshot_approval", "approval.status must be approved")
+        if approval.get("approved_by") != "user":
+            _block(findings, "run_snapshot_approval", "approval.approved_by must be user")
+        if approval.get("approved_revision") != snapshot.get("revision"):
+            _block(findings, "run_snapshot_approval", "approval.approved_revision must equal revision")
+    return _result(findings, "run_snapshot_valid", "RunSnapshot is valid")
+
+
+def build_creative_recast_certification_report(base: dict, manifest: dict, artifacts: dict | None = None) -> dict:
+    """Report whether a base and one cartridge meet the CRCP v0.1 boundary.
+
+    This report is intentionally separate from the existing FARP certification
+    label path. It cannot certify or mutate a manifest while the base does not
+    declare CRCP support.
+    """
+    findings: list[dict] = []
+    base = base if isinstance(base, dict) else {}
+    manifest = manifest if isinstance(manifest, dict) else {}
+    artifacts = artifacts if isinstance(artifacts, dict) else {}
+    supported_protocols = {
+        (str(item.get("id")), str(item.get("version")))
+        for item in base.get("supported_protocols") or []
+        if isinstance(item, dict)
+    }
+    if ("CF-CRCP", "0.1") not in supported_protocols:
+        _block(findings, "crcp_protocol_unsupported", "Base does not support CF-CRCP@0.1")
+    extension = next((item for item in manifest.get("protocol_extensions") or [] if isinstance(item, dict) and item.get("id") == "CF-CRCP" and item.get("version") == "0.1"), None)
+    if extension is None:
+        _block(findings, "crcp_extension_missing", "Manifest must declare CF-CRCP@0.1 in protocol_extensions")
+
+    base_profiles = set(base.get("profiles") or [])
+    base_capabilities = set(base.get("capabilities") or [])
+    required_profiles = list(CRCP_REQUIRED_PROFILES)
+    required_capabilities = list(CRCP_REQUIRED_CAPABILITIES)
+    if isinstance(extension, dict):
+        required_profiles = _merge_required(required_profiles, extension.get("required_profiles"))
+        required_capabilities = _merge_required(required_capabilities, extension.get("required_capabilities"))
+    for profile in required_profiles:
+        if profile not in base_profiles:
+            _block(findings, "crcp_required_profile_missing", f"Base is missing CRCP profile: {profile}")
+    for capability in required_capabilities:
+        if capability not in base_capabilities:
+            _block(findings, "crcp_required_capability_missing", f"Base is missing CRCP capability: {capability}")
+
+    validators = {
+        "creative_spec": validate_creative_spec,
+        "shot_control_bundle": validate_shot_control_bundle,
+        "run_snapshot": validate_run_snapshot,
+    }
+    for artifact_name, validator in validators.items():
+        artifact = artifacts.get(artifact_name)
+        if artifact is None:
+            _block(findings, "crcp_artifact_missing", f"Missing required CRCP artifact: {artifact_name}")
+            continue
+        result = validator(artifact)
+        for finding in result.get("findings") or []:
+            if finding.get("severity") == "blocker":
+                findings.append({
+                    **finding,
+                    "code": f"{artifact_name}_{finding.get('code')}",
+                })
+
+    blockers = [item for item in findings if item.get("severity") == "blocker"]
+    return {
+        "ok": not blockers,
+        "status": "certified" if not blockers else "not_certified",
+        "protocol": {"id": "CF-CRCP", "version": "0.1"},
+        "summary": {"blocker": len(blockers), "total": len(findings)},
+        "findings": findings,
+    }
+
+
 def _result(findings: list[dict], ok_code: str, ok_message: str) -> dict:
     blockers = [item for item in findings if item.get("severity") == "blocker"]
     if not blockers:
@@ -166,6 +303,36 @@ def _positive_int(value: dict, field: str, findings: list[dict], code: str) -> N
     number = value.get(field)
     if isinstance(number, bool) or not isinstance(number, int) or number <= 0:
         _block(findings, code, f"{field} must be a positive integer")
+
+
+def _revision_ref(value: dict, field: str, identity_field: str, findings: list[dict]) -> None:
+    reference = value.get(field)
+    if not isinstance(reference, dict):
+        _block(findings, "run_snapshot_reference", f"{field} must be an object")
+        return
+    _required_string(reference, identity_field, findings, "run_snapshot_reference")
+    _positive_int(reference, "revision", findings, "run_snapshot_reference")
+
+
+def _hashed_ref(value: dict, field: str, findings: list[dict]) -> None:
+    reference = value.get(field)
+    if not isinstance(reference, dict):
+        _block(findings, "run_snapshot_reference", f"{field} must be an object")
+        return
+    _required_string(reference, "id", findings, "run_snapshot_reference")
+    digest = reference.get("sha256")
+    if not isinstance(digest, str) or not _SHA256_RE.fullmatch(digest):
+        _block(findings, "run_snapshot_reference", f"{field}.sha256 must be a SHA-256 digest")
+
+
+def _merge_required(defaults: list[str], declared) -> list[str]:
+    values = list(defaults)
+    if isinstance(declared, list):
+        for item in declared:
+            text = str(item).strip()
+            if text and text not in values:
+                values.append(text)
+    return values
 
 
 def _string_array(value: dict, field: str, findings: list[dict]) -> list[str]:

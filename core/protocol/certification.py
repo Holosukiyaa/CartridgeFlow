@@ -7,7 +7,13 @@ from .flow_contract import build_v02_flow_contract_report, build_v03_flow_contra
 from .report import summarize_findings
 
 
-def build_protocol_certification_report(base: dict, manifest: dict, root_flow: dict | None, project_root: str | Path | None = None) -> dict:
+def build_protocol_certification_report(
+    base: dict,
+    manifest: dict,
+    root_flow: dict | None,
+    project_root: str | Path | None = None,
+    extension_reports: dict | None = None,
+) -> dict:
     compatibility = build_compatibility_report(base, manifest, root_flow, project_root)
     findings: list[dict] = []
 
@@ -40,6 +46,29 @@ def build_protocol_certification_report(base: dict, manifest: dict, root_flow: d
                 "blocker",
                 "contract_mismatch",
                 "manifest.base_contract must match runtime_contract protocol and protocol_version.",
+            ))
+
+    extension_reports = extension_reports if isinstance(extension_reports, dict) else {}
+    for extension in manifest.get("protocol_extensions") or []:
+        if not isinstance(extension, dict):
+            continue
+        extension_id = str(extension.get("id") or "").strip()
+        extension_version = str(extension.get("version") or "").strip()
+        if not extension_id or not extension_version:
+            continue
+        extension_key = f"{extension_id}@{extension_version}"
+        extension_report = extension_reports.get(extension_key)
+        if not isinstance(extension_report, dict):
+            findings.append(_finding(
+                "blocker",
+                "extension_certification_missing",
+                f"Protocol extension requires its own certification report: {extension_key}",
+            ))
+        elif not extension_report.get("ok"):
+            findings.append(_finding(
+                "blocker",
+                "extension_certification_blocked",
+                f"Protocol extension certification is not ok: {extension_key}",
             ))
 
     protocol = compatibility.get("protocol") or {}
@@ -81,6 +110,7 @@ def build_protocol_certification_report(base: dict, manifest: dict, root_flow: d
         "base": compatibility.get("base") or {},
         "cartridge": compatibility.get("cartridge") or {},
         "compatibility": compatibility,
+        "extensions": extension_reports,
         "summary": counts,
         "findings": findings,
     }

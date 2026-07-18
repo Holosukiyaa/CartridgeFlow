@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 
 from core.cartridge.validator import ManifestValidationError, ManifestValidator
-from core.protocol import build_compatibility_report, load_base_implementation
+from core.protocol import build_compatibility_report, build_protocol_certification_report, load_base_implementation
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -97,6 +97,15 @@ class ProtocolExtensionCompatibilityTest(unittest.TestCase):
         report = build_compatibility_report(base, self._manifest(), self._root_flow(), ROOT)
         self.assertTrue(report["ok"])
         self.assertEqual([], report["extensions"])
+
+    def test_generic_certification_requires_extension_report(self):
+        base = load_base_implementation(ROOT)
+        manifest = self._manifest([
+            {"id": "CF-CRCP", "version": "0.1"},
+        ], protocol_version="0.4")
+        report = build_protocol_certification_report(base, manifest, self._root_flow(), ROOT)
+        self.assertFalse(report["ok"])
+        self.assertIn("extension_certification_missing", [item["code"] for item in report["findings"]])
 
 
 if __name__ == "__main__":

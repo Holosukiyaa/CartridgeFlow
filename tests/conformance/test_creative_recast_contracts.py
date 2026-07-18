@@ -4,7 +4,8 @@ import unittest
 from pathlib import Path
 
 from core.lab.mcp import creative_recast
-from core.protocol.creative_recast import validate_creative_spec, validate_shot_control_bundle
+from core.protocol import build_creative_recast_certification_report, validate_run_snapshot
+from core.protocol.creative_recast import CRCP_REQUIRED_CAPABILITIES, validate_creative_spec, validate_shot_control_bundle
 
 
 class CreativeRecastContractTest(unittest.TestCase):
@@ -133,6 +134,74 @@ class CreativeRecastContractTest(unittest.TestCase):
         creative_recast.register(registry)
         result = registry._registry["media"]["validate_change_proposal"]({"proposal": proposal})
         self.assertTrue(result["ok"], result)
+
+    def _snapshot(self):
+        return {
+            "schema": "cartridgeflow.run_snapshot.v1",
+            "snapshot_id": "pilot_01_run_0001",
+            "run_id": "run_pilot_01",
+            "revision": 1,
+            "protocol": {"id": "CF-CRCP", "version": "0.1"},
+            "creative_spec": {"spec_id": "pilot_01_recast", "revision": 1},
+            "control_bundle": {"bundle_id": "pilot_01_walk_01.bundle", "revision": 1},
+            "workflow": {"id": "wan21_vace_1_3b_character_replace", "sha256": "4" * 64},
+            "model": {"id": "wan2.1-vace-1.3b", "sha256": "5" * 64},
+            "seed": 42,
+            "parameters": {"steps": 8, "cfg": 5.0, "width": 480, "height": 832},
+            "outputs": [],
+            "status": "locked",
+            "approval": {"status": "approved", "approved_by": "user", "approved_revision": 1},
+        }
+
+    def test_locked_run_snapshot_passes_and_completed_snapshot_needs_output(self):
+        snapshot = self._snapshot()
+        self.assertTrue(validate_run_snapshot(snapshot)["ok"])
+        snapshot["status"] = "accepted"
+        result = validate_run_snapshot(snapshot)
+        self.assertFalse(result["ok"])
+        self.assertIn("run_snapshot_outputs", [item["code"] for item in result["findings"]])
+
+    def test_current_base_cannot_receive_crcp_certification(self):
+        from core.protocol import load_base_implementation
+
+        report = build_creative_recast_certification_report(
+            load_base_implementation(Path(__file__).resolve().parents[2]),
+            {"protocol_extensions": [{"id": "CF-CRCP", "version": "0.1"}]},
+            {
+                "creative_spec": self._spec(),
+                "shot_control_bundle": self._bundle(),
+                "run_snapshot": self._snapshot(),
+            },
+        )
+        self.assertFalse(report["ok"])
+        self.assertIn("crcp_protocol_unsupported", [item["code"] for item in report["findings"]])
+
+    def test_complete_capability_fixture_can_pass_crcp_artifact_report(self):
+        base = {
+            "supported_protocols": [{"id": "CF-CRCP", "version": "0.1"}],
+            "profiles": ["creative_control_runtime"],
+            "capabilities": list(CRCP_REQUIRED_CAPABILITIES),
+        }
+        manifest = {
+            "protocol_extensions": [
+                {
+                    "id": "CF-CRCP",
+                    "version": "0.1",
+                    "required_profiles": ["creative_control_runtime"],
+                    "required_capabilities": list(CRCP_REQUIRED_CAPABILITIES),
+                }
+            ]
+        }
+        report = build_creative_recast_certification_report(
+            base,
+            manifest,
+            {
+                "creative_spec": self._spec(),
+                "shot_control_bundle": self._bundle(),
+                "run_snapshot": self._snapshot(),
+            },
+        )
+        self.assertTrue(report["ok"], report)
 
 
 if __name__ == "__main__":

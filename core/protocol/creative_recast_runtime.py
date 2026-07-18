@@ -7,7 +7,7 @@ runtime has accepted it.
 
 from __future__ import annotations
 
-from .creative_recast import validate_run_snapshot
+from .creative_recast import CRCP_FAILURE_LABELS, validate_candidate_review, validate_run_snapshot
 
 
 CRCP_STATES = (
@@ -23,18 +23,7 @@ CRCP_STATES = (
     "blocked",
 )
 
-FAILURE_LABELS = {
-    "motion_reversed",
-    "surrogate_leak",
-    "identity_drift",
-    "scene_drift",
-    "temporal_flicker",
-    "contact_error",
-    "style_mismatch",
-    "resource_limit",
-    "control_bundle_invalid",
-    "unapproved_change",
-}
+FAILURE_LABELS = CRCP_FAILURE_LABELS
 
 ALLOWED_TRANSITIONS = {
     "draft": {"awaiting_user_approval", "blocked"},
@@ -100,10 +89,16 @@ def transition_crcp_run(current_state: str, next_state: str, context: dict | Non
             if not context.get("outputs"):
                 _block(findings, "run_prerequisite_missing", "ComfyUI transition requires output artifacts")
         elif next_state == "accepted":
-            if context.get("user_review") != "accepted":
-                _block(findings, "run_review_required", "accepted requires explicit user_review=accepted")
-            if context.get("quality_gate") is not True:
-                _block(findings, "run_quality_gate", "accepted requires a passing quality gate")
+            workspace_root = context.get("workspace_root")
+            review = validate_candidate_review(
+                context.get("candidate_review"),
+                workspace_root,
+                check_files=bool(workspace_root),
+            )
+            if not workspace_root:
+                _block(findings, "run_artifact_audit", "accepted requires workspace_root for artifact hash checks")
+            if not review.get("ok") or (context.get("candidate_review") or {}).get("status") != "accepted":
+                _block(findings, "run_review_required", "accepted requires a valid accepted CandidateReview")
         elif next_state == "rejected":
             failure = validate_failure_record(context.get("failure_record"))
             if not failure.get("ok"):

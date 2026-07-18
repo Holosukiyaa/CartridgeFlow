@@ -1,4 +1,6 @@
+import hashlib
 import unittest
+from pathlib import Path
 
 from core.protocol.creative_recast_runtime import (
     transition_crcp_run,
@@ -7,6 +9,33 @@ from core.protocol.creative_recast_runtime import (
 
 
 class CreativeRecastRuntimeTest(unittest.TestCase):
+    def _candidate_review(self):
+        artifact = "tests/conformance/test_creative_recast_runtime.py"
+        digest = hashlib.sha256((Path.cwd() / artifact).read_bytes()).hexdigest()
+        return {
+            "schema": "cartridgeflow.candidate_review.v1",
+            "review_id": "review-001",
+            "run_id": "run-001",
+            "run_revision": 1,
+            "candidate": {"path": artifact, "sha256": digest},
+            "evidence": {
+                "run_report": {"path": artifact, "sha256": digest},
+                "run_snapshot": {"path": artifact, "sha256": digest},
+            },
+            "gates": {
+                name: {"status": "passed", "notes": f"{name} passed."}
+                for name in ["technical", "motion", "character", "continuity"]
+            },
+            "user_review": {
+                "decision": "accepted",
+                "reviewed_by": "user",
+                "reviewed_at": "2026-07-18T00:00:00+08:00",
+                "feedback": "Accepted after review.",
+            },
+            "failure_labels": [],
+            "status": "accepted",
+        }
+
     def _snapshot(self):
         return {
             "schema": "cartridgeflow.run_snapshot.v1",
@@ -62,9 +91,18 @@ class CreativeRecastRuntimeTest(unittest.TestCase):
         self.assertTrue(transition_crcp_run("running_blender", "running_comfy", context)["ok"])
         context["outputs"] = [{"path": "output.mp4"}]
         self.assertTrue(transition_crcp_run("running_comfy", "review_required", context)["ok"])
-        context["user_review"] = "accepted"
-        context["quality_gate"] = True
+        context["candidate_review"] = self._candidate_review()
+        context["workspace_root"] = Path.cwd()
         self.assertTrue(transition_crcp_run("review_required", "accepted", context)["ok"])
+
+    def test_acceptance_rejects_legacy_boolean_shortcut(self):
+        result = transition_crcp_run(
+            "review_required",
+            "accepted",
+            {"user_review": "accepted", "quality_gate": True},
+        )
+        self.assertFalse(result["ok"])
+        self.assertIn("run_review_required", [item["code"] for item in result["findings"]])
 
     def test_state_machine_rejects_bypass_and_requires_failure_record(self):
         result = transition_crcp_run("approved", "running_comfy", {})

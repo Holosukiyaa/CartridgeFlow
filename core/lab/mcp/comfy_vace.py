@@ -17,6 +17,7 @@ from copy import deepcopy
 from pathlib import Path
 
 from core.protocol.creative_recast import (
+    validate_candidate_review,
     validate_cast_pack,
     validate_creative_spec,
     validate_run_snapshot,
@@ -463,13 +464,49 @@ def run_vace_character_replace(registry, params: dict) -> dict:
         report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
         relative_report = report_path.resolve().relative_to(registry._workspace_root.resolve()).as_posix()
         relative_snapshot = snapshot_path.resolve().relative_to(registry._workspace_root.resolve()).as_posix()
+        review_template = {
+            "schema": "cartridgeflow.candidate_review.v1",
+            "review_id": f"{run_token}.{prompt_token}.review",
+            "run_id": str(snapshot["run_id"]),
+            "run_revision": int(snapshot["revision"]),
+            "candidate": {"path": relative_output, "sha256": output_hash},
+            "evidence": {
+                "run_report": {"path": relative_report, "sha256": _sha256(report_path)},
+                "run_snapshot": {"path": relative_snapshot, "sha256": _sha256(snapshot_path)},
+            },
+            "gates": {
+                "technical": {
+                    "status": "passed" if technical_gate["ok"] else "failed",
+                    "notes": "FFprobe dimensions, frame count, frame rate, and playback checks completed.",
+                },
+                "motion": {"status": "pending", "notes": "Awaiting direction, timing, and ground-contact review."},
+                "character": {"status": "pending", "notes": "Awaiting identity, anatomy, and surrogate-leak review."},
+                "continuity": {"status": "pending", "notes": "Awaiting background, lighting, and temporal continuity review."},
+            },
+            "user_review": {"decision": "pending", "reviewed_by": "", "reviewed_at": "", "feedback": ""},
+            "failure_labels": [],
+            "status": "pending_user",
+        }
+        template_check = validate_candidate_review(
+            review_template,
+            registry._workspace_root,
+            check_files=True,
+            deliverable=False,
+        )
+        if not template_check.get("ok"):
+            raise RuntimeError(f"generated CandidateReview template failed validation: {template_check.get('findings')}")
+        review_path = output_dir / f"candidate_review.pending.{prompt_token}.json"
+        review_path.write_text(json.dumps(review_template, ensure_ascii=False, indent=2), encoding="utf-8")
+        relative_review = review_path.resolve().relative_to(registry._workspace_root.resolve()).as_posix()
         return {
             "ok": technical_gate["ok"],
             "path": relative_output,
-            "files": [relative_output, relative_report, relative_snapshot],
+            "files": [relative_output, relative_report, relative_snapshot, relative_review],
             "report_path": relative_report,
             "run_snapshot_path": relative_snapshot,
             "run_snapshot": review_snapshot,
+            "candidate_review_path": relative_review,
+            "candidate_review": review_template,
             "report": report,
             "technical_gate": technical_gate,
             "error": "ComfyUI output failed the CRCP technical gate" if not technical_gate["ok"] else "",

@@ -7,6 +7,7 @@ import json
 from .comfy_vace import run_vace_character_replace as _run_vace_character_replace
 
 from core.protocol.creative_recast import (
+    validate_candidate_review as _validate_candidate_review,
     validate_cast_pack as _validate_cast_pack,
     validate_creative_spec as _validate_creative_spec,
     validate_run_snapshot as _validate_run_snapshot,
@@ -21,6 +22,7 @@ DLC_ID = "dlc.series_3d_episode_factory"
 DLC_PROTOCOL = "CF-CRCP@0.1"
 TOOLS = [
     "validate_cast_pack",
+    "validate_candidate_review",
     "validate_shot_control_bundle",
     "validate_creative_spec",
     "validate_change_proposal",
@@ -262,6 +264,19 @@ def register(registry):
         except Exception as exc:
             return {"ok": False, "validation_ok": False, "error": f"cast pack validation failed: {exc}"}
 
+    def validate_candidate_review(params: dict) -> dict:
+        try:
+            review = _json_object(_param(params, "candidate_review", "content"), "candidate_review")
+            result = _validate_candidate_review(
+                review,
+                registry._workspace_root,
+                check_files=bool(params.get("check_files", False)),
+                deliverable=params.get("deliverable", True) is not False,
+            )
+            return {"ok": result["ok"], "validation_ok": result["ok"], "report": result, "content": json.dumps(result, ensure_ascii=False, indent=2)}
+        except Exception as exc:
+            return {"ok": False, "validation_ok": False, "error": f"candidate review validation failed: {exc}"}
+
     def validate_change_proposal(params: dict) -> dict:
         try:
             proposal = _json_object(_param(params, "proposal", "content"), "proposal")
@@ -281,6 +296,7 @@ def register(registry):
 
     registry._registry["media"].update({
         "validate_cast_pack": validate_cast_pack,
+        "validate_candidate_review": validate_candidate_review,
         "validate_shot_control_bundle": validate_shot_control_bundle,
         "validate_creative_spec": validate_creative_spec,
         "validate_change_proposal": validate_change_proposal,

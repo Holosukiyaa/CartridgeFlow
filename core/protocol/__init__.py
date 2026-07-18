@@ -6,6 +6,7 @@ from .decision_envelope import parse_decision_envelope, validate_decision_envelo
 from .flow_contract import build_v02_flow_contract_report, build_v03_flow_contract_report, build_v04_flow_contract_report, validate_v02_flow_contract, validate_v03_flow_contract, validate_v04_flow_contract
 from .creative_recast import (
     build_creative_recast_certification_report,
+    validate_candidate_review,
     validate_cast_pack,
     validate_creative_spec,
     validate_run_snapshot,
@@ -37,6 +38,7 @@ __all__ = [
     "build_v04_flow_contract_report",
     "load_base_implementation",
     "parse_decision_envelope",
+    "validate_candidate_review",
     "validate_cast_pack",
     "validate_creative_spec",
     "validate_run_snapshot",

@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 from core.lab.mcp import creative_recast
-from core.protocol import build_creative_recast_certification_report, validate_failure_record, validate_run_snapshot
+from core.protocol import build_creative_recast_certification_report, validate_candidate_review, validate_failure_record, validate_run_snapshot
 from core.protocol.creative_recast import CRCP_REQUIRED_CAPABILITIES, validate_cast_pack, validate_creative_spec, validate_shot_control_bundle
 
 
@@ -12,6 +12,34 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class CreativeRecastContractTest(unittest.TestCase):
+    def _candidate_review(self, decision="accepted"):
+        gate_status = "passed" if decision == "accepted" else "failed"
+        return {
+            "schema": "cartridgeflow.candidate_review.v1",
+            "review_id": "review-001",
+            "run_id": "run_pilot_01",
+            "run_revision": 1,
+            "candidate": {"path": "candidate.mp4", "sha256": "6" * 64},
+            "evidence": {
+                "run_report": {"path": "run_report.json", "sha256": "7" * 64},
+                "run_snapshot": {"path": "run_snapshot.json", "sha256": "8" * 64},
+            },
+            "gates": {
+                "technical": {"status": "passed", "notes": "Technical gate passed."},
+                "motion": {"status": gate_status, "notes": "Motion reviewed."},
+                "character": {"status": gate_status, "notes": "Character reviewed."},
+                "continuity": {"status": gate_status, "notes": "Continuity reviewed."},
+            },
+            "user_review": {
+                "decision": decision,
+                "reviewed_by": "user",
+                "reviewed_at": "2026-07-18T00:00:00+08:00",
+                "feedback": "Candidate reviewed explicitly.",
+            },
+            "failure_labels": [] if decision == "accepted" else ["identity_drift"],
+            "status": decision,
+        }
+
     def _cast_pack(self):
         reference = "frontend/src/assets/hero.png"
         digest = hashlib.sha256((ROOT / reference).read_bytes()).hexdigest()
@@ -131,6 +159,21 @@ class CreativeRecastContractTest(unittest.TestCase):
         self.assertIn("cast_pack_license", codes)
         self.assertIn("cast_pack_hash_mismatch", codes)
 
+    def test_candidate_review_requires_four_gates_and_explicit_user_decision(self):
+        accepted = self._candidate_review()
+        self.assertTrue(validate_candidate_review(accepted)["ok"])
+        accepted["gates"]["character"]["status"] = "pending"
+        result = validate_candidate_review(accepted)
+        self.assertFalse(result["ok"])
+        self.assertIn("candidate_review_gates", [item["code"] for item in result["findings"]])
+
+        pending = self._candidate_review()
+        pending["status"] = "pending_user"
+        pending["user_review"] = {"decision": "pending", "reviewed_by": "", "reviewed_at": "", "feedback": ""}
+        pending["gates"]["motion"] = {"status": "pending", "notes": "Awaiting review."}
+        self.assertTrue(validate_candidate_review(pending, deliverable=False)["ok"])
+        self.assertFalse(validate_candidate_review(pending, deliverable=True)["ok"])
+
     def test_opt_in_mcp_module_exposes_only_its_declared_tools(self):
         class RegistryStub:
             def __init__(self, root):
@@ -206,6 +249,7 @@ class CreativeRecastContractTest(unittest.TestCase):
             {"protocol_extensions": [{"id": "CF-CRCP", "version": "0.1"}]},
             {
                 "cast_pack": self._cast_pack(),
+                "candidate_review": self._candidate_review(),
                 "creative_spec": self._spec(),
                 "shot_control_bundle": self._bundle(),
                 "run_snapshot": self._snapshot(),
@@ -235,6 +279,7 @@ class CreativeRecastContractTest(unittest.TestCase):
             manifest,
             {
                 "cast_pack": self._cast_pack(),
+                "candidate_review": self._candidate_review(),
                 "creative_spec": self._spec(),
                 "shot_control_bundle": self._bundle(),
                 "run_snapshot": self._snapshot(),

@@ -14,6 +14,7 @@ from pathlib import Path
 CONTROL_BUNDLE_SCHEMA = "cartridgeflow.shot_control_bundle.v1"
 CREATIVE_SPEC_SCHEMA = "cartridgeflow.creative_spec.v1"
 CAST_PACK_SCHEMA = "cartridgeflow.cast_pack.v1"
+CANDIDATE_REVIEW_SCHEMA = "cartridgeflow.candidate_review.v1"
 RUN_SNAPSHOT_SCHEMA = "cartridgeflow.run_snapshot.v1"
 CREATIVE_MODES = {"conservative", "character_replace", "creative_recast", "exploration"}
 CRCP_REQUIRED_PROFILES = ["creative_control_runtime"]
@@ -31,6 +32,18 @@ CRCP_REQUIRED_CAPABILITIES = [
     "creative_artifact_audit",
 ]
 _SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
+CRCP_FAILURE_LABELS = {
+    "motion_reversed",
+    "surrogate_leak",
+    "identity_drift",
+    "scene_drift",
+    "temporal_flicker",
+    "contact_error",
+    "style_mismatch",
+    "resource_limit",
+    "control_bundle_invalid",
+    "unapproved_change",
+}
 
 
 def validate_shot_control_bundle(
@@ -256,6 +269,81 @@ def validate_cast_pack(
     return _result(findings, "cast_pack_valid", "CastPack is valid and approved")
 
 
+def validate_candidate_review(
+    review: dict,
+    workspace_root: str | Path | None = None,
+    *,
+    check_files: bool = False,
+    deliverable: bool = True,
+) -> dict:
+    """Validate the auditable quality and user decision for one candidate."""
+    findings: list[dict] = []
+    if not isinstance(review, dict):
+        return _invalid(findings, "candidate_review_invalid", "CandidateReview must be an object")
+    if review.get("schema") != CANDIDATE_REVIEW_SCHEMA:
+        _block(findings, "candidate_review_schema", f"schema must be {CANDIDATE_REVIEW_SCHEMA}")
+    for field in ["review_id", "run_id"]:
+        _required_string(review, field, findings, "candidate_review_identity")
+    _positive_int(review, "run_revision", findings, "candidate_review_identity")
+
+    root = Path(workspace_root).resolve() if workspace_root else None
+    _artifact_reference(review.get("candidate"), "candidate", root, check_files, findings)
+    evidence = review.get("evidence")
+    if not isinstance(evidence, dict):
+        _block(findings, "candidate_review_evidence", "evidence must be an object")
+        evidence = {}
+    for field in ["run_report", "run_snapshot"]:
+        _artifact_reference(evidence.get(field), f"evidence.{field}", root, check_files, findings)
+
+    gates = review.get("gates")
+    if not isinstance(gates, dict):
+        _block(findings, "candidate_review_gates", "gates must be an object")
+        gates = {}
+    gate_statuses = {}
+    for field in ["technical", "motion", "character", "continuity"]:
+        gate = gates.get(field)
+        if not isinstance(gate, dict):
+            _block(findings, "candidate_review_gates", f"gates.{field} must be an object")
+            continue
+        status = gate.get("status")
+        if status not in {"pending", "passed", "failed"}:
+            _block(findings, "candidate_review_gates", f"gates.{field}.status is invalid")
+        else:
+            gate_statuses[field] = status
+        _required_string(gate, "notes", findings, "candidate_review_gates")
+
+    user_review = review.get("user_review")
+    if not isinstance(user_review, dict):
+        _block(findings, "candidate_review_user", "user_review must be an object")
+        user_review = {}
+    decision = user_review.get("decision")
+    if decision not in {"pending", "accepted", "rejected"}:
+        _block(findings, "candidate_review_user", "user_review.decision is invalid")
+    status = review.get("status")
+    expected_status = {"pending": "pending_user", "accepted": "accepted", "rejected": "rejected"}.get(decision)
+    if status != expected_status:
+        _block(findings, "candidate_review_status", "status must match user_review.decision")
+    if decision in {"accepted", "rejected"}:
+        if user_review.get("reviewed_by") != "user":
+            _block(findings, "candidate_review_user", "final review must record reviewed_by=user")
+        for field in ["reviewed_at", "feedback"]:
+            _required_string(user_review, field, findings, "candidate_review_user")
+
+    labels = review.get("failure_labels")
+    if not isinstance(labels, list) or any(not isinstance(item, str) or item not in CRCP_FAILURE_LABELS for item in labels):
+        _block(findings, "candidate_review_failures", "failure_labels must contain only recognized CRCP labels")
+        labels = []
+    if decision == "accepted" and labels:
+        _block(findings, "candidate_review_failures", "accepted review cannot contain failure labels")
+    if decision == "rejected" and not labels:
+        _block(findings, "candidate_review_failures", "rejected review requires at least one failure label")
+    if decision == "accepted" and any(gate_statuses.get(field) != "passed" for field in ["technical", "motion", "character", "continuity"]):
+        _block(findings, "candidate_review_gates", "accepted review requires every quality gate to pass")
+    if deliverable and decision == "pending":
+        _block(findings, "candidate_review_pending", "candidate still requires explicit user review")
+    return _result(findings, "candidate_review_valid", "CandidateReview is valid")
+
+
 def validate_run_snapshot(snapshot: dict) -> dict:
     """Validate the immutable inputs captured for one CRCP run."""
     findings: list[dict] = []
@@ -352,6 +440,7 @@ def build_creative_recast_certification_report(base: dict, manifest: dict, artif
 
     validators = {
         "cast_pack": validate_cast_pack,
+        "candidate_review": validate_candidate_review,
         "creative_spec": validate_creative_spec,
         "shot_control_bundle": validate_shot_control_bundle,
         "run_snapshot": validate_run_snapshot,
@@ -462,6 +551,31 @@ def _nonempty_string_list(value: dict, field: str, findings: list[dict], code: s
         else:
             result.append(item.strip())
     return result
+
+
+def _artifact_reference(reference, field: str, root: Path | None, check_files: bool, findings: list[dict]) -> None:
+    if not isinstance(reference, dict):
+        _block(findings, "candidate_review_evidence", f"{field} must be an object")
+        return
+    path = reference.get("path")
+    if not isinstance(path, str) or not path.strip():
+        _block(findings, "candidate_review_evidence", f"{field}.path is required")
+        return
+    digest = reference.get("sha256")
+    if not isinstance(digest, str) or not _SHA256_RE.fullmatch(digest):
+        _block(findings, "candidate_review_evidence", f"{field}.sha256 must be a SHA-256 digest")
+        return
+    if not check_files:
+        return
+    target = _safe_artifact_path(root, path, findings, "candidate_review")
+    if target is None:
+        return
+    if not target.is_file():
+        _block(findings, "candidate_review_file_missing", f"artifact does not exist: {path}")
+        return
+    actual = hashlib.sha256(target.read_bytes()).hexdigest()
+    if actual.lower() != digest.lower():
+        _block(findings, "candidate_review_hash_mismatch", f"sha256 mismatch: {path}")
 
 
 def _safe_artifact_path(root: Path | None, relative_path: str, findings: list[dict], code_prefix: str = "control_bundle") -> Path | None:

@@ -482,6 +482,14 @@ class BuiltinMcpRegistry:
                         "deliverable": "Require a license that allows public delivery",
                     },
                 },
+                "validate_candidate_review": {
+                    "description": "Read-only validation of candidate hashes, audit evidence, four CRCP quality gates, and explicit user acceptance or rejection.",
+                    "params": {
+                        "candidate_review": "cartridgeflow.candidate_review.v1 JSON object or JSON string",
+                        "check_files": "Check candidate, run report, and snapshot hashes under the workspace",
+                        "deliverable": "Require a final user decision instead of a pending review template",
+                    },
+                },
                 "validate_creative_spec": {
                     "description": "Read-only validation of CreativeSpec locked/free bounds, allowlist, and user approval revision.",
                     "params": {

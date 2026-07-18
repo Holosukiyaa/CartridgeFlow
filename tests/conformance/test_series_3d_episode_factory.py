@@ -126,6 +126,8 @@ class Series3dEpisodeFactoryTest(unittest.TestCase):
             self.assertIn("_render_control_bundle", script)
             self.assertIn("character_mask.mp4", script)
             self.assertIn("pose.json", script)
+            self.assertIn("scene.render.film_transparent = True", script)
+            self.assertIn("view_layer.use_pass_z = True", script)
             plan = json.loads((Path(tmpdir) / "pilot_control.episode_plan.json").read_text(encoding="utf-8"))
             self.assertTrue(plan["render_settings"]["render_control_passes"])
 

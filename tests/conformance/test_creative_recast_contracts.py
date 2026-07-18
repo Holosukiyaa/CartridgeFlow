@@ -94,7 +94,7 @@ class CreativeRecastContractTest(unittest.TestCase):
         result = validate_creative_spec(self._spec())
         self.assertTrue(result["ok"], result)
 
-    def test_opt_in_mcp_module_exposes_only_read_only_validators(self):
+    def test_opt_in_mcp_module_exposes_only_its_declared_tools(self):
         class RegistryStub:
             def __init__(self, root):
                 self._workspace_root = root
@@ -216,7 +216,7 @@ class CreativeRecastContractTest(unittest.TestCase):
                 self.calls.append((server, tool, params))
                 if tool == "forge_3d_series_episode":
                     return {"ok": True, "path": "preview.mp4", "files": ["preview.mp4"], "control_bundle": control_bundle}
-                if tool == "remote_upgrade_keyframes":
+                if tool == "run_vace_character_replace":
                     return {"ok": True, "path": "enhanced.mp4", "files": ["enhanced.mp4"]}
                 return {"ok": False, "error": f"unexpected tool: {tool}"}
 
@@ -233,11 +233,11 @@ class CreativeRecastContractTest(unittest.TestCase):
         self.assertTrue(result["ok"], result)
         self.assertEqual("review_required", result["state"])
         self.assertTrue(result["requires_user_review"])
-        self.assertEqual(["forge_3d_series_episode", "remote_upgrade_keyframes"], [item[1] for item in registry.calls])
-        self.assertEqual("comfyui", registry.calls[1][2]["provider"])
-        self.assertTrue(registry.calls[1][2]["require_remote"])
+        self.assertEqual(["forge_3d_series_episode", "run_vace_character_replace"], [item[1] for item in registry.calls])
         self.assertTrue(registry.calls[0][2]["render_control_passes"])
         self.assertEqual(control_bundle, registry.calls[1][2]["control_bundle"])
+        self.assertEqual(self._spec(), registry.calls[1][2]["creative_spec"])
+        self.assertEqual(self._snapshot(), registry.calls[1][2]["run_snapshot"])
 
     def test_runtime_failure_returns_rejected_failure_record(self):
         class RegistryStub:

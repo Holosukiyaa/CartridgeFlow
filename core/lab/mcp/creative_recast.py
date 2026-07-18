@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 
+from .comfy_vace import run_vace_character_replace as _run_vace_character_replace
+
 from core.protocol.creative_recast import (
     validate_creative_spec as _validate_creative_spec,
     validate_run_snapshot as _validate_run_snapshot,
@@ -20,6 +22,7 @@ TOOLS = [
     "validate_shot_control_bundle",
     "validate_creative_spec",
     "validate_change_proposal",
+    "run_vace_character_replace",
     "run_creative_recast",
 ]
 
@@ -190,11 +193,11 @@ def _run_creative_recast(registry, params: dict) -> dict:
         return {"ok": False, "state": "running_blender", "stage": "running_comfy", "events": events, "blender_result": blender_result, "findings": comfy_start.get("findings") or []}
 
     comfy_params = dict(params.get("comfy_params") or {})
-    comfy_params["provider"] = "comfyui"
-    comfy_params["require_remote"] = True
     comfy_params["control_bundle"] = actual_bundle
     comfy_params["control_bundle_path"] = blender_result.get("control_bundle_path") or ""
-    comfy_result = registry.call("media", "remote_upgrade_keyframes", comfy_params)
+    comfy_params["creative_spec"] = raw_spec
+    comfy_params["run_snapshot"] = raw_snapshot
+    comfy_result = registry.call("media", "run_vace_character_replace", comfy_params)
     if not comfy_result.get("ok"):
         failure = _failure_record(params, "style_mismatch", comfy_result, raw_snapshot)
         rejected = transition_crcp_run("running_comfy", "rejected", {"failure_record": failure})
@@ -254,9 +257,13 @@ def register(registry):
         except Exception as exc:
             return {"ok": False, "state": str(params.get("current_state") or "control_ready"), "stage": "runtime", "error": f"creative recast run failed: {exc}"}
 
+    def run_vace_character_replace(params: dict) -> dict:
+        return _run_vace_character_replace(registry, params)
+
     registry._registry["media"].update({
         "validate_shot_control_bundle": validate_shot_control_bundle,
         "validate_creative_spec": validate_creative_spec,
         "validate_change_proposal": validate_change_proposal,
+        "run_vace_character_replace": run_vace_character_replace,
         "run_creative_recast": run_creative_recast,
     })

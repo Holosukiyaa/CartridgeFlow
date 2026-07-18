@@ -10,6 +10,7 @@
 
 import html
 import base64
+from copy import deepcopy
 import hashlib
 import json
 import math
@@ -32,12 +33,36 @@ from pathlib import Path
 class BuiltinMcpRegistry:
     """??????????????? DLC ?????"""
 
-    def __init__(self, workspace_root: str | Path | None = None):
+    def __init__(
+        self,
+        workspace_root: str | Path | None = None,
+        *,
+        protocol_extensions=None,
+        capabilities=None,
+    ):
         self._workspace_root = Path(workspace_root) if workspace_root else Path.cwd()
+        self._protocol_extensions = protocol_extensions
+        self._capabilities = capabilities
         self._registry: dict[str, dict[str, callable]] = {}
         self._tool_dlc: dict[str, dict] = {}
+        self._dlc_report: list[dict] = []
         self._register_filesystem()
         self._register_media()
+
+    @classmethod
+    def for_manifest(cls, workspace_root: str | Path | None, manifest: dict, capabilities=None):
+        """Build an explicitly scoped registry for one cartridge manifest.
+
+        Ordinary callers should keep using ``BuiltinMcpRegistry(root)``. This
+        factory is the only supported path for a future companion protocol to
+        receive a manifest extension declaration.
+        """
+        manifest = manifest if isinstance(manifest, dict) else {}
+        return cls(
+            workspace_root,
+            protocol_extensions=manifest.get("protocol_extensions") or [],
+            capabilities=capabilities,
+        )
     def _safe_path(self, path_str: str) -> Path:
         resolved = (self._workspace_root / path_str).resolve()
         if not str(resolved).startswith(str(self._workspace_root.resolve())):
@@ -154,7 +179,11 @@ class BuiltinMcpRegistry:
         from .mcp.dlc import register_media_modules
 
         self._registry.setdefault("media", {})
-        register_media_modules(self)
+        register_media_modules(
+            self,
+            protocol_extensions=self._protocol_extensions,
+            capabilities=self._capabilities,
+        )
 
     def call(self, server: str, tool: str, params: dict) -> dict:
         server_tools = self._registry.get(server)
@@ -166,6 +195,11 @@ class BuiltinMcpRegistry:
         return handler(params)
     def list_tools(self) -> dict:
         return {server: list(tools.keys()) for server, tools in self._registry.items()}
+
+    def dlc_report(self) -> list[dict]:
+        """Return a snapshot of extension loading decisions."""
+        return deepcopy(self._dlc_report)
+
     def describe(self) -> list[dict]:
         descriptions = {
             "filesystem": {

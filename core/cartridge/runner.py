@@ -116,6 +116,7 @@ class CartridgeRunner:
             },
             "workspace": manifest.get("workspace", {}),
             "mcp_tools": manifest.get("mcp_tools", []),
+            "protocol_extensions": manifest.get("protocol_extensions", []),
             "run_mode": "probe_range" if normalized_probe_range else "full_flow",
             "probe_range": normalized_probe_range,
             "package_path": cartridge.get("package_path"),

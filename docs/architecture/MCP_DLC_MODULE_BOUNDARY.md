@@ -65,6 +65,17 @@ core/lab/
 - `CF-CRCP@0.1` 目前只作为系列创作扩展的声明，不会因为导入 `series_3d` 就自动改变旧卡带行为。
 - 当前基座尚未声明支持 `CF-CRCP@0.1`，因此不得自动注册 CRCP 专用工具或添加认证标签。
 
+`BuiltinMcpRegistry(workspace_root)` 是默认的基础入口：它只加载 FARP 工具。扩展上下文必须显式传入，推荐使用
+`BuiltinMcpRegistry.for_manifest(workspace_root, manifest, capabilities)`。注册器会在
+`dlc_report()` 中返回每个 companion protocol 的决定：
+
+- `not_requested`：manifest 没有声明扩展；
+- `blocked_missing_capabilities`：声明了扩展，但当前基座缺少所需 capability；
+- `unimplemented`：声明和 capability 都满足，但实现模块尚未加入；
+- `enabled`：实现模块、显式声明和 capability 均满足。
+
+这些决定只控制模块是否进入 Registry，不会在构造或描述阶段启动 Blender、ComfyUI、Godot、网络请求或文件生产。
+
 ### 后续规则
 
 当实现 CRCP 专用工具时，必须新增独立模块，例如：

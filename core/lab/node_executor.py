@@ -28,6 +28,38 @@ class LabNodeExecutor:
         from core.lab.builtin_mcp import BuiltinMcpRegistry
         self.workspace_root = Path(workspace_root) if workspace_root else Path.cwd()
         self._builtin_mcp = BuiltinMcpRegistry(self.workspace_root)
+        self._scoped_mcp_registries: dict[str, object] = {}
+
+    def _registry_for_run(self, run: dict):
+        """Use a manifest-scoped registry only when extensions are declared."""
+        extensions = run.get("protocol_extensions") if isinstance(run, dict) else None
+        if not extensions:
+            return self._builtin_mcp
+
+        from core.lab.builtin_mcp import BuiltinMcpRegistry
+        from core.protocol import load_base_implementation
+
+        capabilities = run.get("base_capabilities") if isinstance(run, dict) else None
+        if not capabilities:
+            try:
+                capabilities = load_base_implementation(self.workspace_root).get("capabilities") or []
+            except Exception:
+                capabilities = []
+        cache_key = json.dumps(
+            {"extensions": extensions, "capabilities": sorted(str(item) for item in capabilities)},
+            ensure_ascii=True,
+            sort_keys=True,
+            default=str,
+        )
+        registry = self._scoped_mcp_registries.get(cache_key)
+        if registry is None:
+            registry = BuiltinMcpRegistry(
+                self.workspace_root,
+                protocol_extensions=extensions,
+                capabilities=capabilities,
+            )
+            self._scoped_mcp_registries[cache_key] = registry
+        return registry
 
     def execute(self, state_name: str, state: dict, state_doc: dict, run: dict, run_dir) -> dict:
         state = normalize_runtime_node(state)
@@ -315,7 +347,7 @@ class LabNodeExecutor:
             if server == "filesystem" and isinstance(tool_params.get("path"), str):
                 tool_params["path"] = self._resolve_package_relative_path(tool_params["path"], _run)
             if server and tool_name:
-                result = self._builtin_mcp.call(server, tool_name, tool_params)
+                result = self._registry_for_run(_run).call(server, tool_name, tool_params)
                 tool_results.append({"server": server, "tool": tool_name, "result": result})
                 if tool.get("strict") and result.get("ok"):
                     if result.get("validation_ok") is False or result.get("asset_ok") is False:

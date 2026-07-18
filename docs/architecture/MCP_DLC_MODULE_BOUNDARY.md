@@ -32,6 +32,8 @@ core/lab/
     series_3d.py                 # 真实 3D 资产匹配、动作匹配、Blender
 ```
 
+协议层的 `core/protocol/creative_recast.py` 只提供 Shot Control Bundle 和 CreativeSpec 的只读结构校验。它不属于默认 MCP DLC、不会注册工具，也不会写入或生成任何 artifact；只有 CRCP 基座能力完成声明后，独立的 `core/lab/mcp/creative_recast.py` 才能接入运行时。
+
 模块只能通过 `register(registry)` 暴露工具。模块导入和注册阶段不得执行 Blender、ComfyUI、Godot、网络请求或文件生产副作用。
 
 ## DLC 描述

@@ -88,10 +88,33 @@ class Series3dEpisodeFactoryTest(unittest.TestCase):
             self.assertIn("Superhero_Male_FullBody.gltf", content)
             self.assertIn("Walk_Loop", content)
             self.assertIn("bpy.ops.import_scene.gltf", content)
+            self.assertIn("for index, shot in enumerate(shots, start=1)", content)
+            self.assertIn("scene.timeline_markers.new", content)
+            self.assertIn('.final.mp4', content)
             self.assertNotIn("primitive_cube_add", content)
             manifest = json.loads((Path(tmpdir) / "pilot_test.manifest.json").read_text(encoding="utf-8"))
             self.assertEqual("blender_script_created", manifest["status"])
+            self.assertEqual("full_episode", manifest["render_scope"])
             self.assertEqual("script_only_not_rendered", manifest["quality_gate"])
+
+    def test_exact_action_id_beats_generic_idle_tag(self):
+        shots = json.loads(json.dumps(self.shots))
+        shots["shots"][0]["action_tags"] = ["idle_talk"]
+        shots["shots"][0]["camera"] = "close_up_reveal"
+        result = self.registry.call(
+            "media",
+            "match_series_actions",
+            {
+                "episode_script": self.script,
+                "shot_list": shots,
+                "asset_library_path": LIBRARY_PATH,
+            },
+        )
+        self.assertTrue(result["ok"], result)
+        plan = result["action_plan"]["shots"][0]
+        self.assertEqual("idle_talk", plan["primary_action"]["id"])
+        self.assertEqual("Idle_Talking_Loop", plan["primary_action"]["clip_name"])
+        self.assertEqual("close_up_reveal", plan["camera_template"]["id"])
 
     def test_unsupported_action_blocks_render_instead_of_falling_back(self):
         unsupported_shots = json.loads(json.dumps(self.shots))

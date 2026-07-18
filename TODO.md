@@ -1,6 +1,7 @@
 # CartridgeFlow TODO
 
 - [x] 清理旧卡带，只保留 `dev.series_3d_episode_factory`。
+- [x] 修复纯 Blender 全分镜渲染与最终 MP4 交付链路。
 
 长期方向和验收标准见 `GOAL.md`。这里不保留历史完成项，只记录当前里程碑的下一步。
 

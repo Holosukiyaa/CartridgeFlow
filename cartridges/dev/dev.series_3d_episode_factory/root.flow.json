@@ -374,7 +374,7 @@
     },
     "forge_episode": {
       "type": "process",
-      "title": "Blender渲染：真实首镜头",
+      "title": "Blender渲染：完整短剧",
       "kind": "mcp_execute",
       "executor": "mcp",
       "effect": "writes_artifacts",
@@ -393,7 +393,7 @@
       "input": "episode_script,shot_list,asset_plan,action_plan",
       "output": "episode_bundle",
       "params": {
-        "description": "消费脚本、分镜、资产匹配和动作匹配，真实调用 Blender 渲染第一镜头 MP4，并生成工程、预览和 manifest。",
+        "description": "消费脚本、分镜、资产匹配和动作匹配，真实调用 Blender 渲染全部镜头 MP4，并生成工程、播放器和 manifest。",
         "input": "episode_script,shot_list,asset_plan,action_plan",
         "output": "episode_bundle"
       },
@@ -405,7 +405,7 @@
     },
     "review_episode": {
       "type": "process",
-      "title": "AI决策：预演复核",
+      "title": "AI决策：成片复核",
       "kind": "decision",
       "executor": "llm",
       "effect": "none",
@@ -433,7 +433,7 @@
             "properties": {
               "approval": {
                 "type": "string",
-                "title": "预演复核",
+                "title": "成片复核",
                 "enum": [
                   "approve",
                   "revise_script",
@@ -514,20 +514,20 @@
         "offline_decision": {
           "schema": "decision_envelope.v1",
           "status": "resolved",
-          "summary": "离线兜底：预演包可进入交付。",
+          "summary": "离线兜底：完整成片包可进入交付。",
           "payload": {
             "review": {
               "schema": "series_episode_review.v1",
               "approved": true,
-              "notes": "离线兜底自动通过。真实协作模式应由用户查看预演后确认。"
+              "notes": "离线兜底自动通过。真实协作模式应由用户查看完整成片后确认。"
             }
           }
         }
       },
       "params": {
-        "description": "让用户查看真实 Blender 首镜头 MP4 后选择通过、改脚本或改分镜。",
-        "system_prompt": "你是 3D 短剧预演复核助手。你根据用户复核意见决定通过、回到脚本或回到分镜，不执行工具。",
-        "prompt": "若 optional_input episode_review_reply 不存在，必须输出 needs_user_input，提醒用户打开预演 HTML 后选择通过、改脚本或改分镜。若用户 approval=approve，输出 resolved，并在 payload.review 中写入 {schema:'series_episode_review.v1', approved:true, notes:string}。若用户要求修改，输出 needs_user_input 或遵循 answer_routes。",
+        "description": "让用户查看真实 Blender 全分镜 MP4 后选择通过、改脚本或改分镜。",
+        "system_prompt": "你是 3D 短剧成片复核助手。你根据用户复核意见决定通过、回到脚本或回到分镜，不执行工具。",
+        "prompt": "若 optional_input episode_review_reply 不存在，必须输出 needs_user_input，提醒用户打开完整 MP4 后选择通过、改脚本或改分镜。若用户 approval=approve，输出 resolved，并在 payload.review 中写入 {schema:'series_episode_review.v1', approved:true, notes:string}。若用户要求修改，输出 needs_user_input 或遵循 answer_routes。",
         "input": "episode_script,shot_list,asset_plan,action_plan,episode_bundle",
         "optional_input": "episode_review_reply",
         "output": "episode_review_decision",
@@ -541,7 +541,7 @@
     },
     "delivery_summary": {
       "type": "process",
-      "title": "交付汇总：短剧预演包",
+      "title": "交付汇总：完整短剧包",
       "kind": "delivery",
       "executor": "deterministic",
       "effect": "writes_store",
@@ -554,7 +554,7 @@
       "output": "series_delivery",
       "primary_output": "series_delivery",
       "params": {
-        "description": "汇总脚本、分镜、资产匹配、动作匹配、预演包和复核结果。",
+        "description": "汇总脚本、分镜、资产匹配、动作匹配、完整成片和复核结果。",
         "input": "episode_script,shot_list,asset_plan,action_plan,episode_bundle,episode_review",
         "output": "series_delivery",
         "preset_config": {

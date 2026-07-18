@@ -1551,8 +1551,8 @@ class BuiltinMcpRegistry:
                 preview_path = target_dir / f"{episode_id}.preview.html"
                 manifest_path = target_dir / f"{episode_id}.manifest.json"
                 blend_path = target_dir / f"{episode_id}.blend"
-                still_path = target_dir / f"{episode_id}.preview.png"
-                video_path = target_dir / f"{episode_id}.preview.mp4"
+                still_path = target_dir / f"{episode_id}.poster.png"
+                video_path = target_dir / f"{episode_id}.final.mp4"
                 render_report_path = target_dir / f"{episode_id}.render.json"
 
                 plan_path.write_text(json.dumps(package, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -1629,7 +1629,7 @@ class BuiltinMcpRegistry:
                 rel_preview = _workspace_rel(registry, preview_path)
                 manifest = {
                     "schema": "series_3d_episode_manifest.v1",
-                    "status": "pilot_single_shot_rendered" if rendered else "blender_script_created",
+                    "status": "full_episode_rendered" if rendered else "blender_script_created",
                     "title": package["episode_script"].get("title"),
                     "provider": "local_blender_3d" if rendered else "blender_script_only",
                     "episode_plan": rel_plan,
@@ -1641,13 +1641,13 @@ class BuiltinMcpRegistry:
                     "render_report": rel_render_report,
                     "blender_binary": blender_binary,
                     "render_seconds": blender_seconds,
-                    "render_scope": "first_shot",
+                    "render_scope": "full_episode",
                     "duration_seconds": package.get("duration_seconds"),
                     "shot_count": len(package.get("shots") or []),
-                    "quality_gate": "real_character_motion_scene_rendered" if rendered else "script_only_not_rendered",
+                    "quality_gate": "real_multi_shot_episode_rendered" if rendered else "script_only_not_rendered",
                     "notes": (
-                        "M1 real-asset validation renders the first shot only. It uses the selected character, motion clip, "
-                        "scene components, PBR materials, and HDRI. Full multi-shot assembly remains a later milestone."
+                        "Pure Blender production renders every planned shot on one timeline. It uses the selected character, "
+                        "per-shot motion clips and cameras, scene components, PBR materials, and HDRI."
                     ),
                 }
                 manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -1657,7 +1657,7 @@ class BuiltinMcpRegistry:
                     files.extend([rel_blend, rel_still, rel_video, rel_render_report])
                 return {
                     "ok": True,
-                    "path": rel_preview,
+                    "path": rel_video or rel_preview,
                     "project_path": rel_blend or rel_plan,
                     "video_path": rel_video,
                     "preview_path": rel_preview,
@@ -6737,6 +6737,11 @@ def _match_series_actions(episode_script, shot_list, library: dict) -> dict:
 
 def _series_best_match(text: str, items: list[dict], fallback_id: str):
     text_l = str(text or "").lower()
+    requested_ids = {token for token in re.split(r"[\s,，、；;]+", text_l) if token}
+    for item in items:
+        item_id = str(item.get("id") or "").lower()
+        if item_id and item_id in requested_ids:
+            return dict(item)
     best = None
     best_score = -1
     for item in items:
@@ -6800,9 +6805,8 @@ def _render_series_real_preview_html(package: dict, blender_script_path: str, vi
     blender_name = html.escape(Path(blender_script_path).name)
     video_name = html.escape(Path(video_path).name)
     still_name = html.escape(Path(still_path).name)
-    first_shot = (package.get("shots") or [{}])[0]
-    shot_title = html.escape(str(first_shot.get("title") or first_shot.get("id") or "首镜头"))
-    action_name = html.escape(str(((first_shot.get("action_plan") or {}).get("primary_action") or {}).get("name") or ""))
+    shot_count = len(package.get("shots") or [])
+    duration = float(package.get("duration_seconds") or 0.0)
     return f"""<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -6826,11 +6830,10 @@ def _render_series_real_preview_html(package: dict, blender_script_path: str, vi
 <body>
 <main>
   <aside>
-    <span class="status">真实 Blender 首镜头</span>
+    <span class="status">真实 Blender 完整成片</span>
     <h1>{title}</h1>
-    <p><b>{shot_title}</b></p>
-    <p>动作：{action_name}</p>
-    <p>当前 M1 只渲染第一镜头，用于验证真实角色、动作、场景、材质和灯光链路。</p>
+    <p><b>{shot_count} 个镜头 · {duration:.1f} 秒</b></p>
+    <p>全部分镜已按连续时间线渲染，每镜使用匹配的动作与摄影机模板。</p>
     <p>编排脚本：<code>{blender_name}</code></p>
   </aside>
   <section class="stage">
@@ -7057,33 +7060,92 @@ def first_item(key):
     return items[0]
 
 
+def camera_pose(template_id, actor_start_y, actor_end_y):
+    subject_start = (0.0, actor_start_y, 1.25)
+    subject_end = (0.0, actor_end_y, 1.25)
+    if template_id == "over_shoulder":
+        return (
+            (1.7, actor_start_y - 2.8, 2.05),
+            (1.7, actor_end_y - 2.8, 2.05),
+            subject_start,
+            subject_end,
+            62.0,
+            62.0,
+        )
+    if template_id == "low_angle_hold":
+        midpoint = (actor_start_y + actor_end_y) / 2.0
+        return (
+            (3.4, midpoint - 4.2, 0.72),
+            (3.4, midpoint - 4.2, 0.72),
+            (0.0, midpoint, 1.15),
+            (0.0, midpoint, 1.15),
+            44.0,
+            44.0,
+        )
+    if template_id == "close_up_reveal":
+        return (
+            (2.6, actor_start_y - 4.2, 2.0),
+            (1.25, actor_end_y - 2.2, 1.8),
+            subject_start,
+            (0.0, actor_end_y, 1.45),
+            68.0,
+            82.0,
+        )
+    return (
+        (5.6, actor_start_y - 5.0, 2.8),
+        (3.8, actor_end_y - 3.8, 2.35),
+        subject_start,
+        subject_end,
+        52.0,
+        58.0,
+    )
+
+
+def add_shot_camera(scene, shot, index, start_frame, end_frame, actor_start_y, actor_end_y):
+    camera_template = (shot.get("action_plan") or {}).get("camera_template") or {}
+    template_id = str(camera_template.get("id") or shot.get("camera") or "slow_push_in")
+    start_location, end_location, start_target, end_target, start_lens, end_lens = camera_pose(
+        template_id,
+        actor_start_y,
+        actor_end_y,
+    )
+    bpy.ops.object.camera_add(location=start_location)
+    camera = bpy.context.object
+    camera.name = f"shot_{index:02d}_{template_id}"
+    camera.data.lens = start_lens
+    point_at(camera, start_target)
+    camera.keyframe_insert(data_path="location", frame=start_frame)
+    camera.keyframe_insert(data_path="rotation_euler", frame=start_frame)
+    camera.data.keyframe_insert(data_path="lens", frame=start_frame)
+    camera.location = end_location
+    camera.data.lens = end_lens
+    point_at(camera, end_target)
+    camera.keyframe_insert(data_path="location", frame=end_frame)
+    camera.keyframe_insert(data_path="rotation_euler", frame=end_frame)
+    camera.data.keyframe_insert(data_path="lens", frame=end_frame)
+    marker = scene.timeline_markers.new(f"shot_{index:02d}_{shot.get('id')}", frame=start_frame)
+    marker.camera = camera
+    return camera, template_id
+
+
 def main():
     shots = DATA.get("shots") or []
     if not shots:
         raise ValueError("episode package has no shots")
-    shot = shots[0]
     character_profile = first_item("characters")
     scene_profile = first_item("scenes")
-    action_profile = (shot.get("action_plan") or {}).get("primary_action") or {}
-    motion_path = resolve_asset(action_profile.get("motion_path"))
-    clip_name = str(action_profile.get("clip_name") or "").strip()
-    if not clip_name:
-        raise ValueError("matched action has no clip_name")
 
     bpy.ops.wm.read_factory_settings(use_empty=True)
     bpy.context.preferences.filepaths.save_version = 0
     scene = bpy.context.scene
     settings = DATA.get("render_settings") or {}
     fps = int(settings.get("fps") or 24)
-    duration = max(1.0, min(8.0, float(shot.get("duration") or 3.0)))
-    frame_end = max(1, int(round(duration * fps)))
     scene.render.engine = "BLENDER_EEVEE_NEXT"
     scene.render.resolution_x = int(settings.get("width") or 360)
     scene.render.resolution_y = int(settings.get("height") or 640)
     scene.render.resolution_percentage = 100
     scene.render.fps = fps
     scene.frame_start = 1
-    scene.frame_end = frame_end
     scene.eevee.taa_render_samples = int(settings.get("samples") or 8)
     scene.eevee.volumetric_samples = min(16, int(settings.get("samples") or 8))
 
@@ -7114,25 +7176,72 @@ def main():
     character.location = (0.0, -3.5, 0.02)
     character.rotation_euler.z = math.pi
 
-    motion_objects = import_asset(motion_path)
-    action = bpy.data.actions.get(clip_name)
-    if action is None:
-        raise RuntimeError(f"animation clip not found: {clip_name}")
-    character.animation_data_create()
-    track = character.animation_data.nla_tracks.new()
-    track.name = f"pilot_{clip_name}"
-    strip = track.strips.new(clip_name, 1, action)
-    action_frames = max(1.0, float(action.frame_range[1] - action.frame_range[0]))
-    strip.repeat = frame_end / action_frames
-    strip.frame_end = frame_end
+    imported_motion_paths = set()
+    motion_objects = []
+    for shot in shots:
+        action_profile = (shot.get("action_plan") or {}).get("primary_action") or {}
+        motion_path = resolve_asset(action_profile.get("motion_path"))
+        if motion_path in imported_motion_paths:
+            continue
+        imported_motion_paths.add(motion_path)
+        motion_objects.extend(import_asset(motion_path))
     for obj in motion_objects:
         bpy.data.objects.remove(obj, do_unlink=True)
 
-    distance = float(action_profile.get("translation_meters") or 0.0)
-    character.location = (0.0, -distance / 2.0, 0.02)
-    character.keyframe_insert(data_path="location", frame=1)
-    character.location = (0.0, distance / 2.0, 0.02)
-    character.keyframe_insert(data_path="location", frame=frame_end)
+    character.animation_data_create()
+    track = character.animation_data.nla_tracks.new()
+    track.name = "episode_actions"
+    shot_reports = []
+    frame_cursor = 1
+    actor_y = -3.5
+    first_camera = None
+    for index, shot in enumerate(shots, start=1):
+        duration = max(1.0, min(8.0, float(shot.get("duration") or 3.0)))
+        frame_count = max(1, int(round(duration * fps)))
+        start_frame = frame_cursor
+        end_frame = start_frame + frame_count - 1
+        action_profile = (shot.get("action_plan") or {}).get("primary_action") or {}
+        clip_name = str(action_profile.get("clip_name") or "").strip()
+        if not clip_name:
+            raise ValueError(f"shot {shot.get('id')} has no matched clip_name")
+        action = bpy.data.actions.get(clip_name)
+        if action is None:
+            raise RuntimeError(f"animation clip not found: {clip_name}")
+        strip = track.strips.new(f"{index:02d}_{clip_name}", start_frame, action)
+        strip.frame_end = end_frame
+
+        distance = float(action_profile.get("translation_meters") or 0.0)
+        actor_start_y = actor_y
+        actor_end_y = actor_start_y + distance
+        character.location = (0.0, actor_start_y, 0.02)
+        character.keyframe_insert(data_path="location", frame=start_frame)
+        character.location = (0.0, actor_end_y, 0.02)
+        character.keyframe_insert(data_path="location", frame=end_frame)
+        camera, camera_template_id = add_shot_camera(
+            scene,
+            shot,
+            index,
+            start_frame,
+            end_frame,
+            actor_start_y,
+            actor_end_y,
+        )
+        if first_camera is None:
+            first_camera = camera
+        shot_reports.append({
+            "shot_id": shot.get("id"),
+            "start_frame": start_frame,
+            "end_frame": end_frame,
+            "duration_seconds": duration,
+            "action_id": action_profile.get("id"),
+            "clip_name": clip_name,
+            "camera_template_id": camera_template_id,
+        })
+        actor_y = actor_end_y
+        frame_cursor = end_frame + 1
+    frame_end = frame_cursor - 1
+    scene.frame_end = frame_end
+    scene.camera = first_camera
 
     bpy.ops.object.light_add(type="AREA", location=(-1.5, -1.0, 6.0))
     key = bpy.context.object
@@ -7149,18 +7258,15 @@ def main():
     lamp.data.color = (1.0, 0.72, 0.42)
     lamp.data.shadow_soft_size = 0.35
 
-    bpy.ops.object.camera_add(location=(5.6, -8.0, 2.8))
-    camera = bpy.context.object
-    camera.name = "pilot_camera"
-    camera.data.lens = 52
-    point_at(camera, (0.0, 0.8, 1.15))
-    scene.camera = camera
     configure_world(resolve_asset(scene_profile.get("hdri_path")))
+    # glTF animation imports can overwrite the scene FPS with the source clip rate.
+    scene.render.fps = fps
+    scene.render.fps_base = 1.0
 
     stem = str(DATA.get("output_stem") or "series_episode")
     blend_path = OUTPUT_DIR / f"{stem}.blend"
-    still_path = OUTPUT_DIR / f"{stem}.preview.png"
-    video_path = OUTPUT_DIR / f"{stem}.preview.mp4"
+    still_path = OUTPUT_DIR / f"{stem}.poster.png"
+    video_path = OUTPUT_DIR / f"{stem}.final.mp4"
     report_path = OUTPUT_DIR / f"{stem}.render.json"
     preview_frame = max(1, frame_end // 2)
     scene.frame_set(preview_frame)
@@ -7180,13 +7286,12 @@ def main():
     report = {
         "schema": "series_blender_render.v1",
         "status": "rendered",
-        "scope": "first_shot",
-        "shot_id": shot.get("id"),
+        "scope": "full_episode",
+        "shots": shot_reports,
+        "shot_count": len(shot_reports),
         "character_id": character_profile.get("id"),
         "scene_id": scene_profile.get("id"),
-        "action_id": action_profile.get("id"),
-        "clip_name": clip_name,
-        "duration_seconds": duration,
+        "duration_seconds": frame_end / fps,
         "fps": fps,
         "frame_count": frame_end,
         "resolution": [scene.render.resolution_x, scene.render.resolution_y],

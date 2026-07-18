@@ -5,7 +5,7 @@
   "version": "0.2.0-dev",
   "kind": "runtime_cartridge",
   "category": "dev_flow",
-  "description": "使用现成角色、场景和动作库，由 LLM 负责剧情、脚本、分镜和调度规划，确定性工具调用 Blender 生成真实资产 3D 竖屏短剧预演包。",
+  "description": "使用现成角色、场景和动作库，由 LLM 负责剧情、脚本、分镜和调度规划，确定性工具调用 Blender 生成真实资产 3D 竖屏完整短剧。",
   "publisher": {
     "id": "local",
     "name": "Local Developer",
@@ -94,7 +94,7 @@
   "delivery_readiness": {
     "level": "dev",
     "certification_target": "CF-FARP@0.4",
-    "notes": "M1 开发卡带：使用本地 CC0 真实资产和 Blender 渲染第一镜头，不自动生成新美术资产。"
+    "notes": "纯 Blender 开发卡带：使用本地 CC0 真实资产渲染全部分镜，不自动生成新美术资产，不依赖 ComfyUI。"
   },
   "root_flow": {
     "entry": "root.flow.json",
@@ -265,11 +265,11 @@
     },
     {
       "id": "media_forge_3d_series_episode",
-      "name": "Media 3D 短剧预演编排",
+      "name": "Media 3D 短剧完整编排",
       "type": "builtin",
       "server": "media",
       "tool": "forge_3d_series_episode",
-      "description": "消费脚本、分镜、资产匹配和动作匹配，调用 Blender 生成真实首镜头 MP4、工程、预览和 manifest。",
+      "description": "消费脚本、分镜、资产匹配和动作匹配，调用 Blender 生成全分镜 MP4、工程、播放器和 manifest。",
       "default_params": {
         "episode_script": "store:episode_script",
         "shot_list": "store:shot_list",

@@ -389,8 +389,8 @@
         }
       },
       "layout": {
-        "x": 1310,
-        "y": 180
+        "x": 1366,
+        "y": 313
       },
       "next": "review_blockout"
     },
@@ -498,8 +498,8 @@
         "output_contract": "decision_envelope.v1"
       },
       "layout": {
-        "x": 1640,
-        "y": 180
+        "x": 1605,
+        "y": 57
       },
       "next": "delivery_summary"
     },

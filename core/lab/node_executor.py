@@ -539,6 +539,7 @@ class LabNodeExecutor:
             final_prompt = (
                 f"{final_prompt}\n\n"
                 "你必须只返回一个 JSON 对象，不要使用 Markdown，不要添加解释文本，不要包在 decision_envelope 字段里。\n"
+                "JSON 里的键和值必须只使用 ASCII 双引号，禁止使用中文引号、弯引号或单引号。\n"
                 "JSON 根对象必须符合 decision_envelope.v1：\n"
                 "{\n"
                 '  "schema": "decision_envelope.v1",\n'

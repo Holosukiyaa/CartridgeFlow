@@ -1,7 +1,7 @@
 import unittest
 
 from core.lab.node_executor import LabNodeExecutor
-from core.protocol import validate_decision_envelope
+from core.protocol import parse_decision_envelope, validate_decision_envelope
 
 
 def decision_state(mock_envelope):
@@ -137,6 +137,28 @@ class ProtocolV03RuntimeDecisionTest(unittest.TestCase):
         self.assertEqual("decision_envelope.v1", envelope["schema"])
         self.assertEqual("resolved", envelope["status"])
         self.assertEqual("入料完整，可以进入工程链路。", envelope["summary"])
+
+    def test_v03_parse_decision_envelope_accepts_smart_quotes(self):
+        raw = """
+        {
+          "schema": "decision_envelope.v1",
+          "status": "needs_user_input",
+          "summary": "AI 决策：生成 3D 动画预演规格”,
+          "question": {
+            "id": "ask_scene_shape",
+            "prompt": "是否按前景 / 中景 / 背景分层？",
+            "input_schema": {"type": "object"},
+            "store_key": "scene_shape_reply"
+          },
+          "resume": {"policy": "resume_same_node"}
+        }
+        """
+        envelope = parse_decision_envelope(raw)
+
+        self.assertIsInstance(envelope, dict)
+        self.assertEqual("decision_envelope.v1", envelope["schema"])
+        self.assertEqual("needs_user_input", envelope["status"])
+        self.assertEqual("AI 决策：生成 3D 动画预演规格", envelope["summary"])
 
     def test_v03_live_needs_user_input_hoists_payload_question_and_uses_contract(self):
         raw = """

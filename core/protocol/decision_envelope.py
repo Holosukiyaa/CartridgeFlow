@@ -15,6 +15,19 @@ RESUME_POLICIES = {
     "manual_only",
 }
 
+_JSON_QUOTE_TRANSLATION = str.maketrans({
+    "“": '"',
+    "”": '"',
+    "„": '"',
+    "‟": '"',
+    "＂": '"',
+    "‘": "'",
+    "’": "'",
+    "‚": "'",
+    "‛": "'",
+    "＇": "'",
+})
+
 
 def parse_decision_envelope(value: Any) -> dict | None:
     if isinstance(value, dict):
@@ -32,11 +45,13 @@ def parse_decision_envelope(value: Any) -> dict | None:
         end = text.rfind("}")
         if start >= 0 and end > start:
             text = text[start:end + 1]
-    try:
-        parsed = json.loads(text)
-    except json.JSONDecodeError:
-        return None
-    return parsed if isinstance(parsed, dict) else None
+    for candidate in (text, text.translate(_JSON_QUOTE_TRANSLATION)):
+        try:
+            parsed = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+        return parsed if isinstance(parsed, dict) else None
+    return None
 
 
 def validate_decision_envelope(envelope: Any, decision_contract: dict | None = None) -> list[dict]:

@@ -4,6 +4,7 @@ __pycache__/
 .env
 .data/
 .tools/
+config/llm/providers.json
 test_output/
 logs/
 temp/

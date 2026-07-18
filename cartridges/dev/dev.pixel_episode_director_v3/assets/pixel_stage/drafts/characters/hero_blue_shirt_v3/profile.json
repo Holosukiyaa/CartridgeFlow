@@ -1,21 +1,20 @@
 {
   "id": "hero_blue_shirt_v3",
-  "name": "蓝色衬衫人物草稿",
-  "role": "hero_candidate",
+  "name": "阿澈 (blue shirt)",
+  "role": "character",
   "status": "draft",
   "provider": "local_pixel_forge",
   "palette": {
-    "body": "#2f80d8",
+    "body": "#d67c3c",
     "skin": "#e8b586",
     "shadow": "#191c24",
-    "trim": "#7fc7ff",
-    "hair": "#201818"
+    "trim": "#f4b24a",
+    "hair": "#36261b"
   },
   "actions": [
     "idle",
     "walk_right",
-    "talk_idle",
-    "look_around"
+    "talk_idle"
   ],
   "asset": {
     "spritesheet": "cartridges/dev/dev.pixel_episode_director_v3/assets/pixel_stage/drafts/characters/hero_blue_shirt_v3/hero_blue_shirt_v3.spritesheet.png",
@@ -27,5 +26,5 @@
     "animation_min_frames": 6,
     "format": "spritesheet_json"
   },
-  "stage_notes": "蓝色衬衫的人物角色，适合夜市像素短剧主角候选；清晰轮廓，低机位 2.5D 像素风。"
+  "stage_notes": "Pixel art character in 2.5D style, male protagonist, blue button-up shirt, dark pants, pixel shoes, expression suspicious, for night alley scenes, neon reflections, clean sprite sheet with idle, walk_right, talk_idle animations, each animation minimum 6 frames, screen height approximately 128px, 24-bit color palette with limited palette for pixel art."
 }

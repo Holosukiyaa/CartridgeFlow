@@ -312,7 +312,7 @@
         }
       },
       "layout": {
-        "x": 1793,
+        "x": 1767,
         "y": 165
       },
       "next": "plan_story_beats"
@@ -600,8 +600,8 @@
         "output": "asset_specs_decision"
       },
       "layout": {
-        "x": 2344,
-        "y": 238
+        "x": 2394,
+        "y": 364
       },
       "next": "forge_draft_assets"
     },
@@ -731,8 +731,8 @@
         "output": "camera_plan_decision"
       },
       "layout": {
-        "x": 1815,
-        "y": 611
+        "x": 1841,
+        "y": 341
       },
       "next": "assemble_creation_packet"
     },
@@ -775,7 +775,7 @@
       },
       "layout": {
         "x": 2260,
-        "y": 570
+        "y": 757
       },
       "next": "review_draft_assets"
     },
@@ -932,8 +932,8 @@
         "output": "asset_review_decision"
       },
       "layout": {
-        "x": 2462,
-        "y": 562
+        "x": 2572,
+        "y": 484
       },
       "next": "review_draft_assets_external_tool_mroweam2_0"
     },
@@ -960,8 +960,8 @@
         }
       },
       "layout": {
-        "x": 2079,
-        "y": 395
+        "x": 2144,
+        "y": 511
       },
       "next": "generate_shot_plan"
     },

@@ -100,6 +100,35 @@ class Series3dEpisodeFactoryTest(unittest.TestCase):
             self.assertEqual("full_episode", manifest["render_scope"])
             self.assertEqual("script_only_not_rendered", manifest["quality_gate"])
 
+    def test_control_pass_generation_is_explicitly_opt_in(self):
+        assets, actions = self._match()
+        output_root = ROOT / "test_output"
+        output_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=output_root) as tmpdir:
+            relative_output = Path(tmpdir).resolve().relative_to(ROOT).as_posix()
+            result = self.registry.call(
+                "media",
+                "forge_3d_series_episode",
+                {
+                    "episode_script": self.script,
+                    "shot_list": self.shots,
+                    "asset_plan": assets,
+                    "action_plan": actions,
+                    "output_dir": relative_output,
+                    "episode_id": "pilot_control",
+                    "execute_blender": False,
+                    "render_control_passes": True,
+                },
+            )
+            self.assertTrue(result["ok"], result)
+            script = (Path(tmpdir) / "pilot_control.blender_scene.py").read_text(encoding="utf-8")
+            compile(script, "pilot_control.blender_scene.py", "exec")
+            self.assertIn("_render_control_bundle", script)
+            self.assertIn("character_mask.mp4", script)
+            self.assertIn("pose.json", script)
+            plan = json.loads((Path(tmpdir) / "pilot_control.episode_plan.json").read_text(encoding="utf-8"))
+            self.assertTrue(plan["render_settings"]["render_control_passes"])
+
     def test_exact_action_id_beats_generic_idle_tag(self):
         shots = json.loads(json.dumps(self.shots))
         shots["shots"][0]["action_tags"] = ["idle_talk"]

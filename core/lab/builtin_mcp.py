@@ -460,6 +460,7 @@ class BuiltinMcpRegistry:
                         "episode_id": "Output filename prefix",
                         "blender_path": "Optional Blender executable path",
                         "execute_blender": "Run Blender instead of stopping after script generation",
+                        "render_control_passes": "Generate CRCP character mask, depth video, pose data, and hashed control bundle",
                         "render_width": "Preview render width",
                         "render_height": "Preview render height",
                         "render_fps": "Preview frame rate",

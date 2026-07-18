@@ -204,6 +204,8 @@ class CreativeRecastContractTest(unittest.TestCase):
         self.assertTrue(report["ok"], report)
 
     def test_runtime_runs_blender_then_forced_comfy_and_stops_for_review(self):
+        control_bundle = self._bundle()
+
         class RegistryStub:
             def __init__(self):
                 self._workspace_root = Path.cwd()
@@ -213,7 +215,7 @@ class CreativeRecastContractTest(unittest.TestCase):
             def call(self, server, tool, params):
                 self.calls.append((server, tool, params))
                 if tool == "forge_3d_series_episode":
-                    return {"ok": True, "path": "preview.mp4", "files": ["preview.mp4"]}
+                    return {"ok": True, "path": "preview.mp4", "files": ["preview.mp4"], "control_bundle": control_bundle}
                 if tool == "remote_upgrade_keyframes":
                     return {"ok": True, "path": "enhanced.mp4", "files": ["enhanced.mp4"]}
                 return {"ok": False, "error": f"unexpected tool: {tool}"}
@@ -234,6 +236,8 @@ class CreativeRecastContractTest(unittest.TestCase):
         self.assertEqual(["forge_3d_series_episode", "remote_upgrade_keyframes"], [item[1] for item in registry.calls])
         self.assertEqual("comfyui", registry.calls[1][2]["provider"])
         self.assertTrue(registry.calls[1][2]["require_remote"])
+        self.assertTrue(registry.calls[0][2]["render_control_passes"])
+        self.assertEqual(control_bundle, registry.calls[1][2]["control_bundle"])
 
     def test_runtime_failure_returns_rejected_failure_record(self):
         class RegistryStub:

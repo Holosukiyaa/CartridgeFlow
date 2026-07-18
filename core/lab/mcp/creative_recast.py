@@ -149,12 +149,40 @@ def _run_creative_recast(registry, params: dict) -> dict:
         return {"ok": False, "state": current_state, "stage": "running_blender", "events": events, "findings": start.get("findings") or []}
 
     blender_params = dict(params.get("blender_params") or {})
+    blender_params["render_control_passes"] = True
     blender_result = registry.call("media", "forge_3d_series_episode", blender_params)
     if not blender_result.get("ok"):
         failure = _failure_record(params, "control_bundle_invalid", blender_result, raw_snapshot)
         rejected = transition_crcp_run("running_blender", "rejected", {"failure_record": failure})
         events.append(rejected)
         return {"ok": False, "state": "rejected", "stage": "running_blender", "events": events, "blender_result": blender_result, "failure_record": failure}
+
+    actual_bundle = blender_result.get("control_bundle")
+    actual_bundle_validation = _validate_shot_control_bundle(
+        actual_bundle,
+        registry._workspace_root,
+        check_files=bool(blender_result.get("control_bundle_path")),
+    )
+    if not actual_bundle_validation.get("ok"):
+        failed_result = {
+            "ok": False,
+            "error": "Blender output did not include a valid CRCP control bundle",
+            "control_bundle_validation": actual_bundle_validation,
+            "path": blender_result.get("control_bundle_path") or blender_result.get("path") or "",
+            "files": blender_result.get("files") or [],
+        }
+        failure = _failure_record(params, "control_bundle_invalid", failed_result, raw_snapshot)
+        rejected = transition_crcp_run("running_blender", "rejected", {"failure_record": failure})
+        events.append(rejected)
+        return {
+            "ok": False,
+            "state": "rejected",
+            "stage": "control_bundle_validation",
+            "events": events,
+            "blender_result": blender_result,
+            "control_bundle_validation": actual_bundle_validation,
+            "failure_record": failure,
+        }
 
     comfy_start = transition_crcp_run("running_blender", "running_comfy", {"blender_ok": True})
     events.append(comfy_start)
@@ -164,6 +192,8 @@ def _run_creative_recast(registry, params: dict) -> dict:
     comfy_params = dict(params.get("comfy_params") or {})
     comfy_params["provider"] = "comfyui"
     comfy_params["require_remote"] = True
+    comfy_params["control_bundle"] = actual_bundle
+    comfy_params["control_bundle_path"] = blender_result.get("control_bundle_path") or ""
     comfy_result = registry.call("media", "remote_upgrade_keyframes", comfy_params)
     if not comfy_result.get("ok"):
         failure = _failure_record(params, "style_mismatch", comfy_result, raw_snapshot)
@@ -181,6 +211,7 @@ def _run_creative_recast(registry, params: dict) -> dict:
         "requires_user_review": bool(review.get("ok")),
         "events": events,
         "blender_result": blender_result,
+        "control_bundle_validation": actual_bundle_validation,
         "comfy_result": comfy_result,
         "outputs": outputs,
         "findings": review.get("findings") or [],

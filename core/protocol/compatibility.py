@@ -75,6 +75,17 @@ def build_compatibility_report(base: dict, manifest: dict, root_flow: dict | Non
     for item in missing_optional_capabilities:
         findings.append(_finding("info", "missing_optional_capability", f"Base is missing optional capability: {item}"))
 
+    extension_report = _validate_protocol_extensions(
+        registry,
+        base_protocols,
+        base_profiles,
+        base_capabilities,
+        manifest.get("protocol_extensions", []),
+        protocol_id,
+        protocol_version,
+        findings,
+    )
+
     manifest_tool_map = {
         str(item.get("id")): item
         for item in manifest.get("mcp_tools") or []
@@ -186,6 +197,7 @@ def build_compatibility_report(base: dict, manifest: dict, root_flow: dict | Non
             "missing_required": missing_required_capabilities,
             "missing_optional": missing_optional_capabilities,
         },
+        "extensions": extension_report,
         "tools": {
             "required": required_tools,
             "optional": optional_tools,
@@ -205,6 +217,102 @@ def _string_list(value) -> list[str]:
     if not isinstance(value, list):
         return []
     return [str(item).strip() for item in value if str(item).strip()]
+
+
+def _validate_protocol_extensions(
+    registry: ProtocolRegistry,
+    base_protocols: dict[tuple[str, str], dict],
+    base_profiles: set[str],
+    base_capabilities: set[str],
+    declarations,
+    primary_protocol_id: str,
+    primary_protocol_version: str,
+    findings: list[dict],
+) -> list[dict]:
+    """Validate opt-in companion protocols before a run can be created."""
+    if declarations in (None, []):
+        return []
+    if not isinstance(declarations, list):
+        findings.append(_finding("blocker", "invalid_protocol_extensions", "manifest.protocol_extensions must be an array"))
+        return []
+
+    report = []
+    for index, declaration in enumerate(declarations):
+        if not isinstance(declaration, dict):
+            findings.append(_finding("blocker", "invalid_protocol_extension", f"manifest.protocol_extensions[{index}] must be an object"))
+            continue
+
+        extension_id = str(declaration.get("id") or "").strip()
+        version = str(declaration.get("version") or "").strip()
+        item = {
+            "id": extension_id,
+            "version": version,
+            "required_profiles": _extension_list(declaration, "required_profiles", index, findings),
+            "optional_profiles": _extension_list(declaration, "optional_profiles", index, findings),
+            "required_capabilities": _extension_list(declaration, "required_capabilities", index, findings),
+            "optional_capabilities": _extension_list(declaration, "optional_capabilities", index, findings),
+            "extends": declaration.get("extends"),
+            "supported": False,
+            "missing_required_profiles": [],
+            "missing_required_capabilities": [],
+        }
+        if not extension_id:
+            findings.append(_finding("blocker", "invalid_protocol_extension_id", f"manifest.protocol_extensions[{index}].id is required"))
+        if not version:
+            findings.append(_finding("blocker", "invalid_protocol_extension_version", f"manifest.protocol_extensions[{index}].version is required"))
+        if not extension_id or not version:
+            report.append(item)
+            continue
+
+        extends = declaration.get("extends")
+        if isinstance(extends, dict):
+            extends_id = str(extends.get("id") or "").strip()
+            extends_version = str(extends.get("version") or "").strip()
+            if extends_id and extends_version and (extends_id != primary_protocol_id or extends_version != primary_protocol_version):
+                findings.append(_finding(
+                    "blocker",
+                    "protocol_extension_base_mismatch",
+                    f"Protocol extension {extension_id}@{version} extends {extends_id}@{extends_version}, but the cartridge runs on {primary_protocol_id}@{primary_protocol_version}",
+                ))
+
+        key = (extension_id, version)
+        if not registry.supports_protocol(extension_id, version):
+            findings.append(_finding("blocker", "unknown_protocol_extension", f"Protocol extension is not registered: {extension_id}@{version}"))
+        elif key not in base_protocols:
+            findings.append(_finding("blocker", "unsupported_protocol_extension", f"Base does not support protocol extension: {extension_id}@{version}"))
+        else:
+            item["supported"] = True
+
+        missing_profiles = [profile for profile in item["required_profiles"] if profile not in base_profiles]
+        missing_capabilities = [capability for capability in item["required_capabilities"] if capability not in base_capabilities]
+        item["missing_required_profiles"] = missing_profiles
+        item["missing_required_capabilities"] = missing_capabilities
+        for profile in missing_profiles:
+            findings.append(_finding("blocker", "missing_extension_required_profile", f"Base is missing required profile for {extension_id}@{version}: {profile}"))
+        for capability in missing_capabilities:
+            findings.append(_finding("blocker", "missing_extension_required_capability", f"Base is missing required capability for {extension_id}@{version}: {capability}"))
+        for profile in item["optional_profiles"]:
+            if profile not in base_profiles:
+                findings.append(_finding("info", "missing_extension_optional_profile", f"Base is missing optional profile for {extension_id}@{version}: {profile}"))
+        for capability in item["optional_capabilities"]:
+            if capability not in base_capabilities:
+                findings.append(_finding("info", "missing_extension_optional_capability", f"Base is missing optional capability for {extension_id}@{version}: {capability}"))
+        report.append(item)
+    return report
+
+
+def _extension_list(declaration: dict, field: str, index: int, findings: list[dict]) -> list[str]:
+    value = declaration.get(field, [])
+    if not isinstance(value, list):
+        findings.append(_finding("blocker", "invalid_protocol_extension_field", f"manifest.protocol_extensions[{index}].{field} must be an array"))
+        return []
+    result = []
+    for item_index, item in enumerate(value):
+        if not isinstance(item, str) or not item.strip():
+            findings.append(_finding("blocker", "invalid_protocol_extension_field", f"manifest.protocol_extensions[{index}].{field}[{item_index}] must be a non-empty string"))
+            continue
+        result.append(item.strip())
+    return result
 
 
 def _tool_ids(value) -> list[str]:

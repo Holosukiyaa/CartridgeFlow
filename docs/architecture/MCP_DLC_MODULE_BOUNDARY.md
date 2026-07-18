@@ -76,6 +76,8 @@ core/lab/
 
 这些决定只控制模块是否进入 Registry，不会在构造或描述阶段启动 Blender、ComfyUI、Godot、网络请求或文件生产。
 
+运行创建前，`manifest.protocol_extensions` 还会经过兼容性报告：扩展必须已登记、当前基座必须声明支持，且声明的 required profiles/capabilities 必须满足。Registry 门禁是第二道运行时保护，不能替代兼容性阻断。
+
 ### 后续规则
 
 当实现 CRCP 专用工具时，必须新增独立模块，例如：

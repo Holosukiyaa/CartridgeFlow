@@ -60,6 +60,34 @@ class ManifestValidator:
                             else:
                                 errors.append(f"manifest.runtime_contract.{field}[{i}] must be a string or object")
 
+        protocol_extensions = manifest.get("protocol_extensions", [])
+        if not isinstance(protocol_extensions, list):
+            errors.append("manifest.protocol_extensions must be an array")
+        else:
+            for i, extension in enumerate(protocol_extensions):
+                if not isinstance(extension, dict):
+                    errors.append(f"manifest.protocol_extensions[{i}] must be an object")
+                    continue
+                for field in ["id", "version"]:
+                    if not isinstance(extension.get(field), str) or not extension.get(field).strip():
+                        errors.append(f"manifest.protocol_extensions[{i}].{field} is required")
+                extends = extension.get("extends")
+                if extends is not None:
+                    if not isinstance(extends, dict):
+                        errors.append(f"manifest.protocol_extensions[{i}].extends must be an object")
+                    else:
+                        for field in ["id", "version"]:
+                            if not isinstance(extends.get(field), str) or not extends.get(field).strip():
+                                errors.append(f"manifest.protocol_extensions[{i}].extends.{field} is required")
+                for field in ["required_profiles", "optional_profiles", "required_capabilities", "optional_capabilities"]:
+                    value = extension.get(field, [])
+                    if not isinstance(value, list):
+                        errors.append(f"manifest.protocol_extensions[{i}].{field} must be an array")
+                    else:
+                        for item_index, item in enumerate(value):
+                            if not isinstance(item, str) or not item.strip():
+                                errors.append(f"manifest.protocol_extensions[{i}].{field}[{item_index}] must be a non-empty string")
+
         delivery_readiness = manifest.get("delivery_readiness")
         if delivery_readiness is not None:
             if not isinstance(delivery_readiness, dict):

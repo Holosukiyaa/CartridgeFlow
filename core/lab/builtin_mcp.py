@@ -6267,11 +6267,19 @@ function cameraZoom(t){{ return zoom + Math.sin((t/duration)*Math.PI)*8; }}
 function project(p,t){{ const a=cameraAngle(t), z=cameraZoom(t), ca=Math.cos(a), sa=Math.sin(a); const x=p[0]*ca-p[2]*sa; const depth=p[0]*sa+p[2]*ca; return [canvas.clientWidth/2+x*z, canvas.clientHeight*.64+depth*z*.38-p[1]*z]; }}
 function boxCorners(o){{ const p=o.position||[0,0,0], s=o.size||[1,1,1]; const hx=s[0]/2, hy=s[1]/2, hz=s[2]/2; return [[p[0]-hx,p[1]-hy,p[2]-hz],[p[0]+hx,p[1]-hy,p[2]-hz],[p[0]+hx,p[1]+hy,p[2]-hz],[p[0]-hx,p[1]+hy,p[2]-hz],[p[0]-hx,p[1]-hy,p[2]+hz],[p[0]+hx,p[1]-hy,p[2]+hz],[p[0]+hx,p[1]+hy,p[2]+hz],[p[0]-hx,p[1]+hy,p[2]+hz]]; }}
 function face(points, fill, t){{ ctx.beginPath(); points.forEach((p,i)=>{{ const q=project(p,t); if(i)ctx.lineTo(q[0],q[1]); else ctx.moveTo(q[0],q[1]); }}); ctx.closePath(); ctx.fillStyle=fill; ctx.fill(); ctx.strokeStyle='rgba(65,52,42,.35)'; ctx.stroke(); }}
+function faceDepth(points,t){{ const a=cameraAngle(t), ca=Math.cos(a), sa=Math.sin(a); return points.reduce((sum,p)=>sum+p[0]*sa+p[2]*ca,0)/points.length; }}
 function mix(a,b,p){{ if(Array.isArray(a)&&Array.isArray(b)) return a.map((v,i)=>Number(v)+(Number(b[i]||0)-Number(v))*p); if(typeof a==='number'&&typeof b==='number') return a+(b-a)*p; return p < .5 ? a : b; }}
 function keyValue(frames,t){{ const ks=[...frames].sort((a,b)=>Number(a.time||0)-Number(b.time||0)); if(!ks.length) return null; if(t<=Number(ks[0].time||0)) return ks[0].value; for(let i=0;i<ks.length-1;i++){{ const a=ks[i], b=ks[i+1], ta=Number(a.time||0), tb=Number(b.time||ta); if(t>=ta&&t<=tb){{ const p=tb===ta?1:(t-ta)/(tb-ta); return mix(a.value,b.value,p); }} }} return ks[ks.length-1].value; }}
 function trackValue(id, prop, t){{ const track = tracks.find(item => String(item.target||'')===String(id) && String(item.property||'')===prop); return track ? keyValue(track.keyframes||[],t) : null; }}
 function animatedObject(o,t){{ const next={{...o, position:[...(o.position||[0,0,0])], size:[...(o.size||[1,1,1])]}}; const offset=trackValue(o.id,'offset',t); const pos=trackValue(o.id,'position',t); if(Array.isArray(pos)) next.position=pos; if(Array.isArray(offset)) next.position=next.position.map((v,i)=>v+Number(offset[i]||0)); next.pose=trackValue(o.id,'pose',t)||''; next.pulse=Number(trackValue(o.id,'pulse',t)||0); return next; }}
-function drawBox(o,t,label=true){{ const c=boxCorners(o), base=color(o.color); const pulse=Number(o.pulse||0); const lit=pulse>0?shade(base,1+.7*Math.abs(Math.sin(t*7))*pulse):base; face([c[4],c[5],c[6],c[7]], shade(lit,.9),t); face([c[1],c[5],c[6],c[2]], shade(lit,.78),t); face([c[3],c[2],c[6],c[7]], shade(lit,1.08),t); if(label) drawLabel(o,t); }}
+function drawBox(o,t,label=true){{ const c=boxCorners(o), base=color(o.color); const pulse=Number(o.pulse||0); const lit=pulse>0?shade(base,1+.7*Math.abs(Math.sin(t*7))*pulse):base; const faces=[
+  {{points:[c[0],c[1],c[2],c[3]], light:.72}},
+  {{points:[c[4],c[5],c[6],c[7]], light:.94}},
+  {{points:[c[0],c[4],c[7],c[3]], light:.82}},
+  {{points:[c[1],c[5],c[6],c[2]], light:.78}},
+  {{points:[c[3],c[2],c[6],c[7]], light:1.08}},
+  {{points:[c[0],c[1],c[5],c[4]], light:.62}},
+]; faces.sort((a,b)=>faceDepth(a.points,t)-faceDepth(b.points,t)).forEach(f=>face(f.points, shade(lit,f.light),t)); if(label) drawLabel(o,t); }}
 function drawLabel(o,t){{ const p=o.position||[0,0,0], s=o.size||[1,1,1]; const q=project([p[0],p[1]+s[1]/2+.18,p[2]],t); ctx.fillStyle='rgba(255,250,244,.82)'; ctx.fillRect(q[0]-44,q[1]-15,88,18); ctx.fillStyle='#4a4038'; ctx.font='11px monospace'; ctx.textAlign='center'; ctx.fillText(o.name||o.id||o.type,q[0],q[1]-2); }}
 function drawCharacter(o,t){{ const p=o.position||[0,0,0], base=o.size||[.55,1.7,.38], c=o.color||[.2,.38,.85,1]; const sway=Math.sin(t*7)*.08; const smokePose=String(o.pose||'').includes('smoke'); const parts=[
   {{id:o.id+'_body', position:[p[0],p[1]+base[1]*.48,p[2]], size:[base[0]*.62,base[1]*.42,base[2]*.78], color:c}},

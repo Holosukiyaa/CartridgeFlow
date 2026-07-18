@@ -166,34 +166,48 @@ function normalizeGraphEdges(edges: FlowEdge[] = []) {
 
 function buildRunEdgeStates(graphEdges: FlowEdge[], runEvents: FlowEvent[] = EMPTY_FLOW_EVENTS) {
   const edgePairs = new Set(graphEdges.map((edge) => `${edge.from}->${edge.to}`))
-  const explicitEdges = runEvents.reduce<string[]>((result, event) => {
+  const explicitEdges = runEvents.reduce<Array<{ key: string; index: number }>>((result, event, index) => {
     if (event.type !== 'flow_edge_traversed') return result
     const source = String((event.data as any)?.from || '').trim()
     const target = String((event.data as any)?.to || '').trim()
     const key = `${source}->${target}`
-    if (source && target && edgePairs.has(key)) result.push(key)
+    if (source && target && edgePairs.has(key)) result.push({ key, index })
     return result
   }, [])
-  if (explicitEdges.length) {
-    const edgeStates = new Map<string, RunEdgeStatus>()
-    explicitEdges.forEach((key) => edgeStates.set(key, 'visited'))
-    edgeStates.set(explicitEdges[explicitEdges.length - 1], 'active')
-    return edgeStates
-  }
-
-  const enteredStates = runEvents.reduce<string[]>((result, event) => {
-    if (event.type === 'state_entered' && event.state) result.push(event.state)
+  const enteredStates = runEvents.reduce<Array<{ state: string; index: number }>>((result, event, index) => {
+    if (event.type === 'state_entered' && event.state) result.push({ state: event.state, index })
     return result
   }, [])
   const edgeStates = new Map<string, RunEdgeStatus>()
-  const latestEnteredState = enteredStates[enteredStates.length - 1] || ''
-  graphEdges.forEach((edge) => {
-    const sourceIndexes = enteredStates.flatMap((state, index) => state === edge.from ? [index] : [])
-    const targetIndexes = enteredStates.flatMap((state, index) => state === edge.to ? [index] : [])
-    const traversed = sourceIndexes.some((sourceIndex) => targetIndexes.some((targetIndex) => targetIndex > sourceIndex))
-    if (!traversed) return
-    edgeStates.set(`${edge.from}->${edge.to}`, edge.to === latestEnteredState ? 'active' : 'visited')
+
+  if (explicitEdges.length) {
+    explicitEdges.forEach(({ key }) => edgeStates.set(key, 'visited'))
+  } else {
+    graphEdges.forEach((edge) => {
+      const sourceIndexes = enteredStates.flatMap((entry) => entry.state === edge.from ? [entry.index] : [])
+      const targetIndexes = enteredStates.flatMap((entry) => entry.state === edge.to ? [entry.index] : [])
+      const traversed = sourceIndexes.some((sourceIndex) => targetIndexes.some((targetIndex) => targetIndex > sourceIndex))
+      if (traversed) edgeStates.set(`${edge.from}->${edge.to}`, 'visited')
+    })
+  }
+
+  const latestEntered = enteredStates[enteredStates.length - 1]
+  const latestExplicit = explicitEdges[explicitEdges.length - 1]
+  if (latestExplicit && (!latestEntered || latestExplicit.index > latestEntered.index)) {
+    edgeStates.set(latestExplicit.key, 'active')
+    return edgeStates
+  }
+
+  const latestNodeFailed = latestEntered && runEvents.slice(latestEntered.index + 1).some((event) => {
+    return event.state === latestEntered.state && event.type === 'lab_node_failed'
   })
+  if (latestEntered && !latestNodeFailed) {
+    const outgoing = graphEdges.filter((edge) => edge.from === latestEntered.state)
+    const mainOutgoing = outgoing.filter((edge) => edge.scope !== 'branch')
+    ;(mainOutgoing.length ? mainOutgoing : outgoing).forEach((edge) => {
+      edgeStates.set(`${edge.from}->${edge.to}`, 'active')
+    })
+  }
   return edgeStates
 }
 
@@ -411,15 +425,16 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
         target: edge.to,
         sourceHandle: getPortHandleId('source', ports.sourceSide, ports.sourceIndex),
         targetHandle: getPortHandleId('target', ports.targetSide, ports.targetIndex),
-        animated: branch || isRunActive,
+        animated: false,
         type: 'default',
         label: branch ? edge.label || '分支' : undefined,
         data: { scope: edge.scope || 'root', label: edge.label || '', lane, loopY, runEdgeStatus: runEdgeStatus || '' },
         zIndex: isRunActive ? 3 : isRunVisited ? 2 : 0,
         style: {
           stroke: isRunActive ? '#d05b2f' : isRunVisited ? '#2f9e63' : branch ? '#5e8bd8' : '#ba6440',
-          strokeWidth: isRunActive ? 4.2 : isRunVisited ? 3.4 : branch ? 2.4 : 2.8,
-          strokeDasharray: branch && !isRunActive ? '6 5' : undefined,
+          strokeWidth: isRunActive ? 5 : isRunVisited ? 3.4 : branch ? 2.4 : 2.8,
+          strokeDasharray: isRunActive ? 'none' : branch ? '6 5' : undefined,
+          filter: isRunActive ? 'drop-shadow(0 0 4px rgba(208, 91, 47, .72))' : undefined,
         },
         markerEnd: { type: MarkerType.ArrowClosed, color: isRunActive ? '#d05b2f' : isRunVisited ? '#2f9e63' : branch ? '#5e8bd8' : '#ba6440' },
       }

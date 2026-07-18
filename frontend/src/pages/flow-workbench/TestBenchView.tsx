@@ -857,7 +857,7 @@ export function TestBenchView({
   const [logPreviewOpen, setLogPreviewOpen] = useState(false)
   const [logHeight, setLogHeight] = useState(150)
   const [logMaxHeight, setLogMaxHeight] = useState(180)
-  const [showUiPreview, setShowUiPreview] = useState(true)
+  const [showUiPreview, setShowUiPreview] = useState(false)
   const [showArtifactsPreview, setShowArtifactsPreview] = useState(false)
   const [lockedPendingKey, setLockedPendingKey] = useState('')
   const logBodyRef = useRef<HTMLDivElement | null>(null)
@@ -908,6 +908,7 @@ export function TestBenchView({
   const probePayload = useMemo(() => getProbePayload(detail.graph, startNodeId, endNodeId), [detail.graph, startNodeId, endNodeId])
   const selectedProbeNodeIds = probePayload?.node_ids || []
   const canRun = !isRunning && (runScope === 'full' || !!probePayload)
+  const runCompleted = latestRun?.status === 'completed' && !isRunning
   const latestUiHtml = useMemo(() => {
     for (let index = events.length - 1; index >= 0; index -= 1) {
       const data = events[index]?.data || {}
@@ -922,6 +923,14 @@ export function TestBenchView({
   useEffect(() => {
     setShowArtifactsPreview(false)
   }, [latestRun?.run_id])
+
+  useEffect(() => {
+    if (latestRun?.status !== 'completed') return
+    setShowUiPreview(false)
+    setShowArtifactsPreview(false)
+    setPendingModalOpen(false)
+    setSelectedNode(null)
+  }, [latestRun?.status, latestRun?.updated_at])
 
   useEffect(() => {
     if (!runArtifacts.length) setShowArtifactsPreview(false)
@@ -1003,6 +1012,9 @@ export function TestBenchView({
 
   const runWithInputs = async (inputs: Record<string, string>) => {
     setShowInputForm(false)
+    setShowUiPreview(false)
+    setShowArtifactsPreview(false)
+    setSelectedNode(null)
     setLogsOpen(true)
     setLogTab('log')
     setIsRunning(true)
@@ -1022,6 +1034,8 @@ export function TestBenchView({
     if (!latestRun?.run_id || !onAnswerPendingInteraction) return
     if (rawPendingKey) setLockedPendingKey(rawPendingKey)
     setIsRunning(true)
+    setShowUiPreview(false)
+    setShowArtifactsPreview(false)
     setLogsOpen(true)
     setLogTab('log')
     setPendingModalOpen(false)
@@ -1124,12 +1138,36 @@ export function TestBenchView({
           </section>
         </aside>
 
-        <div className={`cf-tb-graph ${pendingInteraction ? 'has-pending' : ''}`}>
+        <div className={`cf-tb-graph ${pendingInteraction || runCompleted ? 'has-status-banner' : ''}`}>
           {pendingInteraction && (
-            <button type="button" className="cf-pending-bubble" onClick={openPendingInteraction}>
-              <strong>等待交互</strong>
-              <span>{pendingNode ? `点击与 ${getNodeTitle(pendingNode)} 交互` : '点击打开交互界面'}</span>
+            <button type="button" className="cf-run-status-banner waiting" onClick={openPendingInteraction}>
+              <span className="cf-run-status-mark">待确认</span>
+              <span className="cf-run-status-copy">
+                <strong>流程正在等待用户交互</strong>
+                <span>{pendingNode ? `${getNodeTitle(pendingNode)} 已准备好，请打开并确认后继续。` : '当前节点需要你的确认后才能继续。'}</span>
+              </span>
+              <b>打开交互</b>
             </button>
+          )}
+          {runCompleted && !pendingInteraction && (
+            <div className="cf-run-status-banner completed" role="status">
+              <span className="cf-run-status-mark">已完成</span>
+              <span className="cf-run-status-copy">
+                <strong>流程运行完成</strong>
+                <span>{runArtifacts.length > 0 ? `本次运行已生成 ${runArtifacts.length} 个交付产物。` : '本次流程已经完整执行结束。'}</span>
+              </span>
+              {runArtifacts.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowUiPreview(false)
+                    setShowArtifactsPreview(true)
+                  }}
+                >
+                  查看产物
+                </button>
+              )}
+            </div>
           )}
           <FlowGraphView
             graph={detail.graph}

@@ -1,4 +1,5 @@
 import json
+import shutil
 import uuid
 from copy import deepcopy
 from datetime import datetime
@@ -668,7 +669,7 @@ class CartridgeRunner:
             if not result_paths:
                 continue
             for result_path in result_paths:
-                artifact = self._artifact_from_path(run, state_name, item, result_path, artifacts)
+                artifact = self._artifact_from_path(run, run_dir, state_name, item, result_path, artifacts)
                 if artifact:
                     artifacts.append(artifact)
         return artifacts
@@ -691,7 +692,7 @@ class CartridgeRunner:
             paths.append(Path(text))
         return paths
 
-    def _artifact_from_path(self, run: dict, state_name: str, tool_result: dict, path: Path, pending: list[dict]) -> dict | None:
+    def _artifact_from_path(self, run: dict, run_dir: Path, state_name: str, tool_result: dict, path: Path, pending: list[dict]) -> dict | None:
         if not path.is_absolute():
             path = self.root / path
         try:
@@ -703,19 +704,25 @@ class CartridgeRunner:
                 return None
             rel_path = resolved.relative_to(root).as_posix()
             name = self._unique_artifact_name(run.get("artifacts", []) + pending, resolved.name)
+            snapshot_dir = run_dir / "artifacts"
+            snapshot_dir.mkdir(parents=True, exist_ok=True)
+            snapshot_path = snapshot_dir / name
+            if resolved != snapshot_path.resolve():
+                shutil.copy2(resolved, snapshot_path)
             artifact = self.artifact_manager.make_artifact(
                 run,
                 f"{state_name}_{len(run.get('artifacts', [])) + len(pending) + 1}",
                 name,
-                resolved,
+                snapshot_path,
                 self._artifact_type_for_path(resolved),
                 self._mime_type_for_path(resolved),
             )
-            artifact["display_path"] = rel_path
+            artifact["display_path"] = snapshot_path.resolve().relative_to(root).as_posix()
             artifact["source"] = {
                 **(artifact.get("source") or {}),
                 "node_id": state_name,
                 "tool": f"{tool_result.get('server')}/{tool_result.get('tool')}",
+                "original_path": rel_path,
             }
         except Exception:
             return None

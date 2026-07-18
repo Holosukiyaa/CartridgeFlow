@@ -41,6 +41,7 @@ type TestProbeState = {
 }
 
 const PORT_LIMIT = 5
+const EMPTY_FLOW_EVENTS: FlowEvent[] = []
 const TEST_PROBE_MIME = 'application/x-cf-test-probe'
 const TARGET_PORT_TOPS = [[44], [34, 50], [26, 42, 58], [18, 34, 50, 66], [14, 28, 42, 56, 70]]
 const SOURCE_PORT_TOPS = [[56], [50, 66], [42, 58, 74], [34, 50, 66, 82], [30, 44, 58, 72, 86]]
@@ -163,7 +164,7 @@ function normalizeGraphEdges(edges: FlowEdge[] = []) {
   }, [])
 }
 
-function buildRunEdgeStates(graphEdges: FlowEdge[], runEvents: FlowEvent[] = []) {
+function buildRunEdgeStates(graphEdges: FlowEdge[], runEvents: FlowEvent[] = EMPTY_FLOW_EVENTS) {
   const edgePairs = new Set(graphEdges.map((edge) => `${edge.from}->${edge.to}`))
   const enteredStates = runEvents.reduce<string[]>((result, event) => {
     if (event.type === 'state_entered' && event.state) result.push(event.state)
@@ -181,7 +182,7 @@ function buildRunEdgeStates(graphEdges: FlowEdge[], runEvents: FlowEvent[] = [])
   return edgeStates
 }
 
-export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, onLayoutSave, onEdgesSave, onCreateNode, onDeleteNode, compactStatic = false, readOnlyGraph = false, nodeRunStates, runEvents = [], testProbeState }: {
+export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, onLayoutSave, onEdgesSave, onCreateNode, onDeleteNode, compactStatic = false, readOnlyGraph = false, nodeRunStates, runEvents, testProbeState }: {
   graph: FlowGraph
   selectedNode: FlowNode | null
   focusNodeId: string | null
@@ -206,7 +207,8 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
   const nodeById = useMemo(() => new Map(graph.nodes.map((node) => [node.id, node])), [graph.nodes])
   const probeSelectedNodeIds = useMemo(() => new Set(testProbeState?.selectedNodeIds || []), [testProbeState?.selectedNodeIds])
   const graphEdges = useMemo(() => normalizeGraphEdges(graph.edges), [graph.edges])
-  const runEdgeStates = useMemo(() => buildRunEdgeStates(graphEdges, runEvents), [graphEdges, runEvents])
+  const stableRunEvents = runEvents ?? EMPTY_FLOW_EVENTS
+  const runEdgeStates = useMemo(() => buildRunEdgeStates(graphEdges, stableRunEvents), [graphEdges, stableRunEvents])
   const renderGraph = useMemo(() => ({ ...graph, edges: graphEdges }), [graph, graphEdges])
   const layout = useMemo(() => buildBalancedLayout(renderGraph), [renderGraph])
   const edgePortPlan = useMemo(() => {

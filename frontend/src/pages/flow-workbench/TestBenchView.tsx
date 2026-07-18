@@ -64,6 +64,17 @@ function collectRunArtifacts(run?: RunResult | null): ArtifactItem[] {
   const runArtifacts = run?.artifacts || []
   return (deliveryArtifacts.length ? deliveryArtifacts : runArtifacts).filter((item): item is ArtifactItem => !!item?.name)
 }
+function collectLatestArtifactBatch(events: FlowEvent[]): ArtifactItem[] {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index]
+    if (event.type !== 'lab_node_executed' && event.type !== 'artifact_collected') continue
+    const artifacts = (event.data as any)?.artifacts
+    if (!Array.isArray(artifacts)) continue
+    const batch = artifacts.filter((item): item is ArtifactItem => !!item?.name)
+    if (batch.length) return batch
+  }
+  return []
+}
 
 function artifactPath(item: ArtifactItem) {
   return item.display_path || item.path || item.url || item.name
@@ -860,6 +871,7 @@ export function TestBenchView({
   const cartridgeInputs = detail.cartridge.inputs || []
   const nodeById = useMemo(() => new Map(detail.graph.nodes.map((node) => [node.id, node])), [detail.graph.nodes])
   const runArtifacts = useMemo(() => collectRunArtifacts(latestRun), [latestRun])
+  const latestArtifactBatch = useMemo(() => collectLatestArtifactBatch(events), [events])
   const nodeRunStates = useMemo(() => buildNodeRunStates(detail.graph, events), [detail.graph, events])
   const diagnostics = useMemo(() => buildDiagnostics(events, latestRun), [events, latestRun])
   const selectedState = selectedNode ? nodeRunStates.get(selectedNode.id) : null
@@ -881,14 +893,17 @@ export function TestBenchView({
   }, [events, nodeById, nodeRunStates])
   const pendingArtifactNodeId = pendingNode?.id || ''
   const pendingArtifacts = useMemo(() => {
+    if (latestArtifactBatch.length) return latestArtifactBatch
     if (!runArtifacts.length) return []
     if (!pendingArtifactNodeId) return runArtifacts
     const scoped = runArtifacts.filter((artifact) => artifact?.source?.node_id === pendingArtifactNodeId)
     return scoped.length > 0 ? scoped : runArtifacts
-  }, [pendingArtifactNodeId, runArtifacts])
-  const pendingArtifactsLabel = pendingArtifactNodeId && runArtifacts.some((artifact) => artifact?.source?.node_id === pendingArtifactNodeId)
-    ? getNodeTitle(pendingNode)
-    : '本次运行'
+  }, [latestArtifactBatch, pendingArtifactNodeId, runArtifacts])
+  const pendingArtifactsLabel = latestArtifactBatch.length
+    ? '当前最新草稿'
+    : pendingArtifactNodeId && runArtifacts.some((artifact) => artifact?.source?.node_id === pendingArtifactNodeId)
+      ? getNodeTitle(pendingNode)
+      : '本次运行'
   const startNode = nodeById.get(startNodeId)
   const endNode = nodeById.get(endNodeId)
   const probePayload = useMemo(() => getProbePayload(detail.graph, startNodeId, endNodeId), [detail.graph, startNodeId, endNodeId])

@@ -860,6 +860,7 @@ export function TestBenchView({
   const [showUiPreview, setShowUiPreview] = useState(false)
   const [showArtifactsPreview, setShowArtifactsPreview] = useState(false)
   const [lockedPendingKey, setLockedPendingKey] = useState('')
+  const [dismissedStatusKey, setDismissedStatusKey] = useState('')
   const logBodyRef = useRef<HTMLDivElement | null>(null)
   const logDragRef = useRef<{ startY: number; startHeight: number } | null>(null)
   const probePanelRef = useRef<HTMLElement | null>(null)
@@ -909,6 +910,14 @@ export function TestBenchView({
   const selectedProbeNodeIds = probePayload?.node_ids || []
   const canRun = !isRunning && (runScope === 'full' || !!probePayload)
   const runCompleted = latestRun?.status === 'completed' && !isRunning
+  const latestPausedEvent = [...events].reverse().find((event) => event.type === 'lab_node_paused') as any
+  const latestPausedEventId = String(latestPausedEvent?.event_id || '')
+  const statusBannerKey = pendingInteraction
+    ? `pending:${latestRun?.run_id || ''}:${rawPendingId}:${latestPausedEventId || latestRun?.updated_at || ''}`
+    : runCompleted
+      ? `completed:${latestRun?.run_id || ''}:${latestRun?.updated_at || ''}`
+      : ''
+  const showStatusBanner = Boolean(statusBannerKey && statusBannerKey !== dismissedStatusKey)
   const latestUiHtml = useMemo(() => {
     for (let index = events.length - 1; index >= 0; index -= 1) {
       const data = events[index]?.data || {}
@@ -1015,6 +1024,7 @@ export function TestBenchView({
     setShowUiPreview(false)
     setShowArtifactsPreview(false)
     setSelectedNode(null)
+    setDismissedStatusKey('')
     setLogsOpen(true)
     setLogTab('log')
     setIsRunning(true)
@@ -1036,6 +1046,7 @@ export function TestBenchView({
     setIsRunning(true)
     setShowUiPreview(false)
     setShowArtifactsPreview(false)
+    setDismissedStatusKey('')
     setLogsOpen(true)
     setLogTab('log')
     setPendingModalOpen(false)
@@ -1138,35 +1149,41 @@ export function TestBenchView({
           </section>
         </aside>
 
-        <div className={`cf-tb-graph ${pendingInteraction || runCompleted ? 'has-status-banner' : ''}`}>
-          {pendingInteraction && (
-            <button type="button" className="cf-run-status-banner waiting" onClick={openPendingInteraction}>
+        <div className={`cf-tb-graph ${showStatusBanner ? 'has-status-banner' : ''}`}>
+          {pendingInteraction && showStatusBanner && (
+            <div className="cf-run-status-banner waiting" role="status">
               <span className="cf-run-status-mark">待确认</span>
               <span className="cf-run-status-copy">
                 <strong>流程正在等待用户交互</strong>
                 <span>{pendingNode ? `${getNodeTitle(pendingNode)} 已准备好，请打开并确认后继续。` : '当前节点需要你的确认后才能继续。'}</span>
               </span>
-              <b>打开交互</b>
-            </button>
+              <span className="cf-run-status-actions">
+                <button type="button" onClick={openPendingInteraction}>打开交互</button>
+                <button type="button" className="cf-run-status-close" title="关闭提示" aria-label="关闭提示" onClick={() => setDismissedStatusKey(statusBannerKey)}>×</button>
+              </span>
+            </div>
           )}
-          {runCompleted && !pendingInteraction && (
+          {runCompleted && !pendingInteraction && showStatusBanner && (
             <div className="cf-run-status-banner completed" role="status">
               <span className="cf-run-status-mark">已完成</span>
               <span className="cf-run-status-copy">
                 <strong>流程运行完成</strong>
                 <span>{runArtifacts.length > 0 ? `本次运行已生成 ${runArtifacts.length} 个交付产物。` : '本次流程已经完整执行结束。'}</span>
               </span>
-              {runArtifacts.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowUiPreview(false)
-                    setShowArtifactsPreview(true)
-                  }}
-                >
-                  查看产物
-                </button>
-              )}
+              <span className="cf-run-status-actions">
+                {runArtifacts.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowUiPreview(false)
+                      setShowArtifactsPreview(true)
+                    }}
+                  >
+                    查看产物
+                  </button>
+                )}
+                <button type="button" className="cf-run-status-close" title="关闭提示" aria-label="关闭提示" onClick={() => setDismissedStatusKey(statusBannerKey)}>×</button>
+              </span>
             </div>
           )}
           <FlowGraphView

@@ -883,13 +883,6 @@
   box-shadow: 0 10px 28px rgba(48, 42, 36, .12);
 }
 
-button.cf-run-status-banner {
-  width: calc(100% - 24px);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
 .cf-run-status-banner.waiting {
   border: 1px solid rgba(190, 49, 48, .45);
   border-left: 4px solid #c0392b;
@@ -933,8 +926,14 @@ button.cf-run-status-banner {
   font-size: 12px;
 }
 
-.cf-run-status-banner > b,
-.cf-run-status-banner > button {
+.cf-run-status-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.cf-run-status-actions > button {
   flex: 0 0 auto;
   min-height: 30px;
   display: inline-flex;
@@ -948,6 +947,20 @@ button.cf-run-status-banner {
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
+}
+
+.cf-run-status-actions > .cf-run-status-close {
+  width: 30px;
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.cf-run-status-actions > .cf-run-status-close:hover {
+  border-color: currentColor;
+  background: rgba(255, 255, 255, .78);
 }
 
 .cf-tb-graph.has-status-banner .cf-graph-actions {

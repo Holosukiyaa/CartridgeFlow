@@ -27,9 +27,6 @@ def load_env():
 
 
 def free_port(port: int):
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        if s.connect_ex(("127.0.0.1", port)) != 0:
-            return
     try:
         subprocess.run(
             [
@@ -73,7 +70,10 @@ backend = subprocess.Popen(
 )
 
 print("[2/2] 启动前端开发服务器 (port 5173)...")
-frontend = subprocess.Popen([npm, "run", "dev"], cwd=FRONTEND_DIR)
+frontend = subprocess.Popen(
+    [npm, "run", "dev", "--", "--host", "127.0.0.1", "--port", "5173", "--strictPort"],
+    cwd=FRONTEND_DIR,
+)
 
 for _ in range(20):
     time.sleep(0.5)
@@ -83,8 +83,8 @@ for _ in range(20):
     except OSError:
         continue
 
-webbrowser.open("http://localhost:5173")
-print("已打开 http://localhost:5173  (Ctrl+C 停止)")
+webbrowser.open("http://127.0.0.1:5173")
+print("已打开 http://127.0.0.1:5173  (Ctrl+C 停止)")
 
 try:
     backend.wait()

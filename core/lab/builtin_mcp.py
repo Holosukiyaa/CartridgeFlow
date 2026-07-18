@@ -5825,6 +5825,27 @@ def _draw_text_shadow(draw, pos, text: str, font, fill, shadow=(0, 0, 0, 135)):
     draw.text((x, y), text, font=font, fill=fill)
 
 
+def _normalize_spatial_layer_name(value) -> str:
+    text = str(value or "").strip().lower()
+    aliases = {
+        "front": "foreground",
+        "foregrounds": "foreground",
+        "foreground_layer": "foreground",
+        "fg": "foreground",
+        "mid": "midground",
+        "middle": "midground",
+        "middleground": "midground",
+        "center": "midground",
+        "bg": "background",
+        "back": "background",
+        "backgrounds": "background",
+        "rear": "background",
+    }
+    if text in {"foreground", "midground", "background"}:
+        return text
+    return aliases.get(text, "")
+
+
 def _normalize_spatial_blockout_spec(value, title: str) -> dict:
     if isinstance(value, str):
         text = value.strip()
@@ -5851,17 +5872,109 @@ def _normalize_spatial_blockout_spec(value, title: str) -> dict:
             objects.extend(_expand_spatial_blockout_object(item, index))
     if not objects:
         objects = _default_spatial_blockout_objects(value)
+    def _list_ids(raw_value) -> list[str]:
+        if isinstance(raw_value, str):
+            parts = re.split(r"[,\n、|]+", raw_value)
+            return [piece.strip() for piece in parts if piece.strip()]
+        if isinstance(raw_value, list):
+            return [str(item).strip() for item in raw_value if str(item).strip()]
+        if isinstance(raw_value, dict):
+            return [str(key).strip() for key, enabled in raw_value.items() if enabled and str(key).strip()]
+        return []
+
+    composition_raw = value.get("composition") if isinstance(value.get("composition"), dict) else {}
+    foreground_ids = _list_ids(
+        composition_raw.get("foreground")
+        or composition_raw.get("foreground_ids")
+        or composition_raw.get("front")
+        or composition_raw.get("front_ids")
+        or value.get("foreground")
+    )
+    midground_ids = _list_ids(
+        composition_raw.get("midground")
+        or composition_raw.get("midground_ids")
+        or composition_raw.get("middle")
+        or composition_raw.get("middle_ids")
+        or value.get("midground")
+    )
+    background_ids = _list_ids(
+        composition_raw.get("background")
+        or composition_raw.get("background_ids")
+        or composition_raw.get("back")
+        or composition_raw.get("back_ids")
+        or value.get("background")
+    )
+    focus_ids = _list_ids(
+        composition_raw.get("focus")
+        or composition_raw.get("focus_ids")
+        or composition_raw.get("subject")
+        or composition_raw.get("subject_ids")
+        or value.get("focus")
+    )
+    composition = {
+        "schema": "scene_composition.v1",
+        "goal": str(composition_raw.get("goal") or value.get("composition_goal") or value.get("goal") or "").strip(),
+        "foreground": foreground_ids,
+        "midground": midground_ids,
+        "background": background_ids,
+        "focus": focus_ids,
+        "subject_scale": str(composition_raw.get("subject_scale") or value.get("subject_scale") or "").strip(),
+        "depth_rules": [str(item).strip() for item in (composition_raw.get("depth_rules") or composition_raw.get("rules") or []) if str(item).strip()] if isinstance(composition_raw.get("depth_rules") or composition_raw.get("rules") or [], list) else [],
+        "notes": str(composition_raw.get("notes") or value.get("composition_notes") or "").strip(),
+    }
     camera = value.get("camera") if isinstance(value.get("camera"), dict) else {}
     camera_spec = {
         "position": _vec3(camera.get("position"), [4.5, 4.0, 6.0]),
         "look_at": _vec3(camera.get("look_at"), [0.0, 0.8, 0.0]),
+        "lens_mm": _clamp_float(camera.get("lens_mm") or camera.get("focal_length"), 18.0, 120.0, 35.0),
+        "movement": str(camera.get("movement") or camera.get("motion") or "slow_push_in").strip(),
+        "distance": str(camera.get("distance") or camera.get("framing") or "medium_close").strip(),
+        "focus_target": str(camera.get("focus_target") or camera.get("focus") or _spatial_primary_object_id(objects, {"character", "hero", "person"}) or "").strip(),
     }
     timeline = _normalize_spatial_animation_timeline(value, objects, camera_spec)
+    layer_order = {"background": 0, "midground": 1, "foreground": 2}
+    layer_lookup = {}
+    for item in objects:
+        if not isinstance(item, dict):
+            continue
+        item_layer = _normalize_spatial_layer_name(item.get("layer") or item.get("depth_layer"))
+        item_id = str(item.get("id") or "").strip()
+        if item_id in foreground_ids:
+            item_layer = "foreground"
+        elif item_id in midground_ids:
+            item_layer = "midground"
+        elif item_id in background_ids:
+            item_layer = "background"
+        if not item_layer:
+            raw_type = str(item.get("type") or "").strip().lower()
+            if raw_type in {"ground", "floor", "plane"} or any(tag in raw_type for tag in {"background", "wall", "architecture", "building", "sky"}):
+                item_layer = "background"
+            elif any(tag in raw_type for tag in {"character", "person", "hero", "subject"}):
+                item_layer = "foreground"
+            else:
+                item_layer = "midground"
+        item["layer"] = item_layer
+        try:
+            depth_order = int(item.get("depth_order"))
+        except Exception:
+            depth_order = layer_order.get(item_layer, 1) * 100
+        item["depth_order"] = depth_order
+        if item_id:
+            layer_lookup[item_id] = item_layer
+    if not composition["foreground"]:
+        composition["foreground"] = [item_id for item_id, layer in layer_lookup.items() if layer == "foreground"]
+    if not composition["midground"]:
+        composition["midground"] = [item_id for item_id, layer in layer_lookup.items() if layer == "midground"]
+    if not composition["background"]:
+        composition["background"] = [item_id for item_id, layer in layer_lookup.items() if layer == "background"]
+    if not composition["focus"]:
+        composition["focus"] = [item_id for item_id, layer in layer_lookup.items() if layer == "foreground"][:2]
     return {
         "schema": "scene_animation.v1",
         "title": scene_title,
         "unit": "meter",
         "style": str(value.get("style") or "low_poly_animation_previz"),
+        "composition": composition,
         "objects": objects,
         "camera": camera_spec,
         "timeline": timeline,
@@ -6008,10 +6121,10 @@ def _clamp_float(value, minimum: float, maximum: float, fallback: float) -> floa
 def _default_spatial_blockout_objects(value: dict) -> list[dict]:
     accent = _spatial_color(value.get("accent_color") or "red")
     return [
-        {"id": "ground", "type": "ground", "name": "Ground plane", "position": [0, -0.04, 0], "size": [7.0, 0.08, 5.0], "color": [0.46, 0.44, 0.40, 1.0]},
-        {"id": "hero", "type": "character", "name": "Hero blockout", "position": [0, 0.85, 0], "size": [0.55, 1.7, 0.38], "color": _spatial_color("blue")},
-        {"id": "entrance", "type": "architecture", "name": "Entrance mass", "position": [0, 1.25, 1.8], "size": [2.8, 2.5, 0.28], "color": [0.32, 0.34, 0.36, 1.0]},
-        {"id": "warning_light", "type": "prop", "name": "Warning light", "position": [2.2, 1.5, -0.8], "size": [0.32, 0.32, 0.32], "color": accent},
+        {"id": "ground", "type": "ground", "name": "Ground plane", "position": [0, -0.04, 0], "size": [7.0, 0.08, 5.0], "color": [0.46, 0.44, 0.40, 1.0], "layer": "background", "depth_order": 0},
+        {"id": "hero", "type": "character", "name": "Hero blockout", "position": [0, 0.85, 0], "size": [0.55, 1.7, 0.38], "color": _spatial_color("blue"), "layer": "foreground", "depth_order": 200},
+        {"id": "entrance", "type": "architecture", "name": "Entrance mass", "position": [0, 1.25, 1.8], "size": [2.8, 2.5, 0.28], "color": [0.32, 0.34, 0.36, 1.0], "layer": "midground", "depth_order": 100},
+        {"id": "warning_light", "type": "prop", "name": "Warning light", "position": [2.2, 1.5, -0.8], "size": [0.32, 0.32, 0.32], "color": accent, "layer": "background", "depth_order": 20},
     ]
 
 
@@ -6022,6 +6135,11 @@ def _expand_spatial_blockout_object(item: dict, index: int) -> list[dict]:
     position = _vec3(item.get("position"), [0.0, 0.0, 0.0])
     size = _spatial_size(raw_type, item)
     color = _spatial_color(item.get("color") or item.get("material") or raw_type)
+    layer = _normalize_spatial_layer_name(item.get("layer") or item.get("depth_layer"))
+    try:
+        depth_order = int(item.get("depth_order"))
+    except Exception:
+        depth_order = None
     if raw_type in {"ground", "floor", "plane"}:
         position[1] = -abs(size[1]) / 2
     elif abs(position[1]) < 0.0001:
@@ -6035,16 +6153,27 @@ def _expand_spatial_blockout_object(item: dict, index: int) -> list[dict]:
                 "position": [position[0], 0.08 + step * 0.16, position[2] + step * 0.34],
                 "size": [size[0], 0.16, 0.34],
                 "color": color,
+                "layer": layer or "midground",
+                "depth_order": (depth_order if depth_order is not None else 100) + step,
             }
             for step in range(5)
         ]
     if raw_type in {"door", "doorway", "entrance", "portal"}:
         return [
-            {"id": f"{obj_id}_left", "type": "architecture", "name": f"{name} left", "position": [position[0] - size[0] * 0.42, size[1] / 2, position[2]], "size": [size[0] * 0.16, size[1], size[2]], "color": color},
-            {"id": f"{obj_id}_right", "type": "architecture", "name": f"{name} right", "position": [position[0] + size[0] * 0.42, size[1] / 2, position[2]], "size": [size[0] * 0.16, size[1], size[2]], "color": color},
-            {"id": f"{obj_id}_top", "type": "architecture", "name": f"{name} lintel", "position": [position[0], size[1] * 0.92, position[2]], "size": [size[0], size[1] * 0.16, size[2]], "color": color},
+            {"id": f"{obj_id}_left", "type": "architecture", "name": f"{name} left", "position": [position[0] - size[0] * 0.42, size[1] / 2, position[2]], "size": [size[0] * 0.16, size[1], size[2]], "color": color, "layer": layer or "midground", "depth_order": (depth_order if depth_order is not None else 100)},
+            {"id": f"{obj_id}_right", "type": "architecture", "name": f"{name} right", "position": [position[0] + size[0] * 0.42, size[1] / 2, position[2]], "size": [size[0] * 0.16, size[1], size[2]], "color": color, "layer": layer or "midground", "depth_order": (depth_order if depth_order is not None else 100)},
+            {"id": f"{obj_id}_top", "type": "architecture", "name": f"{name} lintel", "position": [position[0], size[1] * 0.92, position[2]], "size": [size[0], size[1] * 0.16, size[2]], "color": color, "layer": layer or "midground", "depth_order": (depth_order if depth_order is not None else 100)},
         ]
-    return [{"id": obj_id, "type": raw_type, "name": name, "position": position, "size": size, "color": color}]
+    if not layer:
+        if raw_type in {"ground", "floor", "plane"} or any(tag in raw_type for tag in {"background", "wall", "architecture", "building", "sky"}):
+            layer = "background"
+        elif any(tag in raw_type for tag in {"character", "person", "hero", "subject"}):
+            layer = "foreground"
+        else:
+            layer = "midground"
+    if depth_order is None:
+        depth_order = {"background": 0, "midground": 100, "foreground": 200}.get(layer, 100) + index
+    return [{"id": obj_id, "type": raw_type, "name": name, "position": position, "size": size, "color": color, "layer": layer, "depth_order": depth_order}]
 
 
 def _spatial_size(raw_type: str, item: dict) -> list[float]:
@@ -6252,6 +6381,7 @@ const timeline = spec.timeline || {{}};
 const duration = Math.max(2, Number(timeline.duration_seconds || 6));
 const tracks = Array.isArray(timeline.tracks) ? timeline.tracks : [];
 const events = Array.isArray(timeline.events) ? timeline.events : [];
+const composition = spec.composition || {{}};
 const playButton = document.getElementById('play');
 const scrub = document.getElementById('scrub');
 const timeLabel = document.getElementById('time');
@@ -6271,7 +6401,17 @@ function faceDepth(points,t){{ const a=cameraAngle(t), ca=Math.cos(a), sa=Math.s
 function mix(a,b,p){{ if(Array.isArray(a)&&Array.isArray(b)) return a.map((v,i)=>Number(v)+(Number(b[i]||0)-Number(v))*p); if(typeof a==='number'&&typeof b==='number') return a+(b-a)*p; return p < .5 ? a : b; }}
 function keyValue(frames,t){{ const ks=[...frames].sort((a,b)=>Number(a.time||0)-Number(b.time||0)); if(!ks.length) return null; if(t<=Number(ks[0].time||0)) return ks[0].value; for(let i=0;i<ks.length-1;i++){{ const a=ks[i], b=ks[i+1], ta=Number(a.time||0), tb=Number(b.time||ta); if(t>=ta&&t<=tb){{ const p=tb===ta?1:(t-ta)/(tb-ta); return mix(a.value,b.value,p); }} }} return ks[ks.length-1].value; }}
 function trackValue(id, prop, t){{ const track = tracks.find(item => String(item.target||'')===String(id) && String(item.property||'')===prop); return track ? keyValue(track.keyframes||[],t) : null; }}
-function animatedObject(o,t){{ const next={{...o, position:[...(o.position||[0,0,0])], size:[...(o.size||[1,1,1])]}}; const offset=trackValue(o.id,'offset',t); const pos=trackValue(o.id,'position',t); if(Array.isArray(pos)) next.position=pos; if(Array.isArray(offset)) next.position=next.position.map((v,i)=>v+Number(offset[i]||0)); next.pose=trackValue(o.id,'pose',t)||''; next.pulse=Number(trackValue(o.id,'pulse',t)||0); return next; }}
+function listValues(value){{ if(Array.isArray(value)) return value.map(v=>String(v||'').trim()).filter(Boolean); if(value&&typeof value==='object') return Object.entries(value).filter(([,enabled])=>Boolean(enabled)).map(([key])=>String(key).trim()).filter(Boolean); if(typeof value==='string') return value.split(/[,\\n、|]+/).map(v=>v.trim()).filter(Boolean); return []; }}
+const layerSets = {{
+  foreground: new Set([...(listValues(composition.foreground)), ...(listValues(composition.foreground_ids))]),
+  midground: new Set([...(listValues(composition.midground)), ...(listValues(composition.midground_ids))]),
+  background: new Set([...(listValues(composition.background)), ...(listValues(composition.background_ids))]),
+}};
+function normalizeLayer(value){{ const text=String(value||'').trim().toLowerCase(); if(['foreground','midground','background'].includes(text)) return text; const aliases={{front:'foreground',fg:'foreground',middle:'midground',mid:'midground',middleground:'midground',back:'background',bg:'background',rear:'background'}}; return aliases[text] || ''; }}
+function inferLayer(o){{ const explicit = normalizeLayer(o.layer || o.depth_layer || o.stage_layer); if(explicit) return explicit; const id=String(o.id||''); if(layerSets.foreground.has(id)) return 'foreground'; if(layerSets.midground.has(id)) return 'midground'; if(layerSets.background.has(id)) return 'background'; const text=`${{o.id||''}} ${{o.type||''}} ${{o.name||''}}`.toLowerCase(); if(/hero|character|person|subject/.test(text)) return 'foreground'; if(/ground|floor|background|wall|architecture|building|sky/.test(text)) return 'background'; return 'midground'; }}
+function layerBias(layer){{ return {{background:-2, midground:0, foreground:2}}[layer] || 0; }}
+function animatedObject(o,t){{ const next={{...o, position:[...(o.position||[0,0,0])], size:[...(o.size||[1,1,1])]}}; const offset=trackValue(o.id,'offset',t); const pos=trackValue(o.id,'position',t); if(Array.isArray(pos)) next.position=pos; if(Array.isArray(offset)) next.position=next.position.map((v,i)=>v+Number(offset[i]||0)); next.pose=trackValue(o.id,'pose',t)||''; next.pulse=Number(trackValue(o.id,'pulse',t)||0); next.layer=inferLayer(o); next.depth_order=Number(o.depth_order||0); return next; }}
+function objectDepth(o,t){{ const p=o.position||[0,0,0], a=cameraAngle(t), ca=Math.cos(a), sa=Math.sin(a); const base=p[0]*sa+p[2]*ca; return base + layerBias(o.layer)*10 + Number(o.depth_order||0)*0.01; }}
 function drawBox(o,t,label=true){{ const c=boxCorners(o), base=color(o.color); const pulse=Number(o.pulse||0); const lit=pulse>0?shade(base,1+.7*Math.abs(Math.sin(t*7))*pulse):base; const faces=[
   {{points:[c[0],c[1],c[2],c[3]], light:.72}},
   {{points:[c[4],c[5],c[6],c[7]], light:.94}},
@@ -6291,7 +6431,7 @@ function drawCharacter(o,t){{ const p=o.position||[0,0,0], base=o.size||[.55,1.7
 ]; parts.forEach(part=>drawBox(part,t,false)); if(smokePose) drawSmoke([p[0]+base[0]*.52,p[1]+base[1]*.78,p[2]-base[2]*.46],t); drawLabel(o,t); }}
 function drawSmoke(origin,t){{ for(let i=0;i<4;i++){{ const age=((t*1.1+i*.22)%1); const q=project([origin[0]+age*.22,origin[1]+age*.48,origin[2]-age*.16],t); ctx.beginPath(); ctx.arc(q[0],q[1],6+age*11,0,Math.PI*2); ctx.fillStyle='rgba(190,180,168,'+(0.22*(1-age))+')'; ctx.fill(); }} }}
 function drawEvents(t){{ events.forEach(ev=>{{ const dt=Math.abs(t-Number(ev.time||0)); if(dt>.45) return; if(String(ev.type||'').includes('smoke')){{ const hero=(spec.objects||[]).find(o=>String(o.id||'').includes(String(ev.target||'hero'))) || (spec.objects||[]).find(o=>String(o.type||'').includes('character')); if(hero) drawSmoke([(hero.position||[0,0,0])[0]+.35,(hero.position||[0,.8,0])[1]+1.25,(hero.position||[0,0,0])[2]-.2],t); }} }}); }}
-function draw(){{ const t=nowTime(); ctx.clearRect(0,0,canvas.clientWidth,canvas.clientHeight); const objs=(spec.objects||[]).map(o=>animatedObject(o,t)).sort((a,b)=>((a.position[0]||0)+(a.position[2]||0))-((b.position[0]||0)+(b.position[2]||0))); objs.forEach(o=>{{ const type=String(o.type||'').toLowerCase(); if(type.includes('character')||type.includes('person')||type.includes('hero')) drawCharacter(o,t); else drawBox(o,t,true); }}); drawEvents(t); scrub.value=String(Math.round(t/duration*1000)); timeLabel.textContent=t.toFixed(2)+'s / '+duration.toFixed(1)+'s'; document.getElementById('stats').textContent='对象 '+objs.length+' 个 · 动画轨道 '+tracks.length+' 条 · 拖拽旋转，滚轮缩放'; }}
+function draw(){{ const t=nowTime(); ctx.clearRect(0,0,canvas.clientWidth,canvas.clientHeight); const objs=(spec.objects||[]).map(o=>animatedObject(o,t)).sort((a,b)=>objectDepth(a,t)-objectDepth(b,t)); const layerCounts={{foreground:0, midground:0, background:0}}; objs.forEach(o=>{{ layerCounts[o.layer] = (layerCounts[o.layer]||0) + 1; const type=String(o.type||'').toLowerCase(); if(type.includes('character')||type.includes('person')||type.includes('hero')) drawCharacter(o,t); else drawBox(o,t,true); }}); drawEvents(t); scrub.value=String(Math.round(t/duration*1000)); timeLabel.textContent=t.toFixed(2)+'s / '+duration.toFixed(1)+'s'; document.getElementById('stats').textContent='对象 '+objs.length+' 个 · 前景 '+(layerCounts.foreground||0)+' · 中景 '+(layerCounts.midground||0)+' · 背景 '+(layerCounts.background||0)+' · 拖拽旋转，滚轮缩放'; }}
 function loop(){{ draw(); requestAnimationFrame(loop); }}
 playButton.addEventListener('click',()=>{{ if(playing){{ pausedAt=nowTime(); playing=false; playButton.textContent='播放'; }} else {{ startMs=performance.now()-pausedAt*1000; playing=true; playButton.textContent='暂停'; }} }});
 scrub.addEventListener('input',()=>{{ setTime(Number(scrub.value)/1000*duration); if(playing){{ playing=false; playButton.textContent='播放'; }} draw(); }});

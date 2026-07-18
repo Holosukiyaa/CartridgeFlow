@@ -69,7 +69,7 @@
       },
       "output": "scene_inputs",
       "params": {
-        "description": "收集用户对 3D 动画预演的空间、角色、动作、镜头和输出目录要求。",
+        "description": "收集用户对 3D 动画预演的空间、角色、动作、镜头、前中后景和输出目录要求。",
         "output": "scene_inputs"
       },
       "layout": {
@@ -161,7 +161,9 @@
                     0.08,
                     5
                   ],
-                  "color": "gray"
+                  "color": "gray",
+                  "layer": "background",
+                  "depth_order": 0
                 },
                 {
                   "id": "hero",
@@ -172,7 +174,9 @@
                     0,
                     0
                   ],
-                  "color": "blue"
+                  "color": "blue",
+                  "layer": "foreground",
+                  "depth_order": 200
                 },
                 {
                   "id": "subway_entrance",
@@ -188,7 +192,9 @@
                     2.4,
                     0.28
                   ],
-                  "color": "wall"
+                  "color": "wall",
+                  "layer": "midground",
+                  "depth_order": 100
                 },
                 {
                   "id": "warning_light",
@@ -199,7 +205,9 @@
                     1.5,
                     -0.9
                   ],
-                  "color": "red"
+                  "color": "red",
+                  "layer": "background",
+                  "depth_order": 20
                 }
               ],
               "camera": {
@@ -212,7 +220,11 @@
                   0,
                   0.8,
                   0
-                ]
+                ],
+                "lens_mm": 32,
+                "movement": "slow_push_in",
+                "distance": "medium_close",
+                "focus_target": "hero"
               },
               "timeline": {
                 "duration_seconds": 6,
@@ -300,15 +312,40 @@
                   }
                 ]
               },
-              "notes": "低模动画预演，只验证动作节奏、镜头推进、角色站位、入口体块和警示灯事件。"
+              "notes": "低模动画预演，只验证动作节奏、镜头推进、角色站位、前中后景层次和关键事件。",
+              "composition": {
+                "schema": "scene_composition.v1",
+                "goal": "让前景主角、中景建筑和远景线索一眼可分。",
+                "foreground": [
+                  "hero"
+                ],
+                "midground": [
+                  "subway_entrance"
+                ],
+                "background": [
+                  "ground",
+                  "warning_light"
+                ],
+                "focus": [
+                  "hero",
+                  "warning_light"
+                ],
+                "subject_scale": "hero_dominant",
+                "depth_rules": [
+                  "hero 必须始终是最清楚的主体。",
+                  "subway_entrance 作为中景建筑，不得压过 hero。",
+                  "warning_light 只做远景线索，不得抢占画面中心。"
+                ],
+                "notes": "让前中后景先可读，再谈细节。"
+              }
             }
           }
         }
       },
       "params": {
-        "description": "把用户的自然语言需求转成 scene_animation.v1。先让用户确认动作和镜头规格，再允许工具写入产物。",
-        "system_prompt": "你是 3D 动画预演导演，只负责把想法转成可执行的低模动画规格。不要追求最终建模质量，要追求动作节奏、镜头调度、角色站位和关键事件清楚。",
-        "prompt": "根据 scene_inputs 生成 scene_animation.v1，并放在 payload.scene_blockout 中以供现有工具消费。必须输出 decision_envelope.v1，resolved 时 payload.scene_blockout 必须包含：schema='scene_animation.v1'、title、style、objects、camera、timeline、notes。objects 是低模代理对象，字段包含 id/type/name/position/size/color。timeline 必须包含 duration_seconds、tracks、events；tracks 至少包含主角位移或姿态、关键道具闪烁或运动；camera 或 timeline.camera 应描述镜头起止。position/size 是 [x,y,z]，y 为垂直高度。对象数量控制在 4-12 个。若用户在 scene_plan_reply 或 blockout_rework_feedback 中要求修改，请吸收修改后再 resolved。",
+        "description": "把用户的自然语言需求转成 scene_animation.v1。先让用户确认动作、镜头和前中后景层次，再允许工具写入产物。",
+        "system_prompt": "你是 3D 动画预演导演，只负责把想法转成可执行的低模动画规格。不要追求最终建模质量，要追求动作节奏、镜头调度、角色站位、前景/中景/背景层次和关键事件清楚。",
+        "prompt": "根据 scene_inputs 生成 scene_animation.v1，并放在 payload.scene_blockout 中以供现有工具消费。必须输出 decision_envelope.v1。resolved 时 payload.scene_blockout 必须包含：schema='scene_animation.v1'、title、style、composition、objects、camera、timeline、notes。composition 至少要说明 goal、foreground、midground、background、focus、depth_rules、subject_scale。objects 是低模代理对象，字段至少包含 id/type/name/position/size/color/layer/depth_order；必要时补充 role、anchor。camera 必须包含 position、look_at、lens_mm、movement、distance 或 framing、focus_target。timeline 必须包含 duration_seconds、tracks、events；tracks 至少包含主角位移或姿态、关键道具闪烁或运动，且要能看出前景/中景/背景关系。position/size 是 [x,y,z]，y 为垂直高度。对象数量控制在 4-12 个，前景、中景、背景必须一眼可分。若用户在 scene_plan_reply 或 blockout_rework_feedback 中要求修改，请吸收修改后再 resolved。",
         "input": "scene_inputs",
         "optional_input": "scene_plan_reply,blockout_rework_feedback",
         "output": "scene_blockout_decision",
@@ -341,7 +378,7 @@
       "input": "scene_blockout",
       "output": "blockout_bundle",
       "params": {
-        "description": "消费 scene_animation.v1，生成 GLB 代理、动画 JSON、manifest 和可播放 HTML 预览。",
+        "description": "消费 scene_animation.v1，生成 GLB 代理、动画 JSON、manifest 和可播放 HTML 预览，并保留 composition/layer/camera 结构。",
         "input": "scene_blockout",
         "output": "blockout_bundle",
         "tool_params": {

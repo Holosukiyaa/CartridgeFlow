@@ -5,7 +5,7 @@
   "version": "0.1.0-dev",
   "kind": "runtime_cartridge",
   "category": "dev_flow",
-  "description": "轻量 3D 动画预演卡带：用户输入动画想法，AI 转为 scene_animation.v1 结构，本地工具生成 GLB 代理、动画 JSON、manifest 和可播放 HTML 预览，用于验证动作节奏、镜头调度和空间关系。",
+  "description": "轻量 3D 动画预演卡带：用户输入动画想法，AI 转为 scene_animation.v1 结构，并显式保留 composition、layer 和 camera 关系，本地工具生成 GLB 代理、动画 JSON、manifest 和可播放 HTML 预览，用于验证动作节奏、镜头调度和空间层次。",
   "publisher": {
     "id": "local",
     "name": "Local Developer",
@@ -168,7 +168,7 @@
       "type": "builtin",
       "server": "media",
       "tool": "forge_spatial_blockout",
-      "description": "消费 scene_animation.v1，生成 GLB 代理、动画 JSON、manifest 和可播放离线 HTML 预览。",
+      "description": "消费 scene_animation.v1，生成 GLB 代理、动画 JSON、manifest 和可播放离线 HTML 预览，并保留 composition/layer/camera 结构。",
       "default_params": {
         "scene_spec": "store:scene_blockout",
         "output_dir": "store:scene_inputs.output_dir",

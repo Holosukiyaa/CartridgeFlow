@@ -1,0 +1,27 @@
+{
+  "1": {
+    "inputs": {
+      "width": 64,
+      "height": 64,
+      "batch_size": 1,
+      "color": 264714
+    },
+    "class_type": "EmptyImage",
+    "_meta": {
+      "title": "CartridgeFlow API Health Image"
+    }
+  },
+  "2": {
+    "inputs": {
+      "filename_prefix": "CartridgeFlow/healthcheck",
+      "images": [
+        "1",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save Health Image"
+    }
+  }
+}

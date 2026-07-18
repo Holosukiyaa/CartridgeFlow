@@ -2,10 +2,10 @@
   "schema_version": "1.0",
   "id": "dev.series_3d_episode_factory",
   "name": "3D 连续短剧工厂卡带",
-  "version": "0.1.0-dev",
+  "version": "0.2.0-dev",
   "kind": "runtime_cartridge",
   "category": "dev_flow",
-  "description": "使用现成角色、场景、道具、动作库，由 LLM 负责剧情、脚本、分镜和调度规划，确定性工具生成 3D 竖屏短剧预演包。",
+  "description": "使用现成角色、场景和动作库，由 LLM 负责剧情、脚本、分镜和调度规划，确定性工具调用 Blender 生成真实资产 3D 竖屏短剧预演包。",
   "publisher": {
     "id": "local",
     "name": "Local Developer",
@@ -94,7 +94,7 @@
   "delivery_readiness": {
     "level": "dev",
     "certification_target": "CF-FARP@0.4",
-    "notes": "开发预览卡带。第一阶段只做短剧预演和 Blender 编排脚本，不自动生成新美术资产。"
+    "notes": "M1 开发卡带：使用本地 CC0 真实资产和 Blender 渲染第一镜头，不自动生成新美术资产。"
   },
   "root_flow": {
     "entry": "root.flow.json",
@@ -132,7 +132,7 @@
       "label": "本集想法",
       "type": "textarea",
       "required": true,
-      "placeholder": "例如：蓝夹克少年在夜晚地铁口抽烟，警示灯闪烁，远处黑影观察他，结尾留下追踪悬念。"
+      "placeholder": "例如：一名男性沿白天郊区街道走来，忽然停下并抬头做出反应。"
     },
     {
       "id": "episode_id",
@@ -269,14 +269,21 @@
       "type": "builtin",
       "server": "media",
       "tool": "forge_3d_series_episode",
-      "description": "消费脚本、分镜、资产匹配和动作匹配，生成预演 HTML、episode plan 和 Blender Python 脚本。",
+      "description": "消费脚本、分镜、资产匹配和动作匹配，调用 Blender 生成真实首镜头 MP4、工程、预览和 manifest。",
       "default_params": {
         "episode_script": "store:episode_script",
         "shot_list": "store:shot_list",
         "asset_plan": "store:asset_plan",
         "action_plan": "store:action_plan",
         "output_dir": "store:episode_inputs.output_dir",
-        "episode_id": "store:episode_inputs.episode_id"
+        "episode_id": "store:episode_inputs.episode_id",
+        "blender_path": ".tools/blender-4.5.11-windows-x64/blender.exe",
+        "execute_blender": true,
+        "render_width": 360,
+        "render_height": 640,
+        "render_fps": 24,
+        "render_samples": 8,
+        "blender_timeout_seconds": 300
       },
       "enabled": true,
       "required": true,
@@ -284,7 +291,7 @@
         "capability": "builtin_tool_call",
         "idempotent": true,
         "side_effect": "writes_run_artifacts",
-        "timeout_ms": 30000,
+        "timeout_ms": 300000,
         "retry_policy": {
           "max_attempts": 1
         }
@@ -321,6 +328,27 @@
           },
           "episode_id": {
             "type": "string"
+          },
+          "blender_path": {
+            "type": "string"
+          },
+          "execute_blender": {
+            "type": "boolean"
+          },
+          "render_width": {
+            "type": "integer"
+          },
+          "render_height": {
+            "type": "integer"
+          },
+          "render_fps": {
+            "type": "integer"
+          },
+          "render_samples": {
+            "type": "integer"
+          },
+          "blender_timeout_seconds": {
+            "type": "integer"
           }
         },
         "required": [
@@ -340,7 +368,9 @@
       "json",
       "html",
       "text",
-      "video"
+      "video",
+      "image",
+      "model"
     ]
   },
   "delivery": {

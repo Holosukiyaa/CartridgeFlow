@@ -144,30 +144,20 @@
           "payload": {
             "episode_script": {
               "schema": "episode_script.v1",
-              "title": "地铁口的红灯",
-              "episode_id": "subway_hook_ep01",
+              "title": "空街上的停步",
+              "episode_id": "pilot_suburban_ep01",
               "genre": "urban_suspense",
               "format": "vertical_short",
-              "duration_target": 16,
-              "hook": "蓝夹克少年在夜晚地铁口抽烟，红色警示灯突然只对着他闪。",
-              "logline": "少年以为只是设备故障，直到他发现远处黑影和警示灯闪烁节奏一致。",
+              "duration_target": 15,
+              "hook": "一名男性独自走过白天郊区街道，忽然像听见了不该出现的声音。",
+              "logline": "空旷街道看似平静，主角停下后发现声音来自没有人的方向。",
               "beats": [
-                "主角在地铁口停下抽烟，环境安静反常。",
-                "红色警示灯突然开始闪烁，主角回头。",
-                "远处黑影短暂出现，主角手机收到未知消息。",
-                "结尾停在黑影抬头，留下追踪悬念。"
+                "主角沿街道向前走，环境安静得反常。",
+                "主角停下脚步，观察道路两侧。",
+                "他抬头做出反应，画外传来第二次声响。"
               ],
-              "dialogue": [
-                {
-                  "actor": "hero",
-                  "line": "这灯怎么只照我？"
-                },
-                {
-                  "actor": "hero",
-                  "line": "谁在那边？"
-                }
-              ],
-              "ending_hook": "手机弹出一句：别回头。"
+              "dialogue": [],
+              "ending_hook": "声音再次响起，但街道上仍然只有他一个人。"
             }
           }
         }
@@ -175,7 +165,7 @@
       "params": {
         "description": "LLM 只负责编剧：剧情钩子、单集脚本、对白和结尾悬念。",
         "system_prompt": "你是互联网竖屏 3D 连续短剧编剧。你只负责剧情、节奏、对白和悬念，不生成美术资产，不设计复杂动作。",
-        "prompt": "根据 episode_inputs 输出 decision_envelope.v1。resolved 时 payload.episode_script 必须符合 episode_script.v1，包含 title、episode_id、genre、format、duration_target、hook、logline、beats、dialogue、ending_hook。内容要适合 10-20 秒竖屏短剧，必须有前三秒钩子和结尾悬念。若 script_reply 或 episode_rework_feedback 要求修改，吸收后再 resolved。",
+        "prompt": "根据 episode_inputs 输出 decision_envelope.v1。resolved 时 payload.episode_script 必须符合 episode_script.v1，包含 title、episode_id、genre、format、duration_target、hook、logline、beats、dialogue、ending_hook。当前真实资产范围只有一名男性主角和白天郊区街道，不得编入其他角色、场景或道具。内容要适合 15-30 秒竖屏短剧，必须有前三秒钩子和结尾悬念。若 script_reply 或 episode_rework_feedback 要求修改，吸收后再 resolved。",
         "input": "episode_inputs",
         "optional_input": "script_reply,episode_rework_feedback",
         "output": "episode_script_decision",
@@ -249,80 +239,55 @@
         "offline_decision": {
           "schema": "decision_envelope.v1",
           "status": "resolved",
-          "summary": "离线兜底：生成 4 个镜头的短剧分镜表。",
+          "summary": "离线兜底：生成 3 个镜头的真实资产样片分镜表。",
           "payload": {
             "shot_list": {
               "schema": "shot_list.v1",
               "shots": [
                 {
                   "id": "shot_01",
-                  "title": "夜晚地铁口建立",
-                  "description": "蓝夹克少年靠在地铁入口旁抽烟，街道空旷，红灯在画面边缘偶尔闪。",
-                  "scene": "地铁入口",
+                  "title": "空街建立",
+                  "description": "男性主角沿白天郊区街道向前走，街道上没有其他人。",
+                  "scene": "白天郊区街道",
                   "characters": [
                     "hero"
                   ],
-                  "props": [
-                    "cigarette_smoke",
-                    "warning_red_light"
-                  ],
+                  "props": [],
                   "action_tags": [
-                    "smoke_idle"
+                    "walk_slow"
                   ],
                   "camera": "slow_push_in",
-                  "duration": 4
+                  "duration": 5
                 },
                 {
                   "id": "shot_02",
-                  "title": "红灯异常",
-                  "description": "警示灯突然加快闪烁，少年停下动作抬头。",
-                  "scene": "地铁入口",
+                  "title": "停下观察",
+                  "description": "主角停下脚步，观察道路两侧。",
+                  "scene": "白天郊区街道",
                   "characters": [
                     "hero"
                   ],
-                  "props": [
-                    "warning_red_light"
-                  ],
+                  "props": [],
                   "action_tags": [
-                    "turn_head"
+                    "idle_hold"
                   ],
                   "camera": "close_up_reveal",
-                  "duration": 4
+                  "duration": 5
                 },
                 {
                   "id": "shot_03",
-                  "title": "未知消息",
-                  "description": "少年低头看手机，屏幕冷光照亮脸，消息显示别回头。",
-                  "scene": "地铁入口",
+                  "title": "做出反应",
+                  "description": "主角像是发现了什么，抬头做出反应。",
+                  "scene": "白天郊区街道",
                   "characters": [
                     "hero"
                   ],
-                  "props": [
-                    "phone_glow"
-                  ],
+                  "props": [],
                   "action_tags": [
-                    "look_phone"
-                  ],
-                  "camera": "over_shoulder",
-                  "duration": 4
-                },
-                {
-                  "id": "shot_04",
-                  "title": "黑影露出",
-                  "description": "远处观察者从柱子后出现，主角没有回头，画面停在黑影抬头。",
-                  "scene": "地铁入口",
-                  "characters": [
-                    "hero",
-                    "observer"
-                  ],
-                  "props": [
-                    "warning_red_light"
-                  ],
-                  "action_tags": [
-                    "idle_talk"
+                    "gesture_interact"
                   ],
                   "camera": "low_angle_hold",
-                  "duration": 4
+                  "duration": 5
                 }
               ]
             }
@@ -332,7 +297,7 @@
       "params": {
         "description": "LLM 只负责分镜：镜头目标、对白节奏、镜头模板和动作标签，不生成动作曲线。",
         "system_prompt": "你是竖屏 3D 短剧分镜导演。你只能输出镜头表和动作标签，不创建美术资产，不输出复杂动作数据。",
-        "prompt": "根据 episode_script 输出 decision_envelope.v1。resolved 时 payload.shot_list 必须符合 shot_list.v1，包含 3-5 个 shots。每个 shot 必须包含 id、title、description、scene、characters、props、action_tags、camera、duration。action_tags 只能是动作意图标签，后续工具会匹配动作库。camera 必须是镜头模板意图，例如 slow_push_in、close_up_reveal、over_shoulder、low_angle_hold。若 shot_reply 或 episode_rework_feedback 要求修改，吸收后再 resolved。",
+        "prompt": "根据 episode_script 输出 decision_envelope.v1。resolved 时 payload.shot_list 必须符合 shot_list.v1，包含 3-5 个 shots。每个 shot 必须包含 id、title、description、scene、characters、props、action_tags、camera、duration。当前 scene 只能使用白天郊区街道，characters 只能使用 hero，props 必须为空；action_tags 只能从 walk_slow、idle_hold、idle_talk、gesture_interact、run_short 中选择。camera 必须是 slow_push_in、close_up_reveal、over_shoulder 或 low_angle_hold。若 shot_reply 或 episode_rework_feedback 要求修改，吸收后再 resolved。",
         "input": "episode_inputs,episode_script",
         "optional_input": "shot_reply,episode_rework_feedback",
         "output": "shot_list_decision",
@@ -409,7 +374,7 @@
     },
     "forge_episode": {
       "type": "process",
-      "title": "Blender编排：生成短剧预演包",
+      "title": "Blender渲染：真实首镜头",
       "kind": "mcp_execute",
       "executor": "mcp",
       "effect": "writes_artifacts",
@@ -428,7 +393,7 @@
       "input": "episode_script,shot_list,asset_plan,action_plan",
       "output": "episode_bundle",
       "params": {
-        "description": "消费脚本、分镜、资产匹配和动作匹配，生成可播放预演 HTML、episode plan、Blender Python 脚本和 manifest。",
+        "description": "消费脚本、分镜、资产匹配和动作匹配，真实调用 Blender 渲染第一镜头 MP4，并生成工程、预览和 manifest。",
         "input": "episode_script,shot_list,asset_plan,action_plan",
         "output": "episode_bundle"
       },
@@ -560,7 +525,7 @@
         }
       },
       "params": {
-        "description": "让用户查看预演 HTML 后选择通过、改脚本或改分镜。",
+        "description": "让用户查看真实 Blender 首镜头 MP4 后选择通过、改脚本或改分镜。",
         "system_prompt": "你是 3D 短剧预演复核助手。你根据用户复核意见决定通过、回到脚本或回到分镜，不执行工具。",
         "prompt": "若 optional_input episode_review_reply 不存在，必须输出 needs_user_input，提醒用户打开预演 HTML 后选择通过、改脚本或改分镜。若用户 approval=approve，输出 resolved，并在 payload.review 中写入 {schema:'series_episode_review.v1', approved:true, notes:string}。若用户要求修改，输出 needs_user_input 或遵循 answer_routes。",
         "input": "episode_script,shot_list,asset_plan,action_plan,episode_bundle",

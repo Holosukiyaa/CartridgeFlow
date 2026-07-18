@@ -1528,44 +1528,144 @@ class BuiltinMcpRegistry:
                 output_dir = str(params.get("output_dir") or "test_output/series_3d_episode").strip()
                 episode_id = _safe_slug(str(params.get("episode_id") or _series_episode_title(episode_script) or "series_episode"))
                 package = _normalize_series_episode_package(episode_script, shot_list, asset_plan, action_plan)
+                missing_assets = (package.get("asset_plan") or {}).get("missing") or []
+                missing_actions = (package.get("action_plan") or {}).get("missing") or []
+                if missing_assets or missing_actions:
+                    return {
+                        "ok": False,
+                        "error": "real Blender render is blocked by unresolved asset or action requirements",
+                        "missing_assets": missing_assets,
+                        "missing_actions": missing_actions,
+                    }
+                package["output_stem"] = episode_id
+                package["render_settings"] = {
+                    "width": _safe_int(params.get("render_width"), 360, 180, 1080),
+                    "height": _safe_int(params.get("render_height"), 640, 320, 1920),
+                    "fps": _safe_int(params.get("render_fps"), 24, 12, 60),
+                    "samples": _safe_int(params.get("render_samples"), 8, 1, 64),
+                }
                 target_dir = registry._safe_path(output_dir)
                 target_dir.mkdir(parents=True, exist_ok=True)
                 plan_path = target_dir / f"{episode_id}.episode_plan.json"
                 blender_path = target_dir / f"{episode_id}.blender_scene.py"
                 preview_path = target_dir / f"{episode_id}.preview.html"
                 manifest_path = target_dir / f"{episode_id}.manifest.json"
+                blend_path = target_dir / f"{episode_id}.blend"
+                still_path = target_dir / f"{episode_id}.preview.png"
+                video_path = target_dir / f"{episode_id}.preview.mp4"
+                render_report_path = target_dir / f"{episode_id}.render.json"
 
                 plan_path.write_text(json.dumps(package, ensure_ascii=False, indent=2), encoding="utf-8")
                 blender_path.write_text(_render_series_blender_script(package), encoding="utf-8")
                 rel_plan = _workspace_rel(registry, plan_path)
                 rel_blender = _workspace_rel(registry, blender_path)
-                preview_path.write_text(_render_series_episode_preview_html(package, rel_blender), encoding="utf-8")
+
+                execute_blender = _truthy(params.get("execute_blender", True))
+                blender_binary = ""
+                blender_seconds = 0.0
+                rendered = False
+                blender_log = ""
+                if execute_blender:
+                    blender_binary = _find_blender_binary(params.get("blender_path")) or ""
+                    if not blender_binary:
+                        return {
+                            "ok": False,
+                            "error": "Blender executable not found; set BLENDER_BIN or install the portable runtime under .tools",
+                            "files": [rel_plan, rel_blender],
+                        }
+                    started = time.monotonic()
+                    env = dict(os.environ)
+                    env["CF_WORKSPACE_ROOT"] = str(registry._workspace_root.resolve())
+                    timeout_seconds = _safe_int(params.get("blender_timeout_seconds"), 300, 30, 1800)
+                    result = subprocess.run(
+                        [
+                            blender_binary,
+                            "--background",
+                            "--factory-startup",
+                            "--python",
+                            str(blender_path),
+                        ],
+                        cwd=str(registry._workspace_root.resolve()),
+                        env=env,
+                        capture_output=True,
+                        text=True,
+                        timeout=timeout_seconds,
+                    )
+                    blender_seconds = round(time.monotonic() - started, 3)
+                    blender_log = ((result.stdout or "") + "\n" + (result.stderr or "")).strip()[-6000:]
+                    if result.returncode != 0:
+                        return {
+                            "ok": False,
+                            "error": f"Blender exited with code {result.returncode}: {blender_log}",
+                            "files": [rel_plan, rel_blender],
+                        }
+                    expected_outputs = {
+                        blend_path: 1024,
+                        still_path: 1024,
+                        video_path: 1024,
+                        render_report_path: 64,
+                    }
+                    missing_outputs = [
+                        path.name
+                        for path, minimum_size in expected_outputs.items()
+                        if not path.is_file() or path.stat().st_size <= minimum_size
+                    ]
+                    if missing_outputs:
+                        return {
+                            "ok": False,
+                            "error": f"Blender did not create valid outputs: {missing_outputs}: {blender_log}",
+                            "files": [rel_plan, rel_blender],
+                        }
+                    rendered = True
+
+                rel_blend = _workspace_rel(registry, blend_path) if rendered else ""
+                rel_still = _workspace_rel(registry, still_path) if rendered else ""
+                rel_video = _workspace_rel(registry, video_path) if rendered else ""
+                rel_render_report = _workspace_rel(registry, render_report_path) if rendered else ""
+                preview_path.write_text(
+                    _render_series_episode_preview_html(package, rel_blender, rel_video, rel_still),
+                    encoding="utf-8",
+                )
                 rel_preview = _workspace_rel(registry, preview_path)
                 manifest = {
                     "schema": "series_3d_episode_manifest.v1",
-                    "status": "previz_created",
+                    "status": "pilot_single_shot_rendered" if rendered else "blender_script_created",
                     "title": package["episode_script"].get("title"),
-                    "provider": "local_series_3d_previz",
+                    "provider": "local_blender_3d" if rendered else "blender_script_only",
                     "episode_plan": rel_plan,
                     "blender_script": rel_blender,
                     "preview": rel_preview,
+                    "blend_project": rel_blend,
+                    "still": rel_still,
+                    "video": rel_video,
+                    "render_report": rel_render_report,
+                    "blender_binary": blender_binary,
+                    "render_seconds": blender_seconds,
+                    "render_scope": "first_shot",
                     "duration_seconds": package.get("duration_seconds"),
                     "shot_count": len(package.get("shots") or []),
-                    "quality_gate": "script_shots_assets_actions_mapped",
-                    "notes": "Uses fixed library IDs and proxy preview. Blender rendering can run later on a stronger GPU machine.",
+                    "quality_gate": "real_character_motion_scene_rendered" if rendered else "script_only_not_rendered",
+                    "notes": (
+                        "M1 real-asset validation renders the first shot only. It uses the selected character, motion clip, "
+                        "scene components, PBR materials, and HDRI. Full multi-shot assembly remains a later milestone."
+                    ),
                 }
                 manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
                 rel_manifest = _workspace_rel(registry, manifest_path)
+                files = [rel_plan, rel_blender, rel_preview, rel_manifest]
+                if rendered:
+                    files.extend([rel_blend, rel_still, rel_video, rel_render_report])
                 return {
                     "ok": True,
                     "path": rel_preview,
-                    "project_path": rel_plan,
+                    "project_path": rel_blend or rel_plan,
+                    "video_path": rel_video,
                     "preview_path": rel_preview,
                     "manifest_path": rel_manifest,
-                    "files": [rel_plan, rel_blender, rel_preview, rel_manifest],
+                    "files": files,
                     "content": json.dumps(manifest, ensure_ascii=False, indent=2),
-                    "series_episode_ok": True,
-                    "provider": "local_series_3d_previz",
+                    "series_episode_ok": rendered,
+                    "provider": manifest["provider"],
                 }
             except PermissionError as exc:
                 return {"ok": False, "error": str(exc)}
@@ -1853,7 +1953,7 @@ class BuiltinMcpRegistry:
                     },
                 },
                 "forge_3d_series_episode": {
-                    "description": "Create a 3D series episode previz package: episode plan JSON, playable HTML preview, Blender Python script, and manifest.",
+                    "description": "Render the first real-asset Blender shot and create its MP4, project, still, plan, preview, and manifest.",
                     "params": {
                         "episode_script": "episode_script.v1 JSON object or JSON string",
                         "shot_list": "shot_list.v1 JSON object or JSON string",
@@ -1861,6 +1961,12 @@ class BuiltinMcpRegistry:
                         "action_plan": "series_action_plan.v1 JSON object or JSON string",
                         "output_dir": "Output directory",
                         "episode_id": "Output filename prefix",
+                        "blender_path": "Optional Blender executable path",
+                        "execute_blender": "Run Blender instead of stopping after script generation",
+                        "render_width": "Preview render width",
+                        "render_height": "Preview render height",
+                        "render_fps": "Preview frame rate",
+                        "render_samples": "EEVEE render samples",
                     },
                 },
             },
@@ -6446,16 +6552,20 @@ window.addEventListener('resize',resize); resize(); loop();
 
 
 def _load_series_asset_library(registry, path_value=None) -> dict:
-    if path_value:
-        try:
-            path = registry._safe_path(str(path_value))
-            if path.is_file():
-                data = json.loads(path.read_text(encoding="utf-8"))
-                if isinstance(data, dict):
-                    return _normalize_series_library(data)
-        except Exception:
-            pass
-    return _normalize_series_library(_default_series_asset_library())
+    library_path = str(
+        path_value
+        or "cartridges/dev/dev.series_3d_episode_factory/assets/series_asset_library.json"
+    ).strip()
+    path = registry._safe_path(library_path)
+    if not path.is_file():
+        raise FileNotFoundError(f"series asset library not found: {library_path}")
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise ValueError(f"series asset library is not valid JSON: {library_path}: {exc}") from exc
+    if not isinstance(data, dict):
+        raise ValueError(f"series asset library must be an object: {library_path}")
+    return _normalize_series_library(data)
 
 
 def _normalize_series_library(value: dict) -> dict:
@@ -6472,41 +6582,6 @@ def _normalize_series_library(value: dict) -> dict:
         "props": items("props"),
         "actions": items("actions"),
         "camera_templates": items("camera_templates"),
-    }
-
-
-def _default_series_asset_library() -> dict:
-    return {
-        "schema": "series_asset_library.v1",
-        "characters": [
-            {"id": "hero_blue_jacket", "name": "蓝夹克少年", "roles": ["hero", "主角", "少年"], "proxy_color": "#2f65d9"},
-            {"id": "vendor_uncle", "name": "摊贩大叔", "roles": ["vendor", "摊贩", "大叔"], "proxy_color": "#8b5a2b"},
-            {"id": "shadow_observer", "name": "远处观察者", "roles": ["observer", "追踪者", "黑影"], "proxy_color": "#26221f"},
-        ],
-        "scenes": [
-            {"id": "subway_entrance_night", "name": "夜晚地铁口", "tags": ["地铁", "入口", "夜晚", "街头"], "proxy_color": "#555b62"},
-            {"id": "convenience_store_front", "name": "便利店门口", "tags": ["便利店", "门口", "街边"], "proxy_color": "#d9a441"},
-            {"id": "rental_room_small", "name": "狭小出租屋", "tags": ["出租屋", "房间", "室内"], "proxy_color": "#8d7865"},
-        ],
-        "props": [
-            {"id": "cigarette_smoke", "name": "烟雾", "tags": ["抽烟", "烟", "烟雾"], "proxy_color": "#c9c0b5"},
-            {"id": "warning_red_light", "name": "红色警示灯", "tags": ["红灯", "警示灯", "闪烁"], "proxy_color": "#d94a38"},
-            {"id": "phone_glow", "name": "手机冷光", "tags": ["手机", "屏幕", "消息"], "proxy_color": "#74a7d8"},
-        ],
-        "actions": [
-            {"id": "idle_talk", "name": "站立说话", "tags": ["说话", "对话", "台词"], "duration": 3.0},
-            {"id": "walk_slow", "name": "慢走", "tags": ["走", "靠近", "经过"], "duration": 3.0},
-            {"id": "turn_head", "name": "回头", "tags": ["回头", "看向", "发现"], "duration": 1.2},
-            {"id": "smoke_idle", "name": "抽烟待机", "tags": ["抽烟", "烟"], "duration": 3.0},
-            {"id": "look_phone", "name": "看手机", "tags": ["手机", "消息"], "duration": 2.0},
-            {"id": "run_short", "name": "短跑", "tags": ["跑", "逃", "追"], "duration": 2.0},
-        ],
-        "camera_templates": [
-            {"id": "slow_push_in", "name": "慢慢推进", "tags": ["推进", "靠近", "压迫"], "duration": 4.0},
-            {"id": "low_angle_hold", "name": "低机位停留", "tags": ["低机位", "仰拍"], "duration": 4.0},
-            {"id": "over_shoulder", "name": "过肩镜头", "tags": ["过肩", "对话"], "duration": 4.0},
-            {"id": "close_up_reveal", "name": "特写揭示", "tags": ["特写", "揭示", "悬念"], "duration": 3.0},
-        ],
     }
 
 
@@ -6557,9 +6632,9 @@ def _series_shots(shot_list) -> list[dict]:
         })
     if not shots:
         shots = [
-            {"id": "shot_01", "index": 1, "title": "开场建立", "description": "主角出现在夜晚街头，环境给出悬念。", "dialogue": [], "characters": ["hero"], "props": [], "scene": "地铁入口", "camera": "slow_push_in", "action_tags": ["walk_slow"], "duration": 4.0},
-            {"id": "shot_02", "index": 2, "title": "异常提示", "description": "红色警示灯闪烁，主角停下回头。", "dialogue": [], "characters": ["hero"], "props": ["warning_light"], "scene": "地铁入口", "camera": "close_up_reveal", "action_tags": ["turn_head"], "duration": 4.0},
-            {"id": "shot_03", "index": 3, "title": "结尾钩子", "description": "远处观察者出现，下一集留下追踪线索。", "dialogue": [], "characters": ["hero", "observer"], "props": ["warning_light"], "scene": "地铁入口", "camera": "low_angle_hold", "action_tags": ["idle_talk"], "duration": 4.0},
+            {"id": "shot_01", "index": 1, "title": "空街建立", "description": "男性主角沿白天郊区街道向前走。", "dialogue": [], "characters": ["hero"], "props": [], "scene": "白天郊区街道", "camera": "slow_push_in", "action_tags": ["walk_slow"], "duration": 5.0},
+            {"id": "shot_02", "index": 2, "title": "停下观察", "description": "主角停下脚步，观察空旷街道。", "dialogue": [], "characters": ["hero"], "props": [], "scene": "白天郊区街道", "camera": "close_up_reveal", "action_tags": ["idle_hold"], "duration": 5.0},
+            {"id": "shot_03", "index": 3, "title": "做出反应", "description": "主角像是发现了什么，抬头做出反应。", "dialogue": [], "characters": ["hero"], "props": [], "scene": "白天郊区街道", "camera": "low_angle_hold", "action_tags": ["gesture_interact"], "duration": 5.0},
         ]
     return shots
 
@@ -6583,22 +6658,30 @@ def _match_series_assets(episode_script, shot_list, library: dict) -> dict:
     missing = []
     for shot in shots:
         text = " ".join([shot.get("title", ""), shot.get("description", ""), shot.get("scene", ""), " ".join(shot.get("characters") or []), " ".join(shot.get("props") or [])])
-        scene = _series_best_match(text, scenes, "subway_entrance_night")
-        selected_scenes[scene["id"]] = scene
+        scene = _series_best_match(
+            text,
+            scenes,
+            "pilot_suburban_street_day" if not shot.get("scene") else "",
+        )
+        if scene:
+            selected_scenes[scene["id"]] = scene
+        else:
+            missing.append({"type": "scene", "request": shot.get("scene") or text[:80], "shot_id": shot["id"]})
         requested_chars = shot.get("characters") or ["hero"]
         for requested in requested_chars:
-            match = _series_best_match(requested + " " + text, characters, "hero_blue_jacket")
-            selected_characters[match["id"]] = match
+            requested_text = str(requested).strip()
+            fallback_character = "pilot_male_hero" if requested_text.lower() in {"", "hero", "主角", "男性", "男人"} else ""
+            match = _series_best_match(requested_text, characters, fallback_character)
+            if match:
+                selected_characters[match["id"]] = match
+            else:
+                missing.append({"type": "character", "request": requested, "shot_id": shot["id"]})
         for requested in shot.get("props") or []:
             match = _series_best_match(requested + " " + text, props, "")
             if match:
                 selected_props[match["id"]] = match
             elif requested:
                 missing.append({"type": "prop", "request": requested, "shot_id": shot["id"]})
-        if any(word in text for word in ["烟", "抽烟", "smoke"]):
-            selected_props["cigarette_smoke"] = next(item for item in props if item["id"] == "cigarette_smoke")
-        if any(word in text for word in ["红灯", "警示灯", "闪烁"]):
-            selected_props["warning_red_light"] = next(item for item in props if item["id"] == "warning_red_light")
     return {
         "schema": "series_asset_plan.v1",
         "characters": list(selected_characters.values()),
@@ -6617,22 +6700,26 @@ def _match_series_actions(episode_script, shot_list, library: dict) -> dict:
     per_shot = []
     missing = []
     for shot in shots:
-        text = " ".join([shot.get("title", ""), shot.get("description", ""), " ".join(shot.get("action_tags") or []), shot.get("camera", "")])
-        action = _series_best_match(text, actions, "idle_talk")
-        camera = _series_best_match(text + " " + shot.get("camera", ""), cameras, "slow_push_in")
+        action_tags = shot.get("action_tags") or []
+        action_text = " ".join(action_tags) if action_tags else " ".join([shot.get("title", ""), shot.get("description", "")])
+        camera_text = " ".join([shot.get("title", ""), shot.get("description", ""), shot.get("camera", "")])
+        action = _series_best_match(action_text, actions, "")
+        if not action and not shot.get("action_tags"):
+            action = _series_best_match("idle_hold", actions, "idle_hold")
+        camera = _series_best_match(camera_text, cameras, "slow_push_in")
         if not action:
-            missing.append({"type": "action", "shot_id": shot["id"], "request": text[:80]})
+            missing.append({"type": "action", "shot_id": shot["id"], "request": action_text[:80]})
         if not camera:
             missing.append({"type": "camera_template", "shot_id": shot["id"], "request": shot.get("camera")})
         per_shot.append({
             "shot_id": shot["id"],
             "duration": shot["duration"],
-            "primary_action": action or {"id": "idle_talk", "name": "站立说话", "duration": shot["duration"]},
+            "primary_action": action or {"id": "idle_hold", "name": "站立停留", "duration": shot["duration"]},
             "camera_template": camera or {"id": "slow_push_in", "name": "慢慢推进", "duration": shot["duration"]},
             "segments": [
                 {
                     "actor": (shot.get("characters") or ["hero"])[0],
-                    "action_id": (action or {}).get("id", "idle_talk"),
+                    "action_id": (action or {}).get("id", "idle_hold"),
                     "start": 0,
                     "duration": shot["duration"],
                     "notes": "Matched from fixed action library.",
@@ -6708,7 +6795,60 @@ def _normalize_series_episode_package(episode_script, shot_list, asset_plan, act
     }
 
 
-def _render_series_episode_preview_html(package: dict, blender_script_path: str) -> str:
+def _render_series_real_preview_html(package: dict, blender_script_path: str, video_path: str, still_path: str) -> str:
+    title = html.escape(str((package.get("episode_script") or {}).get("title") or "3D Series Episode"))
+    blender_name = html.escape(Path(blender_script_path).name)
+    video_name = html.escape(Path(video_path).name)
+    still_name = html.escape(Path(still_path).name)
+    first_shot = (package.get("shots") or [{}])[0]
+    shot_title = html.escape(str(first_shot.get("title") or first_shot.get("id") or "首镜头"))
+    action_name = html.escape(str(((first_shot.get("action_plan") or {}).get("primary_action") or {}).get("name") or ""))
+    return f"""<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>{title}</title>
+  <style>
+    *{{box-sizing:border-box}}
+    body{{margin:0;background:#171817;color:#f2f4f1;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif}}
+    main{{min-height:100vh;display:grid;grid-template-columns:minmax(240px,340px) minmax(0,1fr)}}
+    aside{{padding:24px;border-right:1px solid #353a36;background:#202320}}
+    h1{{margin:0 0 14px;font-size:22px;line-height:1.3}}
+    p{{margin:0 0 12px;color:#b9c1ba;line-height:1.6;font-size:14px}}
+    code{{color:#e9b872;word-break:break-all}}
+    .stage{{display:grid;place-items:center;padding:20px;background:#101210}}
+    video{{display:block;width:min(56vh,420px);max-width:100%;max-height:calc(100vh - 40px);aspect-ratio:9/16;background:#000;object-fit:contain}}
+    .status{{display:inline-block;margin-bottom:16px;padding:5px 8px;border:1px solid #5e8f68;color:#a9d9b1;font-size:12px}}
+    @media(max-width:760px){{main{{grid-template-columns:1fr}}aside{{border-right:0;border-bottom:1px solid #353a36}}video{{max-height:70vh}}}}
+  </style>
+</head>
+<body>
+<main>
+  <aside>
+    <span class="status">真实 Blender 首镜头</span>
+    <h1>{title}</h1>
+    <p><b>{shot_title}</b></p>
+    <p>动作：{action_name}</p>
+    <p>当前 M1 只渲染第一镜头，用于验证真实角色、动作、场景、材质和灯光链路。</p>
+    <p>编排脚本：<code>{blender_name}</code></p>
+  </aside>
+  <section class="stage">
+    <video controls autoplay loop muted playsinline poster="{still_name}" src="{video_name}"></video>
+  </section>
+</main>
+</body>
+</html>"""
+
+
+def _render_series_episode_preview_html(
+    package: dict,
+    blender_script_path: str,
+    video_path: str = "",
+    still_path: str = "",
+) -> str:
+    if video_path and still_path:
+        return _render_series_real_preview_html(package, blender_script_path, video_path, still_path)
     data = html.escape(json.dumps(package, ensure_ascii=False), quote=False)
     title = html.escape(str((package.get("episode_script") or {}).get("title") or "3D Series Episode"))
     blender_path = html.escape(blender_script_path)
@@ -6796,67 +6936,272 @@ requestAnimationFrame(tick);
 </html>"""
 
 
+def _find_blender_binary(configured=None) -> str | None:
+    repo_root = Path(__file__).resolve().parents[2]
+    candidates = []
+    if configured:
+        candidates.append(str(configured).strip())
+    if os.environ.get("BLENDER_BIN"):
+        candidates.append(os.environ["BLENDER_BIN"].strip())
+    tools_root = repo_root / ".tools"
+    if tools_root.is_dir():
+        candidates.extend(str(path) for path in sorted(tools_root.glob("blender-*/blender.exe"), reverse=True))
+        candidates.extend(str(path) for path in sorted(tools_root.glob("blender/blender.exe"), reverse=True))
+    candidates.extend(["blender", "blender.exe"])
+    seen = set()
+    for candidate in candidates:
+        if not candidate or candidate in seen:
+            continue
+        seen.add(candidate)
+        path = Path(candidate)
+        if not path.is_absolute():
+            local_path = (repo_root / path).resolve()
+            if local_path.is_file():
+                return str(local_path)
+        if path.is_file():
+            return str(path.resolve())
+        found = shutil.which(candidate)
+        if found:
+            return found
+    return None
+
+
 def _render_series_blender_script(package: dict) -> str:
-    data = json.dumps(package, ensure_ascii=False, indent=2)
-    return f'''# Blender Python script generated by CartridgeFlow.
-# Run inside Blender: blender --python this_file.py
+    payload = repr(json.dumps(package, ensure_ascii=False))
+    return """# Blender Python script generated by CartridgeFlow.
+# Run from the CartridgeFlow workspace with Blender in background mode.
 import json
 import math
+import os
+from pathlib import Path
+
 import bpy
+import mathutils
 
-DATA = json.loads(r"""{data}""")
+DATA = json.loads(""" + payload + """)
+WORKSPACE = Path(os.environ.get("CF_WORKSPACE_ROOT") or Path.cwd()).resolve()
+OUTPUT_DIR = Path(__file__).resolve().parent
 
-def mat(name, color):
-    material = bpy.data.materials.new(name)
-    material.diffuse_color = color
+
+def resolve_asset(value):
+    text = str(value or "").strip()
+    if not text:
+        raise ValueError("asset path is empty")
+    path = (WORKSPACE / text).resolve()
+    if path != WORKSPACE and WORKSPACE not in path.parents:
+        raise ValueError(f"asset path leaves workspace: {text}")
+    if not path.is_file():
+        raise FileNotFoundError(f"asset not found: {text}")
+    return path
+
+
+def import_asset(path):
+    before = set(bpy.data.objects)
+    suffix = path.suffix.lower()
+    if suffix in {".gltf", ".glb"}:
+        bpy.ops.import_scene.gltf(filepath=str(path))
+    elif suffix == ".fbx":
+        bpy.ops.import_scene.fbx(filepath=str(path))
+    else:
+        raise ValueError(f"unsupported 3D asset format: {path}")
+    return [obj for obj in bpy.data.objects if obj not in before]
+
+
+def append_material(profile):
+    path = resolve_asset(profile.get("path"))
+    name = str(profile.get("name") or "").strip()
+    with bpy.data.libraries.load(str(path), link=False) as (source, target):
+        if name not in source.materials:
+            raise ValueError(f"material {name!r} not found in {path}")
+        target.materials = [name]
+    material = bpy.data.materials.get(name)
+    if material is None:
+        raise RuntimeError(f"material {name!r} was not appended")
     return material
 
-def cube(name, location, scale, material):
-    bpy.ops.mesh.primitive_cube_add(size=1, location=location)
+
+def add_plane(name, location, scale, material):
+    bpy.ops.mesh.primitive_plane_add(size=2, location=location)
     obj = bpy.context.object
     obj.name = name
     obj.scale = scale
     obj.data.materials.append(material)
     return obj
 
-bpy.ops.object.select_all(action='SELECT')
-bpy.ops.object.delete()
 
-blue = mat("proxy_blue_actor", (0.18, 0.39, 0.85, 1))
-dark = mat("proxy_dark_actor", (0.05, 0.05, 0.05, 1))
-ground_mat = mat("proxy_ground", (0.28, 0.26, 0.23, 1))
-light_mat = mat("proxy_warning_red", (0.85, 0.18, 0.12, 1))
+def point_at(obj, target):
+    direction = mathutils.Vector(target) - obj.location
+    obj.rotation_euler = direction.to_track_quat("-Z", "Y").to_euler()
 
-cube("ground", (0, -0.05, 0), (4.5, 0.05, 7.5), ground_mat)
-hero = cube("hero_blue_jacket", (-0.8, 0.85, 0), (0.28, 0.85, 0.22), blue)
-observer = cube("shadow_observer", (1.4, 0.8, -2.0), (0.22, 0.8, 0.2), dark)
-warning = cube("warning_red_light", (1.8, 1.8, 0.8), (0.2, 0.2, 0.2), light_mat)
 
-fps = 24
-bpy.context.scene.frame_start = 1
-bpy.context.scene.frame_end = max(1, int(DATA.get("duration_seconds", 12) * fps))
-bpy.context.scene.render.fps = fps
+def configure_world(hdri_path):
+    world = bpy.data.worlds.new("pilot_world")
+    world.use_nodes = True
+    nodes = world.node_tree.nodes
+    links = world.node_tree.links
+    nodes.clear()
+    output = nodes.new("ShaderNodeOutputWorld")
+    background = nodes.new("ShaderNodeBackground")
+    background.inputs["Strength"].default_value = 0.65
+    environment = nodes.new("ShaderNodeTexEnvironment")
+    environment.image = bpy.data.images.load(str(hdri_path), check_existing=True)
+    links.new(environment.outputs["Color"], background.inputs["Color"])
+    links.new(background.outputs["Background"], output.inputs["Surface"])
+    bpy.context.scene.world = world
 
-for shot in DATA.get("shots", []):
-    start = int(float(shot.get("start", 0)) * fps) + 1
-    end = int(float(shot.get("end", 0)) * fps) + 1
-    hero.location.x = -1.1 + shot.get("index", 1) * 0.35
-    hero.keyframe_insert(data_path="location", frame=start)
-    hero.location.x += 0.35
-    hero.keyframe_insert(data_path="location", frame=end)
 
-bpy.ops.object.light_add(type='AREA', location=(0, 5, 4))
-bpy.context.object.name = "soft_area_light"
-bpy.context.object.data.energy = 450
-bpy.context.object.data.size = 5
+def first_item(key):
+    items = (DATA.get("asset_plan") or {}).get(key) or []
+    if not items:
+        raise ValueError(f"asset plan has no {key}")
+    return items[0]
 
-bpy.ops.object.camera_add(location=(3.2, 2.4, 5.2), rotation=(math.radians(64), 0, math.radians(34)))
-bpy.context.scene.camera = bpy.context.object
 
-bpy.context.scene.render.resolution_x = 1080
-bpy.context.scene.render.resolution_y = 1920
-print("Series 3D episode previz scene generated:", DATA.get("episode_script", {{}}).get("title"))
-'''
+def main():
+    shots = DATA.get("shots") or []
+    if not shots:
+        raise ValueError("episode package has no shots")
+    shot = shots[0]
+    character_profile = first_item("characters")
+    scene_profile = first_item("scenes")
+    action_profile = (shot.get("action_plan") or {}).get("primary_action") or {}
+    motion_path = resolve_asset(action_profile.get("motion_path"))
+    clip_name = str(action_profile.get("clip_name") or "").strip()
+    if not clip_name:
+        raise ValueError("matched action has no clip_name")
+
+    bpy.ops.wm.read_factory_settings(use_empty=True)
+    bpy.context.preferences.filepaths.save_version = 0
+    scene = bpy.context.scene
+    settings = DATA.get("render_settings") or {}
+    fps = int(settings.get("fps") or 24)
+    duration = max(1.0, min(8.0, float(shot.get("duration") or 3.0)))
+    frame_end = max(1, int(round(duration * fps)))
+    scene.render.engine = "BLENDER_EEVEE_NEXT"
+    scene.render.resolution_x = int(settings.get("width") or 360)
+    scene.render.resolution_y = int(settings.get("height") or 640)
+    scene.render.resolution_percentage = 100
+    scene.render.fps = fps
+    scene.frame_start = 1
+    scene.frame_end = frame_end
+    scene.eevee.taa_render_samples = int(settings.get("samples") or 8)
+    scene.eevee.volumetric_samples = min(16, int(settings.get("samples") or 8))
+
+    asphalt = append_material(scene_profile.get("road_material") or {})
+    pavement = append_material(scene_profile.get("pavement_material") or {})
+    add_plane("pilot_road", (0, 0, 0), (3.2, 10.0, 1.0), asphalt)
+    add_plane("pilot_sidewalk_left", (-4.2, 0, 0.03), (1.0, 10.0, 1.0), pavement)
+    add_plane("pilot_sidewalk_right", (4.2, 0, 0.03), (1.0, 10.0, 1.0), pavement)
+
+    for component in scene_profile.get("components") or []:
+        objects = import_asset(resolve_asset(component.get("path")))
+        location = tuple(float(value) for value in (component.get("location") or [0, 0, 0]))
+        scale = float(component.get("scale") or 1.0)
+        rotation = math.radians(float(component.get("rotation_z_degrees") or 0.0))
+        for obj in objects:
+            if obj.type != "MESH":
+                continue
+            obj.name = str(component.get("id") or obj.name)
+            obj.location = location
+            obj.scale = (scale, scale, scale)
+            obj.rotation_euler.z = rotation
+
+    character_objects = import_asset(resolve_asset(character_profile.get("asset_path")))
+    character = next((obj for obj in character_objects if obj.type == "ARMATURE"), None)
+    if character is None:
+        raise RuntimeError("character asset has no armature")
+    character.name = str(character_profile.get("id") or "pilot_character")
+    character.location = (0.0, -3.5, 0.02)
+    character.rotation_euler.z = math.pi
+
+    motion_objects = import_asset(motion_path)
+    action = bpy.data.actions.get(clip_name)
+    if action is None:
+        raise RuntimeError(f"animation clip not found: {clip_name}")
+    character.animation_data_create()
+    track = character.animation_data.nla_tracks.new()
+    track.name = f"pilot_{clip_name}"
+    strip = track.strips.new(clip_name, 1, action)
+    action_frames = max(1.0, float(action.frame_range[1] - action.frame_range[0]))
+    strip.repeat = frame_end / action_frames
+    strip.frame_end = frame_end
+    for obj in motion_objects:
+        bpy.data.objects.remove(obj, do_unlink=True)
+
+    distance = float(action_profile.get("translation_meters") or 0.0)
+    character.location = (0.0, -distance / 2.0, 0.02)
+    character.keyframe_insert(data_path="location", frame=1)
+    character.location = (0.0, distance / 2.0, 0.02)
+    character.keyframe_insert(data_path="location", frame=frame_end)
+
+    bpy.ops.object.light_add(type="AREA", location=(-1.5, -1.0, 6.0))
+    key = bpy.context.object
+    key.name = "pilot_soft_key"
+    key.data.energy = 700
+    key.data.shape = "DISK"
+    key.data.size = 5.0
+    point_at(key, (0.0, 0.0, 1.0))
+
+    bpy.ops.object.light_add(type="POINT", location=(2.8, 0.5, 3.2))
+    lamp = bpy.context.object
+    lamp.name = "pilot_streetlight_glow"
+    lamp.data.energy = 180
+    lamp.data.color = (1.0, 0.72, 0.42)
+    lamp.data.shadow_soft_size = 0.35
+
+    bpy.ops.object.camera_add(location=(5.6, -8.0, 2.8))
+    camera = bpy.context.object
+    camera.name = "pilot_camera"
+    camera.data.lens = 52
+    point_at(camera, (0.0, 0.8, 1.15))
+    scene.camera = camera
+    configure_world(resolve_asset(scene_profile.get("hdri_path")))
+
+    stem = str(DATA.get("output_stem") or "series_episode")
+    blend_path = OUTPUT_DIR / f"{stem}.blend"
+    still_path = OUTPUT_DIR / f"{stem}.preview.png"
+    video_path = OUTPUT_DIR / f"{stem}.preview.mp4"
+    report_path = OUTPUT_DIR / f"{stem}.render.json"
+    preview_frame = max(1, frame_end // 2)
+    scene.frame_set(preview_frame)
+    scene.render.image_settings.file_format = "PNG"
+    scene.render.filepath = str(still_path)
+    bpy.ops.wm.save_as_mainfile(filepath=str(blend_path))
+    bpy.ops.render.render(write_still=True)
+
+    scene.render.image_settings.file_format = "FFMPEG"
+    scene.render.ffmpeg.format = "MPEG4"
+    scene.render.ffmpeg.codec = "H264"
+    scene.render.ffmpeg.constant_rate_factor = "MEDIUM"
+    scene.render.ffmpeg.audio_codec = "NONE"
+    scene.render.filepath = str(video_path)
+    bpy.ops.render.render(animation=True)
+
+    report = {
+        "schema": "series_blender_render.v1",
+        "status": "rendered",
+        "scope": "first_shot",
+        "shot_id": shot.get("id"),
+        "character_id": character_profile.get("id"),
+        "scene_id": scene_profile.get("id"),
+        "action_id": action_profile.get("id"),
+        "clip_name": clip_name,
+        "duration_seconds": duration,
+        "fps": fps,
+        "frame_count": frame_end,
+        "resolution": [scene.render.resolution_x, scene.render.resolution_y],
+        "blend": blend_path.name,
+        "still": still_path.name,
+        "video": video_path.name,
+        "blender_version": bpy.app.version_string,
+    }
+    report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    print("CF_SERIES_RENDER=" + json.dumps(report, sort_keys=True))
+
+
+if __name__ == "__main__":
+    main()
+"""
 
 
 def _hex_to_rgb(value: str) -> tuple[int, int, int]:

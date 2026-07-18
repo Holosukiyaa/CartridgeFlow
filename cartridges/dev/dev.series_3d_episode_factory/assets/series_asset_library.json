@@ -1,117 +1,148 @@
 {
   "schema": "series_asset_library.v1",
   "policy": "fixed_library_only",
+  "active_profile": "pilot_01",
   "characters": [
     {
-      "id": "hero_blue_jacket",
-      "name": "蓝夹克少年",
-      "roles": ["hero", "主角", "少年"],
-      "proxy_color": "#2f65d9",
-      "asset_path": ""
-    },
-    {
-      "id": "vendor_uncle",
-      "name": "摊贩大叔",
-      "roles": ["vendor", "摊贩", "大叔"],
-      "proxy_color": "#8b5a2b",
-      "asset_path": ""
-    },
-    {
-      "id": "shadow_observer",
-      "name": "远处观察者",
-      "roles": ["observer", "追踪者", "黑影"],
-      "proxy_color": "#26221f",
-      "asset_path": ""
+      "id": "pilot_male_hero",
+      "name": "首发男性主角",
+      "roles": ["hero", "主角", "男性", "男人"],
+      "proxy_color": "#b9825a",
+      "asset_path": ".data/assets/pilot_01/character/Universal Base Characters[Standard]/Base Characters/Godot - UE/Superhero_Male_FullBody.gltf",
+      "asset_format": "gltf",
+      "rig_profile": "quaternius_universal_humanoid_v1",
+      "license": "CC0-1.0",
+      "source_url": "https://quaternius.com/packs/universalbasecharacters.html"
     }
   ],
   "scenes": [
     {
-      "id": "subway_entrance_night",
-      "name": "夜晚地铁口",
-      "tags": ["地铁", "入口", "夜晚", "街头"],
-      "proxy_color": "#555b62",
-      "asset_path": ""
-    },
-    {
-      "id": "convenience_store_front",
-      "name": "便利店门口",
-      "tags": ["便利店", "门口", "街边"],
-      "proxy_color": "#d9a441",
-      "asset_path": ""
-    },
-    {
-      "id": "rental_room_small",
-      "name": "狭小出租屋",
-      "tags": ["出租屋", "房间", "室内"],
-      "proxy_color": "#8d7865",
-      "asset_path": ""
+      "id": "pilot_suburban_street_day",
+      "name": "白天郊区街道",
+      "tags": ["街道", "郊区", "白天", "城市", "室外", "daytime", "suburban", "street"],
+      "proxy_color": "#747d73",
+      "asset_path": ".data/assets/pilot_01/scene/suburban",
+      "hdri_path": ".data/assets/pilot_01/hdri/urban_street_01_2k.hdr",
+      "road_material": {
+        "path": ".data/assets/pilot_01/materials/asphalt/aerial_asphalt_01_4k.blend",
+        "name": "aerial_asphalt_01"
+      },
+      "pavement_material": {
+        "path": ".data/assets/pilot_01/materials/pavement/concrete_pavement_02_4k.blend",
+        "name": "concrete_pavement_02"
+      },
+      "components": [
+        {
+          "id": "building_left_a",
+          "path": ".data/assets/pilot_01/scene/suburban/Models/GLB format/building-type-a.glb",
+          "location": [-7.0, -5.5, 0.0],
+          "scale": 3.8,
+          "rotation_z_degrees": 0
+        },
+        {
+          "id": "building_left_f",
+          "path": ".data/assets/pilot_01/scene/suburban/Models/GLB format/building-type-f.glb",
+          "location": [-7.2, 0.0, 0.0],
+          "scale": 3.8,
+          "rotation_z_degrees": 0
+        },
+        {
+          "id": "building_left_k",
+          "path": ".data/assets/pilot_01/scene/suburban/Models/GLB format/building-type-k.glb",
+          "location": [-7.0, 5.5, 0.0],
+          "scale": 3.8,
+          "rotation_z_degrees": 0
+        },
+        {
+          "id": "building_right_c",
+          "path": ".data/assets/pilot_01/scene/suburban/Models/GLB format/building-type-c.glb",
+          "location": [7.0, -5.5, 0.0],
+          "scale": 3.8,
+          "rotation_z_degrees": 180
+        },
+        {
+          "id": "building_right_h",
+          "path": ".data/assets/pilot_01/scene/suburban/Models/GLB format/building-type-h.glb",
+          "location": [7.2, 0.0, 0.0],
+          "scale": 3.8,
+          "rotation_z_degrees": 180
+        },
+        {
+          "id": "building_right_n",
+          "path": ".data/assets/pilot_01/scene/suburban/Models/GLB format/building-type-n.glb",
+          "location": [7.0, 5.5, 0.0],
+          "scale": 3.8,
+          "rotation_z_degrees": 180
+        },
+        {
+          "id": "streetlight",
+          "path": ".data/assets/pilot_01/scene/street/Street Pack by @Quaternius/FBX/Streetlight_Single.fbx",
+          "location": [2.8, 0.5, 0.05],
+          "scale": 3.0,
+          "rotation_z_degrees": 0
+        }
+      ],
+      "license": "CC0-1.0",
+      "source_urls": [
+        "https://www.kenney.nl/assets/city-kit-suburban",
+        "https://quaternius.com/packs/modularstreets.html",
+        "https://polyhaven.com/a/urban_street_01",
+        "https://polyhaven.com/a/aerial_asphalt_01",
+        "https://polyhaven.com/a/concrete_pavement_02"
+      ]
     }
   ],
-  "props": [
-    {
-      "id": "cigarette_smoke",
-      "name": "烟雾",
-      "tags": ["抽烟", "烟", "烟雾"],
-      "proxy_color": "#c9c0b5",
-      "asset_path": ""
-    },
-    {
-      "id": "warning_red_light",
-      "name": "红色警示灯",
-      "tags": ["红灯", "警示灯", "闪烁"],
-      "proxy_color": "#d94a38",
-      "asset_path": ""
-    },
-    {
-      "id": "phone_glow",
-      "name": "手机冷光",
-      "tags": ["手机", "屏幕", "消息"],
-      "proxy_color": "#74a7d8",
-      "asset_path": ""
-    }
-  ],
+  "props": [],
   "actions": [
+    {
+      "id": "walk_slow",
+      "name": "向前慢走",
+      "tags": ["走", "慢走", "靠近", "经过", "walk"],
+      "duration": 3.0,
+      "motion_path": ".data/assets/pilot_01/motions/Universal Animation Library[Standard]/Unreal-Godot/UAL1_Standard.glb",
+      "clip_name": "Walk_Loop",
+      "translation_meters": 7.0,
+      "license": "CC0-1.0"
+    },
+    {
+      "id": "idle_hold",
+      "name": "站立停留",
+      "tags": ["站立", "停下", "等待", "待机", "idle"],
+      "duration": 3.0,
+      "motion_path": ".data/assets/pilot_01/motions/Universal Animation Library[Standard]/Unreal-Godot/UAL1_Standard.glb",
+      "clip_name": "Idle_Loop",
+      "translation_meters": 0.0,
+      "license": "CC0-1.0"
+    },
     {
       "id": "idle_talk",
       "name": "站立说话",
-      "tags": ["说话", "对话", "台词"],
+      "tags": ["说话", "对话", "台词", "旁白"],
       "duration": 3.0,
-      "motion_path": ""
+      "motion_path": ".data/assets/pilot_01/motions/Universal Animation Library[Standard]/Unreal-Godot/UAL1_Standard.glb",
+      "clip_name": "Idle_Talking_Loop",
+      "translation_meters": 0.0,
+      "license": "CC0-1.0"
     },
     {
-      "id": "walk_slow",
-      "name": "慢走",
-      "tags": ["走", "靠近", "经过"],
-      "duration": 3.0,
-      "motion_path": ""
-    },
-    {
-      "id": "turn_head",
-      "name": "回头",
-      "tags": ["回头", "看向", "发现"],
-      "duration": 1.2,
-      "motion_path": ""
-    },
-    {
-      "id": "smoke_idle",
-      "name": "抽烟待机",
-      "tags": ["抽烟", "烟"],
-      "duration": 3.0,
-      "motion_path": ""
-    },
-    {
-      "id": "look_phone",
-      "name": "看手机",
-      "tags": ["手机", "消息"],
+      "id": "gesture_interact",
+      "name": "停下并做出反应",
+      "tags": ["反应", "示意", "互动", "发现", "抬头"],
       "duration": 2.0,
-      "motion_path": ""
+      "motion_path": ".data/assets/pilot_01/motions/Universal Animation Library[Standard]/Unreal-Godot/UAL1_Standard.glb",
+      "clip_name": "Interact",
+      "translation_meters": 0.0,
+      "license": "CC0-1.0"
     },
     {
       "id": "run_short",
-      "name": "短跑",
-      "tags": ["跑", "逃", "追"],
+      "name": "向前短跑",
+      "tags": ["跑", "逃", "追", "冲刺"],
       "duration": 2.0,
-      "motion_path": ""
+      "motion_path": ".data/assets/pilot_01/motions/Universal Animation Library[Standard]/Unreal-Godot/UAL1_Standard.glb",
+      "clip_name": "Sprint_Loop",
+      "translation_meters": 8.0,
+      "license": "CC0-1.0"
     }
   ],
   "camera_templates": [

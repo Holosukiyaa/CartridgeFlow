@@ -782,7 +782,7 @@ class CartridgeRunner:
             return "audio"
         if suffix in {".png", ".jpg", ".jpeg", ".gif", ".webp"}:
             return "image"
-        if suffix in {".glb", ".gltf", ".obj", ".fbx"}:
+        if suffix in {".blend", ".glb", ".gltf", ".obj", ".fbx"}:
             return "model"
         return "text"
 
@@ -794,6 +794,8 @@ class CartridgeRunner:
             return "text/html"
         if suffix == ".json":
             return "application/json"
+        if suffix == ".blend":
+            return "application/x-blender"
         if suffix == ".csv":
             return "text/csv"
         if suffix == ".mp4":

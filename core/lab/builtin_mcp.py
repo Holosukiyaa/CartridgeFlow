@@ -7060,13 +7060,13 @@ def first_item(key):
     return items[0]
 
 
-def camera_pose(template_id, actor_start_y, actor_end_y):
+def camera_pose(template_id, actor_start_y, actor_end_y, forward_y_sign):
     subject_start = (0.0, actor_start_y, 1.25)
     subject_end = (0.0, actor_end_y, 1.25)
     if template_id == "over_shoulder":
         return (
-            (1.7, actor_start_y - 2.8, 2.05),
-            (1.7, actor_end_y - 2.8, 2.05),
+            (1.7, actor_start_y + (2.8 * forward_y_sign), 2.05),
+            (1.7, actor_end_y + (2.8 * forward_y_sign), 2.05),
             subject_start,
             subject_end,
             62.0,
@@ -7075,8 +7075,8 @@ def camera_pose(template_id, actor_start_y, actor_end_y):
     if template_id == "low_angle_hold":
         midpoint = (actor_start_y + actor_end_y) / 2.0
         return (
-            (3.4, midpoint - 4.2, 0.72),
-            (3.4, midpoint - 4.2, 0.72),
+            (3.4, midpoint + (4.2 * forward_y_sign), 0.72),
+            (3.4, midpoint + (4.2 * forward_y_sign), 0.72),
             (0.0, midpoint, 1.15),
             (0.0, midpoint, 1.15),
             44.0,
@@ -7084,16 +7084,16 @@ def camera_pose(template_id, actor_start_y, actor_end_y):
         )
     if template_id == "close_up_reveal":
         return (
-            (2.6, actor_start_y - 4.2, 2.0),
-            (1.25, actor_end_y - 2.2, 1.8),
+            (2.6, actor_start_y + (4.2 * forward_y_sign), 2.0),
+            (1.25, actor_end_y + (2.2 * forward_y_sign), 1.8),
             subject_start,
             (0.0, actor_end_y, 1.45),
             68.0,
             82.0,
         )
     return (
-        (5.6, actor_start_y - 5.0, 2.8),
-        (3.8, actor_end_y - 3.8, 2.35),
+        (5.6, actor_start_y + (5.0 * forward_y_sign), 2.8),
+        (3.8, actor_end_y + (3.8 * forward_y_sign), 2.35),
         subject_start,
         subject_end,
         52.0,
@@ -7101,13 +7101,14 @@ def camera_pose(template_id, actor_start_y, actor_end_y):
     )
 
 
-def add_shot_camera(scene, shot, index, start_frame, end_frame, actor_start_y, actor_end_y):
+def add_shot_camera(scene, shot, index, start_frame, end_frame, actor_start_y, actor_end_y, forward_y_sign):
     camera_template = (shot.get("action_plan") or {}).get("camera_template") or {}
     template_id = str(camera_template.get("id") or shot.get("camera") or "slow_push_in")
     start_location, end_location, start_target, end_target, start_lens, end_lens = camera_pose(
         template_id,
         actor_start_y,
         actor_end_y,
+        forward_y_sign,
     )
     bpy.ops.object.camera_add(location=start_location)
     camera = bpy.context.object
@@ -7173,8 +7174,14 @@ def main():
     if character is None:
         raise RuntimeError("character asset has no armature")
     character.name = str(character_profile.get("id") or "pilot_character")
-    character.location = (0.0, -3.5, 0.02)
-    character.rotation_euler.z = math.pi
+    world_transform = character_profile.get("world_transform") or {}
+    forward_axis = str(world_transform.get("forward_axis") or "-Y").strip().upper()
+    if forward_axis not in {"+Y", "-Y"}:
+        raise ValueError(f"unsupported character forward_axis: {forward_axis}")
+    forward_y_sign = -1.0 if forward_axis == "-Y" else 1.0
+    actor_start_y = float(world_transform.get("start_y", -3.5 * forward_y_sign))
+    character.location = (0.0, actor_start_y, 0.02)
+    character.rotation_euler.z = math.radians(float(world_transform.get("rotation_z_degrees") or 0.0))
 
     imported_motion_paths = set()
     motion_objects = []
@@ -7193,7 +7200,7 @@ def main():
     track.name = "episode_actions"
     shot_reports = []
     frame_cursor = 1
-    actor_y = -3.5
+    actor_y = actor_start_y
     first_camera = None
     for index, shot in enumerate(shots, start=1):
         duration = max(1.0, min(8.0, float(shot.get("duration") or 3.0)))
@@ -7212,7 +7219,7 @@ def main():
 
         distance = float(action_profile.get("translation_meters") or 0.0)
         actor_start_y = actor_y
-        actor_end_y = actor_start_y + distance
+        actor_end_y = actor_start_y + (distance * forward_y_sign)
         character.location = (0.0, actor_start_y, 0.02)
         character.keyframe_insert(data_path="location", frame=start_frame)
         character.location = (0.0, actor_end_y, 0.02)
@@ -7225,6 +7232,7 @@ def main():
             end_frame,
             actor_start_y,
             actor_end_y,
+            forward_y_sign,
         )
         if first_camera is None:
             first_camera = camera
@@ -7236,6 +7244,8 @@ def main():
             "action_id": action_profile.get("id"),
             "clip_name": clip_name,
             "camera_template_id": camera_template_id,
+            "start_y": actor_start_y,
+            "end_y": actor_end_y,
         })
         actor_y = actor_end_y
         frame_cursor = end_frame + 1
@@ -7291,6 +7301,7 @@ def main():
         "shot_count": len(shot_reports),
         "character_id": character_profile.get("id"),
         "scene_id": scene_profile.get("id"),
+        "character_forward_axis": forward_axis,
         "duration_seconds": frame_end / fps,
         "fps": fps,
         "frame_count": frame_end,

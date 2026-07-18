@@ -11,6 +11,11 @@
       "asset_path": ".data/assets/pilot_01/character/Universal Base Characters[Standard]/Base Characters/Godot - UE/Superhero_Male_FullBody.gltf",
       "asset_format": "gltf",
       "rig_profile": "quaternius_universal_humanoid_v1",
+      "world_transform": {
+        "rotation_z_degrees": 180.0,
+        "forward_axis": "-Y",
+        "start_y": 3.5
+      },
       "license": "CC0-1.0",
       "source_url": "https://quaternius.com/packs/universalbasecharacters.html"
     }

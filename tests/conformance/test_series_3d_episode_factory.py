@@ -54,6 +54,8 @@ class Series3dEpisodeFactoryTest(unittest.TestCase):
         self.assertEqual([], assets["missing"])
         self.assertEqual("pilot_male_hero", assets["characters"][0]["id"])
         self.assertTrue(assets["characters"][0]["asset_path"])
+        self.assertEqual("-Y", assets["characters"][0]["world_transform"]["forward_axis"])
+        self.assertEqual(180.0, assets["characters"][0]["world_transform"]["rotation_z_degrees"])
         self.assertEqual("pilot_suburban_street_day", assets["scenes"][0]["id"])
         self.assertTrue(assets["scenes"][0]["components"])
         primary_action = actions["shots"][0]["primary_action"]
@@ -90,6 +92,7 @@ class Series3dEpisodeFactoryTest(unittest.TestCase):
             self.assertIn("bpy.ops.import_scene.gltf", content)
             self.assertIn("for index, shot in enumerate(shots, start=1)", content)
             self.assertIn("scene.timeline_markers.new", content)
+            self.assertIn("distance * forward_y_sign", content)
             self.assertIn('.final.mp4', content)
             self.assertNotIn("primitive_cube_add", content)
             manifest = json.loads((Path(tmpdir) / "pilot_test.manifest.json").read_text(encoding="utf-8"))

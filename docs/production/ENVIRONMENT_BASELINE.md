@@ -2,7 +2,7 @@
 
 记录日期：2026-07-18
 
-状态：环境与 API 通路已验证；首发 ComfyUI 视频工作流尚未选定。
+状态：环境、API 通路与 Wan2.1 VACE 候选工作流已实测；首发 ComfyUI 视频工作流尚未选定。
 
 ## 硬件
 
@@ -41,8 +41,35 @@ E11D3A8E4D4249BE5A7DB4A9325C1F670037D4233467C3B0BDA181001EFE44D3
 - `anything-v5.safetensors`。
 - Canny、Depth、Lineart 三个 SD1.5 ControlNet。
 - PixelArtRedmond15V LoRA。
+- `diffusion_models/wan2.1_vace_1.3B_fp16.safetensors`。
+- `text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors`。
+- `vae/wan_2.1_vae.safetensors`。
 
-当前没有视频模型。因此 API 健康检查通过不代表视频增强能力已经通过；首发视频工作流仍需单独选择、下载和基准测试。
+| 视频模型文件 | SHA-256 |
+| --- | --- |
+| `wan2.1_vace_1.3B_fp16.safetensors` | `640CCC0577E6A5D4BB15CD91B11B699EF914FC55F126C5A1C544E152130784F2` |
+| `umt5_xxl_fp8_e4m3fn_scaled.safetensors` | `C3355D30191F1F066B26D93FBA017AE9809DCE6C627DDA5F6A66EAA651204F68` |
+| `wan_2.1_vae.safetensors` | `2FC39D31359A4B0A64F55876D8FF7FA8D780956AE2CB13463B0223E15148976B` |
+
+### Wan2.1 VACE 1.3B 候选工作流
+
+- API 工作流：`config/comfyui/workflows/wan21_vace_1_3b_v2v_smoke.api.json`。
+- 基准脚本：`scripts/benchmark_comfyui_workflow.py`。
+- 控制输入：卡带真实 Blender 走路镜头，12 fps。
+- 推荐候选控制：逐帧 Canny + 首帧角色参考图。
+
+| 控制方式 | 分辨率 | 帧数 | 步数 | 耗时 | 驱动峰值显存 | 结果 |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| 原始 RGB | 288x512 | 17 | 8 | 51.5 秒 | 约 8.13 GB | 可播放，但模糊且有明显色块 |
+| 原始 RGB | 480x832 | 17 | 20 | 56.8 秒 | 10.42 GB | 细节提高，但绿橙色伪影与场景生长不可接受 |
+| Canny | 480x832 | 17 | 20 | 87.7 秒 | 10.04 GB | 人物、步态和轮廓稳定，画面可用 |
+| Canny | 480x832 | 33 | 20 | 97.9 秒 | 未记录 | 2.75 秒完整生成，无 OOM，长段一致性通过初检 |
+
+33 帧任务开始后，基准前台进程因外层命令超时退出，ComfyUI 后台仍正常完成，因此本行不补写推测的显存峰值。17 帧同分辨率实测已证明该工作流在 12 GB VRAM 内运行。
+
+Canny 版的能力边界：它能保留人物运动、朝向、镜头运动和主要轮廓，但会重新设计房屋、路面等场景细节。它适合把 Blender 预演重渲染为统一的风格化成片，不是严格保留原始几何与材质的普通超分工作流。首发方案是否锁定，需要先人工审看长段视频。
+
+长段输出：`C:/ComfyUI_windows_portable/ComfyUI/output/CartridgeFlow/vace_1_3b_canny_33f_00001_.mp4`。
 
 ## 真实 3D 资产验证
 
@@ -71,5 +98,4 @@ E11D3A8E4D4249BE5A7DB4A9325C1F670037D4233467C3B0BDA181001EFE44D3
 ## 尚未完成
 
 - 选择一个能在 12GB VRAM 上稳定运行的首发 ComfyUI 视频工作流。
-- 使用真实 Blender 控制素材测试该工作流的显存、耗时和一致性。
 - 将首镜头扩展为 3 至 5 镜头的完整 15 至 30 秒样片。

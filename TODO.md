@@ -10,7 +10,7 @@
 
 - [x] 记录 Blender、FFmpeg、Python、ComfyUI、CUDA 和模型的实际路径与版本。
 - [x] 确认 ComfyUI 本地 API 可调用，并保存一个最小 workflow JSON。
-- [ ] 在 RTX 3080 12GB 上测试候选工作流，记录分辨率、帧数、耗时、峰值显存和结果。
+- [x] 在 RTX 3080 12GB 上测试候选工作流，记录分辨率、帧数、耗时、峰值显存和结果。
 - [ ] 只选定一个首发 ComfyUI 工作流，明确它负责的镜头类型和失败边界。
 - [x] 写入 `docs/production/ENVIRONMENT_BASELINE.md`，保证他人可以复现实测。
 - [x] 冻结第一条 15 至 30 秒样片的角色、场景、动作、镜头数和无对白方案。

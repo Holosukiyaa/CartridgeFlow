@@ -486,6 +486,17 @@ class BuiltinMcpRegistry:
                         "proposal": "cartridgeflow.change_proposal.v1 JSON object or JSON string",
                     },
                 },
+                "run_creative_recast": {
+                    "description": "Run the approved Blender control stage and forced-ComfyUI stage, then stop at explicit user review.",
+                    "params": {
+                        "current_state": "approved or control_ready",
+                        "creative_spec": "Approved CreativeSpec JSON object or JSON string",
+                        "shot_control_bundle": "Validated Shot Control Bundle JSON object or JSON string",
+                        "run_snapshot": "Locked RunSnapshot JSON object or JSON string",
+                        "blender_params": "Parameters for the existing Blender series episode tool",
+                        "comfy_params": "Parameters for the existing ComfyUI media upgrade tool",
+                    },
+                },
             },
         }
         result = []

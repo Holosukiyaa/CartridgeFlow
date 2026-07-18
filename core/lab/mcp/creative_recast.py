@@ -1,10 +1,4 @@
-"""Opt-in CF-CRCP validation tools.
-
-The module is intentionally not registered in ``core.lab.mcp.dlc`` yet. The
-current base does not claim the CRCP runtime capabilities required to expose
-these tools through MCP. The functions remain side-effect free so they can be
-conformance-tested before the execution path is enabled.
-"""
+"""Opt-in CF-CRCP validation and two-stage execution tools."""
 
 from __future__ import annotations
 
@@ -12,13 +6,22 @@ import json
 
 from core.protocol.creative_recast import (
     validate_creative_spec as _validate_creative_spec,
+    validate_run_snapshot as _validate_run_snapshot,
     validate_shot_control_bundle as _validate_shot_control_bundle,
+)
+from core.protocol.creative_recast_runtime import (
+    transition_crcp_run,
 )
 
 
 DLC_ID = "dlc.series_3d_episode_factory"
 DLC_PROTOCOL = "CF-CRCP@0.1"
-TOOLS = ["validate_shot_control_bundle", "validate_creative_spec", "validate_change_proposal"]
+TOOLS = [
+    "validate_shot_control_bundle",
+    "validate_creative_spec",
+    "validate_change_proposal",
+    "run_creative_recast",
+]
 
 
 def _json_object(value, field: str) -> dict:
@@ -81,6 +84,109 @@ def _proposal_block(findings: list[dict], code: str, message: str) -> None:
     findings.append({"severity": "blocker", "code": code, "message": message})
 
 
+def _failure_record(params: dict, label: str, result: dict, snapshot: dict) -> dict:
+    files = result.get("files") or []
+    output_location = result.get("path") or (files[0] if files else "unknown")
+    return {
+        "schema": "cartridgeflow.failure_record.v1",
+        "failure_id": str(params.get("failure_id") or f"failure-{params.get('run_id') or 'creative-recast'}"),
+        "shot_id": str(params.get("shot_id") or "shot_unknown"),
+        "run_revision": snapshot.get("revision", 1),
+        "label": label,
+        "user_feedback": str(params.get("user_feedback") or "Provider execution failed; review the recorded error."),
+        "actual_change": str(result.get("error") or "Provider returned an unsuccessful result."),
+        "output_location": str(output_location),
+        "rollback_target": str(snapshot.get("snapshot_id") or "previous_approved_snapshot"),
+        "retry_index": int(params.get("retry_index") or 0),
+        "changed_fields": [str(item) for item in params.get("changed_fields") or [] if str(item).strip()],
+        "recommendation": str(params.get("recommendation") or "Return to the approved snapshot before retrying."),
+    }
+
+
+def _run_creative_recast(registry, params: dict) -> dict:
+    current_state = str(params.get("current_state") or "control_ready").strip()
+    raw_spec = _json_object(_param(params, "creative_spec", "spec"), "creative_spec")
+    raw_bundle = _json_object(_param(params, "shot_control_bundle", "bundle"), "shot_control_bundle")
+    raw_snapshot = _json_object(_param(params, "run_snapshot", "snapshot"), "run_snapshot")
+    spec_result = _validate_creative_spec(raw_spec)
+    bundle_result = _validate_shot_control_bundle(raw_bundle)
+    snapshot_result = _validate_run_snapshot(raw_snapshot)
+    if not spec_result.get("ok") or not bundle_result.get("ok") or not snapshot_result.get("ok"):
+        return {
+            "ok": False,
+            "state": current_state,
+            "stage": "validation",
+            "error": "CRCP artifacts failed validation",
+            "creative_spec": spec_result,
+            "shot_control_bundle": bundle_result,
+            "run_snapshot": snapshot_result,
+        }
+
+    context = {
+        "approval": params.get("approval") or raw_spec.get("approval"),
+        "creative_spec": spec_result,
+        "shot_control_bundle": bundle_result,
+        "run_snapshot": raw_snapshot,
+    }
+    events = []
+    if current_state == "approved":
+        ready = transition_crcp_run("approved", "control_ready", context)
+        events.append(ready)
+        if not ready.get("ok"):
+            return {"ok": False, "state": current_state, "stage": "approval", "events": events, "findings": ready.get("findings") or []}
+        current_state = "control_ready"
+    if current_state != "control_ready":
+        return {
+            "ok": False,
+            "state": current_state,
+            "stage": "state",
+            "error": "run_creative_recast must start from approved or control_ready",
+        }
+
+    start = transition_crcp_run("control_ready", "running_blender", context)
+    events.append(start)
+    if not start.get("ok"):
+        return {"ok": False, "state": current_state, "stage": "running_blender", "events": events, "findings": start.get("findings") or []}
+
+    blender_params = dict(params.get("blender_params") or {})
+    blender_result = registry.call("media", "forge_3d_series_episode", blender_params)
+    if not blender_result.get("ok"):
+        failure = _failure_record(params, "control_bundle_invalid", blender_result, raw_snapshot)
+        rejected = transition_crcp_run("running_blender", "rejected", {"failure_record": failure})
+        events.append(rejected)
+        return {"ok": False, "state": "rejected", "stage": "running_blender", "events": events, "blender_result": blender_result, "failure_record": failure}
+
+    comfy_start = transition_crcp_run("running_blender", "running_comfy", {"blender_ok": True})
+    events.append(comfy_start)
+    if not comfy_start.get("ok"):
+        return {"ok": False, "state": "running_blender", "stage": "running_comfy", "events": events, "blender_result": blender_result, "findings": comfy_start.get("findings") or []}
+
+    comfy_params = dict(params.get("comfy_params") or {})
+    comfy_params["provider"] = "comfyui"
+    comfy_params["require_remote"] = True
+    comfy_result = registry.call("media", "remote_upgrade_keyframes", comfy_params)
+    if not comfy_result.get("ok"):
+        failure = _failure_record(params, "style_mismatch", comfy_result, raw_snapshot)
+        rejected = transition_crcp_run("running_comfy", "rejected", {"failure_record": failure})
+        events.append(rejected)
+        return {"ok": False, "state": "rejected", "stage": "running_comfy", "events": events, "blender_result": blender_result, "comfy_result": comfy_result, "failure_record": failure}
+
+    outputs = comfy_result.get("files") or [item for item in [comfy_result.get("path")] if item]
+    review = transition_crcp_run("running_comfy", "review_required", {"outputs": outputs})
+    events.append(review)
+    return {
+        "ok": bool(review.get("ok")),
+        "state": "review_required" if review.get("ok") else "running_comfy",
+        "stage": "review_required",
+        "requires_user_review": bool(review.get("ok")),
+        "events": events,
+        "blender_result": blender_result,
+        "comfy_result": comfy_result,
+        "outputs": outputs,
+        "findings": review.get("findings") or [],
+    }
+
+
 def register(registry):
     """Register only when the CRCP DLC loader has passed its capability gate."""
     def validate_shot_control_bundle(params: dict) -> dict:
@@ -111,8 +217,15 @@ def register(registry):
         except Exception as exc:
             return {"ok": False, "validation_ok": False, "error": f"change proposal validation failed: {exc}"}
 
+    def run_creative_recast(params: dict) -> dict:
+        try:
+            return _run_creative_recast(registry, params)
+        except Exception as exc:
+            return {"ok": False, "state": str(params.get("current_state") or "control_ready"), "stage": "runtime", "error": f"creative recast run failed: {exc}"}
+
     registry._registry["media"].update({
         "validate_shot_control_bundle": validate_shot_control_bundle,
         "validate_creative_spec": validate_creative_spec,
         "validate_change_proposal": validate_change_proposal,
+        "run_creative_recast": run_creative_recast,
     })

@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 from core.lab.mcp import creative_recast
-from core.protocol import build_creative_recast_certification_report, validate_run_snapshot
+from core.protocol import build_creative_recast_certification_report, validate_failure_record, validate_run_snapshot
 from core.protocol.creative_recast import CRCP_REQUIRED_CAPABILITIES, validate_creative_spec, validate_shot_control_bundle
 
 
@@ -202,6 +202,59 @@ class CreativeRecastContractTest(unittest.TestCase):
             },
         )
         self.assertTrue(report["ok"], report)
+
+    def test_runtime_runs_blender_then_forced_comfy_and_stops_for_review(self):
+        class RegistryStub:
+            def __init__(self):
+                self._workspace_root = Path.cwd()
+                self._registry = {"media": {}}
+                self.calls = []
+
+            def call(self, server, tool, params):
+                self.calls.append((server, tool, params))
+                if tool == "forge_3d_series_episode":
+                    return {"ok": True, "path": "preview.mp4", "files": ["preview.mp4"]}
+                if tool == "remote_upgrade_keyframes":
+                    return {"ok": True, "path": "enhanced.mp4", "files": ["enhanced.mp4"]}
+                return {"ok": False, "error": f"unexpected tool: {tool}"}
+
+        registry = RegistryStub()
+        creative_recast.register(registry)
+        result = registry._registry["media"]["run_creative_recast"]({
+            "current_state": "control_ready",
+            "creative_spec": self._spec(),
+            "shot_control_bundle": self._bundle(),
+            "run_snapshot": self._snapshot(),
+            "blender_params": {"episode_id": "pilot_01"},
+            "comfy_params": {"input_manifest": "control.json"},
+        })
+        self.assertTrue(result["ok"], result)
+        self.assertEqual("review_required", result["state"])
+        self.assertTrue(result["requires_user_review"])
+        self.assertEqual(["forge_3d_series_episode", "remote_upgrade_keyframes"], [item[1] for item in registry.calls])
+        self.assertEqual("comfyui", registry.calls[1][2]["provider"])
+        self.assertTrue(registry.calls[1][2]["require_remote"])
+
+    def test_runtime_failure_returns_rejected_failure_record(self):
+        class RegistryStub:
+            def __init__(self):
+                self._workspace_root = Path.cwd()
+                self._registry = {"media": {}}
+
+            def call(self, server, tool, params):
+                return {"ok": False, "error": "Blender control render failed", "files": []}
+
+        registry = RegistryStub()
+        creative_recast.register(registry)
+        result = registry._registry["media"]["run_creative_recast"]({
+            "current_state": "control_ready",
+            "creative_spec": self._spec(),
+            "shot_control_bundle": self._bundle(),
+            "run_snapshot": self._snapshot(),
+        })
+        self.assertFalse(result["ok"])
+        self.assertEqual("rejected", result["state"])
+        self.assertTrue(validate_failure_record(result["failure_record"])["ok"])
 
 
 if __name__ == "__main__":

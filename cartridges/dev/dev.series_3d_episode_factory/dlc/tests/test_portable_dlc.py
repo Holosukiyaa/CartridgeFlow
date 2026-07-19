@@ -78,6 +78,23 @@ class PortableDlcTest(unittest.TestCase):
         })
         self.assertFalse(result["ok"])
 
+    def test_worker_transports_large_nested_unicode_json_as_utf8(self):
+        marker = "女孩说：\"继续拍摄\"。絵コンテ 🎬 " * 500
+        draft = {
+            "schema": "shot_list.v1",
+            "shots": [{"id": f"shot_{index:02d}", "description": marker} for index in range(1, 9)],
+        }
+        result = self.scoped_registry().call("media", "confirm_storyboard_plan", {
+            "shot_list_decision": {
+                "schema": "decision_envelope.v1",
+                "status": "needs_user_input",
+                "payload": {"draft_shot_list": draft},
+            },
+            "shot_reply": {"approval": "approve"},
+        })
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(marker, result["shot_list"]["shots"][7]["description"])
+
     def test_storyboard_preserves_distinct_ai_scene_camera_and_pose_plans(self):
         result = self.scoped_registry().call("media", "build_storyboard_project", {
             "episode_script": {"episode_id": "scene-plan-test"},

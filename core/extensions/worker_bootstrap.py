@@ -21,7 +21,7 @@ def main() -> int:
     sys.path.insert(0, str(workspace))
     sys.path.insert(0, str(package / "dlc"))
 
-    request = json.loads(sys.stdin.read() or "{}")
+    request = json.loads((sys.stdin.buffer.read() or b"{}").decode("utf-8"))
     descriptor = json.loads(descriptor_path.read_text(encoding="utf-8"))
     server = str(request.get("server") or "")
     tool_name = str(request.get("tool") or "")
@@ -45,7 +45,7 @@ def main() -> int:
                     raise TypeError("DLC handler must return an object")
             except Exception as exc:
                 result = {"ok": False, "code": "dlc_handler_failed", "error": f"{type(exc).__name__}: {exc}"}
-    sys.stdout.write(json.dumps(result, ensure_ascii=False))
+    sys.stdout.buffer.write(json.dumps(result, ensure_ascii=False).encode("utf-8"))
     return 0
 
 

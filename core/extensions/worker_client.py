@@ -30,11 +30,11 @@ def run_worker_call(
         str(descriptor_path),
     ]
     creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    payload = json.dumps(request, ensure_ascii=False).encode("utf-8")
     try:
         completed = subprocess.run(
             command,
-            input=json.dumps(request, ensure_ascii=False),
-            text=True,
+            input=payload,
             capture_output=True,
             cwd=str(root),
             timeout=max(1.0, timeout_ms / 1000),
@@ -42,15 +42,17 @@ def run_worker_call(
         )
     except subprocess.TimeoutExpired:
         return {"ok": False, "code": "dlc_worker_timeout", "error": f"DLC worker exceeded {timeout_ms} ms"}
+    stdout = (completed.stdout or b"").decode("utf-8", errors="replace")
+    stderr = (completed.stderr or b"").decode("utf-8", errors="replace")
     if completed.returncode != 0:
-        detail = (completed.stderr or completed.stdout or "").strip()[-4000:]
+        detail = (stderr or stdout).strip()[-4000:]
         return {"ok": False, "code": "dlc_worker_failed", "error": detail or f"DLC worker exited {completed.returncode}"}
     try:
-        result = json.loads(completed.stdout)
+        result = json.loads(stdout)
     except json.JSONDecodeError:
-        return {"ok": False, "code": "dlc_worker_invalid_response", "error": (completed.stdout or "")[-2000:]}
+        return {"ok": False, "code": "dlc_worker_invalid_response", "error": stdout[-2000:]}
     if not isinstance(result, dict):
         return {"ok": False, "code": "dlc_worker_invalid_response", "error": "DLC worker response must be an object"}
-    if completed.stderr.strip():
-        result.setdefault("worker_log", completed.stderr.strip()[-4000:])
+    if stderr.strip():
+        result.setdefault("worker_log", stderr.strip()[-4000:])
     return result

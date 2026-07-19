@@ -47,10 +47,29 @@ _ACTION_ALIASES = {
     "interact": "gesture_interact",
 }
 
+_COMPOSITE_ACTION_ALIASES = {
+    "reading_turning_page_slowly": "page_turn",
+    "turning_page_eyes_following_text": "page_turn",
+    "looking_up_from_book_staring_into_distance_then_back_to_book": "sit_reading",
+    "right_hand_pressing_page_left_hand_holding_book_smiling_gently": "sit_reading",
+    "closing_book_leaning_back_looking_up_into_sky": "page_turn",
+}
+
 
 def _normalize_action_id(value: str, fallback: str = "idle_hold") -> str:
-    raw = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
-    return _ACTION_ALIASES.get(raw, raw or fallback)
+    raw = re.sub(r"[，,;|/]+", "_", str(value or "").strip().lower().replace("-", "_").replace(" ", "_"))
+    raw = re.sub(r"_+", "_", raw).strip("_")
+    if raw in _ACTION_ALIASES:
+        return _ACTION_ALIASES[raw]
+    if raw in _COMPOSITE_ACTION_ALIASES:
+        return _COMPOSITE_ACTION_ALIASES[raw]
+    if "pack_up" in raw and "walk" in raw:
+        return "walk_slow"
+    if "turning_page" in raw or "pressing_page" in raw or "close_book" in raw or "closing_book" in raw:
+        return "page_turn"
+    if "looking_up" in raw or "gaze_at_distance" in raw or "reading" in raw or "hand_still" in raw:
+        return "sit_reading"
+    return raw or fallback
 
 
 def _normalize_actor(actor: dict) -> dict:
@@ -157,10 +176,18 @@ def _vector(value, fallback: list[float], length: int = 3) -> list[float]:
     return deepcopy(fallback)
 
 
-def _scene_for(index: int, shot: dict) -> dict:
+def _scene_for(index: int, shot: dict, previous: dict | None = None) -> dict:
     raw = shot.get("scene_design") or shot.get("scene") or {}
     design = raw if isinstance(raw, dict) else {"location": str(raw)}
     requested_location = str(design.get("location") or design.get("name") or shot.get("location") or "").strip()
+    same_location = requested_location.lower() in {"同上", "同一地点", "同一场景", "same", "same location", "same scene", "same place"}
+    if previous and same_location:
+        inherited = deepcopy(previous)
+        inherited["time"] = str(design.get("time") or shot.get("time") or inherited.get("time") or "day")
+        inherited["weather"] = str(design.get("weather") or shot.get("weather") or inherited.get("weather") or "clear")
+        inherited["blocking_notes"] = str(design.get("blocking_notes") or shot.get("composition") or shot.get("description") or inherited.get("blocking_notes") or "")
+        inherited["variation"] = index
+        return inherited
     text = " ".join([
         requested_location,
         str(shot.get("title") or ""),
@@ -351,6 +378,7 @@ def _build_project(params: dict) -> dict:
     )
     primary_actor_id = actor_counts.most_common(1)[0][0] if actor_counts else "hero"
     shots = []
+    previous_scene = None
     for index, source in enumerate(source_shots[:10]):
         shot_id = _shot_id(source.get("id"), index)
         action_item = action_items.get(shot_id) or {}
@@ -360,7 +388,8 @@ def _build_project(params: dict) -> dict:
         planned_camera = action_item.get("camera_template") if isinstance(action_item.get("camera_template"), dict) else {}
         if not isinstance(source.get("camera"), dict) and planned_camera.get("id"):
             planned_source["camera"] = str(planned_camera["id"])
-        scene = _scene_for(index, source)
+        scene = _scene_for(index, source, previous_scene)
+        previous_scene = scene
         source_props = source.get("props") if isinstance(source.get("props"), list) else []
         actor_ids = source.get("characters") or source.get("actors") or source.get("cast") or [primary_actor_id]
         if not isinstance(actor_ids, list):

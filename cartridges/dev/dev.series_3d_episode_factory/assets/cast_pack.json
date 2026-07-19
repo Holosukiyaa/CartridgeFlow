@@ -7,8 +7,8 @@
     "retarget_profile": "unreal_ual_to_vrm1_humanoid_54",
     "director_runtime": "calibrated_motion_delta_v1_with_procedural_fallback",
     "retarget_status": "approved_clips_enabled",
-    "approved_actions": ["walk_slow", "idle_hold", "idle_talk", "gesture_interact", "run_short", "sit_idle"],
-    "fallback_actions": ["look_back", "sit_reading", "page_turn", "look_up", "point_forward", "pick_up"],
+    "approved_actions": ["walk_slow", "idle_hold", "idle_talk", "gesture_interact", "run_short", "sit_idle", "sit_reading", "page_turn"],
+    "fallback_actions": ["look_back", "look_up", "point_forward", "pick_up"],
     "fallback_reason": "Actions without a semantically accurate source clip use the deterministic VRM pose layer.",
     "fallback_is_user_visible": false,
     "performance_overlay": {

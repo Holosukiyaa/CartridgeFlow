@@ -104,7 +104,8 @@ class Series3dEpisodeFactoryTest(unittest.TestCase):
         motion = cast_pack["motion_policy"]
         self.assertEqual("approved_clips_enabled", motion["retarget_status"])
         self.assertIn("walk_slow", motion["approved_actions"])
-        self.assertIn("sit_reading", motion["fallback_actions"])
+        self.assertIn("sit_reading", motion["approved_actions"])
+        self.assertIn("page_turn", motion["approved_actions"])
         overlay = motion["performance_overlay"]
         self.assertEqual("vrm1_expression_overlay_v1", overlay["profile"])
         self.assertTrue(overlay["action_driven_lip_sync"])
@@ -226,6 +227,9 @@ class Series3dEpisodeFactoryTest(unittest.TestCase):
             "close_book_look_up": "page_turn",
             "gaze_at_distance": "sit_reading",
             "pack_up_walk_away": "walk_slow",
+            "reading,_turning_page_slowly": "page_turn",
+            "turning_page,_eyes_following_text": "page_turn",
+            "closing_book,_leaning_back,_looking_up_into_sky": "page_turn",
         }
         for raw, expected in aliases.items():
             actor = _normalize_actor({"id": "hero", "action": raw, "available_actions": ["idle_hold", raw]})
@@ -241,6 +245,7 @@ class Series3dEpisodeFactoryTest(unittest.TestCase):
                     "title": "公园阅读",
                     "description": "男孩在公园长椅上看书。",
                     "duration": "00:08",
+                    "scene_design": {"location": "城市公园", "time": "午后"},
                     "camera": {
                         "position": {"x": 15, "y": 3, "z": -10},
                         "target": {"x": 0, "y": 1.2, "z": 0},
@@ -252,6 +257,7 @@ class Series3dEpisodeFactoryTest(unittest.TestCase):
                     "id": 2,
                     "title": "蝴蝶飞离",
                     "duration": 4,
+                    "scene_design": {"location": "同上", "time": "午后"},
                     "actor_blocking": [
                         {"actor_id": "butterfly", "action": "fly_away", "pose_time": "0:00"},
                         {"actor_id": "boy", "action": "close_book_look_up", "pose_time": "0:02"},
@@ -269,6 +275,8 @@ class Series3dEpisodeFactoryTest(unittest.TestCase):
         self.assertEqual("boy", project["shots"][1]["actors"][0]["id"])
         self.assertEqual("page_turn", project["shots"][1]["actors"][0]["action"])
         self.assertEqual(1.0, project["shots"][1]["actors"][0]["pose_time"])
+        self.assertEqual("forest", project["shots"][1]["scene"]["archetype"])
+        self.assertEqual(project["shots"][0]["scene"]["environment"], project["shots"][1]["scene"]["environment"])
 
     def test_unsupported_action_blocks_render_instead_of_falling_back(self):
         unsupported_shots = json.loads(json.dumps(self.shots))

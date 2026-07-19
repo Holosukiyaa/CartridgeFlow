@@ -9,15 +9,26 @@
       "roles": ["hero", "主角", "男性", "男人"],
       "proxy_color": "#b9825a",
       "asset_path": ".data/assets/pilot_01/character/Universal Base Characters[Standard]/Base Characters/Godot - UE/Superhero_Male_FullBody.gltf",
+      "director_asset_path": "dlc/frontend/models/boy1.vrm",
+      "director_asset_format": "vrm",
       "asset_format": "gltf",
-      "rig_profile": "quaternius_universal_humanoid_v1",
+      "rig_profile": "vrm1_humanoid_54",
+      "cast_character_id": "pilot_vroid_boy_01",
+      "cast_pack": "assets/cast_pack.json",
+      "skeleton": {
+        "total_joints": 127,
+        "humanoid_bones": 54,
+        "finger_chains": ["thumb", "index", "middle", "ring", "little"],
+        "secondary_bones": true,
+        "spring_bones": true
+      },
       "world_transform": {
         "rotation_z_degrees": 180.0,
         "forward_axis": "-Y",
         "start_y": 3.5
       },
-      "license": "CC0-1.0",
-      "source_url": "https://quaternius.com/packs/universalbasecharacters.html"
+      "license": "user_created_vroid_studio",
+      "source_url": "https://vroid.com/studio"
     }
   ],
   "scenes": [
@@ -147,6 +158,72 @@
       "motion_path": ".data/assets/pilot_01/motions/Universal Animation Library[Standard]/Unreal-Godot/UAL1_Standard.glb",
       "clip_name": "Sprint_Loop",
       "translation_meters": 8.0,
+      "license": "CC0-1.0"
+    },
+    {
+      "id": "sit_idle",
+      "name": "坐姿停留",
+      "tags": ["坐下", "坐姿", "等待", "sitting", "sit"],
+      "duration": 3.0,
+      "motion_path": ".data/assets/pilot_01/motions/Universal Animation Library[Standard]/Unreal-Godot/UAL1_Standard.glb",
+      "clip_name": "Sitting_Idle_Loop",
+      "translation_meters": 0.0,
+      "director_pose": "sit_idle",
+      "license": "CC0-1.0"
+    },
+    {
+      "id": "sit_reading",
+      "name": "坐姿阅读",
+      "tags": ["阅读", "看书", "坐姿", "read", "reading"],
+      "duration": 4.0,
+      "motion_path": ".data/assets/pilot_01/motions/Universal Animation Library[Standard]/Unreal-Godot/UAL1_Standard.glb",
+      "clip_name": "Sitting_Idle_Loop",
+      "translation_meters": 0.0,
+      "director_pose": "sit_reading",
+      "license": "CC0-1.0"
+    },
+    {
+      "id": "page_turn",
+      "name": "翻页",
+      "tags": ["翻页", "读书", "动作", "page", "turn"],
+      "duration": 2.0,
+      "motion_path": ".data/assets/pilot_01/motions/Universal Animation Library[Standard]/Unreal-Godot/UAL1_Standard.glb",
+      "clip_name": "Interact",
+      "translation_meters": 0.0,
+      "director_pose": "page_turn",
+      "license": "CC0-1.0"
+    },
+    {
+      "id": "look_up",
+      "name": "抬头观察",
+      "tags": ["抬头", "观察", "发现", "look", "up"],
+      "duration": 2.0,
+      "motion_path": ".data/assets/pilot_01/motions/Universal Animation Library[Standard]/Unreal-Godot/UAL1_Standard.glb",
+      "clip_name": "Idle_Talking_Loop",
+      "translation_meters": 0.0,
+      "director_pose": "look_up",
+      "license": "CC0-1.0"
+    },
+    {
+      "id": "point_forward",
+      "name": "指向前方",
+      "tags": ["指向", "手势", "方向", "point", "gesture"],
+      "duration": 2.0,
+      "motion_path": ".data/assets/pilot_01/motions/Universal Animation Library[Standard]/Unreal-Godot/UAL1_Standard.glb",
+      "clip_name": "Interact",
+      "translation_meters": 0.0,
+      "director_pose": "point_forward",
+      "license": "CC0-1.0"
+    },
+    {
+      "id": "pick_up",
+      "name": "弯腰拾取",
+      "tags": ["拾取", "捡起", "弯腰", "pick", "pickup"],
+      "duration": 2.5,
+      "motion_path": ".data/assets/pilot_01/motions/Universal Animation Library[Standard]/Unreal-Godot/UAL1_Standard.glb",
+      "clip_name": "PickUp_Table",
+      "translation_meters": 0.0,
+      "director_pose": "pick_up",
       "license": "CC0-1.0"
     }
   ],

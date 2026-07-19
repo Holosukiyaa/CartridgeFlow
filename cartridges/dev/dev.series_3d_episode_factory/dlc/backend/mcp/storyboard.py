@@ -19,6 +19,25 @@ TOOLS = [
     "prepare_video_shots",
 ]
 
+_ACTION_ALIASES = {
+    "sitting_reading": "sit_reading",
+    "reading": "sit_reading",
+    "read": "sit_reading",
+    "hand_tracing_text": "page_turn",
+    "turn_page": "page_turn",
+    "look_up_thoughtfully": "look_up",
+    "return_to_reading_with_smile": "sit_reading",
+    "walk_forward": "walk_slow",
+    "walk_backward": "walk_slow",
+    "talking": "idle_talk",
+    "interact": "gesture_interact",
+}
+
+
+def _normalize_action_id(value: str, fallback: str = "idle_hold") -> str:
+    raw = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+    return _ACTION_ALIASES.get(raw, raw or fallback)
+
 
 def _object(value, fallback=None):
     if isinstance(value, dict):
@@ -215,13 +234,26 @@ def _actor_for(index: int, shot: dict, action: str, actor_index: int, actor_id: 
     return {
         "id": actor_id,
         "asset_id": "pilot_male_hero",
+        "cast_character_id": "pilot_vroid_boy_01",
+        "asset_format": "gltf",
+        "director_asset_path": "dlc/frontend/models/boy1.vrm",
+        "director_asset_format": "vrm",
+        "rig_profile": "vrm1_humanoid_54",
         "position": _vector(blocking.get("position"), base_position),
         "rotation_degrees": _vector(blocking.get("rotation_degrees"), [0.0, 0.0, float((index % 3 - 1) * 18)]),
         "scale": 1.0,
-        "action": str(blocking.get("action") or (action if actor_index == 0 else "idle_talk")),
+        "action": _normalize_action_id(blocking.get("action") or (action if actor_index == 0 else "idle_talk")),
         "pose_time": float(blocking.get("pose_time") or (0.22 + (index % 4) * 0.19)),
-        "available_actions": ["idle_hold", "walk_slow", "idle_talk", "gesture_interact", "look_back", "run_short"],
+        "available_actions": ["idle_hold", "walk_slow", "idle_talk", "gesture_interact", "look_back", "run_short", "sit_idle", "sit_reading", "page_turn", "look_up", "point_forward", "pick_up"],
         "gaze_target": [0.0, -4.0, 1.4],
+        "expression": str(blocking.get("expression") or "auto"),
+        "expression_weight": float(blocking.get("expression_weight") if blocking.get("expression_weight") is not None else 0.65),
+        "gaze_yaw_degrees": float(blocking.get("gaze_yaw_degrees") or 0.0),
+        "gaze_pitch_degrees": float(blocking.get("gaze_pitch_degrees") or 0.0),
+        "head_pitch_degrees": float(blocking.get("head_pitch_degrees") or 0.0),
+        "head_yaw_degrees": float(blocking.get("head_yaw_degrees") or 0.0),
+        "left_arm_raise_degrees": float(blocking.get("left_arm_raise_degrees") or 0.0),
+        "right_arm_raise_degrees": float(blocking.get("right_arm_raise_degrees") or 0.0),
         "locked_identity": True,
     }
 
@@ -245,7 +277,7 @@ def _build_project(params: dict) -> dict:
         shot_id = str(source.get("id") or f"shot_{index + 1:02d}")
         action_item = action_items.get(shot_id) or {}
         primary_action = action_item.get("primary_action") if isinstance(action_item.get("primary_action"), dict) else {}
-        action = str(primary_action.get("id") or action_item.get("action_id") or action_item.get("action") or (source.get("action_tags") or ["idle_hold"])[0])
+        action = _normalize_action_id(primary_action.get("id") or action_item.get("action_id") or action_item.get("action") or (source.get("action_tags") or ["idle_hold"])[0])
         planned_source = deepcopy(source)
         planned_camera = action_item.get("camera_template") if isinstance(action_item.get("camera_template"), dict) else {}
         if not isinstance(source.get("camera"), dict) and planned_camera.get("id"):

@@ -1,4 +1,5 @@
 import json
+import struct
 import tempfile
 import unittest
 import sys
@@ -13,6 +14,8 @@ from core.extensions.worker_sdk import DlcWorkerRegistry
 from backend.mcp import series_3d
 
 LIBRARY_PATH = "cartridges/dev/dev.series_3d_episode_factory/assets/series_asset_library.json"
+VRM_PATH = PACKAGE / "dlc/frontend/models/boy1.vrm"
+CAST_PACK_PATH = PACKAGE / "assets/cast_pack.json"
 
 
 class Series3dEpisodeFactoryTest(unittest.TestCase):
@@ -68,6 +71,56 @@ class Series3dEpisodeFactoryTest(unittest.TestCase):
         self.assertEqual("walk_slow", primary_action["id"])
         self.assertEqual("Walk_Loop", primary_action["clip_name"])
         self.assertTrue(primary_action["motion_path"])
+
+    def test_vrm_cast_pack_has_full_humanoid_and_finger_contract(self):
+        data = VRM_PATH.read_bytes()
+        self.assertEqual(b"glTF", data[:4])
+        offset = 12
+        document = None
+        while offset < len(data):
+            length, chunk_type = struct.unpack_from("<II", data, offset)
+            offset += 8
+            chunk = data[offset:offset + length]
+            offset += length
+            if chunk_type == 0x4E4F534A:
+                document = json.loads(chunk.decode("utf-8"))
+                break
+        self.assertIsNotNone(document)
+        extension = document["extensions"]["VRMC_vrm"]
+        bones = extension["humanoid"]["humanBones"]
+        names = set(bones) if isinstance(bones, dict) else {str(item.get("bone") or item.get("name")) for item in bones}
+        self.assertGreaterEqual(len(bones), 54)
+        for side in ("left", "right"):
+            for finger in ("Thumb", "Index", "Middle", "Ring", "Little"):
+                self.assertIn(f"{side}{finger}Proximal", names)
+        preset_expressions = extension["expressions"]["preset"]
+        for expression in ("blink", "aa", "oh", "happy", "relaxed"):
+            self.assertTrue(preset_expressions[expression]["morphTargetBinds"], expression)
+        cast_pack = json.loads(CAST_PACK_PATH.read_text(encoding="utf-8"))
+        character = cast_pack["characters"][0]
+        self.assertEqual("vrm1_humanoid_54", character["rig_profile"])
+        self.assertTrue(character["license"]["third_party_restrictions"] is False)
+        motion = cast_pack["motion_policy"]
+        self.assertEqual("approved_clips_enabled", motion["retarget_status"])
+        self.assertIn("walk_slow", motion["approved_actions"])
+        self.assertIn("sit_reading", motion["fallback_actions"])
+        overlay = motion["performance_overlay"]
+        self.assertEqual("vrm1_expression_overlay_v1", overlay["profile"])
+        self.assertTrue(overlay["action_driven_lip_sync"])
+        self.assertIn("pose_scrub", overlay["playback_controls"])
+        self.assertIn("gaze_yaw_degrees", overlay["director_controls"])
+        self.assertIn("right_arm_raise_degrees", overlay["director_controls"])
+
+    def test_all_declared_action_clips_exist_in_motion_library(self):
+        library = json.loads((PACKAGE / "assets/series_asset_library.json").read_text(encoding="utf-8"))
+        motion_path = ROOT / library["actions"][0]["motion_path"]
+        data = motion_path.read_bytes()
+        length, chunk_type = struct.unpack_from("<II", data, 12)
+        self.assertEqual(0x4E4F534A, chunk_type)
+        document = json.loads(data[20:20 + length].decode("utf-8"))
+        available = {item.get("name") for item in document.get("animations", [])}
+        for action in library["actions"]:
+            self.assertIn(action["clip_name"], available, action["id"])
 
     def test_script_only_mode_generates_real_asset_blender_script(self):
         assets, actions = self._match()

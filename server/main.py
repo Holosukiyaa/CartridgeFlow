@@ -902,7 +902,8 @@ def serve_cartridge_dlc_frontend(cartridge_id: str):
         raise HTTPException(status_code=404, detail="Cartridge has no frontend DLC")
     target = (Path(cartridge["package_path"]) / entry).resolve()
     response = FileResponse(target, media_type="text/html")
-    response.headers["Content-Security-Policy"] = "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'self';"
+    # GLTF/VRM loaders materialize embedded textures as blob URLs inside the isolated iframe.
+    response.headers["Content-Security-Policy"] = "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' blob:;"
     response.headers["Cache-Control"] = "no-store"
     return response
 

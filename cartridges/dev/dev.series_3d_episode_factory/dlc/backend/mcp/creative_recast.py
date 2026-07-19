@@ -4,16 +4,16 @@ from __future__ import annotations
 
 import json
 
-from .comfy_vace import run_vace_character_replace as _run_vace_character_replace
+from ..adapters.comfy_vace import run_vace_character_replace as _run_vace_character_replace
 
-from core.protocol.creative_recast import (
+from ..protocol.creative_recast import (
     validate_candidate_review as _validate_candidate_review,
     validate_cast_pack as _validate_cast_pack,
     validate_creative_spec as _validate_creative_spec,
     validate_run_snapshot as _validate_run_snapshot,
     validate_shot_control_bundle as _validate_shot_control_bundle,
 )
-from core.protocol.creative_recast_runtime import (
+from ..protocol.creative_recast_runtime import (
     transition_crcp_run,
 )
 

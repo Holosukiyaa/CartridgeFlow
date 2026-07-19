@@ -178,4 +178,5 @@ class CartridgeRegistry:
             "inputs": manifest.get("inputs", []),
             "outputs": manifest.get("outputs", []),
             "mcp_tools": manifest.get("mcp_tools", []),
+            "portable_dlc": manifest.get("portable_dlc"),
         }

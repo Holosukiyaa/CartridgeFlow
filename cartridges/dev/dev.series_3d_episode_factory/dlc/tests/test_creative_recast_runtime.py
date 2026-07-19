@@ -1,8 +1,13 @@
 import hashlib
 import unittest
+import sys
 from pathlib import Path
 
-from core.protocol.creative_recast_runtime import (
+ROOT = Path(__file__).resolve().parents[5]
+PACKAGE = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(PACKAGE / "dlc"))
+
+from backend.protocol.creative_recast_runtime import (
     transition_crcp_run,
     validate_failure_record,
 )
@@ -10,7 +15,7 @@ from core.protocol.creative_recast_runtime import (
 
 class CreativeRecastRuntimeTest(unittest.TestCase):
     def _candidate_review(self):
-        artifact = "tests/conformance/test_creative_recast_runtime.py"
+        artifact = "cartridges/dev/dev.series_3d_episode_factory/dlc/tests/test_creative_recast_runtime.py"
         digest = hashlib.sha256((Path.cwd() / artifact).read_bytes()).hexdigest()
         return {
             "schema": "cartridgeflow.candidate_review.v1",

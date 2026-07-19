@@ -5630,6 +5630,21 @@ hr {
   background: white;
 }
 
+.cf-dlc-sandbox-frame {
+  width: 100%;
+  min-height: min(820px, 78vh);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #101314;
+}
+
+.cf-dlc-frame-error {
+  padding: 12px;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+  background: #fff1f2;
+}
+
 .cf-mcp-tool-card {
   border: 1px solid var(--line);
   border-radius: 12px;

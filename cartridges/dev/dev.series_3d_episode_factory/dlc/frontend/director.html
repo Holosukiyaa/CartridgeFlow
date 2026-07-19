@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>分镜导演台</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, "Microsoft YaHei", sans-serif; letter-spacing: 0; --bg:#101314; --panel:#191d1e; --line:#303738; --text:#eef2ef; --muted:#98a29f; --red:#ed6153; --green:#58b487; --amber:#d6a347; }
+    * { box-sizing: border-box; }
+    html, body { margin:0; min-height:100%; background:var(--bg); color:var(--text); }
+    button, input, textarea { font:inherit; }
+    button { border:1px solid var(--line); background:#242a2b; color:var(--text); min-height:36px; cursor:pointer; }
+    button:hover { border-color:#667170; }
+    button:focus-visible, input:focus-visible, textarea:focus-visible { outline:2px solid var(--amber); outline-offset:2px; }
+    .shell { display:grid; grid-template-rows:52px 1fr 118px; height:100vh; min-height:680px; }
+    header { display:flex; align-items:center; gap:12px; padding:0 16px; border-bottom:1px solid var(--line); background:#15191a; }
+    h1 { margin:0; font-size:16px; font-weight:650; }
+    .status { margin-left:auto; color:var(--muted); font-size:12px; }
+    .main { display:grid; grid-template-columns:minmax(420px, 1fr) 330px; min-height:0; }
+    .stage { position:relative; min-width:0; background:#0d0f10; overflow:hidden; }
+    canvas { width:100%; height:100%; display:block; touch-action:none; }
+    .safe { position:absolute; inset:7% 26%; border:1px solid rgba(255,255,255,.35); pointer-events:none; }
+    aside { border-left:1px solid var(--line); background:var(--panel); padding:14px; overflow:auto; }
+    .group { padding:0 0 14px; margin:0 0 14px; border-bottom:1px solid var(--line); }
+    .group:last-child { border-bottom:0; }
+    .group h2 { margin:0 0 10px; font-size:12px; color:#cbd2cf; text-transform:uppercase; }
+    label { display:grid; grid-template-columns:92px 1fr 48px; gap:8px; align-items:center; margin:8px 0; color:var(--muted); font-size:12px; }
+    input[type=range] { width:100%; accent-color:var(--red); }
+    textarea { width:100%; min-height:86px; resize:vertical; border:1px solid var(--line); background:#111516; color:var(--text); padding:9px; }
+    .actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+    .approve { background:#174c39; border-color:#2b7a5c; }
+    .approve[aria-pressed=true] { background:var(--green); color:#07140e; font-weight:700; }
+    .strip { display:flex; gap:8px; padding:10px 14px; border-top:1px solid var(--line); overflow-x:auto; background:#15191a; }
+    .shot { flex:0 0 150px; height:96px; text-align:left; padding:8px; display:grid; grid-template-rows:1fr auto; border-radius:4px; }
+    .shot.active { border-color:var(--red); box-shadow:inset 0 0 0 1px var(--red); }
+    .shot.approved { border-bottom:3px solid var(--green); }
+    .shot strong { font-size:12px; overflow:hidden; }
+    .shot span { color:var(--muted); font-size:11px; }
+    .empty { display:grid; place-items:center; height:100%; color:var(--muted); }
+    @media (max-width:760px) { .shell { height:auto; min-height:100vh; grid-template-rows:52px auto 112px; padding-bottom:52px; } header { display:grid; grid-template-columns:auto 1fr; gap:6px; padding:0 8px; } header h1 { font-size:14px; } header .status { display:none; } header #submit { position:fixed; z-index:20; right:8px; bottom:8px; padding:0 12px; font-size:12px; white-space:nowrap; background:#2f936e; color:#081710; border-color:#58b487; } .main { grid-template-columns:1fr; } .stage { min-height:56vh; } aside { border-left:0; border-top:1px solid var(--line); } }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header><h1>分镜导演台</h1><span id="counter"></span><span class="status" id="status">等待分镜</span><button id="submit" title="提交全部分镜">提交并继续</button></header>
+    <div class="main">
+      <section class="stage"><canvas id="stage"></canvas><div class="safe"></div></section>
+      <aside id="inspector">
+        <div class="group"><h2>摄影机</h2><label>X <input id="cameraX" type="range" min="-8" max="8" step="0.1"><output id="cameraXOut"></output></label><label>Y <input id="cameraY" type="range" min="-12" max="2" step="0.1"><output id="cameraYOut"></output></label><label>焦距 <input id="focal" type="range" min="18" max="120" step="1"><output id="focalOut"></output></label></div>
+        <div class="group"><h2>人物调度</h2><label>X <input id="actorX" type="range" min="-6" max="6" step="0.1"><output id="actorXOut"></output></label><label>Y <input id="actorY" type="range" min="-6" max="8" step="0.1"><output id="actorYOut"></output></label><label>动作点 <input id="pose" type="range" min="0" max="1" step="0.01"><output id="poseOut"></output></label></div>
+        <div class="group"><h2>画面意图</h2><textarea id="prompt" aria-label="画面意图"></textarea></div>
+        <div class="actions"><button id="reset">撤销本镜修改</button><button class="approve" id="approve" aria-pressed="false">确认本镜</button></div>
+      </aside>
+    </div>
+    <nav class="strip" id="strip" aria-label="分镜列表"></nav>
+  </div>
+  <script>
+    const state={project:null,active:0,changes:new Map()};
+    const $=id=>document.getElementById(id); const canvas=$("stage"),ctx=canvas.getContext("2d");
+    const controls=["cameraX","cameraY","focal","actorX","actorY","pose"];
+    function current(){return state.project?.shots?.[state.active]||null}
+    function resize(){const r=canvas.getBoundingClientRect(); canvas.width=Math.max(1,Math.round(r.width*devicePixelRatio));canvas.height=Math.max(1,Math.round(r.height*devicePixelRatio));draw()}
+    function draw(){const shot=current(),w=canvas.width,h=canvas.height,s=devicePixelRatio;if(!shot){ctx.fillStyle="#0d0f10";ctx.fillRect(0,0,w,h);return}const horizon=h*.42;ctx.fillStyle="#8bbbd1";ctx.fillRect(0,0,w,horizon);ctx.fillStyle="#59615c";ctx.fillRect(0,horizon,w,h-horizon);ctx.fillStyle="#b8bbb0";ctx.fillRect(0,horizon,w*.27,h*.45);ctx.fillStyle="#aab5aa";ctx.fillRect(w*.73,horizon,w*.27,h*.45);ctx.fillStyle="#3c4140";ctx.beginPath();ctx.moveTo(w*.36,h);ctx.lineTo(w*.47,horizon);ctx.lineTo(w*.53,horizon);ctx.lineTo(w*.64,h);ctx.fill();const a=shot.actors[0],x=w*.5+(a.position[0]||0)*w*.045,y=h*.63-(a.position[1]||0)*h*.025,scale=Math.max(.55,1+(a.position[1]||0)*.035);ctx.fillStyle="#d9ab83";ctx.beginPath();ctx.arc(x,y-h*.115*scale,h*.035*scale,0,Math.PI*2);ctx.fill();ctx.fillStyle="#354f66";ctx.fillRect(x-w*.035*scale,y-h*.09*scale,w*.07*scale,h*.18*scale);ctx.strokeStyle="#ef6153";ctx.lineWidth=2*s;ctx.strokeRect(12*s,12*s,w-24*s,h-24*s);ctx.fillStyle="rgba(12,15,16,.78)";ctx.fillRect(18*s,18*s,Math.min(w-36*s,420*s),50*s);ctx.fillStyle="#f1f4f1";ctx.font=`${14*s}px sans-serif`;ctx.fillText(`${shot.order}. ${shot.title}`,30*s,48*s)}
+    function sync(){const shot=current();if(!shot)return;const p=shot.camera.position,a=shot.actors[0];const values={cameraX:p[0],cameraY:p[1],focal:shot.camera.focal_length_mm,actorX:a.position[0],actorY:a.position[1],pose:a.pose_time};for(const id of controls){$(id).value=values[id];$(id+"Out").value=Number(values[id]).toFixed(id==="focal"?0:1)}$("prompt").value=shot.prompt.content;$("approve").setAttribute("aria-pressed",String(shot.review.status==="approved"));$("counter").textContent=`${state.active+1} / ${state.project.shots.length}`;renderStrip();draw()}
+    function change(){const shot=current();if(!shot)return;shot.camera.position[0]=+$('cameraX').value;shot.camera.position[1]=+$('cameraY').value;shot.camera.focal_length_mm=+$('focal').value;shot.actors[0].position[0]=+$('actorX').value;shot.actors[0].position[1]=+$('actorY').value;shot.actors[0].pose_time=+$('pose').value;shot.prompt.content=$('prompt').value;shot.review.status="draft";state.changes.set(shot.id,structuredClone(shot));sync()}
+    function renderStrip(){const strip=$("strip");strip.innerHTML="";state.project.shots.forEach((shot,i)=>{const b=document.createElement("button");b.className=`shot ${i===state.active?'active':''} ${shot.review.status==='approved'?'approved':''}`;b.innerHTML=`<strong>${shot.order}. ${shot.title}</strong><span>${shot.camera.template} · ${shot.actors[0].action}</span>`;b.onclick=()=>{state.active=i;sync()};strip.appendChild(b)})}
+    function load(project){state.project=structuredClone(project);state.project.shots.forEach(s=>s._initial=structuredClone(s));state.active=0;state.changes.clear();$("status").textContent="逐镜调整";sync()}
+    controls.forEach(id=>$(id).addEventListener("input",change));$("prompt").addEventListener("input",change);
+    $("approve").onclick=()=>{const shot=current();shot.review.status=shot.review.status==="approved"?"draft":"approved";state.changes.set(shot.id,structuredClone(shot));sync();if(shot.review.status==="approved"&&state.active<state.project.shots.length-1){state.active++;sync()}};
+    $("reset").onclick=()=>{const shot=current(),initial=structuredClone(shot._initial);initial._initial=shot._initial;state.project.shots[state.active]=initial;state.changes.delete(shot.id);sync()};
+    $("submit").onclick=()=>{if(!state.project)return;const approved=state.project.shots.filter(s=>s.review.status==="approved").map(s=>s.id);if(approved.length!==state.project.shots.length){$("status").textContent=`还有 ${state.project.shots.length-approved.length} 镜未确认`;return}const shot_changes=[...state.changes.values()].map(s=>({shot_id:s.id,camera:s.camera,actors:s.actors,props:s.props,lighting:s.lighting,prompt:s.prompt,duration_seconds:s.duration_seconds}));parent.postMessage({schema:"cartridgeflow.dlc_ui_message.v1",type:"submit_interaction",values:{approval:"approve_all",approved_shot_ids:approved,shot_changes}},"*");$("status").textContent="已提交"};
+    addEventListener("message",e=>{const d=e.data||{};if(d.schema==="cartridgeflow.dlc_ui_host.v1"&&d.type==="load_storyboard"&&d.project)load(d.project)});addEventListener("resize",resize);new ResizeObserver(resize).observe(canvas);parent.postMessage({schema:"cartridgeflow.dlc_ui_message.v1",type:"ready"},"*");resize();
+    if(new URLSearchParams(location.search).has("demo"))load({shots:[1,2,3,4].map((n,i)=>({id:`shot_0${n}`,order:n,title:["街道前进","停下观察","回头确认","影子异动"][i],camera:{position:[i-1,-8+i,2.1],target:[0,0,1.2],focal_length_mm:42+i*8,template:["slow_push_in","close_up_reveal","over_shoulder","low_angle_hold"][i]},actors:[{position:[0,i*.2,0],pose_time:.42,action:["walk_slow","idle_hold","idle_talk","gesture_interact"][i]}],props:[],lighting:{},prompt:{content:"男孩沿着空旷街道察觉异常。"},review:{status:i===0?"approved":"draft"}}))});
+  </script>
+</body>
+</html>

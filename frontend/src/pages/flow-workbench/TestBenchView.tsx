@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSPropert
 import type { ArtifactItem, FlowEvent, FlowGraph, FlowLabDetail, FlowNode, RunResult, TestProbeRange } from '../../api.ts'
 import { uploadWorkspaceFile } from '../../api.ts'
 import { showToast } from '../../toast.tsx'
+import { DlcSandboxFrame } from '../../components/DlcSandboxFrame.tsx'
 import { FlowGraphView } from './FlowGraphView.tsx'
 import { getProcessDisplayLabel, getProtocolKind } from './nodeModel.ts'
 import './TestBench.css'
@@ -1305,19 +1306,23 @@ export function TestBenchView({
 
       {pendingModalOpen && pendingInteraction && (
         <div className="cf-pending-modal-backdrop" onClick={() => setPendingModalOpen(false)}>
-          <div className="cf-pending-modal" onClick={(event) => event.stopPropagation()}>
+          <div className={`cf-pending-modal ${pendingInteraction.ui_extension === 'portable_dlc' ? 'cf-pending-modal-dlc' : ''}`} onClick={(event) => event.stopPropagation()}>
             <div className="cf-pending-modal-head">
               <strong>{pendingNode ? `与 ${getNodeTitle(pendingNode)} 交互` : '等待用户交互'}</strong>
               <button type="button" onClick={() => setPendingModalOpen(false)}>x</button>
             </div>
-            <PendingInteractionForm
-              pending={pendingInteraction}
-              disabled={isRunning || !onAnswerPendingInteraction}
-              onSubmit={answerPending}
-              artifacts={pendingArtifacts}
-              nodeById={nodeById}
-              artifactScopeLabel={pendingArtifactsLabel}
-            />
+            {pendingInteraction.ui_extension === 'portable_dlc' && detail.cartridge.portable_dlc && latestRun ? (
+              <DlcSandboxFrame cartridgeId={detail.cartridge.id} runId={latestRun.run_id} onSubmit={answerPending} />
+            ) : (
+              <PendingInteractionForm
+                pending={pendingInteraction}
+                disabled={isRunning || !onAnswerPendingInteraction}
+                onSubmit={answerPending}
+                artifacts={pendingArtifacts}
+                nodeById={nodeById}
+                artifactScopeLabel={pendingArtifactsLabel}
+              />
+            )}
           </div>
         </div>
       )}

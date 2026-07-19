@@ -31,9 +31,11 @@ class LabNodeExecutor:
         self._scoped_mcp_registries: dict[str, object] = {}
 
     def _registry_for_run(self, run: dict):
-        """Use a manifest-scoped registry only when extensions are declared."""
+        """Use a manifest-scoped registry for protocol or portable-DLC extensions."""
         extensions = run.get("protocol_extensions") if isinstance(run, dict) else None
-        if not extensions:
+        portable_dlc = run.get("portable_dlc") if isinstance(run, dict) else None
+        package_path = run.get("package_path") if isinstance(run, dict) else None
+        if not extensions and not portable_dlc:
             return self._builtin_mcp
 
         from core.lab.builtin_mcp import BuiltinMcpRegistry
@@ -52,6 +54,8 @@ class LabNodeExecutor:
         cache_key = json.dumps(
             {
                 "extensions": extensions,
+                "portable_dlc": portable_dlc,
+                "package_path": package_path,
                 "capabilities": sorted(str(item) for item in capabilities),
                 "supported_protocols": supported_protocols,
             },
@@ -61,11 +65,19 @@ class LabNodeExecutor:
         )
         registry = self._scoped_mcp_registries.get(cache_key)
         if registry is None:
-            registry = BuiltinMcpRegistry(
+            manifest = {
+                "id": run.get("cartridge_id"),
+                "version": run.get("cartridge_version"),
+                "mcp_tools": run.get("mcp_tools") or [],
+                "protocol_extensions": extensions or [],
+                "portable_dlc": portable_dlc,
+            }
+            registry = BuiltinMcpRegistry.for_manifest(
                 self.workspace_root,
-                protocol_extensions=extensions,
+                manifest,
                 capabilities=capabilities,
                 supported_protocols=supported_protocols,
+                package_path=package_path,
             )
             self._scoped_mcp_registries[cache_key] = registry
         return registry
@@ -923,6 +935,8 @@ class LabNodeExecutor:
             question["store_key"] = str(interaction.get("store_key")).strip()
         else:
             question.setdefault("store_key", "decision_user_reply")
+        if str(interaction.get("ui_extension") or "").strip():
+            question["ui_extension"] = str(interaction.get("ui_extension")).strip()
         envelope["question"] = question
 
         resume = envelope.get("resume") if isinstance(envelope.get("resume"), dict) else {}
@@ -1009,6 +1023,7 @@ class LabNodeExecutor:
                 "prompt": prompt,
                 "input_schema": input_schema,
                 "store_key": store_key,
+                **({"ui_extension": interaction.get("ui_extension")} if interaction.get("ui_extension") else {}),
             },
             "resume": resume,
             "proposal": envelope,
@@ -1098,6 +1113,7 @@ class LabNodeExecutor:
                 "store_key": question.get("store_key") or "user_reply",
             },
             "resume": pending_resume,
+            **({"ui_extension": question.get("ui_extension")} if question.get("ui_extension") else {}),
         }
 
     def _offline_llm_response(self, system_prompt: str, prompt_template: str, context_text: str) -> str:
@@ -1237,6 +1253,35 @@ class LabNodeExecutor:
             preset_config.get("message") or
             "请确认是否继续执行。"
         )
+        interaction = params.get("interaction") if isinstance(params.get("interaction"), dict) else preset_config.get("interaction")
+        if isinstance(interaction, dict) and str(interaction.get("store_key") or "").strip():
+            import uuid
+            store_key = str(interaction.get("store_key")).strip()
+            test_mode = str((_run.get("test_mode") or {}).get("decision") or "").strip()
+            if store_key not in store and test_mode == "mock_resolved":
+                store[store_key] = interaction.get("offline_answer") if isinstance(interaction.get("offline_answer"), dict) else {"approval": "approve"}
+            if store_key not in store:
+                pending = {
+                    "schema": "pending_interaction.v1",
+                    "interaction_id": str(interaction.get("id") or f"human_gate_{uuid.uuid4().hex[:12]}"),
+                    "run_id": _run.get("run_id"),
+                    "node_output": params.get("output") or "human_gate_result",
+                    "status": "waiting_user",
+                    "question": {
+                        "prompt": str(interaction.get("prompt") or message),
+                        "input_schema": interaction.get("input_schema") or {"type": "object", "properties": {"approval": {"type": "string"}}},
+                        "store_key": store_key,
+                    },
+                    "resume": {"policy": str(interaction.get("resume_policy") or "resume_same_node")},
+                }
+                if interaction.get("ui_extension"):
+                    pending["ui_extension"] = str(interaction.get("ui_extension"))
+                store["_pending_interaction"] = pending
+                return {"action": "confirm_checkpoint", "paused": True, "pause_status": "paused_waiting_user", "pending_interaction": pending, "message": message}
+            output_key = str(params.get("output") or preset_config.get("output_name") or "human_gate_result")
+            store[output_key] = store.get(store_key)
+            store["_checkpoint_status"] = "approved"
+            return {"action": "confirm_checkpoint", "output": output_key, "message": message, "approved": True}
         store["_checkpoint_message"] = message
         store["_checkpoint_status"] = "auto_approved"
         return {"action": "confirm_checkpoint", "message": message, "auto_approved": True}

@@ -16,7 +16,7 @@ import uuid
 from copy import deepcopy
 from pathlib import Path
 
-from core.protocol.creative_recast import (
+from ..protocol.creative_recast import (
     validate_candidate_review,
     validate_cast_pack,
     validate_creative_spec,
@@ -26,7 +26,7 @@ from core.protocol.creative_recast import (
 
 
 WORKFLOW_ID = "wan21_vace_1_3b_character_replace"
-WORKFLOW_PATH = "config/comfyui/workflows/wan21_vace_1_3b_character_replace.api.json"
+WORKFLOW_PATH = "dlc/workflows/wan21_vace_1_3b_character_replace.api.json"
 MODEL_ID = "wan2.1-vace-1.3b"
 MODEL_FILENAME = "wan2.1_vace_1.3B_fp16.safetensors"
 
@@ -331,7 +331,7 @@ def run_vace_character_replace(registry, params: dict) -> dict:
         if model_ref.get("id") != MODEL_ID:
             raise ValueError(f"RunSnapshot model must be {MODEL_ID}")
 
-        workflow_path = registry._safe_path(WORKFLOW_PATH)
+        workflow_path = registry.package_path(WORKFLOW_PATH)
         workflow_hash = _sha256(workflow_path)
         if workflow_ref.get("sha256") != workflow_hash:
             raise ValueError("RunSnapshot workflow hash does not match the allowlisted workflow")

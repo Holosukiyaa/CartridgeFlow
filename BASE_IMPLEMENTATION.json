@@ -24,6 +24,11 @@
       "id": "CF-FARP",
       "version": "0.4",
       "status": "partial"
+    },
+    {
+      "id": "CF-FARP",
+      "version": "0.5",
+      "status": "partial"
     }
   ],
   "profiles": [
@@ -31,7 +36,8 @@
     "testbench_core",
     "dev_authoring",
     "dynamic_decision_runtime",
-    "interactive_decision_runtime"
+    "interactive_decision_runtime",
+    "portable_dlc_runtime"
   ],
   "capabilities": [
     "manifest_load",
@@ -71,7 +77,21 @@
     "runtime_user_input_request",
     "paused_waiting_user_status",
     "pending_interaction_record",
-    "runtime_resume_after_user_input"
+    "runtime_resume_after_user_input",
+    "portable_dlc_descriptor",
+    "portable_dlc_validate",
+    "cartridge_scoped_tool_registry",
+    "isolated_dlc_worker",
+    "dlc_worker_json_rpc",
+    "cartridge_protocol_overlay",
+    "frontend_dlc_sandbox",
+    "package_owned_code",
+    "dlc_activation_lifecycle",
+    "dlc_uninstall_cleanup",
+    "dlc_absence_verification",
+    "dlc_resource_ownership",
+    "dlc_artifact_retention_policy",
+    "dlc_integrity_hash"
   ],
   "tool_packs": [
     "builtin.filesystem",
@@ -79,7 +99,7 @@
   ],
   "conformance": {
     "status": "partial",
-    "last_run": "2026-07-17",
+    "last_run": "2026-07-19",
     "passed_cases": [
       "base_manifest_loads",
       "runtime_contract_compatible",
@@ -135,7 +155,12 @@
       "v04_certification_passes_for_supported_v04_capabilities",
       "v04_resolved_decision_projects_explicit_consume_value",
       "v04_needs_user_input_does_not_project_consume_value",
-      "v04_missing_consume_path_fails_closed"
+      "v04_missing_consume_path_fails_closed",
+      "v05_is_standalone_and_registered",
+      "v05_base_claims_portable_dlc_runtime",
+      "v05_cartridge_descriptor_is_valid_and_core_stays_clean",
+      "v05_storyboard_flow_closes_in_mock_mode",
+      "v05_human_gate_requires_submit_before_resume"
     ]
   }
 }

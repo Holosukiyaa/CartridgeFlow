@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
-  "id": "dev.series_3d_episode_factory.root.v1",
-  "name": "3D 连续短剧工厂 RootFlow",
-  "mode": "standard",
+  "id": "dev.series_3d_episode_factory.root.v2",
+  "name": "3D 系列短剧分镜工作流",
+  "mode": "lifecycle",
   "cartridge_id": "dev.series_3d_episode_factory",
   "protocol": {
     "id": "CF-FARP",
-    "version": "0.4"
+    "version": "0.5"
   },
   "start": "start",
   "states": {
@@ -14,83 +14,50 @@
       "type": "system",
       "title": "开始",
       "action": "start",
+      "next": "collect_brief",
       "layout": {
-        "x": 60,
-        "y": 180
-      },
-      "next": "welcome_ui"
+        "x": 9,
+        "y": 239
+      }
     },
-    "welcome_ui": {
+    "collect_brief": {
       "type": "process",
-      "title": "工程看板：3D 连续短剧工厂",
-      "action": "show_ui",
-      "kind": "ui",
-      "executor": "deterministic",
-      "effect": "writes_store",
-      "protocol_version": "0.4",
-      "display": {
-        "suffix": "展示",
-        "label": "展示节点"
-      },
-      "output": "welcome_ui",
-      "params": {
-        "description": "展示 3D 连续短剧工厂入口。",
-        "output": "welcome_ui",
-        "ui_type": "html",
-        "path": "assets/welcome.html"
-      },
-      "layout": {
-        "x": 350,
-        "y": 180
-      },
-      "next": "collect_episode_brief"
-    },
-    "collect_episode_brief": {
-      "type": "process",
-      "title": "入料口：本集想法",
+      "title": "填写创作需求",
       "kind": "input",
       "executor": "user",
       "effect": "writes_store",
-      "protocol_version": "0.4",
-      "display": {
-        "suffix": "输入",
-        "label": "输入节点"
-      },
-      "input_kind": "initial",
-      "source": "user_form",
+      "protocol_version": "0.5",
+      "input_kind": "episode_brief",
+      "source": "run_inputs",
+      "output": "episode_inputs",
       "input_schema": {
-        "schema": "series_episode.input.v1",
+        "type": "object",
         "fields": [
-          "episode_brief",
-          "episode_id",
-          "series_notes",
-          "output_dir"
+          "episode_brief"
         ]
       },
-      "output": "episode_inputs",
       "params": {
-        "description": "收集本集短剧想法、系列备注和输出目录。",
+        "description": "输入本集的故事想法。",
+        "fields": [
+          "episode_brief"
+        ],
         "output": "episode_inputs"
       },
+      "next": "write_script",
       "layout": {
-        "x": 660,
-        "y": 180
-      },
-      "next": "write_episode_script"
+        "x": 260,
+        "y": 240
+      }
     },
-    "write_episode_script": {
+    "write_script": {
       "type": "process",
-      "title": "AI编剧：剧情钩子与脚本",
+      "title": "AI 生成剧情",
       "kind": "decision",
       "executor": "llm",
       "effect": "none",
-      "protocol_version": "0.4",
-      "display": {
-        "suffix": "AI编剧",
-        "label": "AI决策节点"
-      },
+      "protocol_version": "0.5",
       "input": "episode_inputs",
-      "optional_input": "script_reply,episode_rework_feedback",
+      "optional_input": "script_reply",
       "output": "episode_script_decision",
       "output_contract": "decision_envelope.v1",
       "decision_contract": {
@@ -108,20 +75,13 @@
             "properties": {
               "approval": {
                 "type": "string",
-                "title": "脚本确认",
                 "enum": [
                   "approve",
                   "revise"
-                ],
-                "enumNames": [
-                  "确认脚本",
-                  "修改脚本"
                 ]
               },
               "feedback": {
-                "type": "string",
-                "title": "修改意见",
-                "description": "如果不满意，请说明需要调整剧情钩子、对白、节奏或结尾悬念。"
+                "type": "string"
               }
             },
             "required": [
@@ -140,56 +100,52 @@
         "offline_decision": {
           "schema": "decision_envelope.v1",
           "status": "resolved",
-          "summary": "离线兜底：生成一集可分镜的悬疑短剧脚本。",
+          "summary": "离线剧情草案",
           "payload": {
             "episode_script": {
               "schema": "episode_script.v1",
-              "title": "空街上的停步",
+              "title": "街角的回声",
               "episode_id": "pilot_suburban_ep01",
               "genre": "urban_suspense",
               "format": "vertical_short",
-              "duration_target": 15,
-              "hook": "一名男性独自走过白天郊区街道，忽然像听见了不该出现的声音。",
-              "logline": "空旷街道看似平静，主角停下后发现声音来自没有人的方向。",
+              "duration_target": 30,
+              "hook": "男孩在空街上听见第二个脚步声。",
+              "logline": "一个男孩沿着白天的街道前进，停下后发现声音来自自己的影子。",
               "beats": [
-                "主角沿街道向前走，环境安静得反常。",
-                "主角停下脚步，观察道路两侧。",
-                "他抬头做出反应，画外传来第二次声响。"
+                "男孩向前走过街道",
+                "他停下观察四周",
+                "影子做出不同步的动作"
               ],
               "dialogue": [],
-              "ending_hook": "声音再次响起，但街道上仍然只有他一个人。"
+              "ending_hook": "影子先一步走进拐角"
             }
           }
         }
       },
       "params": {
-        "description": "LLM 只负责编剧：剧情钩子、单集脚本、对白和结尾悬念。",
-        "system_prompt": "你是互联网竖屏 3D 连续短剧编剧。你只负责剧情、节奏、对白和悬念，不生成美术资产，不设计复杂动作。",
-        "prompt": "根据 episode_inputs 输出 decision_envelope.v1。resolved 时 payload.episode_script 必须符合 episode_script.v1，包含 title、episode_id、genre、format、duration_target、hook、logline、beats、dialogue、ending_hook。当前真实资产范围只有一名男性主角和白天郊区街道，不得编入其他角色、场景或道具。内容要适合 15-30 秒竖屏短剧，必须有前三秒钩子和结尾悬念。若 script_reply 或 episode_rework_feedback 要求修改，吸收后再 resolved。",
+        "description": "只生成剧情和节奏，不生成美术资产。",
+        "system_prompt": "你是系列短剧编剧。只输出 decision_envelope.v1 的 episode_script.v1。",
+        "prompt": "根据 episode_inputs 生成 episode_script.v1。",
         "input": "episode_inputs",
-        "optional_input": "script_reply,episode_rework_feedback",
+        "optional_input": "script_reply",
         "output": "episode_script_decision",
         "output_contract": "decision_envelope.v1"
       },
+      "next": "plan_shots",
       "layout": {
-        "x": 980,
-        "y": 180
-      },
-      "next": "plan_shot_list"
+        "x": 500,
+        "y": 240
+      }
     },
-    "plan_shot_list": {
+    "plan_shots": {
       "type": "process",
-      "title": "AI分镜：3-5 镜头表",
+      "title": "AI 拆解分镜",
       "kind": "decision",
       "executor": "llm",
       "effect": "none",
-      "protocol_version": "0.4",
-      "display": {
-        "suffix": "AI分镜",
-        "label": "AI决策节点"
-      },
+      "protocol_version": "0.5",
       "input": "episode_inputs,episode_script",
-      "optional_input": "shot_reply,episode_rework_feedback",
+      "optional_input": "shot_reply",
       "output": "shot_list_decision",
       "output_contract": "decision_envelope.v1",
       "decision_contract": {
@@ -207,20 +163,13 @@
             "properties": {
               "approval": {
                 "type": "string",
-                "title": "分镜确认",
                 "enum": [
                   "approve",
                   "revise"
-                ],
-                "enumNames": [
-                  "确认分镜",
-                  "修改分镜"
                 ]
               },
               "feedback": {
-                "type": "string",
-                "title": "修改意见",
-                "description": "如果不满意，请说明镜头数量、画面目标、对白、节奏或镜头语言的调整。"
+                "type": "string"
               }
             },
             "required": [
@@ -239,15 +188,15 @@
         "offline_decision": {
           "schema": "decision_envelope.v1",
           "status": "resolved",
-          "summary": "离线兜底：生成 3 个镜头的真实资产样片分镜表。",
+          "summary": "离线分镜草案",
           "payload": {
             "shot_list": {
               "schema": "shot_list.v1",
               "shots": [
                 {
                   "id": "shot_01",
-                  "title": "空街建立",
-                  "description": "男性主角沿白天郊区街道向前走，街道上没有其他人。",
+                  "title": "街道前进",
+                  "description": "男孩沿着白天的郊区街道向前走。",
                   "scene": "白天郊区街道",
                   "characters": [
                     "hero"
@@ -262,7 +211,7 @@
                 {
                   "id": "shot_02",
                   "title": "停下观察",
-                  "description": "主角停下脚步，观察道路两侧。",
+                  "description": "男孩停下脚步，侧头听向身后。",
                   "scene": "白天郊区街道",
                   "characters": [
                     "hero"
@@ -276,8 +225,8 @@
                 },
                 {
                   "id": "shot_03",
-                  "title": "做出反应",
-                  "description": "主角像是发现了什么，抬头做出反应。",
+                  "title": "影子异动",
+                  "description": "男孩抬头，影子在地面上先一步转向拐角。",
                   "scene": "白天郊区街道",
                   "characters": [
                     "hero"
@@ -295,160 +244,199 @@
         }
       },
       "params": {
-        "description": "LLM 只负责分镜：镜头目标、对白节奏、镜头模板和动作标签，不生成动作曲线。",
-        "system_prompt": "你是竖屏 3D 短剧分镜导演。你只能输出镜头表和动作标签，不创建美术资产，不输出复杂动作数据。",
-        "prompt": "根据 episode_script 输出 decision_envelope.v1。resolved 时 payload.shot_list 必须符合 shot_list.v1，包含 3-5 个 shots。每个 shot 必须包含 id、title、description、scene、characters、props、action_tags、camera、duration。当前 scene 只能使用白天郊区街道，characters 只能使用 hero，props 必须为空；action_tags 只能从 walk_slow、idle_hold、idle_talk、gesture_interact、run_short 中选择。camera 必须是 slow_push_in、close_up_reveal、over_shoulder 或 low_angle_hold。若 shot_reply 或 episode_rework_feedback 要求修改，吸收后再 resolved。",
+        "description": "以镜头为单位生成可编辑的构图、动作和节奏草案。",
+        "system_prompt": "你是分镜导演。只输出 shot_list.v1，不生成视频。",
+        "prompt": "根据 episode_script 生成 3-10 个 shot。",
         "input": "episode_inputs,episode_script",
-        "optional_input": "shot_reply,episode_rework_feedback",
+        "optional_input": "shot_reply",
         "output": "shot_list_decision",
         "output_contract": "decision_envelope.v1"
       },
+      "next": "match_assets",
       "layout": {
-        "x": 1310,
-        "y": 180
+        "x": 740,
+        "y": 240
       }
     },
     "match_assets": {
       "type": "process",
-      "title": "资产匹配：固定库",
+      "title": "匹配固定资产",
       "kind": "mcp_read",
       "executor": "mcp",
       "effect": "read_only",
-      "protocol_version": "0.4",
-      "display": {
-        "suffix": "MCP读取",
-        "label": "MCP读取节点"
-      },
+      "protocol_version": "0.5",
+      "input": "episode_script,shot_list",
+      "output": "asset_plan",
       "tool_binding": "static_params",
-      "mcp_binding": {
-        "mode": "read_only"
-      },
       "allowed_tools": [
         "media_match_series_assets"
       ],
+      "mcp_binding": {
+        "mode": "read_only",
+        "allowed_tools": [
+          "media_match_series_assets"
+        ]
+      },
       "failure_policy": "fail_closed",
+      "abort_on_failed": true,
       "audit_log": true,
-      "input": "episode_script,shot_list",
-      "output": "asset_plan",
       "params": {
-        "description": "把脚本和分镜映射到现成资产库；缺资产只报告缺口，不生成新素材。",
         "input": "episode_script,shot_list",
         "output": "asset_plan"
       },
+      "next": "match_actions",
       "layout": {
-        "x": 1640,
-        "y": 80
+        "x": 984,
+        "y": 136
       }
     },
     "match_actions": {
       "type": "process",
-      "title": "动作匹配：标签库",
+      "title": "匹配动作与摄影机",
       "kind": "mcp_read",
       "executor": "mcp",
       "effect": "read_only",
-      "protocol_version": "0.4",
-      "display": {
-        "suffix": "MCP读取",
-        "label": "MCP读取节点"
-      },
+      "protocol_version": "0.5",
+      "input": "episode_script,shot_list",
+      "output": "action_plan",
       "tool_binding": "static_params",
-      "mcp_binding": {
-        "mode": "read_only"
-      },
       "allowed_tools": [
         "media_match_series_actions"
       ],
+      "mcp_binding": {
+        "mode": "read_only",
+        "allowed_tools": [
+          "media_match_series_actions"
+        ]
+      },
       "failure_policy": "fail_closed",
+      "abort_on_failed": true,
       "audit_log": true,
-      "input": "episode_script,shot_list",
-      "output": "action_plan",
       "params": {
-        "description": "把分镜动作意图映射到固定动作标签和镜头模板。",
         "input": "episode_script,shot_list",
         "output": "action_plan"
       },
+      "next": "build_storyboard",
       "layout": {
-        "x": 1640,
-        "y": 300
+        "x": 980,
+        "y": 340
       }
     },
-    "forge_episode": {
+    "build_storyboard": {
       "type": "process",
-      "title": "Blender渲染：完整短剧",
+      "title": "构建分镜项目",
       "kind": "mcp_execute",
       "executor": "mcp",
       "effect": "writes_artifacts",
-      "protocol_version": "0.4",
-      "display": {
-        "suffix": "MCP执行",
-        "label": "MCP执行节点"
-      },
+      "protocol_version": "0.5",
+      "input": "episode_script,shot_list,asset_plan,action_plan",
+      "output": "storyboard_project",
       "tool_binding": "static_params",
       "allowed_tools": [
-        "media_forge_3d_series_episode"
+        "build_storyboard_project"
       ],
       "permission": "write_run_artifacts",
       "failure_policy": "fail_closed",
+      "abort_on_failed": true,
       "audit_log": true,
-      "input": "episode_script,shot_list,asset_plan,action_plan",
-      "output": "episode_bundle",
       "params": {
-        "description": "消费脚本、分镜、资产匹配和动作匹配，真实调用 Blender 渲染全部镜头 MP4，并生成工程、播放器和 manifest。",
         "input": "episode_script,shot_list,asset_plan,action_plan",
-        "output": "episode_bundle"
+        "output": "storyboard_project",
+        "tool_params": {
+          "episode_script": "store:episode_script",
+          "shot_list": "store:shot_list",
+          "asset_plan": "store:asset_plan",
+          "action_plan": "store:action_plan"
+        }
       },
+      "next": "render_storyboard",
       "layout": {
-        "x": 1980,
-        "y": 180
-      },
-      "next": "review_episode"
+        "x": 1220,
+        "y": 240
+      }
     },
-    "review_episode": {
+    "render_storyboard": {
       "type": "process",
-      "title": "AI决策：成片复核",
-      "kind": "decision",
-      "executor": "llm",
-      "effect": "none",
-      "protocol_version": "0.4",
-      "display": {
-        "suffix": "AI复核",
-        "label": "AI决策节点"
+      "title": "生成基础分镜帧",
+      "kind": "mcp_execute",
+      "executor": "mcp",
+      "effect": "writes_artifacts",
+      "protocol_version": "0.5",
+      "input": "storyboard_project",
+      "output": "storyboard_frame_bundle",
+      "tool_binding": "static_params",
+      "allowed_tools": [
+        "render_storyboard_frames"
+      ],
+      "permission": "write_run_artifacts",
+      "failure_policy": "fail_closed",
+      "abort_on_failed": true,
+      "audit_log": true,
+      "params": {
+        "input": "storyboard_project",
+        "output": "storyboard_frame_bundle",
+        "tool_params": {
+          "storyboard_project": "store:storyboard_project"
+        }
       },
-      "input": "episode_script,shot_list,asset_plan,action_plan,episode_bundle",
-      "optional_input": "episode_review_reply",
-      "output": "episode_review_decision",
-      "output_contract": "decision_envelope.v1",
-      "decision_contract": {
-        "schema": "decision_envelope.v1",
-        "allowed_statuses": [
-          "resolved",
-          "needs_user_input",
-          "blocked"
-        ],
-        "on_needs_user_input": "pause",
+      "next": "director_console",
+      "layout": {
+        "x": 1460,
+        "y": 240
+      }
+    },
+    "director_console": {
+      "type": "process",
+      "title": "分镜导演台",
+      "kind": "ui",
+      "executor": "deterministic",
+      "effect": "none",
+      "protocol_version": "0.5",
+      "input": "storyboard_frame_bundle",
+      "output": "director_console_view",
+      "params": {
+        "path": "dlc/frontend/director.html",
+        "input": "storyboard_frame_bundle",
+        "output": "director_console_view",
+        "ui_type": "html"
+      },
+      "next": "review_storyboard",
+      "layout": {
+        "x": 1700,
+        "y": 240
+      }
+    },
+    "review_storyboard": {
+      "type": "process",
+      "title": "确认分镜构图",
+      "kind": "human_gate",
+      "executor": "human",
+      "effect": "none",
+      "protocol_version": "0.5",
+      "input": "storyboard_frame_bundle",
+      "output": "storyboard_review",
+      "params": {
+        "description": "导演台提交后才允许进入视频镜头准备。",
         "interaction": {
-          "store_key": "episode_review_reply",
+          "id": "director_storyboard_review",
+          "ui_extension": "portable_dlc",
+          "store_key": "director_reply",
+          "prompt": "逐镜调整完成后提交并继续。",
           "input_schema": {
             "type": "object",
             "properties": {
               "approval": {
                 "type": "string",
-                "title": "成片复核",
                 "enum": [
-                  "approve",
-                  "revise_script",
-                  "revise_shots"
-                ],
-                "enumNames": [
-                  "通过",
-                  "改脚本",
-                  "改分镜"
+                  "approve_all",
+                  "revise"
                 ]
               },
-              "feedback": {
-                "type": "string",
-                "title": "调整意见",
-                "description": "说明要调整剧情、对白、镜头、节奏或动作标签。"
+              "approved_shot_ids": {
+                "type": "array"
+              },
+              "shot_changes": {
+                "type": "array"
               }
             },
             "required": [
@@ -456,185 +444,222 @@
             ]
           },
           "resume_policy": "resume_same_node",
-          "live_collaboration": true,
-          "answer_routes": [
-            {
-              "match": {
-                "field": "approval",
-                "equals": "revise_script"
-              },
-              "target_node": "write_episode_script",
-              "policy": "resume_target_node",
-              "replay_from_target": true,
-              "copy_answer_to": "episode_rework_feedback",
-              "clear_store_keys": [
-                "script_reply",
-                "shot_reply",
-                "episode_script_decision",
-                "episode_script",
-                "shot_list_decision",
-                "shot_list",
-                "asset_plan",
-                "action_plan",
-                "episode_bundle",
-                "episode_review_reply",
-                "episode_review_decision",
-                "series_delivery"
-              ]
-            },
-            {
-              "match": {
-                "field": "approval",
-                "equals": "revise_shots"
-              },
-              "target_node": "plan_shot_list",
-              "policy": "resume_target_node",
-              "replay_from_target": true,
-              "copy_answer_to": "episode_rework_feedback",
-              "clear_store_keys": [
-                "shot_reply",
-                "shot_list_decision",
-                "shot_list",
-                "asset_plan",
-                "action_plan",
-                "episode_bundle",
-                "episode_review_reply",
-                "episode_review_decision",
-                "series_delivery"
-              ]
-            }
-          ]
-        },
-        "consume": {
-          "mode": "payload_path",
-          "path": "payload.review",
-          "as": "episode_review",
-          "on_missing": "fail_closed"
-        },
-        "offline_decision": {
-          "schema": "decision_envelope.v1",
-          "status": "resolved",
-          "summary": "离线兜底：完整成片包可进入交付。",
-          "payload": {
-            "review": {
-              "schema": "series_episode_review.v1",
-              "approved": true,
-              "notes": "离线兜底自动通过。真实协作模式应由用户查看完整成片后确认。"
-            }
+          "offline_answer": {
+            "approval": "approve_all",
+            "approved_shot_ids": [
+              "shot_01",
+              "shot_02",
+              "shot_03"
+            ],
+            "shot_changes": []
           }
+        },
+        "input": "storyboard_frame_bundle",
+        "output": "storyboard_review"
+      },
+      "next": "apply_adjustments",
+      "layout": {
+        "x": 1940,
+        "y": 240
+      }
+    },
+    "apply_adjustments": {
+      "type": "process",
+      "title": "保存导演调整",
+      "kind": "mcp_execute",
+      "executor": "mcp",
+      "effect": "writes_artifacts",
+      "protocol_version": "0.5",
+      "input": "storyboard_frame_bundle,storyboard_review",
+      "output": "approved_storyboard_project",
+      "tool_binding": "static_params",
+      "allowed_tools": [
+        "apply_storyboard_adjustments"
+      ],
+      "permission": "write_run_artifacts",
+      "failure_policy": "fail_closed",
+      "abort_on_failed": true,
+      "audit_log": true,
+      "params": {
+        "input": "storyboard_frame_bundle,storyboard_review",
+        "output": "approved_storyboard_project",
+        "tool_params": {
+          "storyboard_project": "store:storyboard_frame_bundle",
+          "review": "store:storyboard_review"
         }
       },
-      "params": {
-        "description": "让用户查看真实 Blender 全分镜 MP4 后选择通过、改脚本或改分镜。",
-        "system_prompt": "你是 3D 短剧成片复核助手。你根据用户复核意见决定通过、回到脚本或回到分镜，不执行工具。",
-        "prompt": "若 optional_input episode_review_reply 不存在，必须输出 needs_user_input，提醒用户打开完整 MP4 后选择通过、改脚本或改分镜。若用户 approval=approve，输出 resolved，并在 payload.review 中写入 {schema:'series_episode_review.v1', approved:true, notes:string}。若用户要求修改，输出 needs_user_input 或遵循 answer_routes。",
-        "input": "episode_script,shot_list,asset_plan,action_plan,episode_bundle",
-        "optional_input": "episode_review_reply",
-        "output": "episode_review_decision",
-        "output_contract": "decision_envelope.v1"
-      },
+      "next": "render_approved_frames",
       "layout": {
-        "x": 2310,
-        "y": 180
+        "x": 2180,
+        "y": 240
+      }
+    },
+    "render_approved_frames": {
+      "type": "process",
+      "title": "重绘确认后的分镜帧",
+      "kind": "mcp_execute",
+      "executor": "mcp",
+      "effect": "writes_artifacts",
+      "protocol_version": "0.5",
+      "input": "approved_storyboard_project",
+      "output": "approved_frame_bundle",
+      "tool_binding": "static_params",
+      "allowed_tools": [
+        "render_storyboard_frames"
+      ],
+      "permission": "write_run_artifacts",
+      "failure_policy": "fail_closed",
+      "abort_on_failed": true,
+      "audit_log": true,
+      "params": {
+        "input": "approved_storyboard_project",
+        "output": "approved_frame_bundle",
+        "tool_params": {
+          "storyboard_project": "store:approved_storyboard_project"
+        }
       },
-      "next": "delivery_summary"
+      "next": "prepare_video",
+      "layout": {
+        "x": 2420,
+        "y": 240
+      }
+    },
+    "prepare_video": {
+      "type": "process",
+      "title": "生成视频镜头包",
+      "kind": "mcp_execute",
+      "executor": "mcp",
+      "effect": "writes_artifacts",
+      "protocol_version": "0.5",
+      "input": "approved_storyboard_project",
+      "output": "video_shot_package",
+      "tool_binding": "static_params",
+      "allowed_tools": [
+        "prepare_video_shots"
+      ],
+      "permission": "write_run_artifacts",
+      "failure_policy": "fail_closed",
+      "abort_on_failed": true,
+      "audit_log": true,
+      "params": {
+        "input": "approved_storyboard_project",
+        "output": "video_shot_package",
+        "tool_params": {
+          "storyboard_project": "store:approved_storyboard_project"
+        }
+      },
+      "next": "delivery_summary",
+      "layout": {
+        "x": 2660,
+        "y": 240
+      }
     },
     "delivery_summary": {
       "type": "process",
-      "title": "交付汇总：完整短剧包",
+      "title": "交付分镜镜头包",
       "kind": "delivery",
       "executor": "deterministic",
       "effect": "writes_store",
-      "protocol_version": "0.4",
-      "display": {
-        "suffix": "交付",
-        "label": "交付节点"
-      },
-      "input": "episode_script,shot_list,asset_plan,action_plan,episode_bundle,episode_review",
+      "protocol_version": "0.5",
+      "input": "episode_script,shot_list,asset_plan,action_plan,approved_storyboard_project,approved_frame_bundle,video_shot_package",
       "output": "series_delivery",
       "primary_output": "series_delivery",
       "params": {
-        "description": "汇总脚本、分镜、资产匹配、动作匹配、完整成片和复核结果。",
-        "input": "episode_script,shot_list,asset_plan,action_plan,episode_bundle,episode_review",
+        "input": "episode_script,shot_list,asset_plan,action_plan,approved_storyboard_project,approved_frame_bundle,video_shot_package",
         "output": "series_delivery",
         "preset_config": {
-          "items": "episode_script,shot_list,asset_plan,action_plan,episode_bundle,episode_review",
+          "items": "episode_script,shot_list,asset_plan,action_plan,approved_storyboard_project,approved_frame_bundle,video_shot_package",
           "output_name": "series_delivery"
         }
       },
+      "next": "delivery",
       "layout": {
-        "x": 2640,
-        "y": 180
-      },
-      "next": "delivery"
+        "x": 2900,
+        "y": 240
+      }
     },
     "delivery": {
       "type": "system",
       "title": "交付",
       "action": "delivery",
+      "next": "complete",
       "layout": {
-        "x": 2960,
-        "y": 180
-      },
-      "next": "complete"
+        "x": 3140,
+        "y": 240
+      }
     },
     "complete": {
       "type": "terminal",
-      "title": "完成",
+      "title": "流程完成",
       "layout": {
-        "x": 3260,
-        "y": 180
+        "x": 3380,
+        "y": 240
       }
     }
   },
   "edges": [
     {
       "from": "start",
-      "to": "welcome_ui",
+      "to": "collect_brief",
       "scope": "root"
     },
     {
-      "from": "welcome_ui",
-      "to": "collect_episode_brief",
+      "from": "collect_brief",
+      "to": "write_script",
       "scope": "root"
     },
     {
-      "from": "collect_episode_brief",
-      "to": "write_episode_script",
+      "from": "write_script",
+      "to": "plan_shots",
       "scope": "root"
     },
     {
-      "from": "write_episode_script",
-      "to": "plan_shot_list",
-      "scope": "root"
-    },
-    {
-      "from": "plan_shot_list",
+      "from": "plan_shots",
       "to": "match_assets",
-      "scope": "parallel"
-    },
-    {
-      "from": "plan_shot_list",
-      "to": "match_actions",
-      "scope": "parallel"
+      "scope": "root"
     },
     {
       "from": "match_assets",
-      "to": "forge_episode",
-      "scope": "join"
-    },
-    {
-      "from": "match_actions",
-      "to": "forge_episode",
-      "scope": "join"
-    },
-    {
-      "from": "forge_episode",
-      "to": "review_episode",
+      "to": "match_actions",
       "scope": "root"
     },
     {
-      "from": "review_episode",
+      "from": "match_actions",
+      "to": "build_storyboard",
+      "scope": "root"
+    },
+    {
+      "from": "build_storyboard",
+      "to": "render_storyboard",
+      "scope": "root"
+    },
+    {
+      "from": "render_storyboard",
+      "to": "director_console",
+      "scope": "root"
+    },
+    {
+      "from": "director_console",
+      "to": "review_storyboard",
+      "scope": "root"
+    },
+    {
+      "from": "review_storyboard",
+      "to": "apply_adjustments",
+      "scope": "root"
+    },
+    {
+      "from": "apply_adjustments",
+      "to": "render_approved_frames",
+      "scope": "root"
+    },
+    {
+      "from": "render_approved_frames",
+      "to": "prepare_video",
+      "scope": "root"
+    },
+    {
+      "from": "prepare_video",
       "to": "delivery_summary",
       "scope": "root"
     },

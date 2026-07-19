@@ -1,0 +1,16 @@
+{
+  "schema_version": "0.1",
+  "capabilities": [
+    {"id": "control_bundle_v1", "profile": "creative_control_runtime"},
+    {"id": "control_bundle_validate", "profile": "creative_control_runtime"},
+    {"id": "creative_spec_v1", "profile": "creative_control_runtime"},
+    {"id": "creative_mode_policy", "profile": "creative_control_runtime"},
+    {"id": "creative_workflow_allowlist", "profile": "creative_control_runtime"},
+    {"id": "creative_change_proposal", "profile": "creative_control_authoring"},
+    {"id": "creative_approval_gate", "profile": "creative_control_runtime"},
+    {"id": "creative_run_snapshot", "profile": "creative_control_runtime"},
+    {"id": "creative_failure_record", "profile": "creative_control_runtime"},
+    {"id": "creative_quality_gates", "profile": "creative_control_testbench"},
+    {"id": "creative_artifact_audit", "profile": "creative_control_testbench"}
+  ]
+}

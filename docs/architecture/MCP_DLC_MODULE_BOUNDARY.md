@@ -1,136 +1,70 @@
-# Built-in MCP 与 DLC 模块边界
+# Portable DLC Boundary
 
-更新日期：2026-07-18
+更新日期：2026-07-19
 
-本文定义 `core/lab` 内置 MCP 工具的代码组织和 DLC 边界。它是实现架构说明，不替代 `CF-FARP@0.4` 或 `CF-CRCP@0.1` 的规范正文。
+本文说明 `CF-FARP@0.5` 的实现边界。规范正文是 `docs/protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.5.md`，本文不能替代协议。
 
-## 目标
+## 核心原则
 
-`core/lab/builtin_mcp.py` 只负责：
-
-- 创建 `BuiltinMcpRegistry`。
-- 注册文件系统基础工具。
-- 读取并注册媒体模块。
-- 分发 `server/tool` 调用。
-- 暴露工具描述和 DLC 元数据。
-
-它不得继续承载具体像素绘制、短视频、空间 blockout、系列 Blender 或 ComfyUI 实现。
-
-## 目录结构
+基座只提供通用扩展宿主，不保存任何单卡带业务实现。卡带专用的后端工具、前端工作台、伴随协议、供应商工作流和测试必须位于卡带包内。卸载卡带后，这些代码不得继续出现在工具注册表或基座目录中。
 
 ```text
-core/lab/
-  builtin_mcp.py                 # 薄 facade，不放业务工具实现
-  mcp/
-    __init__.py
-    dlc.py                       # DLC descriptor 与模块注册表
-    shared.py                    # 跨模块的无业务通用辅助函数
-    media_core.py                # 基础媒体探测、关键帧、风格化、QC
-    pixel_episode.py             # 像素资产、像素分镜、Godot、FFmpeg
-    short_video.py               # 短视频脚本、图片、语音、封装
-    spatial.py                   # 空间 blockout 和动画预演
-    series_3d.py                 # 真实 3D 资产匹配、动作匹配、Blender
+core/extensions/
+  descriptor.py        # 元数据和完整性校验
+  registry.py          # 卡带作用域代理注册
+  worker_client.py     # 隔离进程客户端
+  worker_bootstrap.py  # JSON stdio worker 入口
+  worker_sdk.py        # worker 内最小 SDK
+
+cartridges/<source>/<cartridge-id>/
+  manifest.json
+  root.flow.json
+  dlc/
+    descriptor.json
+    backend/
+    frontend/
+    protocols/
+    workflows/
+    tests/
 ```
 
-协议层的 `core/protocol/creative_recast.py` 和 `core/protocol/creative_recast_runtime.py` 提供 Shot Control Bundle、CreativeSpec、RunSnapshot、FailureRecord、状态转换和独立 CRCP certification report 的只读校验。独立的 `core/lab/mcp/creative_recast.py` 已加入 `_EXTENSION_MODULES`，但只有 manifest 声明、基座同时支持 `CF-CRCP@0.1` 且完整 capability 集满足时才会注册校验和两阶段执行入口；执行器先走 Blender，再强制走 ComfyUI，成功只停在 `review_required`，失败转为 `rejected` 并返回 FailureRecord。默认 FARP 基座不会加载它，也不会产生 artifact 副作用。
+## 激活链路
 
-模块只能通过 `register(registry)` 暴露工具。模块导入和注册阶段不得执行 Blender、ComfyUI、Godot、网络请求或文件生产副作用。
+1. `ManifestValidator` 读取 `manifest.portable_dlc`。
+2. `load_portable_dlc_descriptor` 校验 owner、作用域、工具集合、入口路径、协议覆盖、资源归属和 SHA-256。
+3. `BuiltinMcpRegistry.for_manifest(..., package_path=...)` 为当前卡带建立作用域注册表。
+4. 每次工具调用启动隔离 Python worker，以 JSON stdin/stdout 通信。
+5. 前端入口只通过经过 descriptor 校验的服务端路由提供，并进入 `sandbox="allow-scripts"` 的 iframe。
 
-## DLC 描述
+未声明 `portable_dlc` 的卡带只获得基座工具。默认 `BuiltinMcpRegistry(root)` 不加载任何卡带代码。
 
-`core/lab/mcp/dlc.py` 为每个模块声明：
+## 资源归属
 
-- `id`：稳定的模块或 DLC ID。
-- `kind`：`core` 或 `dlc`。
-- `protocol`：当前模块遵守的主协议。
-- `optional_extension`：可选 companion protocol，例如 `CF-CRCP@0.1`。
-- `enabled_by_default`：是否在当前基座注册工具入口。
-- `modules`：实现文件。
+descriptor 中的资源必须标记为：
 
-当前映射：
-
-| 模块 | kind | 主协议 | 可选扩展 |
-| --- | --- | --- | --- |
-| `core.media` | core | `CF-FARP@0.4` | 无 |
-| `core.short_video` | core | `CF-FARP@0.4` | 无 |
-| `dlc.pixel_episode` | dlc | `CF-FARP@0.4` | 无 |
-| `dlc.spatial_blockout` | dlc | `CF-FARP@0.4` | 无 |
-| `dlc.series_3d_episode_factory` | dlc | `CF-FARP@0.4` | `CF-CRCP@0.1` |
-
-工具描述会额外返回 `dlc` 字段，使前端、测试台和 Agent 能知道工具属于哪个模块以及哪个协议。
-
-## 协议加载规则
-
-### 当前规则
-
-- 所有已存在的工具入口继续遵守 `CF-FARP@0.4`，以保持旧卡带兼容。
-- `CF-CRCP@0.1` 目前只作为系列创作扩展的声明，不会因为导入 `series_3d` 就自动改变旧卡带行为。
-- 当前基座尚未声明支持 `CF-CRCP@0.1`，因此不得自动注册 CRCP 专用工具或添加认证标签。
-
-`BuiltinMcpRegistry(workspace_root)` 是默认的基础入口：它只加载 FARP 工具。扩展上下文必须显式传入，推荐使用
-`BuiltinMcpRegistry.for_manifest(workspace_root, manifest, capabilities)`。注册器会在
-`dlc_report()` 中返回每个 companion protocol 的决定：
-
-- `not_requested`：manifest 没有声明扩展；
-- `blocked_missing_protocol`：manifest 声明了扩展，但基座没有在 `supported_protocols` 中声明该协议；
-- `blocked_missing_capabilities`：声明了扩展，但当前基座缺少所需 capability；
-- `unimplemented`：声明和 capability 都满足，但实现模块尚未加入；
-- `enabled`：实现模块、显式声明和 capability 均满足。
-
-这些决定只控制模块是否进入 Registry，不会在构造或描述阶段启动 Blender、ComfyUI、Godot、网络请求或文件生产。
-
-运行创建前，`manifest.protocol_extensions` 还会经过兼容性报告：扩展必须已登记、当前基座必须声明支持，且声明的 required profiles/capabilities 必须满足。Registry 门禁是第二道运行时保护，不能替代兼容性阻断。
-
-### 后续规则
-
-当实现 CRCP 专用工具时，必须新增独立模块，例如：
-
-```text
-core/lab/mcp/creative_recast.py
-```
-
-该模块必须：
-
-1. 声明 `DLC_ID` 和 `DLC_PROTOCOL = "CF-CRCP@0.1"`。
-2. 只在 manifest 的 `protocol_extensions` 明确声明并且基座能力满足时注册。
-3. 不改变 `core.media`、`pixel_episode`、`short_video`、`spatial` 或 `series_3d` 的默认工具语义。
-4. 不能通过导入副作用注册自己。
-5. 使用独立的 conformance 测试证明未声明 CRCP 的卡带不会加载该模块。
-
-这保证不采用 CRCP 的其他卡带不承担 CRCP 的输入契约、审批门、控制包校验或运行副作用。
-
-## 依赖规则
-
-- `shared.py` 只能放跨模块、无产品语义的辅助函数。
-- 功能模块可以读取 `shared.py`。
-- 功能模块之间的依赖必须显式导入，禁止从 facade 的隐式全局名称读取函数。
-- `series_3d.py` 可以使用空间模块的通用数值辅助函数，但不能依赖空间 DLC 的运行状态。
-- 新增功能不得把实现重新放回 `builtin_mcp.py`。
-- 跨 DLC 的数据必须通过显式参数、manifest 或 artifact 传递，不得共享隐藏全局状态。
-
-## 副作用边界
-
-注册模块不是执行模块。真正的副作用只允许发生在工具调用中，并且必须继续遵守 `CF-FARP@0.4` 的 `effect`、permission、audit 和 failure policy。
-
-| 阶段 | 允许副作用 |
+| ownership | 卸载行为 |
 | --- | --- |
-| Python import | 不允许 |
-| `BuiltinMcpRegistry()` | 只建立工具表，不生成文件、不启动服务 |
-| `describe()` | 只读描述和 DLC 元数据 |
-| `call()` | 由具体工具按 manifest 和节点契约执行 |
+| `package` | 随卡带包删除 |
+| `private_data` | 随卡带卸载删除 |
+| `shared_dependency` | 不自动删除 |
+| `user_artifact` | 默认保留 |
 
-## 重构规则
+卸载还必须清空作用域注册缓存。已经拿到的工具代理在包路径消失后返回 `extension_inactive`，不能继续执行残留代码。
 
-1. 拆分是行为保持型重构，不得顺便改变工具输入输出。
-2. 每移动一个工具，必须保留原工具 ID 和返回字段。
-3. 新模块先通过导入、工具列表、目标模块 conformance，再删除旧实现。
-4. 任何新的协议能力先进入协议版本和 capability 词表，再进入模块实现。
-5. 需要改变旧工具语义时，建立 ChangeProposal；不能以“模块化”为理由绕过协议版本治理。
+## 禁止事项
 
-## 当前状态
+- 不得在 `core/lab/mcp/`、`core/protocol/` 或前端通用页面中硬编码卡带 ID、工具实现或领域协议。
+- 不得在 import、descriptor 校验、工具描述或卡带列表阶段启动 Blender、ComfyUI、网络请求或文件生产。
+- 不得让卡带工具进入全局默认 Registry。
+- 不得让 iframe 获得 `allow-same-origin`、顶层导航或任意文件访问。
+- 不得把用户产物当作卡带私有数据随卸载删除。
 
-- facade 已从约 6,855 行降至约 443 行。
-- 原有媒体工具已经拆为五个功能模块。
-- DLC 描述会随工具描述返回。
-- CRCP 专用控制包工具尚未接入，当前没有伪造 CRCP runtime 支持。
-- 下一次扩展应新增 `creative_recast.py`，而不是把控制包逻辑写回 `builtin_mcp.py`。
+## 系列 3D 卡带
+
+`dev.series_3d_episode_factory` 的分镜工具、Blender 预演、CRCP 校验代码、ComfyUI 工作流和导演台全部位于：
+
+```text
+cartridges/dev/dev.series_3d_episode_factory/dlc/
+```
+
+它们不是基座能力。其他卡带不声明该 DLC 时，不会看到这些工具、协议或 UI。

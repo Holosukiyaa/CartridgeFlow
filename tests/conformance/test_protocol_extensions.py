@@ -36,7 +36,7 @@ class ProtocolExtensionCompatibilityTest(unittest.TestCase):
             "mcp_tools": [],
         }
 
-    def test_declared_crcp_extension_is_blocked_by_current_base(self):
+    def test_card_owned_extension_is_unknown_without_package_overlay(self):
         base = load_base_implementation(ROOT)
         manifest = self._manifest([
             {
@@ -48,7 +48,7 @@ class ProtocolExtensionCompatibilityTest(unittest.TestCase):
         ], protocol_version="0.4")
         report = build_compatibility_report(base, manifest, self._root_flow(), ROOT)
         self.assertFalse(report["ok"])
-        self.assertIn("unsupported_protocol_extension", [item["code"] for item in report["findings"]])
+        self.assertIn("unknown_protocol_extension", [item["code"] for item in report["findings"]])
         self.assertIn("missing_extension_required_profile", [item["code"] for item in report["findings"]])
         self.assertIn("missing_extension_required_capability", [item["code"] for item in report["findings"]])
         self.assertEqual("CF-CRCP", report["extensions"][0]["id"])

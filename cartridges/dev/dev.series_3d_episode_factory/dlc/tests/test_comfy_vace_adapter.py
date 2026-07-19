@@ -1,9 +1,14 @@
 import copy
 import json
 import unittest
+import sys
 from pathlib import Path
 
-from core.lab.mcp.comfy_vace import (
+ROOT = Path(__file__).resolve().parents[5]
+PACKAGE = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(PACKAGE / "dlc"))
+
+from backend.adapters.comfy_vace import (
     WORKFLOW_PATH,
     _cached_nodes,
     _prepare_workflow,
@@ -13,12 +18,9 @@ from core.lab.mcp.comfy_vace import (
 )
 
 
-ROOT = Path(__file__).resolve().parents[2]
-
-
 class ComfyVaceAdapterTests(unittest.TestCase):
     def _workflow(self):
-        return json.loads((ROOT / WORKFLOW_PATH).read_text(encoding="utf-8"))
+        return json.loads((PACKAGE / WORKFLOW_PATH).read_text(encoding="utf-8"))
 
     def test_allowlisted_workflow_binds_preview_mask_and_reference_explicitly(self):
         workflow = self._workflow()

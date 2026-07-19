@@ -1,14 +1,24 @@
 import hashlib
 import tempfile
 import unittest
+import sys
 from pathlib import Path
 
-from core.lab.mcp import creative_recast
-from core.protocol import build_creative_recast_certification_report, validate_candidate_review, validate_failure_record, validate_run_snapshot
-from core.protocol.creative_recast import CRCP_REQUIRED_CAPABILITIES, validate_cast_pack, validate_creative_spec, validate_shot_control_bundle
+ROOT = Path(__file__).resolve().parents[5]
+PACKAGE = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(PACKAGE / "dlc"))
 
-
-ROOT = Path(__file__).resolve().parents[2]
+from backend.mcp import creative_recast
+from backend.protocol.creative_recast import (
+    CRCP_REQUIRED_CAPABILITIES,
+    build_creative_recast_certification_report,
+    validate_candidate_review,
+    validate_cast_pack,
+    validate_creative_spec,
+    validate_run_snapshot,
+    validate_shot_control_bundle,
+)
+from backend.protocol.creative_recast_runtime import validate_failure_record
 
 
 class CreativeRecastContractTest(unittest.TestCase):
@@ -245,7 +255,7 @@ class CreativeRecastContractTest(unittest.TestCase):
         from core.protocol import load_base_implementation
 
         report = build_creative_recast_certification_report(
-            load_base_implementation(Path(__file__).resolve().parents[2]),
+            load_base_implementation(ROOT),
             {"protocol_extensions": [{"id": "CF-CRCP", "version": "0.1"}]},
             {
                 "cast_pack": self._cast_pack(),

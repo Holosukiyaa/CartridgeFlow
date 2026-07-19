@@ -92,6 +92,18 @@ def build_v04_flow_contract_report(root_flow: dict | None, manifest: dict | None
     }
 
 
+def build_v05_flow_contract_report(root_flow: dict | None, manifest: dict | None = None) -> dict:
+    findings = validate_v05_flow_contract(root_flow, manifest)
+    counts = summarize_findings(findings)
+    return {
+        "ok": counts["blocker"] == 0,
+        "status": report_status(findings),
+        "protocol": "CF-FARP@0.5",
+        "summary": counts,
+        "findings": findings,
+    }
+
+
 def validate_v02_flow_contract(root_flow: dict | None, manifest: dict | None = None) -> list[dict]:
     findings: list[dict] = []
     root_flow = root_flow if isinstance(root_flow, dict) else {}
@@ -186,6 +198,41 @@ def validate_v04_flow_contract(root_flow: dict | None, manifest: dict | None = N
     for node_id, node in states.items():
         if not isinstance(node, dict):
             findings.append(_node_finding("blocker", "v04_node_not_object", str(node_id), "node must be an object."))
+            continue
+        findings.extend(_validate_v02_node(str(node_id), node, manifest_tools, produced_keys))
+        findings.extend(_validate_v03_node(str(node_id), node))
+        findings.extend(_validate_v04_node(str(node_id), node))
+
+    return findings
+
+
+def validate_v05_flow_contract(root_flow: dict | None, manifest: dict | None = None) -> list[dict]:
+    findings: list[dict] = []
+    root_flow = root_flow if isinstance(root_flow, dict) else {}
+    manifest = manifest if isinstance(manifest, dict) else {}
+
+    if not _root_flow_declares_version(root_flow, "0.5"):
+        findings.append(_finding(
+            "blocker",
+            "v05_root_flow_protocol_missing",
+            "root flow must declare protocol CF-FARP@0.5.",
+        ))
+
+    states = root_flow.get("states")
+    if not isinstance(states, dict) or not states:
+        findings.append(_finding("blocker", "v05_invalid_states", "root_flow.states must be a non-empty object."))
+        return findings
+
+    manifest_tools = {
+        str(tool.get("id")): tool
+        for tool in manifest.get("mcp_tools") or []
+        if isinstance(tool, dict) and tool.get("id")
+    }
+    produced_keys = _produced_keys(states, include_decision_consume=True)
+
+    for node_id, node in states.items():
+        if not isinstance(node, dict):
+            findings.append(_node_finding("blocker", "v05_node_not_object", str(node_id), "node must be an object."))
             continue
         findings.extend(_validate_v02_node(str(node_id), node, manifest_tools, produced_keys))
         findings.extend(_validate_v03_node(str(node_id), node))

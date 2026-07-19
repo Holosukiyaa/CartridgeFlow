@@ -37,22 +37,36 @@ class BuiltinMcpRegistry:
         self,
         workspace_root: str | Path | None = None,
         *,
+        package_path: str | Path | None = None,
+        manifest: dict | None = None,
         protocol_extensions=None,
         capabilities=None,
         supported_protocols=None,
     ):
         self._workspace_root = Path(workspace_root) if workspace_root else Path.cwd()
+        self._package_path = Path(package_path).resolve() if package_path else None
+        self._manifest = manifest if isinstance(manifest, dict) else {}
         self._protocol_extensions = protocol_extensions
         self._capabilities = capabilities
         self._supported_protocols = supported_protocols
         self._registry: dict[str, dict[str, callable]] = {}
         self._tool_dlc: dict[str, dict] = {}
+        self._extension_tool_descriptions: dict[tuple[str, str], dict] = {}
+        self._package_dlc_descriptor: dict | None = None
         self._dlc_report: list[dict] = []
         self._register_filesystem()
         self._register_media()
+        self._register_package_dlc()
 
     @classmethod
-    def for_manifest(cls, workspace_root: str | Path | None, manifest: dict, capabilities=None, supported_protocols=None):
+    def for_manifest(
+        cls,
+        workspace_root: str | Path | None,
+        manifest: dict,
+        capabilities=None,
+        supported_protocols=None,
+        package_path: str | Path | None = None,
+    ):
         """Build an explicitly scoped registry for one cartridge manifest.
 
         Ordinary callers should keep using ``BuiltinMcpRegistry(root)``. This
@@ -62,10 +76,17 @@ class BuiltinMcpRegistry:
         manifest = manifest if isinstance(manifest, dict) else {}
         return cls(
             workspace_root,
+            package_path=package_path,
+            manifest=manifest,
             protocol_extensions=manifest.get("protocol_extensions") or [],
             capabilities=capabilities,
             supported_protocols=supported_protocols,
         )
+
+    def _register_package_dlc(self):
+        from core.extensions import register_package_dlc
+
+        register_package_dlc(self, self._package_path, self._manifest)
     def _safe_path(self, path_str: str) -> Path:
         resolved = (self._workspace_root / path_str).resolve()
         if not str(resolved).startswith(str(self._workspace_root.resolve())):
@@ -433,107 +454,12 @@ class BuiltinMcpRegistry:
                         "filename_prefix": "Output filename prefix",
                     },
                 },
-                "match_series_assets": {
-                    "description": "Map episode script and shot list to a fixed 3D series asset library without generating new visual assets.",
-                    "params": {
-                        "episode_script": "episode_script.v1 JSON object or JSON string",
-                        "shot_list": "shot_list.v1 JSON object or JSON string",
-                        "asset_library_path": "Optional asset library JSON path",
-                    },
-                },
-                "match_series_actions": {
-                    "description": "Map shot list requirements to fixed action tags and camera templates.",
-                    "params": {
-                        "episode_script": "episode_script.v1 JSON object or JSON string",
-                        "shot_list": "shot_list.v1 JSON object or JSON string",
-                        "asset_library_path": "Optional asset library JSON path",
-                    },
-                },
-                "forge_3d_series_episode": {
-                    "description": "Render the first real-asset Blender shot and create its MP4, project, still, plan, preview, and manifest.",
-                    "params": {
-                        "episode_script": "episode_script.v1 JSON object or JSON string",
-                        "shot_list": "shot_list.v1 JSON object or JSON string",
-                        "asset_plan": "series_asset_plan.v1 JSON object or JSON string",
-                        "action_plan": "series_action_plan.v1 JSON object or JSON string",
-                        "output_dir": "Output directory",
-                        "episode_id": "Output filename prefix",
-                        "blender_path": "Optional Blender executable path",
-                        "execute_blender": "Run Blender instead of stopping after script generation",
-                        "render_control_passes": "Generate CRCP character mask, depth video, pose data, and hashed control bundle",
-                        "render_width": "Preview render width",
-                        "render_height": "Preview render height",
-                        "render_fps": "Preview frame rate",
-                        "render_samples": "EEVEE render samples",
-                    },
-                },
-                "validate_shot_control_bundle": {
-                    "description": "Read-only validation of a CF-CRCP Shot Control Bundle manifest, hashes, and optional workspace files.",
-                    "params": {
-                        "bundle": "cartridgeflow.shot_control_bundle.v1 JSON object or JSON string",
-                        "check_files": "Check referenced files and SHA-256 values under the workspace",
-                    },
-                },
-                "validate_cast_pack": {
-                    "description": "Read-only validation of an approved CRCP CastPack, reference hashes, appearance anchors, and public-delivery license.",
-                    "params": {
-                        "cast_pack": "cartridgeflow.cast_pack.v1 JSON object or JSON string",
-                        "check_files": "Check reference images and SHA-256 values under the workspace",
-                        "deliverable": "Require a license that allows public delivery",
-                    },
-                },
-                "validate_candidate_review": {
-                    "description": "Read-only validation of candidate hashes, audit evidence, four CRCP quality gates, and explicit user acceptance or rejection.",
-                    "params": {
-                        "candidate_review": "cartridgeflow.candidate_review.v1 JSON object or JSON string",
-                        "check_files": "Check candidate, run report, and snapshot hashes under the workspace",
-                        "deliverable": "Require a final user decision instead of a pending review template",
-                    },
-                },
-                "validate_creative_spec": {
-                    "description": "Read-only validation of CreativeSpec locked/free bounds, allowlist, and user approval revision.",
-                    "params": {
-                        "spec": "cartridgeflow.creative_spec.v1 JSON object or JSON string",
-                        "deliverable": "Whether missing bounds should block delivery",
-                    },
-                },
-                "validate_change_proposal": {
-                    "description": "Read-only validation of a CF-CRCP ChangeProposal and its explicit user approval metadata.",
-                    "params": {
-                        "proposal": "cartridgeflow.change_proposal.v1 JSON object or JSON string",
-                    },
-                },
-                "run_creative_recast": {
-                    "description": "Run the approved Blender control stage and allowlisted CRCP VACE stage, then stop at explicit user review.",
-                    "params": {
-                        "current_state": "approved or control_ready",
-                        "creative_spec": "Approved CreativeSpec JSON object or JSON string",
-                        "cast_pack": "Approved CastPack JSON object or JSON string",
-                        "shot_control_bundle": "Validated Shot Control Bundle JSON object or JSON string",
-                        "run_snapshot": "Locked RunSnapshot JSON object or JSON string",
-                        "blender_params": "Parameters for the existing Blender series episode tool",
-                        "comfy_params": "Reference image, prompt layers, ComfyUI endpoint, and output settings for the CRCP VACE adapter",
-                    },
-                },
-                "run_vace_character_replace": {
-                    "description": "Run the allowlisted Wan2.1 VACE 1.3B character-replacement workflow from a validated CRCP control bundle.",
-                    "params": {
-                        "creative_spec": "Approved CreativeSpec JSON object or JSON string",
-                        "cast_pack": "Approved CastPack JSON object or JSON string; its primary reference is the only identity input",
-                        "control_bundle": "Validated Shot Control Bundle JSON object or JSON string",
-                        "run_snapshot": "Locked RunSnapshot with exact workflow and model hashes",
-                        "prompt_fields": "Auditable content, identity, style, continuity, and negative prompt fields",
-                        "comfyui_root": "Optional ComfyUI portable root",
-                        "comfyui_url": "Optional ComfyUI API URL",
-                        "output_dir": "Workspace-relative candidate and report directory",
-                    },
-                },
             },
         }
         result = []
         for server, tools in self._registry.items():
             for tool_name in tools:
-                meta = descriptions.get(server, {}).get(tool_name, {})
+                meta = descriptions.get(server, {}).get(tool_name, {}) or self._extension_tool_descriptions.get((server, tool_name), {})
                 item = {
                     "server": server,
                     "tool": tool_name,

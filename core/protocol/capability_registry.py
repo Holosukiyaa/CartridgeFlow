@@ -9,9 +9,10 @@ class ProtocolRegistryError(ValueError):
 
 
 class ProtocolRegistry:
-    def __init__(self, root: str | Path):
+    def __init__(self, root: str | Path, overlay_dirs: list[str | Path] | None = None):
         self.root = Path(root)
         self.protocol_dir = self.root / "protocol"
+        self.overlay_dirs = [Path(item) for item in (overlay_dirs or [])]
         self.protocols = self._load_protocols()
         self.profiles = self._load_id_set("profiles.json", "profiles")
         self.capabilities = self._load_id_set("capabilities.json", "capabilities")
@@ -35,16 +36,17 @@ class ProtocolRegistry:
 
     def _load_protocols(self) -> set[tuple[str, str]]:
         result: set[tuple[str, str]] = set()
-        if not self.protocol_dir.is_dir():
-            return result
-        for path in self.protocol_dir.glob("*.json"):
-            if path.name in {"profiles.json", "capabilities.json", "tool_packs.json"}:
+        for protocol_dir in [self.protocol_dir, *self.overlay_dirs]:
+            if not protocol_dir.is_dir():
                 continue
-            data = self._read_json(path)
-            protocol_id = data.get("id")
-            version = data.get("version")
-            if protocol_id and version:
-                result.add((str(protocol_id), str(version)))
+            for path in protocol_dir.glob("*.json"):
+                if protocol_dir == self.protocol_dir and path.name in {"profiles.json", "capabilities.json", "tool_packs.json"}:
+                    continue
+                data = self._read_json(path)
+                protocol_id = data.get("id")
+                version = data.get("version")
+                if protocol_id and version:
+                    result.add((str(protocol_id), str(version)))
         return result
 
     def _load_id_set(self, filename: str, key: str) -> set[str]:

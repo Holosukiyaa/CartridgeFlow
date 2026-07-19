@@ -1,0 +1,49 @@
+{
+  "schema": "cartridgeflow.portable_dlc.v1",
+  "id": "dlc.series_3d_episode_factory",
+  "version": "0.5.0",
+  "owner_cartridge": "dev.series_3d_episode_factory",
+  "scope": "cartridge",
+  "backend": {"transport": "json_stdio_worker", "entry": "dlc/backend/entry.py", "python": "stdlib_plus_workspace"},
+  "frontend": {"sandbox": "isolated_iframe", "entry": "dlc/frontend/director.html", "context_keys": ["storyboard_project", "storyboard_frame_bundle", "approved_storyboard_project"]},
+  "tools": [
+    {"server": "media", "tool": "match_series_assets", "handler": "backend.entry:invoke", "effect": "read_only", "timeout_ms": 30000, "description": "Map a script and shot list to the fixed series asset library.", "params": {}},
+    {"server": "media", "tool": "match_series_actions", "handler": "backend.entry:invoke", "effect": "read_only", "timeout_ms": 30000, "description": "Map shot action tags to fixed actions and camera templates.", "params": {}},
+    {"server": "media", "tool": "build_storyboard_project", "handler": "backend.entry:invoke", "effect": "writes_artifacts", "timeout_ms": 30000, "description": "Build a cartridge-owned editable storyboard project.", "params": {}},
+    {"server": "media", "tool": "render_storyboard_frames", "handler": "backend.entry:invoke", "effect": "writes_artifacts", "timeout_ms": 30000, "description": "Render deterministic base frames for storyboard review.", "params": {}},
+    {"server": "media", "tool": "apply_storyboard_adjustments", "handler": "backend.entry:invoke", "effect": "writes_artifacts", "timeout_ms": 30000, "description": "Persist director camera, actor, lighting, prompt and approval changes.", "params": {}},
+    {"server": "media", "tool": "prepare_video_shots", "handler": "backend.entry:invoke", "effect": "writes_artifacts", "timeout_ms": 30000, "description": "Create the approved handoff package for image and video generation.", "params": {}}
+  ],
+  "protocols": [
+    {"id": "CF-CRCP", "version": "0.1", "registry": "dlc/protocols/CF-CRCP-0.1.json", "document": "dlc/protocols/CARTRIDGEFLOW_CREATIVE_RECAST_CONTROL_PROTOCOL_v0.1.md"}
+  ],
+  "resources": [
+    {"path": "dlc", "ownership": "package"},
+    {"path": ".data/cartridge_dlc/dev.series_3d_episode_factory", "ownership": "private_data"},
+    {"path": "test_output", "ownership": "user_artifact"},
+    {"path": ".data/assets", "ownership": "shared_dependency"}
+  ],
+  "files": [
+    {"path": "dlc/backend/entry.py", "sha256": "62d2b786e63bc471065551b4c188e53b9ccb9798bdf82eb66981138825ba5387"},
+    {"path": "dlc/backend/__init__.py", "sha256": "fe5addd4c8e1e0c4579146cb038944452c6055d4453d6a57a04c60d428b66399"},
+    {"path": "dlc/backend/adapters/comfy_vace.py", "sha256": "6c4f0ccb423c7311565e6626b03448cf832aae6d3a4c95a2805ae33c0dbd5ff2"},
+    {"path": "dlc/backend/adapters/__init__.py", "sha256": "cb5dae990d35ec7ebbde8402d1e42b93c4408c0d61ebd53943fd5145a431a7ab"},
+    {"path": "dlc/backend/mcp/creative_recast.py", "sha256": "8b51c9d6f2c713d2727f83d39f8372993a5f53fe74a5419a4f0c6c627a13d2dc"},
+    {"path": "dlc/backend/mcp/series_3d.py", "sha256": "419fe3b31733399d326192a7f984ec8a60d588ac47c462b77adb47c047a71b48"},
+    {"path": "dlc/backend/mcp/shared.py", "sha256": "faeeff963e283dcff42022bb359853e2b33e3cdd8748a7d49f523108c3d1ced6"},
+    {"path": "dlc/backend/mcp/spatial.py", "sha256": "66c79e603619ed415b7431f6f45bd35d014feb9f1a9a6e1ce055d768c1e4a9a7"},
+    {"path": "dlc/backend/mcp/storyboard.py", "sha256": "7ffa990cc525c9921bdbfb3b03f87206f35a5d5b50d3977be08ebfc3be154f57"},
+    {"path": "dlc/backend/mcp/__init__.py", "sha256": "6fad90e5d54540aef72eea42b1cffa61758bcb4b10361e0ed4c541bcac5a32ad"},
+    {"path": "dlc/backend/protocol/creative_recast.py", "sha256": "0690fdffa35491e5b71d999ac0ec9350bc31b937541c8dbcbd652183d98d8546"},
+    {"path": "dlc/backend/protocol/creative_recast_runtime.py", "sha256": "ea615ac165574ee36164adae64479158aba25682650e864d0e72ced2d6e09afd"},
+    {"path": "dlc/backend/protocol/__init__.py", "sha256": "d12fe2dc88f607fc1c9a02be6227037433a3924e82396e1aa91733ace25fcaaf"},
+    {"path": "dlc/frontend/director.html", "sha256": "26af9af14fbb304e5009d3ceeb091b8000ef1769d64df30f5c6d42e5739fc5f5"},
+    {"path": "dlc/protocols/CARTRIDGEFLOW_CREATIVE_RECAST_CONTROL_PROTOCOL_v0.1.md", "sha256": "7cbc87880d211f2b8311eb199228a56760b2f552dd01d1f92e9221b824b9be79"},
+    {"path": "dlc/protocols/CF-CRCP-0.1.json", "sha256": "1a1691630a56834d3250ff4f0f8c8e31939c7980084ba76a6a7270b3f553ddd8"},
+    {"path": "dlc/protocols/profiles.json", "sha256": "06e3a973630e1e98ff98806286f9ae1dee3c7571dd6e7bb8da2e0f2bd4f49354"},
+    {"path": "dlc/protocols/capabilities.json", "sha256": "5d6ee3dd0edc222e7d2ff2739db262cc51b0cbf1a7a2d0cbc7516fbbaa2bdfd1"},
+    {"path": "dlc/protocols/tool_packs.json", "sha256": "87637342d6f1378873d0cbe9a750037160758a27b2ab655c629bf9cb28203c76"},
+    {"path": "dlc/workflows/wan21_vace_1_3b_character_replace.api.json", "sha256": "c3c6cb13e7463ddd6d05d3e60eda50125fb111caed8fc3025f413455c75c278e"},
+    {"path": "dlc/workflows/wan21_vace_1_3b_v2v_smoke.api.json", "sha256": "ba92d1d69b0ac22889568f5f28599ebf92cdc3c8f8ad8e174cfa228dba6d7c03"}
+  ]
+}

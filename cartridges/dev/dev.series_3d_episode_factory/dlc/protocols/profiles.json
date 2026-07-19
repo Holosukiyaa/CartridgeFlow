@@ -1,0 +1,8 @@
+{
+  "schema_version": "0.1",
+  "profiles": [
+    {"id": "creative_control_runtime", "protocol": "CF-CRCP@0.1"},
+    {"id": "creative_control_testbench", "protocol": "CF-CRCP@0.1"},
+    {"id": "creative_control_authoring", "protocol": "CF-CRCP@0.1"}
+  ]
+}

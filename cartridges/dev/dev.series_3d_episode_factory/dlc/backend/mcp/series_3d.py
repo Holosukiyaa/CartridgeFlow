@@ -31,15 +31,12 @@ for _name in dir(_spatial):
         globals()[_name] = getattr(_spatial, _name)
 
 DLC_ID = 'dlc.series_3d_episode_factory'
-DLC_PROTOCOL = 'CF-FARP@0.4'
+DLC_PROTOCOL = 'CF-FARP@0.5'
 TOOLS = ['match_series_assets', 'match_series_actions', 'forge_3d_series_episode']
 
 def _load_series_asset_library(registry, path_value=None) -> dict:
-    library_path = str(
-        path_value
-        or "cartridges/dev/dev.series_3d_episode_factory/assets/series_asset_library.json"
-    ).strip()
-    path = registry._safe_path(library_path)
+    library_path = str(path_value or "").strip()
+    path = registry._safe_path(library_path) if library_path else registry.package_path("assets/series_asset_library.json")
     if not path.is_file():
         raise FileNotFoundError(f"series asset library not found: {library_path}")
     try:

@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from core.cartridge import CartridgeRegistry, CartridgeRunner
+from core.extensions import PortableDlcValidationError, load_portable_dlc_descriptor
 from core.cartridge.artifacts import ArtifactManager
 from core.lab import DevFlowManager, FlowGraphBuilder, FlowSteward
 from core.llm.config_manager import ensure_llm_config
@@ -545,7 +546,18 @@ def _compatibility_for_manifest(manifest: dict, root_flow: dict | None) -> dict:
 
 
 def _compatibility_for_cartridge(cartridge: dict) -> dict:
-    return _compatibility_for_manifest(cartridge.get("manifest") or {}, cartridge.get("root_flow") or {})
+    manifest = cartridge.get("manifest") or {}
+    overlay_dirs = []
+    if manifest.get("portable_dlc") and cartridge.get("package_path"):
+        overlay_dirs.append(Path(cartridge["package_path"]) / "dlc" / "protocols")
+    base = load_base_implementation(ROOT)
+    return build_compatibility_report(
+        base,
+        manifest,
+        cartridge.get("root_flow") or {},
+        ROOT,
+        protocol_overlay_dirs=overlay_dirs,
+    )
 
 
 def _compatibility_for_files(cartridge_id: str, incoming_files: dict | None = None) -> dict:
@@ -563,7 +575,18 @@ def _certification_for_manifest(manifest: dict, root_flow: dict | None) -> dict:
 
 
 def _certification_for_cartridge(cartridge: dict) -> dict:
-    return _certification_for_manifest(cartridge.get("manifest") or {}, cartridge.get("root_flow") or {})
+    manifest = cartridge.get("manifest") or {}
+    overlay_dirs = []
+    if manifest.get("portable_dlc") and cartridge.get("package_path"):
+        overlay_dirs.append(Path(cartridge["package_path"]) / "dlc" / "protocols")
+    base = load_base_implementation(ROOT)
+    return build_protocol_certification_report(
+        base,
+        manifest,
+        cartridge.get("root_flow") or {},
+        ROOT,
+        protocol_overlay_dirs=overlay_dirs,
+    )
 
 
 def _certification_for_files(cartridge_id: str, incoming_files: dict | None = None) -> tuple[dict, dict, dict]:
@@ -865,9 +888,61 @@ def load_cartridge(cartridge_id: str):
         raise HTTPException(status_code=404, detail=str(e))
 
 
+@app.get("/api/cartridges/{cartridge_id}/dlc/frontend")
+def serve_cartridge_dlc_frontend(cartridge_id: str):
+    try:
+        cartridge = registry.get_cartridge(cartridge_id)
+        descriptor = load_portable_dlc_descriptor(cartridge["package_path"], cartridge["manifest"])
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except PortableDlcValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    entry = (descriptor.get("frontend") or {}).get("entry")
+    if not entry:
+        raise HTTPException(status_code=404, detail="Cartridge has no frontend DLC")
+    target = (Path(cartridge["package_path"]) / entry).resolve()
+    response = FileResponse(target, media_type="text/html")
+    response.headers["Content-Security-Policy"] = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'self';"
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@app.get("/api/cartridge-runs/{run_id}/dlc-context")
+def get_cartridge_run_dlc_context(run_id: str):
+    try:
+        run = runner.get_run(run_id)
+        cartridge = registry.get_cartridge(run["cartridge_id"])
+        descriptor = load_portable_dlc_descriptor(cartridge["package_path"], cartridge["manifest"])
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except PortableDlcValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    state_path = runner.runs_dir / run_id / "root_flow_state.json"
+    state = runner._read_json(state_path) if state_path.is_file() else {}
+    store = ((state.get("context") or {}).get("store") or {}) if isinstance(state, dict) else {}
+    context = {}
+    for key in (descriptor.get("frontend") or {}).get("context_keys") or []:
+        value = store.get(key)
+        if isinstance(value, str):
+            try:
+                value = __import__("json").loads(value)
+            except ValueError:
+                pass
+        context[str(key)] = value
+    return {
+        "schema": "cartridgeflow.dlc_ui_host.v1",
+        "run_id": run_id,
+        "cartridge_id": run["cartridge_id"],
+        "frontend_url": f"/api/cartridges/{run['cartridge_id']}/dlc/frontend",
+        "pending_interaction": run.get("pending_interaction"),
+        "context": context,
+    }
+
+
 @app.delete("/api/cartridges/{cartridge_id}/installed")
 def uninstall_cartridge(cartridge_id: str):
     import shutil as _shutil
+    import stat as _stat
 
     try:
         cartridge = registry.get_cartridge(cartridge_id)
@@ -883,8 +958,24 @@ def uninstall_cartridge(cartridge_id: str):
             raise HTTPException(status_code=400, detail="Invalid installed cartridge path")
     except OSError as e:
         raise HTTPException(status_code=404, detail=str(e))
+    for item in package_path.rglob("*"):
+        try:
+            item.chmod(_stat.S_IWRITE)
+        except OSError:
+            pass
     _shutil.rmtree(package_path)
-    return {"ok": True, "cartridge_id": cartridge_id}
+    dlc_data_root = (ROOT / ".data" / "cartridge_dlc").resolve()
+    private_root = (dlc_data_root / cartridge_id).resolve()
+    if private_root != dlc_data_root and dlc_data_root in private_root.parents and private_root.is_dir():
+        _shutil.rmtree(private_root)
+    runner.lab_node_executor._scoped_mcp_registries.clear()
+    return {
+        "ok": not package_path.exists(),
+        "cartridge_id": cartridge_id,
+        "package_removed": not package_path.exists(),
+        "private_data_removed": not private_root.exists(),
+        "user_artifacts_preserved": True,
+    }
 
 
 @app.post("/api/cartridges/{cartridge_id}/clone-to-dev")
@@ -930,6 +1021,15 @@ def clone_cartridge_to_dev(cartridge_id: str, payload: CartridgeCloneToDevPayloa
         manifest["description"] = payload.description.strip() or manifest.get("description", "")
         manifest["category"] = "dev_flow"
         manifest_path.write_text(_json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        portable_dlc = manifest.get("portable_dlc") if isinstance(manifest.get("portable_dlc"), dict) else None
+        if portable_dlc and portable_dlc.get("descriptor"):
+            descriptor_path = (target / str(portable_dlc["descriptor"])).resolve()
+            if target.resolve() not in descriptor_path.parents or not descriptor_path.is_file():
+                raise HTTPException(status_code=400, detail="Invalid portable DLC descriptor path")
+            descriptor = _json.loads(descriptor_path.read_text(encoding="utf-8"))
+            descriptor["owner_cartridge"] = new_id
+            descriptor_path.write_text(_json.dumps(descriptor, ensure_ascii=False, indent=2), encoding="utf-8")
 
         root_entry = manifest.get("root_flow", {}).get("entry", "root.flow.json")
         root_flow_path = target / root_entry
@@ -1054,6 +1154,14 @@ def list_lab_flow_mcp_tools(cartridge_id: str):
         raise HTTPException(status_code=404, detail=str(e))
 
 
+def _ensure_manifest_tool_editor_allowed(manifest: dict) -> None:
+    if manifest.get("portable_dlc"):
+        raise HTTPException(
+            status_code=409,
+            detail="Portable DLC tools are owned by dlc/descriptor.json and cannot be edited independently.",
+        )
+
+
 @app.post("/api/lab/flows/{cartridge_id}/mcp-tools")
 def create_lab_flow_mcp_tool(cartridge_id: str, payload: McpToolPayload):
     try:
@@ -1061,6 +1169,7 @@ def create_lab_flow_mcp_tool(cartridge_id: str, payload: McpToolPayload):
         if not cartridge.get("editable"):
             raise HTTPException(status_code=403, detail="Only dev flows are editable")
         manifest, files = _flow_manifest_files(cartridge_id)
+        _ensure_manifest_tool_editor_allowed(manifest)
         tools = manifest.setdefault("mcp_tools", [])
         tool = _normalize_mcp_tool(payload.dict())
         existing_ids = {item.get("id") for item in tools if isinstance(item, dict)}
@@ -1085,6 +1194,7 @@ def update_lab_flow_mcp_tool(cartridge_id: str, tool_id: str, payload: McpToolPa
         if not cartridge.get("editable"):
             raise HTTPException(status_code=403, detail="Only dev flows are editable")
         manifest, files = _flow_manifest_files(cartridge_id)
+        _ensure_manifest_tool_editor_allowed(manifest)
         tools = manifest.setdefault("mcp_tools", [])
         for index, item in enumerate(tools):
             if isinstance(item, dict) and item.get("id") == tool_id:
@@ -1107,6 +1217,7 @@ def delete_lab_flow_mcp_tool(cartridge_id: str, tool_id: str):
         if not cartridge.get("editable"):
             raise HTTPException(status_code=403, detail="Only dev flows are editable")
         manifest, files = _flow_manifest_files(cartridge_id)
+        _ensure_manifest_tool_editor_allowed(manifest)
         tools = manifest.setdefault("mcp_tools", [])
         next_tools = [item for item in tools if not (isinstance(item, dict) and item.get("id") == tool_id)]
         if len(next_tools) == len(tools):

@@ -386,6 +386,17 @@
   box-shadow: 0 24px 80px rgba(37, 31, 27, .26);
 }
 
+.cf-pending-modal.cf-pending-modal-dlc {
+  width: min(1500px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+}
+
+.cf-pending-modal-dlc .cf-dlc-sandbox-frame {
+  min-height: calc(100vh - 94px);
+  border: 0;
+  border-radius: 0;
+}
+
 .cf-pending-modal-head {
   flex: 0 0 auto;
   min-height: 44px;

@@ -6,11 +6,12 @@ import {
 } from '../ui.tsx'
 import ReactMarkdown from 'react-markdown'
 import {
-  fetchCartridges, fetchCartridge, cloneCartridgeToDev, createCartridgeRun, importCartridgePackage, packageCartridge,
+  answerPendingInteraction, fetchCartridges, fetchCartridge, cloneCartridgeToDev, createCartridgeRun, importCartridgePackage, packageCartridge,
   uninstallInstalledCartridge, uploadWorkspaceFile,
   type CartridgeSummary, type CartridgeDetail, type RunResult, type CartridgeInput, type McpTool,
 } from '../api.ts'
 import { showToast } from '../toast.tsx'
+import { DlcSandboxFrame } from '../components/DlcSandboxFrame.tsx'
 
 const TEMPLATE_ORDER = [
   'dev.file_summary',
@@ -253,9 +254,23 @@ function CartridgePlayer({ cartridge, onBack, onOpen }: { cartridge: CartridgeDe
     try {
       const result = await createCartridgeRun(cartridge.id, inputs)
       setRunResult(result)
-      showToast({ title: '运行完成', type: 'success' })
+      showToast({ title: result.status === 'paused_waiting_user' ? '等待用户确认' : '运行完成', type: 'success' })
     } catch (e: any) {
       setRunError(e.message || '运行失败')
+    } finally {
+      setRunning(false)
+    }
+  }
+
+  const handleDlcSubmit = async (values: Record<string, any>) => {
+    if (!runResult) return
+    setRunning(true)
+    try {
+      const result = await answerPendingInteraction(runResult.run_id, values)
+      setRunResult(result.run)
+      showToast({ title: result.run.status === 'completed' ? '流程已完成' : '已提交分镜调整', type: 'success' })
+    } catch (e: any) {
+      setRunError(e.message || '提交失败')
     } finally {
       setRunning(false)
     }
@@ -430,6 +445,9 @@ function CartridgePlayer({ cartridge, onBack, onOpen }: { cartridge: CartridgeDe
           </Box>
         )}
 
+        {runResult?.status === 'paused_waiting_user' && runResult.pending_interaction?.ui_extension === 'portable_dlc' && cartridge.portable_dlc && (
+          <DlcSandboxFrame cartridgeId={cartridge.id} runId={runResult.run_id} onSubmit={handleDlcSubmit} />
+        )}
         {runResult && <RunResultView run={runResult} />}
       </VStack>
       <VStack align="stretch" gap={4}>

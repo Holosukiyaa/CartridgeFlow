@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 
-from . import creative_recast, media_core, pixel_episode, short_video, spatial, series_3d
+from . import media_core, pixel_episode, short_video, spatial
 
 
 DLC_DESCRIPTORS = {
@@ -18,33 +18,9 @@ DLC_DESCRIPTORS = {
     "dlc.spatial_blockout": {
         "id": "dlc.spatial_blockout", "protocol": "CF-FARP@0.4", "kind": "dlc", "enabled_by_default": True, "modules": ["spatial"]
     },
-    "dlc.series_3d_episode_factory": {
-        "id": "dlc.series_3d_episode_factory",
-        "protocol": "CF-FARP@0.4",
-        "optional_extension": "CF-CRCP@0.1",
-        "optional_extension_module": "creative_recast",
-        "optional_extension_required_capabilities": [
-            "control_bundle_v1",
-            "control_bundle_validate",
-            "creative_spec_v1",
-            "creative_mode_policy",
-            "creative_workflow_allowlist",
-            "creative_change_proposal",
-            "creative_approval_gate",
-            "creative_run_snapshot",
-            "creative_failure_record",
-            "creative_quality_gates",
-            "creative_artifact_audit",
-        ],
-        "kind": "dlc",
-        "enabled_by_default": True,
-        "modules": ["series_3d"],
-    },
 }
-_MODULES = [media_core, pixel_episode, short_video, spatial, series_3d]
-# Extension modules are imported as inert Python code, but registration remains
-# gated by explicit protocol declaration, base protocol support, and capabilities.
-_EXTENSION_MODULES: dict[str, object] = {"creative_recast": creative_recast}
+_MODULES = [media_core, pixel_episode, short_video, spatial]
+_EXTENSION_MODULES: dict[str, object] = {}
 
 
 def _protocol_key(value) -> str:

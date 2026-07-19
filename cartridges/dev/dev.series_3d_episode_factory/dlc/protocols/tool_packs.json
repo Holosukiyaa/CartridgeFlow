@@ -1,0 +1,6 @@
+{
+  "schema_version": "0.1",
+  "tool_packs": [
+    {"id": "series_3d.creative_recast", "protocol": "CF-CRCP@0.1"}
+  ]
+}

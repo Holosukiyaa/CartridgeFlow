@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from .compatibility import build_compatibility_report
-from .flow_contract import build_v02_flow_contract_report, build_v03_flow_contract_report, build_v04_flow_contract_report
+from .flow_contract import build_v02_flow_contract_report, build_v03_flow_contract_report, build_v04_flow_contract_report, build_v05_flow_contract_report
 from .report import summarize_findings
 
 
@@ -13,8 +13,15 @@ def build_protocol_certification_report(
     root_flow: dict | None,
     project_root: str | Path | None = None,
     extension_reports: dict | None = None,
+    protocol_overlay_dirs: list[str | Path] | None = None,
 ) -> dict:
-    compatibility = build_compatibility_report(base, manifest, root_flow, project_root)
+    compatibility = build_compatibility_report(
+        base,
+        manifest,
+        root_flow,
+        project_root,
+        protocol_overlay_dirs=protocol_overlay_dirs,
+    )
     findings: list[dict] = []
 
     if not compatibility.get("ok"):
@@ -82,6 +89,10 @@ def build_protocol_certification_report(
             findings.append(item)
     if protocol.get("id") == "CF-FARP" and protocol.get("version") == "0.4":
         flow_contract = compatibility.get("flow_contract") or build_v04_flow_contract_report(root_flow, manifest)
+        for item in flow_contract.get("findings") or []:
+            findings.append(item)
+    if protocol.get("id") == "CF-FARP" and protocol.get("version") == "0.5":
+        flow_contract = compatibility.get("flow_contract") or build_v05_flow_contract_report(root_flow, manifest)
         for item in flow_contract.get("findings") or []:
             findings.append(item)
 

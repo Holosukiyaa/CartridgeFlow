@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from .capability_registry import ProtocolRegistry
-from .flow_contract import build_v02_flow_contract_report, build_v03_flow_contract_report, build_v04_flow_contract_report
+from .flow_contract import build_v02_flow_contract_report, build_v03_flow_contract_report, build_v04_flow_contract_report, build_v05_flow_contract_report
 from .report import report_status, summarize_findings
 
 
@@ -13,9 +13,15 @@ class CompatibilityBlockedError(RuntimeError):
         super().__init__("Cartridge is not compatible with current base")
 
 
-def build_compatibility_report(base: dict, manifest: dict, root_flow: dict | None, project_root: str | Path | None = None) -> dict:
+def build_compatibility_report(
+    base: dict,
+    manifest: dict,
+    root_flow: dict | None,
+    project_root: str | Path | None = None,
+    protocol_overlay_dirs: list[str | Path] | None = None,
+) -> dict:
     root = Path(project_root) if project_root else Path.cwd()
-    registry = ProtocolRegistry(root)
+    registry = ProtocolRegistry(root, overlay_dirs=protocol_overlay_dirs)
     findings: list[dict] = []
     findings.extend(registry.validate_base(base))
 
@@ -147,6 +153,9 @@ def build_compatibility_report(base: dict, manifest: dict, root_flow: dict | Non
         findings.extend(flow_contract.get("findings") or [])
     elif protocol_id == "CF-FARP" and protocol_version == "0.4":
         flow_contract = build_v04_flow_contract_report(root_flow, manifest)
+        findings.extend(flow_contract.get("findings") or [])
+    elif protocol_id == "CF-FARP" and protocol_version == "0.5":
+        flow_contract = build_v05_flow_contract_report(root_flow, manifest)
         findings.extend(flow_contract.get("findings") or [])
 
     delivery = manifest.get("delivery_readiness")

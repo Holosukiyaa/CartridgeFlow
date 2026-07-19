@@ -11,7 +11,7 @@
   "profiles_file": "profiles.json",
   "capabilities_file": "capabilities.json",
   "tool_packs_file": "tool_packs.json",
-  "document": "docs/protocol/CARTRIDGEFLOW_CREATIVE_RECAST_CONTROL_PROTOCOL_v0.1.md",
+  "document": "CARTRIDGEFLOW_CREATIVE_RECAST_CONTROL_PROTOCOL_v0.1.md",
   "governance": {
     "read_only": true,
     "amendment_policy": "new_version_after_user_approval",

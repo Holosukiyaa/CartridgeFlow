@@ -82,7 +82,7 @@ class CartridgeRunner:
         if missing_required_inputs:
             raise ValueError(f"Required run input missing: {', '.join(missing_required_inputs)}")
         source_root_flow = cartridge.get("root_flow") or {}
-        compatibility = self.build_compatibility_report(manifest, source_root_flow)
+        compatibility = self.build_compatibility_report(manifest, source_root_flow, cartridge.get("package_path"))
         if not compatibility.get("ok"):
             raise CompatibilityBlockedError(compatibility)
         normalized_probe_range = self._normalize_probe_range(source_root_flow, probe_range)
@@ -117,6 +117,7 @@ class CartridgeRunner:
             "workspace": manifest.get("workspace", {}),
             "mcp_tools": manifest.get("mcp_tools", []),
             "protocol_extensions": manifest.get("protocol_extensions", []),
+            "portable_dlc": manifest.get("portable_dlc"),
             "run_mode": "probe_range" if normalized_probe_range else "full_flow",
             "probe_range": normalized_probe_range,
             "package_path": cartridge.get("package_path"),
@@ -385,13 +386,20 @@ class CartridgeRunner:
         self._write_json(run_dir / "run.json", run)
         return run
 
-    def build_compatibility_report(self, manifest: dict, root_flow: dict | None) -> dict:
+    def build_compatibility_report(self, manifest: dict, root_flow: dict | None, package_path: str | Path | None = None) -> dict:
         base = load_base_implementation(self.root)
-        return build_compatibility_report(base, manifest, root_flow, self.root)
+        overlay_dirs = []
+        if package_path and manifest.get("portable_dlc"):
+            overlay_dirs.append(Path(package_path) / "dlc" / "protocols")
+        return build_compatibility_report(base, manifest, root_flow, self.root, overlay_dirs)
 
     def build_cartridge_compatibility_report(self, cartridge_id: str) -> dict:
         cartridge = self.registry.get_cartridge(cartridge_id)
-        return self.build_compatibility_report(cartridge.get("manifest") or {}, cartridge.get("root_flow") or {})
+        return self.build_compatibility_report(
+            cartridge.get("manifest") or {},
+            cartridge.get("root_flow") or {},
+            cartridge.get("package_path"),
+        )
 
     def validate_probe_range(self, root_flow: dict, probe_range: dict | None) -> dict:
         normalized = self._normalize_probe_range(root_flow, probe_range)

@@ -1,19 +1,25 @@
 import json
 import tempfile
 import unittest
+import sys
 from pathlib import Path
 
+ROOT = Path(__file__).resolve().parents[5]
+PACKAGE = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(PACKAGE / "dlc"))
+
 from core.cartridge.runner import CartridgeRunner
-from core.lab.builtin_mcp import BuiltinMcpRegistry
+from core.extensions.worker_sdk import DlcWorkerRegistry
+from backend.mcp import series_3d
 
-
-ROOT = Path(__file__).resolve().parents[2]
 LIBRARY_PATH = "cartridges/dev/dev.series_3d_episode_factory/assets/series_asset_library.json"
 
 
 class Series3dEpisodeFactoryTest(unittest.TestCase):
     def setUp(self):
-        self.registry = BuiltinMcpRegistry(ROOT)
+        self.registry = DlcWorkerRegistry(ROOT, PACKAGE)
+        self.registry._registry["media"] = {}
+        series_3d.register(self.registry)
         self.script = {
             "schema": "episode_script.v1",
             "title": "Pilot",

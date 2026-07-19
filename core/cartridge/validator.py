@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from core.extensions import PortableDlcValidationError, load_portable_dlc_descriptor
+
 
 class ManifestValidationError(ValueError):
     pass
@@ -226,6 +228,18 @@ class ManifestValidator:
                         retry_policy = contract.get("retry_policy")
                         if retry_policy is not None and not isinstance(retry_policy, dict):
                             errors.append(f"manifest.mcp_tools[{i}].contract.retry_policy must be an object")
+
+        portable_dlc = manifest.get("portable_dlc")
+        if portable_dlc is not None:
+            if not isinstance(portable_dlc, dict):
+                errors.append("manifest.portable_dlc must be an object")
+            elif (manifest.get("runtime_contract") or {}).get("protocol_version") != "0.5":
+                errors.append("manifest.portable_dlc requires CF-FARP@0.5")
+            else:
+                try:
+                    load_portable_dlc_descriptor(package_path, manifest)
+                except PortableDlcValidationError as exc:
+                    errors.append(str(exc))
 
         if errors:
             raise ManifestValidationError("; ".join(errors))

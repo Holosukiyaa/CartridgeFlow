@@ -197,7 +197,13 @@
                   "id": "shot_01",
                   "title": "街道前进",
                   "description": "男孩沿着白天的郊区街道向前走。",
-                  "scene": "白天郊区街道",
+                  "scene_design": {
+                    "location": "白天郊区街道入口",
+                    "time": "day",
+                    "weather": "clear",
+                    "landmarks": ["左侧住宅", "右侧行道树", "远处拐角"],
+                    "blocking_notes": "人物从画面深处进入，街道透视线指向远处拐角。"
+                  },
                   "characters": [
                     "hero"
                   ],
@@ -205,14 +211,29 @@
                   "action_tags": [
                     "walk_slow"
                   ],
-                  "camera": "slow_push_in",
+                  "camera": {
+                    "template": "slow_push_in",
+                    "position": [-1.4, -8.5, 2.4],
+                    "target": [0.0, 1.0, 1.2],
+                    "focal_length_mm": 36
+                  },
+                  "actor_blocking": [
+                    {"actor_id": "hero", "position": [-0.7, 1.6, 0.0], "rotation_degrees": [0.0, 0.0, 8.0], "action": "walk_slow", "pose_time": 0.18}
+                  ],
+                  "lighting": {"key": "sun_left", "exposure": 0.15},
                   "duration": 5
                 },
                 {
                   "id": "shot_02",
                   "title": "停下观察",
                   "description": "男孩停下脚步，侧头听向身后。",
-                  "scene": "白天郊区街道",
+                  "scene_design": {
+                    "location": "住宅前的人行道",
+                    "time": "day",
+                    "weather": "clear",
+                    "landmarks": ["路边围墙", "住宅窗户", "身后空路"],
+                    "blocking_notes": "让背景留出声音来源方向，人物侧脸占画面中心。"
+                  },
                   "characters": [
                     "hero"
                   ],
@@ -220,14 +241,29 @@
                   "action_tags": [
                     "idle_hold"
                   ],
-                  "camera": "close_up_reveal",
+                  "camera": {
+                    "template": "close_up_reveal",
+                    "position": [2.2, -3.6, 1.75],
+                    "target": [-0.5, 1.1, 1.45],
+                    "focal_length_mm": 68
+                  },
+                  "actor_blocking": [
+                    {"actor_id": "hero", "position": [-0.5, 1.1, 0.0], "rotation_degrees": [0.0, 0.0, -35.0], "action": "look_back", "pose_time": 0.52}
+                  ],
+                  "lighting": {"key": "sun_rim", "exposure": 0.05},
                   "duration": 5
                 },
                 {
                   "id": "shot_03",
                   "title": "影子异动",
                   "description": "男孩抬头，影子在地面上先一步转向拐角。",
-                  "scene": "白天郊区街道",
+                  "scene_design": {
+                    "location": "街道尽头拐角",
+                    "time": "late_afternoon",
+                    "weather": "clear",
+                    "landmarks": ["高围墙", "转角路灯", "拉长的地面阴影"],
+                    "blocking_notes": "低机位同时看见人物和偏离人物动作的影子。"
+                  },
                   "characters": [
                     "hero"
                   ],
@@ -235,7 +271,16 @@
                   "action_tags": [
                     "gesture_interact"
                   ],
-                  "camera": "low_angle_hold",
+                  "camera": {
+                    "template": "low_angle_hold",
+                    "position": [1.2, -4.8, 0.55],
+                    "target": [0.2, 1.8, 1.0],
+                    "focal_length_mm": 32
+                  },
+                  "actor_blocking": [
+                    {"actor_id": "hero", "position": [0.6, 1.8, 0.0], "rotation_degrees": [0.0, 0.0, 42.0], "action": "gesture_interact", "pose_time": 0.76}
+                  ],
+                  "lighting": {"key": "low_sun", "exposure": -0.1},
                   "duration": 5
                 }
               ]
@@ -245,8 +290,8 @@
       },
       "params": {
         "description": "以镜头为单位生成可编辑的构图、动作和节奏草案。",
-        "system_prompt": "你是分镜导演。只输出 shot_list.v1，不生成视频。",
-        "prompt": "根据 episode_script 生成 3-10 个 shot。",
+        "system_prompt": "你是分镜导演。只输出 decision_envelope.v1，并在 payload.shot_list 中输出 shot_list.v1，不生成视频。每个 shot 必须包含 id、title、description、duration、scene_design、camera、actor_blocking、action_tags、lighting、composition。scene_design 必须包含 location、time、weather、landmarks、blocking_notes；camera 必须包含 template、position、target、focal_length_mm；actor_blocking 必须是数组，每个出镜人物分别包含 actor_id、position、rotation_degrees、action、pose_time。每个镜头都要给出有叙事目的的独立构图、机位、人物站位和默认动作相位，连续场景也不能简单复制上一镜。",
+        "prompt": "根据 episode_script 生成 3-10 个可直接进入 3D 导演台的 shot。先设计每镜空间与构图，再确定机位、人物阻挡和动作。",
         "input": "episode_inputs,episode_script",
         "optional_input": "shot_reply",
         "output": "shot_list_decision",

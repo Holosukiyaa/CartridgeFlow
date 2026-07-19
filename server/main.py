@@ -902,7 +902,33 @@ def serve_cartridge_dlc_frontend(cartridge_id: str):
         raise HTTPException(status_code=404, detail="Cartridge has no frontend DLC")
     target = (Path(cartridge["package_path"]) / entry).resolve()
     response = FileResponse(target, media_type="text/html")
-    response.headers["Content-Security-Policy"] = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'self';"
+    response.headers["Content-Security-Policy"] = "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'self';"
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@app.get("/api/cartridges/{cartridge_id}/dlc/assets/{asset_path:path}")
+def serve_cartridge_dlc_asset(cartridge_id: str, asset_path: str):
+    try:
+        cartridge = registry.get_cartridge(cartridge_id)
+        descriptor = load_portable_dlc_descriptor(cartridge["package_path"], cartridge["manifest"])
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except PortableDlcValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    entry = str((descriptor.get("frontend") or {}).get("entry") or "")
+    if not entry:
+        raise HTTPException(status_code=404, detail="Cartridge has no frontend DLC")
+    package_root = Path(cartridge["package_path"]).resolve()
+    frontend_root = (package_root / entry).resolve().parent
+    target = (frontend_root / asset_path).resolve()
+    if target != frontend_root and frontend_root not in target.parents:
+        raise HTTPException(status_code=400, detail="Invalid DLC asset path")
+    relative = target.relative_to(package_root).as_posix()
+    declared = {str(item.get("path") or "").replace("\\", "/") for item in descriptor.get("files") or [] if isinstance(item, dict)}
+    if relative not in declared or not target.is_file():
+        raise HTTPException(status_code=404, detail="DLC asset is not declared")
+    response = FileResponse(target)
     response.headers["Cache-Control"] = "no-store"
     return response
 
@@ -929,6 +955,19 @@ def get_cartridge_run_dlc_context(run_id: str):
             except ValueError:
                 pass
         context[str(key)] = value
+    artifacts = []
+    for item in run.get("artifacts") or []:
+        if not isinstance(item, dict):
+            continue
+        source = item.get("source") if isinstance(item.get("source"), dict) else {}
+        artifacts.append({
+            "name": item.get("name"),
+            "type": item.get("type"),
+            "mime_type": item.get("mime_type"),
+            "path": source.get("original_path") or item.get("display_path") or item.get("path"),
+            "preview_url": item.get("url"),
+            "source_node_id": source.get("node_id"),
+        })
     return {
         "schema": "cartridgeflow.dlc_ui_host.v1",
         "run_id": run_id,
@@ -936,6 +975,7 @@ def get_cartridge_run_dlc_context(run_id: str):
         "frontend_url": f"/api/cartridges/{run['cartridge_id']}/dlc/frontend",
         "pending_interaction": run.get("pending_interaction"),
         "context": context,
+        "artifacts": artifacts,
     }
 
 

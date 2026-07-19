@@ -6,13 +6,16 @@ export function DlcSandboxFrame({
   cartridgeId,
   runId,
   onSubmit,
+  mode = 'director',
 }: {
   cartridgeId: string
   runId: string
-  onSubmit: (values: Record<string, any>) => Promise<void> | void
+  onSubmit?: (values: Record<string, any>) => Promise<void> | void
+  mode?: 'director' | 'result'
 }) {
   const frameRef = useRef<HTMLIFrameElement | null>(null)
   const [project, setProject] = useState<any>(null)
+  const [artifacts, setArtifacts] = useState<any[]>([])
   const [ready, setReady] = useState(false)
   const [error, setError] = useState('')
 
@@ -20,9 +23,16 @@ export function DlcSandboxFrame({
     setReady(false)
     setError('')
     fetchDlcRunContext(runId)
-      .then((result) => setProject(result.context?.storyboard_project || result.context?.storyboard_frame_bundle?.project || null))
+      .then((result) => {
+        const context = result.context || {}
+        const nextProject = mode === 'result'
+          ? context.approved_frame_bundle?.project || context.approved_storyboard_project?.project || context.approved_storyboard_project || context.storyboard_frame_bundle?.project || context.storyboard_project?.project || context.storyboard_project
+          : context.storyboard_frame_bundle?.project || context.storyboard_project?.project || context.storyboard_project
+        setProject(nextProject || null)
+        setArtifacts(result.artifacts || [])
+      })
       .catch((reason) => setError(reason?.message || 'DLC context failed'))
-  }, [runId])
+  }, [mode, runId])
 
   useEffect(() => {
     const receive = (event: MessageEvent) => {
@@ -31,7 +41,7 @@ export function DlcSandboxFrame({
       if (message.schema !== 'cartridgeflow.dlc_ui_message.v1') return
       if (message.type === 'ready') setReady(true)
       if (message.type === 'submit_interaction' && message.values && typeof message.values === 'object') {
-        void onSubmit(message.values)
+        void onSubmit?.(message.values)
       }
     }
     window.addEventListener('message', receive)
@@ -42,18 +52,19 @@ export function DlcSandboxFrame({
     if (!ready || !project) return
     frameRef.current?.contentWindow?.postMessage({
       schema: 'cartridgeflow.dlc_ui_host.v1',
-      type: 'load_storyboard',
+      type: mode === 'result' ? 'load_result' : 'load_storyboard',
       run_id: runId,
       project,
+      artifacts,
     }, '*')
-  }, [ready, project, runId])
+  }, [artifacts, mode, ready, project, runId])
 
   if (error) return <div className="cf-dlc-frame-error">{error}</div>
   return (
     <iframe
       ref={frameRef}
-      className="cf-dlc-sandbox-frame"
-      title={`${cartridgeId} director console`}
+      className={`cf-dlc-sandbox-frame ${mode === 'result' ? 'cf-dlc-result-frame' : ''}`}
+      title={`${cartridgeId} ${mode === 'result' ? 'storyboard result' : 'director console'}`}
       src={`/api/cartridges/${encodeURIComponent(cartridgeId)}/dlc/frontend`}
       sandbox="allow-scripts"
     />

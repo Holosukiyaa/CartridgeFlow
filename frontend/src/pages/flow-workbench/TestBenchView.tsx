@@ -860,6 +860,7 @@ export function TestBenchView({
   const [logMaxHeight, setLogMaxHeight] = useState(180)
   const [showUiPreview, setShowUiPreview] = useState(false)
   const [showArtifactsPreview, setShowArtifactsPreview] = useState(false)
+  const [resultModalOpen, setResultModalOpen] = useState(false)
   const [lockedPendingKey, setLockedPendingKey] = useState('')
   const [dismissedStatusKey, setDismissedStatusKey] = useState('')
   const logBodyRef = useRef<HTMLDivElement | null>(null)
@@ -911,6 +912,7 @@ export function TestBenchView({
   const selectedProbeNodeIds = probePayload?.node_ids || []
   const canRun = !isRunning && (runScope === 'full' || !!probePayload)
   const runCompleted = latestRun?.status === 'completed' && !isRunning
+  const canViewDlcResult = runCompleted && Boolean(detail.cartridge.portable_dlc)
   const latestPausedEvent = [...events].reverse().find((event) => event.type === 'lab_node_paused') as any
   const latestPausedEventId = String(latestPausedEvent?.event_id || '')
   const statusBannerKey = pendingInteraction
@@ -932,6 +934,7 @@ export function TestBenchView({
   }, [detail, events])
   useEffect(() => {
     setShowArtifactsPreview(false)
+    setResultModalOpen(false)
   }, [latestRun?.run_id])
 
   useEffect(() => {
@@ -1172,6 +1175,9 @@ export function TestBenchView({
                 <span>{runArtifacts.length > 0 ? `本次运行已生成 ${runArtifacts.length} 个交付产物。` : '本次流程已经完整执行结束。'}</span>
               </span>
               <span className="cf-run-status-actions">
+                {canViewDlcResult && (
+                  <button type="button" onClick={() => setResultModalOpen(true)}>查看分镜结果</button>
+                )}
                 {runArtifacts.length > 0 && (
                   <button
                     type="button"
@@ -1233,6 +1239,9 @@ export function TestBenchView({
               >
                 查看产物
               </button>
+            )}
+            {canViewDlcResult && (
+              <button type="button" className="cf-graph-action" onClick={() => setResultModalOpen(true)}>查看分镜结果</button>
             )}
           </div>
           {latestUiHtml && showUiPreview && (
@@ -1323,6 +1332,18 @@ export function TestBenchView({
                 artifactScopeLabel={pendingArtifactsLabel}
               />
             )}
+          </div>
+        </div>
+      )}
+
+      {resultModalOpen && canViewDlcResult && latestRun && (
+        <div className="cf-pending-modal-backdrop" onClick={() => setResultModalOpen(false)}>
+          <div className="cf-pending-modal cf-pending-modal-dlc" onClick={(event) => event.stopPropagation()}>
+            <div className="cf-pending-modal-head">
+              <strong>本次分镜交付</strong>
+              <button type="button" onClick={() => setResultModalOpen(false)}>x</button>
+            </div>
+            <DlcSandboxFrame cartridgeId={detail.cartridge.id} runId={latestRun.run_id} mode="result" />
           </div>
         </div>
       )}

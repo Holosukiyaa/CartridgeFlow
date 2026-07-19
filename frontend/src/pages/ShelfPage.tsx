@@ -210,6 +210,7 @@ export default function ShelfPage() {
 function CartridgePlayer({ cartridge, onBack, onOpen }: { cartridge: CartridgeDetail; onBack: () => void; onOpen: (id: string) => Promise<void> }) {
   const [running, setRunning] = useState(false)
   const [runResult, setRunResult] = useState<RunResult | null>(null)
+  const [showDlcResult, setShowDlcResult] = useState(false)
   const [runError, setRunError] = useState('')
   const [inputs, setInputs] = useState<Record<string, string>>({})
   const [packageResult, setPackageResult] = useState<{ url: string; filename: string; size: number; mcp_tool_count: number } | null>(null)
@@ -251,6 +252,7 @@ function CartridgePlayer({ cartridge, onBack, onOpen }: { cartridge: CartridgeDe
     setRunning(true)
     setRunError('')
     setRunResult(null)
+    setShowDlcResult(false)
     try {
       const result = await createCartridgeRun(cartridge.id, inputs)
       setRunResult(result)
@@ -268,6 +270,7 @@ function CartridgePlayer({ cartridge, onBack, onOpen }: { cartridge: CartridgeDe
     try {
       const result = await answerPendingInteraction(runResult.run_id, values)
       setRunResult(result.run)
+      setShowDlcResult(false)
       showToast({ title: result.run.status === 'completed' ? '流程已完成' : '已提交分镜调整', type: 'success' })
     } catch (e: any) {
       setRunError(e.message || '提交失败')
@@ -447,6 +450,14 @@ function CartridgePlayer({ cartridge, onBack, onOpen }: { cartridge: CartridgeDe
 
         {runResult?.status === 'paused_waiting_user' && runResult.pending_interaction?.ui_extension === 'portable_dlc' && cartridge.portable_dlc && (
           <DlcSandboxFrame cartridgeId={cartridge.id} runId={runResult.run_id} onSubmit={handleDlcSubmit} />
+        )}
+        {runResult?.status === 'completed' && cartridge.portable_dlc && (
+          <Button className="cf-outline-btn" onClick={() => setShowDlcResult((current) => !current)}>
+            {showDlcResult ? '关闭分镜结果' : '查看分镜结果'}
+          </Button>
+        )}
+        {runResult?.status === 'completed' && cartridge.portable_dlc && showDlcResult && (
+          <DlcSandboxFrame cartridgeId={cartridge.id} runId={runResult.run_id} mode="result" />
         )}
         {runResult && <RunResultView run={runResult} />}
       </VStack>

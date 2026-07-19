@@ -12,7 +12,7 @@ sys.path.insert(0, str(PACKAGE / "dlc"))
 from core.cartridge.runner import CartridgeRunner
 from core.extensions.worker_sdk import DlcWorkerRegistry
 from backend.mcp import series_3d
-from backend.mcp.storyboard import _normalize_actor
+from backend.mcp.storyboard import _build_project, _normalize_actor, _number, _vector
 
 LIBRARY_PATH = "cartridges/dev/dev.series_3d_episode_factory/assets/series_asset_library.json"
 VRM_PATH = PACKAGE / "dlc/frontend/models/boy1.vrm"
@@ -219,11 +219,56 @@ class Series3dEpisodeFactoryTest(unittest.TestCase):
             "tracking_butterfly_closing_book": "sit_reading",
             "closing_book": "page_turn",
             "watching_butterfly": "sit_reading",
+            "idle_read": "sit_reading",
+            "reading_focused": "sit_reading",
+            "hand_still": "sit_reading",
+            "surprised_then_smile": "sit_reading",
+            "close_book_look_up": "page_turn",
+            "gaze_at_distance": "sit_reading",
+            "pack_up_walk_away": "walk_slow",
         }
         for raw, expected in aliases.items():
             actor = _normalize_actor({"id": "hero", "action": raw, "available_actions": ["idle_hold", raw]})
             self.assertEqual(expected, actor["action"], raw)
             self.assertIn(expected, actor["available_actions"])
+
+    def test_storyboard_builder_accepts_llm_timecodes_and_y_up_vectors(self):
+        shot_list = {
+            "schema": "shot_list.v1",
+            "shots": [
+                {
+                    "id": 1,
+                    "title": "公园阅读",
+                    "description": "男孩在公园长椅上看书。",
+                    "duration": "00:08",
+                    "camera": {
+                        "position": {"x": 15, "y": 3, "z": -10},
+                        "target": {"x": 0, "y": 1.2, "z": 0},
+                        "focal_length_mm": "35mm",
+                    },
+                    "actor_blocking": [{"actor_id": "boy", "position": {"x": 0, "y": 0, "z": 0}, "rotation_degrees": {"y": 12}, "action": "idle_read", "pose_time": "0:00"}],
+                },
+                {
+                    "id": 2,
+                    "title": "蝴蝶飞离",
+                    "duration": 4,
+                    "actor_blocking": [
+                        {"actor_id": "butterfly", "action": "fly_away", "pose_time": "0:00"},
+                        {"actor_id": "boy", "action": "close_book_look_up", "pose_time": "0:02"},
+                    ],
+                },
+            ],
+        }
+        project = _build_project({"episode_script": {"title": "公园里的书页"}, "shot_list": shot_list})
+        self.assertEqual(0.0, _number("0:00", 0.5))
+        self.assertEqual(90.0, _number("01:30", 0.0))
+        self.assertEqual([15.0, -10.0, 3.0], _vector({"x": 15, "y": 3, "z": -10}, [0.0, 0.0, 0.0]))
+        self.assertEqual(["shot_01", "shot_02"], [shot["id"] for shot in project["shots"]])
+        self.assertEqual(8.0, project["shots"][0]["duration_seconds"])
+        self.assertEqual([15.0, -10.0, 3.0], project["shots"][0]["camera"]["position"])
+        self.assertEqual("boy", project["shots"][1]["actors"][0]["id"])
+        self.assertEqual("page_turn", project["shots"][1]["actors"][0]["action"])
+        self.assertEqual(1.0, project["shots"][1]["actors"][0]["pose_time"])
 
     def test_unsupported_action_blocks_render_instead_of_falling_back(self):
         unsupported_shots = json.loads(json.dumps(self.shots))

@@ -5,6 +5,7 @@ import math
 import re
 import struct
 import zlib
+from collections import Counter
 from copy import deepcopy
 from pathlib import Path
 
@@ -21,6 +22,9 @@ TOOLS = [
 
 _ACTION_ALIASES = {
     "sitting_reading": "sit_reading",
+    "idle_read": "sit_reading",
+    "reading_focused": "sit_reading",
+    "hand_still": "sit_reading",
     "reading": "sit_reading",
     "read": "sit_reading",
     "hand_tracing_text": "page_turn",
@@ -32,6 +36,10 @@ _ACTION_ALIASES = {
     "tracking_butterfly_closing_book": "sit_reading",
     "closing_book": "page_turn",
     "watching_butterfly": "sit_reading",
+    "surprised_then_smile": "sit_reading",
+    "close_book_look_up": "page_turn",
+    "gaze_at_distance": "sit_reading",
+    "pack_up_walk_away": "walk_slow",
     "return_to_reading_with_smile": "sit_reading",
     "walk_forward": "walk_slow",
     "walk_backward": "walk_slow",
@@ -98,16 +106,54 @@ def _shots(value) -> list[dict]:
     return [item for item in raw if isinstance(item, dict)] if isinstance(raw, list) else []
 
 
+def _shot_id(value, index: int) -> str:
+    raw = str(value if value is not None else "").strip()
+    if raw.isdigit():
+        return f"shot_{int(raw):02d}"
+    return raw or f"shot_{index + 1:02d}"
+
+
+def _blocking_candidates(shot: dict) -> list[dict]:
+    raw = shot.get("actor_blocking") or shot.get("blocking") or {}
+    candidates = raw if isinstance(raw, list) else raw.get("actors", []) if isinstance(raw, dict) else []
+    return [item for item in candidates if isinstance(item, dict)]
+
+
 def _workspace_rel(registry, path: Path) -> str:
     return path.resolve().relative_to(registry._workspace_root.resolve()).as_posix()
 
 
+def _number(value, fallback: float = 0.0) -> float:
+    if isinstance(value, bool) or value is None:
+        return float(fallback)
+    if isinstance(value, (int, float)):
+        number = float(value)
+        return number if math.isfinite(number) else float(fallback)
+    text = str(value).strip().lower()
+    if not text:
+        return float(fallback)
+    if ":" in text:
+        parts = text.split(":")
+        if 2 <= len(parts) <= 3:
+            try:
+                values = [float(part.strip()) for part in parts]
+                number = sum(item * (60 ** index) for index, item in enumerate(reversed(values)))
+                return number if math.isfinite(number) else float(fallback)
+            except ValueError:
+                pass
+    match = re.search(r"[-+]?\d+(?:\.\d+)?", text)
+    if match:
+        number = float(match.group(0))
+        return number if math.isfinite(number) else float(fallback)
+    return float(fallback)
+
+
 def _vector(value, fallback: list[float], length: int = 3) -> list[float]:
+    if isinstance(value, dict) and length == 3:
+        # LLM shot plans conventionally use Y-up dictionaries; the director stage is Z-up.
+        return [_number(value.get(key), fallback[index]) for index, key in enumerate(("x", "z", "y"))]
     if isinstance(value, (list, tuple)) and len(value) >= length:
-        try:
-            return [float(value[index]) for index in range(length)]
-        except (TypeError, ValueError):
-            pass
+        return [_number(value[index], fallback[index]) for index in range(length)]
     return deepcopy(fallback)
 
 
@@ -239,14 +285,14 @@ def _camera_for(index: int, shot: dict) -> dict:
     camera["position"] = _vector(raw_camera.get("position"), camera["position"])
     camera["target"] = _vector(raw_camera.get("target"), camera["target"])
     if raw_camera.get("focal_length_mm") is not None:
-        camera["focal_length_mm"] = float(raw_camera["focal_length_mm"])
+        camera["focal_length_mm"] = max(18.0, min(120.0, _number(raw_camera["focal_length_mm"], camera["focal_length_mm"])))
     camera.update({"template": template, "safe_frame": "9:16", "index": index, "view_mode": "shot_camera"})
     return camera
 
 
 def _actor_for(index: int, shot: dict, action: str, actor_index: int, actor_id: str) -> dict:
     raw_blocking = shot.get("actor_blocking") or shot.get("blocking") or {}
-    candidates = raw_blocking if isinstance(raw_blocking, list) else raw_blocking.get("actors", []) if isinstance(raw_blocking, dict) and isinstance(raw_blocking.get("actors"), list) else []
+    candidates = _blocking_candidates(shot)
     blocking = next((item for item in candidates if isinstance(item, dict) and str(item.get("actor_id") or item.get("id") or "") == actor_id), None)
     if blocking is None and actor_index < len(candidates) and isinstance(candidates[actor_index], dict):
         blocking = candidates[actor_index]
@@ -268,17 +314,17 @@ def _actor_for(index: int, shot: dict, action: str, actor_index: int, actor_id: 
         "rotation_degrees": _vector(blocking.get("rotation_degrees"), [0.0, 0.0, float((index % 3 - 1) * 18)]),
         "scale": 1.0,
         "action": _normalize_action_id(blocking.get("action") or (action if actor_index == 0 else "idle_talk")),
-        "pose_time": float(blocking.get("pose_time") or (0.22 + (index % 4) * 0.19)),
+        "pose_time": max(0.0, min(1.0, _number(blocking.get("pose_time"), 0.22 + (index % 4) * 0.19))),
         "available_actions": ["idle_hold", "walk_slow", "idle_talk", "gesture_interact", "look_back", "run_short", "sit_idle", "sit_reading", "page_turn", "look_up", "point_forward", "pick_up"],
         "gaze_target": [0.0, -4.0, 1.4],
         "expression": str(blocking.get("expression") or "auto"),
-        "expression_weight": float(blocking.get("expression_weight") if blocking.get("expression_weight") is not None else 0.65),
-        "gaze_yaw_degrees": float(blocking.get("gaze_yaw_degrees") or 0.0),
-        "gaze_pitch_degrees": float(blocking.get("gaze_pitch_degrees") or 0.0),
-        "head_pitch_degrees": float(blocking.get("head_pitch_degrees") or 0.0),
-        "head_yaw_degrees": float(blocking.get("head_yaw_degrees") or 0.0),
-        "left_arm_raise_degrees": float(blocking.get("left_arm_raise_degrees") or 0.0),
-        "right_arm_raise_degrees": float(blocking.get("right_arm_raise_degrees") or 0.0),
+        "expression_weight": max(0.0, min(1.0, _number(blocking.get("expression_weight"), 0.65))),
+        "gaze_yaw_degrees": _number(blocking.get("gaze_yaw_degrees"), 0.0),
+        "gaze_pitch_degrees": _number(blocking.get("gaze_pitch_degrees"), 0.0),
+        "head_pitch_degrees": _number(blocking.get("head_pitch_degrees"), 0.0),
+        "head_yaw_degrees": _number(blocking.get("head_yaw_degrees"), 0.0),
+        "left_arm_raise_degrees": _number(blocking.get("left_arm_raise_degrees"), 0.0),
+        "right_arm_raise_degrees": _number(blocking.get("right_arm_raise_degrees"), 0.0),
         "locked_identity": True,
     }
 
@@ -297,9 +343,16 @@ def _build_project(params: dict) -> dict:
         for item in (action_plan.get("shots") or action_plan.get("assignments") or [])
         if isinstance(item, dict)
     }
+    actor_counts = Counter(
+        str(actor.get("actor_id") or actor.get("id") or "").strip()
+        for source in source_shots
+        for actor in _blocking_candidates(source)
+        if str(actor.get("actor_id") or actor.get("id") or "").strip()
+    )
+    primary_actor_id = actor_counts.most_common(1)[0][0] if actor_counts else "hero"
     shots = []
     for index, source in enumerate(source_shots[:10]):
-        shot_id = str(source.get("id") or f"shot_{index + 1:02d}")
+        shot_id = _shot_id(source.get("id"), index)
         action_item = action_items.get(shot_id) or {}
         primary_action = action_item.get("primary_action") if isinstance(action_item.get("primary_action"), dict) else {}
         action = _normalize_action_id(primary_action.get("id") or action_item.get("action_id") or action_item.get("action") or (source.get("action_tags") or ["idle_hold"])[0])
@@ -309,7 +362,7 @@ def _build_project(params: dict) -> dict:
             planned_source["camera"] = str(planned_camera["id"])
         scene = _scene_for(index, source)
         source_props = source.get("props") if isinstance(source.get("props"), list) else []
-        actor_ids = source.get("characters") or source.get("actors") or source.get("cast") or ["hero"]
+        actor_ids = source.get("characters") or source.get("actors") or source.get("cast") or [primary_actor_id]
         if not isinstance(actor_ids, list):
             actor_ids = [actor_ids]
         actor_ids = [str(value or f"actor_{actor_index + 1}") for actor_index, value in enumerate(actor_ids[:3])]
@@ -318,14 +371,14 @@ def _build_project(params: dict) -> dict:
             "order": index + 1,
             "title": str(source.get("title") or f"Shot {index + 1}"),
             "intent": str(source.get("description") or ""),
-            "duration_seconds": float(source.get("duration") or 3.0),
+            "duration_seconds": max(0.25, _number(source.get("duration"), 3.0)),
             "scene": scene,
             "camera": _camera_for(index, planned_source),
             "actors": [_actor_for(index, source, action, actor_index, actor_id) for actor_index, actor_id in enumerate(actor_ids)],
             "props": [{"id": str(item), "position": [float(pos - 1), 1.8, 0.35]} for pos, item in enumerate(source_props[:4])],
             "lighting": {
                 "key": str((source.get("lighting") or {}).get("key") if isinstance(source.get("lighting"), dict) else source.get("lighting") or "sun"),
-                "exposure": float((source.get("lighting") or {}).get("exposure", 0.1) if isinstance(source.get("lighting"), dict) else 0.1),
+                "exposure": _number((source.get("lighting") or {}).get("exposure", 0.1) if isinstance(source.get("lighting"), dict) else 0.1, 0.1),
                 "contrast": 1.0,
                 "temperature_k": 5600 if scene["time"] in {"day", "morning", "白天", "早晨"} else 3900,
             },
@@ -413,7 +466,7 @@ def _render_shot(path: Path, shot: dict):
     camera = shot.get("camera") if isinstance(shot.get("camera"), dict) else {}
     camera_position = _vector(camera.get("position"), [0.0, -8.0, 2.1])
     camera_target = _vector(camera.get("target"), [0.0, 0.0, 1.2])
-    focal = max(18.0, min(120.0, float(camera.get("focal_length_mm") or 42.0)))
+    focal = max(18.0, min(120.0, _number(camera.get("focal_length_mm"), 42.0)))
     view_scale = 0.72 + focal / 120.0
     camera_pan = camera_position[0] * 18.0 - camera_target[0] * 12.0
     for item in scene.get("environment") or []:
@@ -449,7 +502,7 @@ def _render_shot(path: Path, shot: dict):
         body_color = wardrobe[actor_index % len(wardrobe)]
         _circle(pixels, width, height, ax, head_y, max(12, int(29 * scale)), (215, 171, 132))
         _rect(pixels, width, height, ax - int(35 * scale), body_top, ax + int(35 * scale), int(body_top + 135 * scale), body_color)
-        phase = float(actor.get("pose_time") or 0.0) * math.tau
+        phase = _number(actor.get("pose_time"), 0.0) * math.tau
         action = str(actor.get("action") or "idle_hold")
         stride = math.sin(phase) * (38 if action in {"walk_slow", "run_short"} else 8) * scale
         gesture = math.sin(phase * 0.5) * 45 * scale if action in {"gesture_interact", "idle_talk", "look_back"} else 8 * scale

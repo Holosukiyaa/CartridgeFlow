@@ -12,6 +12,7 @@ sys.path.insert(0, str(PACKAGE / "dlc"))
 from core.cartridge.runner import CartridgeRunner
 from core.extensions.worker_sdk import DlcWorkerRegistry
 from backend.mcp import series_3d
+from backend.mcp.storyboard import _normalize_actor
 
 LIBRARY_PATH = "cartridges/dev/dev.series_3d_episode_factory/assets/series_asset_library.json"
 VRM_PATH = PACKAGE / "dlc/frontend/models/boy1.vrm"
@@ -208,6 +209,21 @@ class Series3dEpisodeFactoryTest(unittest.TestCase):
         self.assertEqual("idle_talk", plan["primary_action"]["id"])
         self.assertEqual("Idle_Talking_Loop", plan["primary_action"]["clip_name"])
         self.assertEqual("close_up_reveal", plan["camera_template"]["id"])
+
+    def test_storyboard_adjustments_normalize_narrative_action_aliases(self):
+        aliases = {
+            "sitting_reading": "sit_reading",
+            "reading_then_looking_up": "sit_reading",
+            "turning_page": "page_turn",
+            "looking_up_smiling": "sit_reading",
+            "tracking_butterfly_closing_book": "sit_reading",
+            "closing_book": "page_turn",
+            "watching_butterfly": "sit_reading",
+        }
+        for raw, expected in aliases.items():
+            actor = _normalize_actor({"id": "hero", "action": raw, "available_actions": ["idle_hold", raw]})
+            self.assertEqual(expected, actor["action"], raw)
+            self.assertIn(expected, actor["available_actions"])
 
     def test_unsupported_action_blocks_render_instead_of_falling_back(self):
         unsupported_shots = json.loads(json.dumps(self.shots))

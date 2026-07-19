@@ -143,6 +143,25 @@
     const actionNames={idle_hold:'静止观察',walk_slow:'向前缓慢走',idle_talk:'站立交谈',gesture_interact:'手势互动',look_back:'回头观察',run_short:'向前短跑',sit_idle:'坐姿停留',sit_reading:'坐姿阅读',page_turn:'翻页',look_up:'抬头观察',point_forward:'指向前方',pick_up:'弯腰拾取'}
     const motionClipAliases={walk_slow:'Walk_Loop',idle_hold:'Idle_Loop',idle_talk:'Idle_Talking_Loop',gesture_interact:'Interact',run_short:'Sprint_Loop',sit_idle:'Sitting_Idle_Loop',sit_reading:'Sitting_Idle_Loop',page_turn:'Interact',look_up:'Idle_Talking_Loop',point_forward:'Interact',pick_up:'PickUp_Table'}
     const approvedMotionActions=new Set(['walk_slow','idle_hold','idle_talk','gesture_interact','run_short','sit_idle'])
+    const actionAliases={
+      sitting_reading:{action:'sit_reading'},
+      reading_then_looking_up:{action:'sit_reading',head_pitch_degrees:-18},
+      turning_page:{action:'page_turn'},
+      looking_up_smiling:{action:'sit_reading',head_pitch_degrees:-18,expression:'happy',expression_weight:.7},
+      tracking_butterfly_closing_book:{action:'sit_reading',head_pitch_degrees:-12,expression:'happy',expression_weight:.45},
+      closing_book:{action:'page_turn'},
+      watching_butterfly:{action:'sit_reading',head_pitch_degrees:-12,expression:'relaxed',expression_weight:.3},
+      reading:{action:'sit_reading'},
+      read:{action:'sit_reading'},
+      hand_tracing_text:{action:'page_turn'},
+      turn_page:{action:'page_turn'},
+      look_up_thoughtfully:{action:'look_up'},
+      return_to_reading_with_smile:{action:'sit_reading',expression:'happy',expression_weight:.55},
+      walk_forward:{action:'walk_slow'},
+      walk_backward:{action:'walk_slow'},
+      talking:{action:'idle_talk'},
+      interact:{action:'gesture_interact'}
+    }
     const humanoidAliases={hips:['hips'],spine:['spine'],chest:['chest'],upperChest:['upperChest'],neck:['neck'],head:['head'],leftEye:['leftEye'],rightEye:['rightEye'],leftShoulder:['leftShoulder'],rightShoulder:['rightShoulder'],leftUpperArm:['leftUpperArm'],leftLowerArm:['leftLowerArm'],leftHand:['leftHand'],rightUpperArm:['rightUpperArm'],rightLowerArm:['rightLowerArm'],rightHand:['rightHand'],leftUpperLeg:['leftUpperLeg'],leftLowerLeg:['leftLowerLeg'],leftFoot:['leftFoot'],leftToes:['leftToes'],rightUpperLeg:['rightUpperLeg'],rightLowerLeg:['rightLowerLeg'],rightFoot:['rightFoot'],rightToes:['rightToes']}
     for(const side of ['left','right'])for(const finger of ['Thumb','Index','Middle','Ring','Little'])for(const segment of ['Proximal','Intermediate','Distal'])humanoidAliases[side+finger+segment]=[side+finger+segment]
     const motionBoneNames={hips:'pelvis',spine:'spine_01',chest:'spine_02',upperChest:'spine_03',neck:'neck_01',head:'Head',leftShoulder:'clavicle_l',leftUpperArm:'upperarm_l',leftLowerArm:'lowerarm_l',leftHand:'hand_l',rightShoulder:'clavicle_r',rightUpperArm:'upperarm_r',rightLowerArm:'lowerarm_r',rightHand:'hand_r',leftUpperLeg:'thigh_l',leftLowerLeg:'calf_l',leftFoot:'foot_l',leftToes:'ball_l',rightUpperLeg:'thigh_r',rightLowerLeg:'calf_r',rightFoot:'foot_r',rightToes:'ball_r'}
@@ -150,6 +169,8 @@
     const current=()=>state.project?.shots?.[state.active]||null
     const vec=(value,fallback)=>Array.isArray(value)&&value.length>=3?value.map(Number):[...fallback]
     const color=(value,fallback)=>{try{return new THREE.Color(value||fallback)}catch{return new THREE.Color(fallback)}}
+    function normalizeActionId(value){const raw=String(value||'idle_hold').trim().toLowerCase().replace(/[- ]/g,'_');return actionAliases[raw]?.action||raw||'idle_hold'}
+    function normalizeProjectActions(project){for(const shot of project.shots||[]){for(const actor of shot.actors||[]){const raw=String(actor.action||'idle_hold').trim().toLowerCase().replace(/[- ]/g,'_'),hint=actionAliases[raw];actor.action=hint?.action||raw||'idle_hold';if(hint){for(const key of ['head_pitch_degrees','expression','expression_weight'])if(actor[key]===undefined&&hint[key]!==undefined)actor[key]=hint[key]}const available=Array.isArray(actor.available_actions)?actor.available_actions.map(normalizeActionId):Object.keys(actionNames);actor.available_actions=[...new Set([...available,actor.action])]}}return project}
     function clearScene(){while(scene.children.length)scene.remove(scene.children[0]);actorRigs=[];cameraHelper=null}
     function material(value,rough=.85){return new THREE.MeshStandardMaterial({color:value,roughness:rough,metalness:.05})}
     function box(size,position,value){const mesh=new THREE.Mesh(new THREE.BoxGeometry(...size),material(value));mesh.position.set(...position);mesh.castShadow=true;mesh.receiveShadow=true;return mesh}
@@ -308,7 +329,7 @@
     }
     function renderStrip(){const strip=$('strip');strip.innerHTML='';state.project.shots.forEach((shot,index)=>{const b=document.createElement('button');b.type='button';b.className=`shot ${index===state.active?'active':''} ${shot.review?.status==='approved'?'approved':''}`;const matches=state.artifacts.filter(item=>item.path===shot.preview_frame||item.name===shot.preview_frame);const artifact=state.result?(matches.find(item=>item.source_node_id==='render_approved_frames')||matches.at(-1)):matches[0];const sceneColor=shot.scene?.palette?.sky||'#52636b';const media=artifact?.preview_url?`<img src="${artifact.preview_url}" alt="">`:`<span class="thumb-fallback" style="background:${sceneColor}"><span></span></span>`;b.innerHTML=`${media}<span class="shot-copy"><strong>${shot.order}. ${shot.title}</strong><small>${shot.scene?.label||shot.scene?.archetype||''}</small><small>${shot.camera?.template||''} · ${actionNames[shot.actors?.[0]?.action]||shot.actors?.[0]?.action||''}</small></span>`;b.onclick=()=>selectShot(index);strip.appendChild(b)})}
     function selectShot(index){state.active=index;buildScene(current());syncInspector();renderStrip();bindControls()}
-    function load(project,{result=false,artifacts=[]}={}){state.project=structuredClone(project);state.project.shots.forEach(shot=>shot._initial=structuredClone(shot));state.active=0;state.changes.clear();state.result=result;state.artifacts=artifacts;$('shell').classList.toggle('result-mode',result);$('title').textContent=result?'分镜交付':'分镜导演台';$('status').textContent=result?'流程已完成':'逐镜调整';renderDeliverables();selectShot(0)}
+    function load(project,{result=false,artifacts=[]}={}){state.project=normalizeProjectActions(structuredClone(project));state.project.shots.forEach(shot=>shot._initial=structuredClone(shot));state.active=0;state.changes.clear();state.result=result;state.artifacts=artifacts;$('shell').classList.toggle('result-mode',result);$('title').textContent=result?'分镜交付':'分镜导演台';$('status').textContent=result?'流程已完成':'逐镜调整';renderDeliverables();selectShot(0)}
     function renderDeliverables(){const root=$('deliverables');root.innerHTML='';const files=state.artifacts.filter(item=>item.preview_url).slice(-4);files.forEach(item=>{const link=document.createElement('a');link.href=item.preview_url;link.target='_blank';link.rel='noopener';link.textContent=item.name?.endsWith('.json')?'查看镜头包':'查看分镜帧';root.appendChild(link)});root.classList.toggle('visible',state.result&&files.length>0)}
     function change(){if(state.result)return;const shot=current(),actor=shot.actors[0],rotation=vec(actor.rotation_degrees,[0,0,0]);shot.camera.position=[+$('cameraX').value,+$('cameraY').value,+$('cameraZ').value];shot.camera.focal_length_mm=+$('focal').value;actor.position[0]=+$('actorX').value;actor.position[1]=+$('actorY').value;rotation[2]=+$('actorRotation').value;actor.rotation_degrees=rotation;actor.pose_time=+$('pose').value;actor.action=$('action').value;actor.expression=$('expression').value;actor.expression_weight=+$('expressionWeight').value;actor.gaze_yaw_degrees=+$('gazeYaw').value;actor.gaze_pitch_degrees=+$('gazePitch').value;actor.head_pitch_degrees=+$('headPitch').value;actor.head_yaw_degrees=+$('headYaw').value;actor.left_arm_raise_degrees=+$('leftArmRaise').value;actor.right_arm_raise_degrees=+$('rightArmRaise').value;shot.prompt.content=$('prompt').value;state.syncing=true;syncShotCamera(shot);if(state.mode==='shot'){controls.target.set(...vec(shot.camera.target,[0,0,1.2]));controls.update()}state.syncing=false;updateActor(actor);markChanged();syncInspector();render()}
     controlsIds.forEach(id=>$(id).addEventListener('input',change));$('pose').addEventListener('pointerdown',()=>setMotionPlaying(false));$('action').addEventListener('change',change);$('expression').addEventListener('change',change);$('prompt').addEventListener('input',change)

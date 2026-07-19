@@ -25,7 +25,13 @@ _ACTION_ALIASES = {
     "read": "sit_reading",
     "hand_tracing_text": "page_turn",
     "turn_page": "page_turn",
+    "turning_page": "page_turn",
     "look_up_thoughtfully": "look_up",
+    "reading_then_looking_up": "sit_reading",
+    "looking_up_smiling": "sit_reading",
+    "tracking_butterfly_closing_book": "sit_reading",
+    "closing_book": "page_turn",
+    "watching_butterfly": "sit_reading",
     "return_to_reading_with_smile": "sit_reading",
     "walk_forward": "walk_slow",
     "walk_backward": "walk_slow",
@@ -37,6 +43,25 @@ _ACTION_ALIASES = {
 def _normalize_action_id(value: str, fallback: str = "idle_hold") -> str:
     raw = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
     return _ACTION_ALIASES.get(raw, raw or fallback)
+
+
+def _normalize_actor(actor: dict) -> dict:
+    item = deepcopy(actor) if isinstance(actor, dict) else {}
+    item["action"] = _normalize_action_id(item.get("action"))
+    available = item.get("available_actions")
+    if isinstance(available, list):
+        item["available_actions"] = list(dict.fromkeys(_normalize_action_id(value) for value in available if value))
+    if item["action"] not in item.get("available_actions", []):
+        item.setdefault("available_actions", []).append(item["action"])
+    return item
+
+
+def _normalize_project_actions(project: dict) -> dict:
+    normalized = deepcopy(project)
+    for shot in normalized.get("shots") or []:
+        if isinstance(shot, dict) and isinstance(shot.get("actors"), list):
+            shot["actors"] = [_normalize_actor(actor) for actor in shot["actors"]]
+    return normalized
 
 
 def _object(value, fallback=None):
@@ -485,7 +510,7 @@ def register(registry):
 
     def render_storyboard_frames(params: dict) -> dict:
         try:
-            project = _project(params.get("storyboard_project") or params.get("project"))
+            project = _normalize_project_actions(_project(params.get("storyboard_project") or params.get("project")))
             if project.get("schema") != "cartridgeflow.storyboard_project.v1":
                 raise ValueError("storyboard_project.v1 is required")
             output_dir = str(params.get("output_dir") or f"test_output/storyboards/{_slug(project.get('project_id'))}")
@@ -506,7 +531,7 @@ def register(registry):
 
     def apply_storyboard_adjustments(params: dict) -> dict:
         try:
-            project = _project(params.get("storyboard_project") or params.get("project"))
+            project = _normalize_project_actions(_project(params.get("storyboard_project") or params.get("project")))
             review = _object(params.get("review") or params.get("director_reply") or params.get("adjustments"))
             shots = project.get("shots") or []
             by_id = {str(item.get("id")): item for item in shots if isinstance(item, dict)}
@@ -516,7 +541,7 @@ def register(registry):
                 shot = by_id[str(change["shot_id"])]
                 for field in ["camera", "actors", "props", "lighting", "prompt", "duration_seconds"]:
                     if field in change:
-                        shot[field] = deepcopy(change[field])
+                        shot[field] = [_normalize_actor(actor) for actor in change[field]] if field == "actors" and isinstance(change[field], list) else deepcopy(change[field])
                 shot["review"] = {"status": "draft", "revision": int((shot.get("review") or {}).get("revision") or 1) + 1, "notes": str(change.get("notes") or "")}
             approved_ids = {str(item) for item in (review.get("approved_shot_ids") or review.get("approved_shots") or [])}
             if review.get("approval") in {"approve", "approve_all"} or review.get("status") == "approved":
@@ -537,7 +562,7 @@ def register(registry):
 
     def prepare_video_shots(params: dict) -> dict:
         try:
-            project = _project(params.get("storyboard_project") or params.get("project"))
+            project = _normalize_project_actions(_project(params.get("storyboard_project") or params.get("project")))
             shots = project.get("shots") or []
             pending = [str(shot.get("id")) for shot in shots if (shot.get("review") or {}).get("status") != "approved"]
             if pending:

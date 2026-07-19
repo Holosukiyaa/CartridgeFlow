@@ -33,6 +33,7 @@ async def chat(
     usage = result.get("usage") or {}
     result["meta"] = {
         **result.get("meta", {}),
+        **result.get("provider_meta", {}),
         "agent_name": agent_name,
         "phase": phase,
         "elapsed_seconds": round(time.time() - started_at, 3),

@@ -576,6 +576,7 @@ class LabNodeExecutor:
         fallback = ""
         provider_id = ""
         model = ""
+        llm_response_meta = {}
         raw_decision_contract = params.get("decision_contract")
         decision_contract = raw_decision_contract if isinstance(raw_decision_contract, dict) else {}
         output_contract = params.get("output_contract") or decision_contract.get("schema")
@@ -649,13 +650,21 @@ class LabNodeExecutor:
                     loop = asyncio.get_event_loop()
                     response = loop.run_until_complete(chat(cfg, messages, agent_name="lab_node", phase="flow_node"))
                 result_text = response.get("content", "")
+                llm_response_meta = response.get("meta") if isinstance(response.get("meta"), dict) else {}
                 used_llm = True
         except Exception as exc:
             fallback = f"llm_error:{exc.__class__.__name__}"
             result_text = self._offline_llm_response(system_prompt, prompt_template, final_prompt)
 
         if output_contract == "decision_envelope.v1":
-            envelope = self._decision_envelope_from_result(result_text, decision_contract, fallback)
+            if used_llm and not str(result_text or "").strip():
+                finish_reason = str(llm_response_meta.get("finish_reason") or "unknown")
+                envelope = make_blocked_decision_envelope(
+                    "llm_empty_response",
+                    f"LLM returned empty assistant content (finish_reason={finish_reason}).",
+                )
+            else:
+                envelope = self._decision_envelope_from_result(result_text, decision_contract, fallback)
             if force_live_confirmation and envelope.get("status") == "resolved":
                 envelope = self._collaboration_confirmation_envelope(envelope, decision_contract, params, output_key)
             if envelope.get("status") == "needs_user_input":
@@ -680,6 +689,7 @@ class LabNodeExecutor:
                 "fallback": fallback,
                 "provider_id": provider_id,
                 "model": model,
+                "llm_response_meta": llm_response_meta,
                 "test_mode": run.get("test_mode") or {},
                 "decision_test_mode": decision_test_mode,
                 "output_contract": "decision_envelope.v1",
@@ -705,6 +715,13 @@ class LabNodeExecutor:
                 result["failed"] = True
                 if blockers:
                     result["error"] = self._format_decision_validation_error(blockers)
+                else:
+                    issues = envelope.get("issues") if isinstance(envelope.get("issues"), list) else []
+                    result["error"] = "; ".join(
+                        str(item.get("message") or item.get("code") or "Decision blocked")
+                        for item in issues[:5]
+                        if isinstance(item, dict)
+                    ) or str(envelope.get("summary") or "Decision blocked")
             return result
 
         store[output_key] = result_text

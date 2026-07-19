@@ -60,6 +60,7 @@
       "optional_input": "script_reply",
       "output": "episode_script_decision",
       "output_contract": "decision_envelope.v1",
+      "abort_on_failed": true,
       "decision_contract": {
         "schema": "decision_envelope.v1",
         "allowed_statuses": [
@@ -145,9 +146,10 @@
       "effect": "none",
       "protocol_version": "0.5",
       "input": "episode_inputs,episode_script",
-      "optional_input": "shot_reply",
+      "optional_input": "shot_revision_feedback",
       "output": "shot_list_decision",
       "output_contract": "decision_envelope.v1",
+      "abort_on_failed": true,
       "decision_contract": {
         "schema": "decision_envelope.v1",
         "allowed_statuses": [
@@ -176,13 +178,21 @@
               "approval"
             ]
           },
-          "resume_policy": "resume_same_node",
+          "resume_policy": "resume_next_node",
+          "answer_routes": [
+            {
+              "match": {"field": "approval", "equals": "revise"},
+              "policy": "resume_same_node",
+              "copy_answer_to": "shot_revision_feedback",
+              "clear_store_keys": ["shot_reply"]
+            }
+          ],
           "live_collaboration": true
         },
         "consume": {
           "mode": "payload_path",
           "path": "payload.shot_list",
-          "as": "shot_list",
+          "as": "shot_list_candidate",
           "on_missing": "fail_closed"
         },
         "offline_decision": {
@@ -290,16 +300,54 @@
       },
       "params": {
         "description": "以镜头为单位生成可编辑的构图、动作和节奏草案。",
-        "system_prompt": "你是分镜导演。只输出 decision_envelope.v1，并在 payload.shot_list 中输出 shot_list.v1，不生成视频。每个 shot 必须包含 id、title、description、duration、scene_design、camera、actor_blocking、action_tags、lighting、composition。scene_design 必须包含 location、time、weather、landmarks、blocking_notes；camera 必须包含 template、position、target、focal_length_mm；actor_blocking 必须是数组，每个出镜人物分别包含 actor_id、position、rotation_degrees、action、pose_time。每个镜头都要给出有叙事目的的独立构图、机位、人物站位和默认动作相位，连续场景也不能简单复制上一镜。",
-        "prompt": "根据 episode_script 生成 3-10 个可直接进入 3D 导演台的 shot。先设计每镜空间与构图，再确定机位、人物阻挡和动作。",
+        "system_prompt": "你是分镜导演。只输出 decision_envelope.v1，不生成视频。首次方案或收到修改意见时，status 必须为 needs_user_input，并把完整 shot_list.v1 放在 payload.draft_shot_list；不要把 question 放进 payload。若不需要用户确认而直接 resolved，则把完整 shot_list.v1 放在 payload.shot_list。每个 shot 必须包含 id、title、description、duration、scene_design、camera、actor_blocking、action_tags、lighting、composition。scene_design 必须包含 location、time、weather、landmarks、blocking_notes；camera 必须包含 template、position、target、focal_length_mm；actor_blocking 必须是数组，每个出镜人物分别包含 actor_id、position、rotation_degrees、action、pose_time。每个镜头都要给出有叙事目的的独立构图、机位、人物站位和默认动作相位，连续场景也不能简单复制上一镜。",
+        "prompt": "根据 episode_script 生成 3-10 个可直接进入 3D 导演台的 shot。先设计每镜空间与构图，再确定机位、人物阻挡和动作；如果存在 shot_revision_feedback，必须据此修改后重新给出完整草稿并请求确认。",
         "input": "episode_inputs,episode_script",
-        "optional_input": "shot_reply",
+        "optional_input": "shot_revision_feedback",
         "output": "shot_list_decision",
         "output_contract": "decision_envelope.v1"
       },
-      "next": "match_assets",
+      "next": "confirm_shot_plan",
       "layout": {
         "x": 740,
+        "y": 240
+      }
+    },
+    "confirm_shot_plan": {
+      "type": "process",
+      "title": "确认分镜方案数据",
+      "kind": "mcp_read",
+      "executor": "mcp",
+      "effect": "read_only",
+      "protocol_version": "0.5",
+      "input": "shot_list_decision",
+      "optional_input": "shot_reply",
+      "output": "shot_list",
+      "tool_binding": "static_params",
+      "allowed_tools": [
+        "confirm_storyboard_plan"
+      ],
+      "mcp_binding": {
+        "mode": "read_only",
+        "allowed_tools": [
+          "confirm_storyboard_plan"
+        ]
+      },
+      "failure_policy": "fail_closed",
+      "abort_on_failed": true,
+      "audit_log": true,
+      "params": {
+        "input": "shot_list_decision",
+        "optional_input": "shot_reply",
+        "output": "shot_list",
+        "tool_params": {
+          "shot_list_decision": "store:shot_list_decision",
+          "shot_reply": "store:shot_reply"
+        }
+      },
+      "next": "match_assets",
+      "layout": {
+        "x": 980,
         "y": 240
       }
     },
@@ -331,7 +379,7 @@
       },
       "next": "match_actions",
       "layout": {
-        "x": 984,
+        "x": 1220,
         "y": 136
       }
     },
@@ -363,7 +411,7 @@
       },
       "next": "build_storyboard",
       "layout": {
-        "x": 980,
+        "x": 1220,
         "y": 340
       }
     },
@@ -396,7 +444,7 @@
       },
       "next": "render_storyboard",
       "layout": {
-        "x": 1220,
+        "x": 1460,
         "y": 240
       }
     },
@@ -426,7 +474,7 @@
       },
       "next": "director_console",
       "layout": {
-        "x": 1460,
+        "x": 1700,
         "y": 240
       }
     },
@@ -447,7 +495,7 @@
       },
       "next": "review_storyboard",
       "layout": {
-        "x": 1700,
+        "x": 1940,
         "y": 240
       }
     },
@@ -504,7 +552,7 @@
       },
       "next": "apply_adjustments",
       "layout": {
-        "x": 1940,
+        "x": 2180,
         "y": 240
       }
     },
@@ -535,7 +583,7 @@
       },
       "next": "render_approved_frames",
       "layout": {
-        "x": 2180,
+        "x": 2420,
         "y": 240
       }
     },
@@ -565,7 +613,7 @@
       },
       "next": "prepare_video",
       "layout": {
-        "x": 2420,
+        "x": 2660,
         "y": 240
       }
     },
@@ -595,7 +643,7 @@
       },
       "next": "delivery_summary",
       "layout": {
-        "x": 2660,
+        "x": 2900,
         "y": 240
       }
     },
@@ -619,7 +667,7 @@
       },
       "next": "delivery",
       "layout": {
-        "x": 2900,
+        "x": 3140,
         "y": 240
       }
     },
@@ -629,7 +677,7 @@
       "action": "delivery",
       "next": "complete",
       "layout": {
-        "x": 3140,
+        "x": 3380,
         "y": 240
       }
     },
@@ -637,7 +685,7 @@
       "type": "terminal",
       "title": "流程完成",
       "layout": {
-        "x": 3380,
+        "x": 3620,
         "y": 240
       }
     }
@@ -660,6 +708,11 @@
     },
     {
       "from": "plan_shots",
+      "to": "confirm_shot_plan",
+      "scope": "root"
+    },
+    {
+      "from": "confirm_shot_plan",
       "to": "match_assets",
       "scope": "root"
     },

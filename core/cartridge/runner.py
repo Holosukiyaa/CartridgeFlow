@@ -233,7 +233,7 @@ class CartridgeRunner:
                 store = _state_doc["context"].setdefault("store", {})
                 params_ = state_.get("params") or {}
                 preset_config_ = params_.get("preset_config") or {}
-                abort_on_failed = bool(params_.get("abort_on_failed") or preset_config_.get("abort_on_failed"))
+                abort_on_failed = bool(state_.get("abort_on_failed") or params_.get("abort_on_failed") or preset_config_.get("abort_on_failed"))
                 input_key = params_.get("input") or preset_config_.get("from") or preset_config_.get("source") or preset_config_.get("items")
 
                 def _truncate(val, limit=2000):
@@ -1062,7 +1062,7 @@ class CartridgeRunner:
                 store = _state_doc["context"].setdefault("store", {})
                 params_ = state_.get("params") or {}
                 preset_config_ = params_.get("preset_config") or {}
-                abort_on_failed = bool(params_.get("abort_on_failed") or preset_config_.get("abort_on_failed"))
+                abort_on_failed = bool(state_.get("abort_on_failed") or params_.get("abort_on_failed") or preset_config_.get("abort_on_failed"))
                 input_key = params_.get("input") or preset_config_.get("from") or preset_config_.get("source") or preset_config_.get("items")
 
                 def _truncate(val, limit=2000):

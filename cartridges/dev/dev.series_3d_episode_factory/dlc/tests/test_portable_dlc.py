@@ -51,6 +51,33 @@ class PortableDlcTest(unittest.TestCase):
         self.assertEqual("cartridgeflow.storyboard_project.v1", result["project"]["schema"])
         self.assertEqual("blocking", result["project"]["approval"]["status"])
 
+    def test_confirm_storyboard_plan_promotes_the_exact_approved_draft(self):
+        draft = {
+            "schema": "shot_list.v1",
+            "shots": [{"id": "approved-shot", "description": "Keep this exact proposal."}],
+        }
+        result = self.scoped_registry().call("media", "confirm_storyboard_plan", {
+            "shot_list_decision": {
+                "schema": "decision_envelope.v1",
+                "status": "needs_user_input",
+                "payload": {"draft_shot_list": draft},
+            },
+            "shot_reply": {"approval": "approve"},
+        })
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(draft, result["shot_list"])
+
+    def test_confirm_storyboard_plan_rejects_unapproved_pending_draft(self):
+        result = self.scoped_registry().call("media", "confirm_storyboard_plan", {
+            "shot_list_decision": {
+                "schema": "decision_envelope.v1",
+                "status": "needs_user_input",
+                "payload": {"draft_shot_list": {"shots": [{"id": "s1"}]}},
+            },
+            "shot_reply": {"approval": "revise"},
+        })
+        self.assertFalse(result["ok"])
+
     def test_storyboard_preserves_distinct_ai_scene_camera_and_pose_plans(self):
         result = self.scoped_registry().call("media", "build_storyboard_project", {
             "episode_script": {"episode_id": "scene-plan-test"},

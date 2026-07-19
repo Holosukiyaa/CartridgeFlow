@@ -12,6 +12,7 @@ from pathlib import Path
 DLC_ID = "dlc.series_3d_episode_factory"
 DLC_PROTOCOL = "CF-FARP@0.5"
 TOOLS = [
+    "confirm_storyboard_plan",
     "build_storyboard_project",
     "render_storyboard_frames",
     "apply_storyboard_adjustments",
@@ -415,6 +416,32 @@ def _save_project(registry, project: dict, output_dir: str) -> tuple[Path, str]:
 
 
 def register(registry):
+    def confirm_storyboard_plan(params: dict) -> dict:
+        try:
+            decision = _object(params.get("shot_list_decision") or params.get("decision"))
+            reply = _object(params.get("shot_reply") or params.get("reply"))
+            status = str(decision.get("status") or "").strip()
+            approval = str(reply.get("approval") or "").strip()
+            if status == "needs_user_input" and approval not in {"approve", "approve_all"}:
+                raise ValueError("approved shot_reply is required for a pending storyboard proposal")
+            payload = decision.get("payload") if isinstance(decision.get("payload"), dict) else {}
+            shot_list = payload.get("shot_list") or payload.get("draft_shot_list") or decision.get("shot_list") or decision.get("draft_shot_list")
+            if isinstance(shot_list, list):
+                shot_list = {"schema": "shot_list.v1", "shots": shot_list}
+            if not isinstance(shot_list, dict) or not _shots(shot_list):
+                raise ValueError("decision does not contain payload.shot_list or payload.draft_shot_list")
+            shot_list = deepcopy(shot_list)
+            shot_list.setdefault("schema", "shot_list.v1")
+            return {
+                "ok": True,
+                "content": json.dumps(shot_list, ensure_ascii=False),
+                "shot_list": shot_list,
+                "source_status": status,
+                "approval": approval or "implicit_resolved",
+            }
+        except Exception as exc:
+            return {"ok": False, "error": f"storyboard plan confirmation failed: {exc}"}
+
     def build_storyboard_project(params: dict) -> dict:
         try:
             project = _build_project(params)
@@ -510,6 +537,7 @@ def register(registry):
             return {"ok": False, "error": f"video shot preparation failed: {exc}"}
 
     registry._registry["media"].update({
+        "confirm_storyboard_plan": confirm_storyboard_plan,
         "build_storyboard_project": build_storyboard_project,
         "render_storyboard_frames": render_storyboard_frames,
         "apply_storyboard_adjustments": apply_storyboard_adjustments,

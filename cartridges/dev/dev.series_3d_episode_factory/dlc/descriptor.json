@@ -9,6 +9,7 @@
   "tools": [
     {"server": "media", "tool": "match_series_assets", "handler": "backend.entry:invoke", "effect": "read_only", "timeout_ms": 30000, "description": "Map a script and shot list to the fixed series asset library.", "params": {}},
     {"server": "media", "tool": "match_series_actions", "handler": "backend.entry:invoke", "effect": "read_only", "timeout_ms": 30000, "description": "Map shot action tags to fixed actions and camera templates.", "params": {}},
+    {"server": "media", "tool": "confirm_storyboard_plan", "handler": "backend.entry:invoke", "effect": "read_only", "timeout_ms": 30000, "description": "Promote the exact user-approved storyboard proposal without regenerating it.", "params": {}},
     {"server": "media", "tool": "build_storyboard_project", "handler": "backend.entry:invoke", "effect": "writes_artifacts", "timeout_ms": 30000, "description": "Build a cartridge-owned editable storyboard project.", "params": {}},
     {"server": "media", "tool": "render_storyboard_frames", "handler": "backend.entry:invoke", "effect": "writes_artifacts", "timeout_ms": 30000, "description": "Render deterministic base frames for storyboard review.", "params": {}},
     {"server": "media", "tool": "apply_storyboard_adjustments", "handler": "backend.entry:invoke", "effect": "writes_artifacts", "timeout_ms": 30000, "description": "Persist director camera, actor, lighting, prompt and approval changes.", "params": {}},
@@ -32,7 +33,7 @@
     {"path": "dlc/backend/mcp/series_3d.py", "sha256": "419fe3b31733399d326192a7f984ec8a60d588ac47c462b77adb47c047a71b48"},
     {"path": "dlc/backend/mcp/shared.py", "sha256": "faeeff963e283dcff42022bb359853e2b33e3cdd8748a7d49f523108c3d1ced6"},
     {"path": "dlc/backend/mcp/spatial.py", "sha256": "66c79e603619ed415b7431f6f45bd35d014feb9f1a9a6e1ce055d768c1e4a9a7"},
-    {"path": "dlc/backend/mcp/storyboard.py", "sha256": "c099bdc211d15672d3d7e962e2710de040515e5f5d10c7c8ab2ce2b05f2b29ee"},
+    {"path": "dlc/backend/mcp/storyboard.py", "sha256": "ed9b2a2fb95d9a5b0b08bc555a95e1c07228b986d2dbe8061918c0b37deee51d"},
     {"path": "dlc/backend/mcp/__init__.py", "sha256": "6fad90e5d54540aef72eea42b1cffa61758bcb4b10361e0ed4c541bcac5a32ad"},
     {"path": "dlc/backend/protocol/creative_recast.py", "sha256": "0690fdffa35491e5b71d999ac0ec9350bc31b937541c8dbcbd652183d98d8546"},
     {"path": "dlc/backend/protocol/creative_recast_runtime.py", "sha256": "ea615ac165574ee36164adae64479158aba25682650e864d0e72ced2d6e09afd"},

@@ -1,6 +1,8 @@
 import unittest
+from unittest.mock import AsyncMock, patch
 
 from core.lab.node_executor import LabNodeExecutor
+from core.llm.config import ModelConfig
 
 
 def decision_state(mock_envelope, consume=None):
@@ -31,6 +33,22 @@ def decision_state(mock_envelope, consume=None):
 
 
 class ProtocolV04RuntimeDecisionTest(unittest.TestCase):
+    def test_empty_live_llm_response_is_reported_explicitly(self):
+        state_doc = {"context": {"store": {"context_pack": {"goal": "build short drama"}}}}
+        run = {"inputs": {}, "run_id": "run_test", "cartridge_id": "test.v04"}
+        state = decision_state({}, {"mode": "payload_path", "path": "payload.decision", "as": "decision_payload"})
+        state.pop("decision_test_mode", None)
+        state.pop("mock_decision_envelope", None)
+        config = ModelConfig(provider_id="test", model="test-model", api_key="test-key")
+        response = {"content": "", "meta": {"finish_reason": "length", "reasoning_content_length": 8192}}
+        with patch("core.llm.config_manager.resolve_model", return_value=config), patch("core.llm.chat", new=AsyncMock(return_value=response)):
+            result = LabNodeExecutor().execute("decide", state, state_doc, run, ".")
+
+        self.assertTrue(result["failed"])
+        self.assertEqual("blocked", result["decision_status"])
+        self.assertEqual("llm_empty_response", result["decision_envelope"]["issues"][0]["code"])
+        self.assertEqual("length", result["llm_response_meta"]["finish_reason"])
+
     def test_v04_resolved_decision_projects_explicit_consume_value(self):
         state_doc = {"context": {"store": {"context_pack": {"goal": "build short drama"}}}}
         run = {"inputs": {}, "run_id": "run_test", "cartridge_id": "test.v04"}

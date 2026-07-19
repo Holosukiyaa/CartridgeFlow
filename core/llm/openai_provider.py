@@ -52,8 +52,20 @@ async def openai_chat(
 
         if on_usage and response.usage:
             on_usage(response.usage.prompt_tokens, response.usage.completion_tokens)
-        message = response.choices[0].message
+        choice = response.choices[0]
+        message = choice.message
         result = {"role": "assistant", "content": message.content or ""}
+        reasoning = getattr(message, "reasoning_content", None)
+        result["provider_meta"] = {
+            "finish_reason": getattr(choice, "finish_reason", None),
+            "reasoning_content_length": len(reasoning) if isinstance(reasoning, str) else 0,
+        }
+        if response.usage:
+            result["usage"] = {
+                "prompt_tokens": getattr(response.usage, "prompt_tokens", 0) or 0,
+                "completion_tokens": getattr(response.usage, "completion_tokens", 0) or 0,
+                "total_tokens": getattr(response.usage, "total_tokens", 0) or 0,
+            }
         if message.tool_calls:
             result["tool_calls"] = [
                 {"id": item.id, "type": "function", "function": {"name": item.function.name, "arguments": item.function.arguments}}

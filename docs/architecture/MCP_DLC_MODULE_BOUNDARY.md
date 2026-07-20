@@ -59,12 +59,12 @@ descriptor 中的资源必须标记为：
 - 不得让 iframe 获得 `allow-same-origin`、顶层导航或任意文件访问。
 - 不得把用户产物当作卡带私有数据随卸载删除。
 
-## 系列 3D 卡带
+## 空基座验收
 
-`dev.series_3d_episode_factory` 的分镜工具、Blender 预演、CRCP 校验代码、ComfyUI 工作流和导演台全部位于：
+正式基座不预装业务卡带。干净检出后：
 
-```text
-cartridges/dev/dev.series_3d_episode_factory/dlc/
-```
-
-它们不是基座能力。其他卡带不声明该 DLC 时，不会看到这些工具、协议或 UI。
+- `CartridgeRegistry.list_cartridges()` 返回空列表；
+- 默认 `BuiltinMcpRegistry` 只暴露基座拥有的通用工具；
+- `core/`、`server/` 和通用前端不包含任何卡带 id 或领域工具实现；
+- 安装一张 Portable DLC 卡带时，工具只进入该卡带作用域；
+- 删除卡带包后，已有代理返回 `extension_inactive`。

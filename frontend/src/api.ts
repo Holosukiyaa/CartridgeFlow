@@ -377,6 +377,7 @@ export interface LlmProvider {
 export interface LlmTestResult {
   ok: boolean
   content?: string
+  capability?: 'text' | 'vision'
   error?: string
   status_code?: number
   retryable?: boolean
@@ -613,10 +614,10 @@ export const deleteLlmProvider = (id: string) =>
 export const activateLlmProvider = (id: string) =>
   api<{ ok: boolean; provider: LlmProvider }>(`/api/llm/providers/${id}/activate`, { method: 'POST' })
 
-export const testLlmProvider = (providerId: string, model?: string, prompt?: string) =>
+export const testLlmProvider = (providerId: string, model?: string, prompt?: string, vision = false) =>
   api<LlmTestResult>('/api/llm/test', {
     method: 'POST',
-    body: JSON.stringify({ provider_id: providerId, model: model || '', prompt: prompt || 'OK' }),
+    body: JSON.stringify({ provider_id: providerId, model: model || '', prompt: prompt || 'OK', vision }),
   })
 
 export const smartImportLlm = (content: string) =>

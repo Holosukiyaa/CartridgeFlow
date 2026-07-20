@@ -1,23 +1,15 @@
-# CartridgeFlow Agent Notes
+# CartridgeFlow Agent Entry
 
-开始工作前先读 `GOAL.md` 和 `TODO.md`。`GOAL.md` 决定方向与验收标准，`TODO.md` 只记录当前里程碑。
+所有开发 Agent 在修改项目之前，必须完整阅读：
 
-## 工作方式
+```text
+devtools/AGENT.md
+```
 
-- 只处理当前 TODO 中的明确事项；新增工作先判断是否直接服务当前里程碑。
-- 一次解决一个可验证问题，避免顺手扩展 UI、协议或通用框架。
-- 保留用户已有修改，不提交依赖、缓存、日志、运行产物或密钥。
-- 真实工具不可用时明确失败，不用 Mock、代理或静默降级冒充完成。
-- 修改后按风险运行测试；提交前确认差异只覆盖本次任务。
+涉及协议、manifest、root flow、运行时或 Portable DLC 时，还必须阅读：
 
-## 协议红线
+```text
+docs/protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.5.md
+```
 
-- 不修改已发布协议版本。
-- 协议语义确需变化时，先与用户讨论，再建立新版本。
-- 不为了单个卡带让底座能力或协议语义漂移。
-- 系列视频创作控制以 `docs/protocol/CARTRIDGEFLOW_CREATIVE_RECAST_CONTROL_PROTOCOL_v0.1.md` 为规范来源；行动指南只是实施说明。
-- 在该协议下，LLM 或 Agent 不得静默改变锁定项、自由度边界、模型、工作流或生产方向；必须先提出 ChangeProposal 并等待用户批准。
-
-## 当前重点
-
-在 RTX 3080 12GB 的本机条件下，先完成生产环境基线，再打通“真实资产 -> Blender 单镜头 -> ComfyUI 单工作流增强”的最短链路。
+本仓库的正式基座不预装业务卡带。领域功能必须位于卡带包内，不能进入核心。

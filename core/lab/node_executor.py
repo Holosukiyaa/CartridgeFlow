@@ -365,6 +365,8 @@ class LabNodeExecutor:
             server = tool.get("server") or ""
             tool_name = tool.get("tool") or ""
             tool_params = self._resolve_tool_params(tool.get("params") or {}, store)
+            if params.get("include_runtime_test_mode"):
+                tool_params["_runtime_test_mode"] = dict(_run.get("test_mode") or {})
             if server == "filesystem" and isinstance(tool_params.get("path"), str):
                 tool_params["path"] = self._resolve_package_relative_path(tool_params["path"], _run)
             if server and tool_name:

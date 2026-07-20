@@ -81,15 +81,15 @@ export default function LlmPage() {
     }
   }
 
-  const handleTest = async () => {
-    setStatusText('正在测试...')
+  const handleTest = async (vision = false) => {
+    setStatusText(vision ? '正在测试图片理解...' : '正在测试文本...')
     try {
       const active = providers.find((p) => p.enabled)
       if (!active) { setStatusText('没有激活的 Provider'); return }
-      const data = await testLlmProvider(active.id)
+      const data = await testLlmProvider(active.id, undefined, vision ? 'Inspect this image and reply with OK.' : undefined, vision)
       if (data.ok) {
-        setImportResult(`测试成功：${data.content || ''}`)
-        setStatusText('测试通过')
+        setImportResult(`${vision ? '图片测试' : '文本测试'}成功：${data.content || ''}`)
+        setStatusText(vision ? '图片理解测试通过' : '文本测试通过')
       } else {
         setImportResult(`测试失败：${data.error || ''}`)
         setStatusText('测试失败')
@@ -187,7 +187,8 @@ export default function LlmPage() {
         <HStack gap={2} flexWrap="wrap">
           <Button className="cf-accent-btn" onClick={handleSmartImport}>智能导入</Button>
           <Button className="cf-outline-btn" onClick={handleExport}>导出配置</Button>
-          <Button className="cf-outline-btn" onClick={handleTest}>测试 Provider</Button>
+          <Button className="cf-outline-btn" onClick={() => handleTest(false)}>测试文本</Button>
+          <Button className="cf-outline-btn" onClick={() => handleTest(true)}>测试看图</Button>
         </HStack>
         {importResult && (
           <Box p={3} className="cf-soft-panel">

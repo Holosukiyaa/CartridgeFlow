@@ -18,6 +18,20 @@ import wave
 import zlib
 from pathlib import Path
 
+from .shared import (
+    coerce_json_dict as _coerce_json_dict,
+    file_sha256 as _file_sha256,
+    find_ffmpeg_binary as _find_ffmpeg_binary,
+    find_godot_binary as _find_godot_binary,
+    first_comfyui_image as _first_comfyui_image,
+    image_dimensions as _image_dimensions,
+    load_manifest_from_params as _load_manifest_from_params,
+    safe_int as _safe_int,
+    safe_slug as _safe_slug,
+    truthy as _truthy,
+    workspace_rel as _workspace_rel,
+)
+
 DLC_ID = 'core.media'
 DLC_PROTOCOL = 'CF-FARP@0.4'
 TOOLS = ['media_probe', 'extract_keyframes', 'style_keyframes', 'qc_outputs', 'remote_upgrade_keyframes']
@@ -138,22 +152,33 @@ figcaption{{font-size:12px;color:#cbd5e1;margin-top:8px;word-break:break-word;}}
 </html>
 """
 
-def _compose_pixel_upgrade_prompt(style_notes: str) -> str:
+def _compose_upgrade_prompt(style_notes: str) -> str:
     base = (
-        "high quality pixel art, PixArFK, anime style, 2.5D pixel art game cutscene keyframe, "
-        "redraw and enrich the scene, preserve the rough composition and all visible foreground characters, "
-        "do not remove people, keep character count and positions, readable human silhouettes with clear head, body, arms and legs, "
-        "night market alley street, layered city skyline, storefronts, lanterns, street lamps, neon signs, "
-        "cinematic rim light, warm window lights, detailed but coherent background, clean pixel clusters, sharp edges, "
-        "not a flat block sketch, not simple geometric placeholders"
+        "cinematic animation keyframe, coherent composition, stable silhouettes, "
+        "consistent character count, positions, scene geometry, and readable lighting"
     )
     notes = str(style_notes or "").strip()
     if not notes:
         return base
     lower = notes.lower()
-    if "pixarfk" in lower or "preserve original composition" in lower:
+    if "preserve original composition" in lower:
         return notes
     return f"{base}, scene notes: {notes}"
+
+
+def _load_shot_plan(registry, path_value: str, content_value) -> dict:
+    if isinstance(content_value, dict):
+        return content_value
+    if isinstance(content_value, str) and content_value.strip():
+        parsed = json.loads(content_value)
+        if not isinstance(parsed, dict):
+            raise ValueError("shot_plan_content must be a JSON object")
+        return parsed
+    target = registry._safe_path(path_value)
+    parsed = json.loads(target.read_text(encoding="utf-8"))
+    if not isinstance(parsed, dict):
+        raise ValueError("shot plan must be a JSON object")
+    return parsed
 
 def _style_image_locally(source: Path, target: Path, style_prompt: str, seed: int) -> None:
     try:
@@ -509,7 +534,7 @@ def register(registry):
         frame_dir = str(params.get("frame_dir") or render_bundle.get("control_frame_dir") or render_bundle.get("frame_dir") or "").strip()
         if not frame_dir:
             return {"ok": False, "error": "missing frame_dir or render_bundle.frame_dir"}
-        shot_plan_path = str(params.get("shot_plan_path") or "test_output/pixel_episode/shot_plan.json").strip()
+        shot_plan_path = str(params.get("shot_plan_path") or "test_output/media/shot_plan.json").strip()
         shot_plan_content = params.get("shot_plan_content") or params.get("shot_plan_json") or ""
         output_dir = str(params.get("output_dir") or "test_output/media_control_bundle").strip()
         frames_per_shot = _safe_int(params.get("frames_per_shot"), 1, 1, 3)
@@ -518,7 +543,7 @@ def register(registry):
             source_dir = registry._safe_path(frame_dir)
             if not source_dir.exists() or not source_dir.is_dir():
                 return {"ok": False, "error": f"frame_dir not found: {frame_dir}"}
-            plan = _load_pixel_shot_plan(registry, shot_plan_path, shot_plan_content)
+            plan = _load_shot_plan(registry, shot_plan_path, shot_plan_content)
             frames = sorted(source_dir.glob("*.png"))
             if not frames:
                 return {"ok": False, "error": f"no PNG frames found in {frame_dir}"}
@@ -595,7 +620,7 @@ def register(registry):
         provider = str(params.get("provider") or "auto").strip().lower()
         comfyui_url = str(params.get("comfyui_url") or os.environ.get("COMFYUI_URL") or "http://127.0.0.1:8188").strip()
         workflow_path = str(params.get("workflow_path") or os.environ.get("COMFYUI_WORKFLOW_PATH") or "").strip()
-        style_prompt = _compose_pixel_upgrade_prompt(str(params.get("style_prompt") or "").strip())
+        style_prompt = _compose_upgrade_prompt(str(params.get("style_prompt") or "").strip())
         negative_prompt = str(params.get("negative_prompt") or "text, watermark, logo, distorted character").strip()
         output_dir = str(params.get("output_dir") or "test_output/media_upgrade").strip()
         denoise = params.get("denoise", params.get("strength", 0.48))
@@ -760,7 +785,7 @@ def register(registry):
             extract_result = extract_keyframes({
                 "render_bundle": params.get("render_bundle"),
                 "frame_dir": params.get("frame_dir"),
-                "shot_plan_path": params.get("shot_plan_path") or "test_output/pixel_episode/shot_plan.json",
+                "shot_plan_path": params.get("shot_plan_path") or "test_output/media/shot_plan.json",
                 "shot_plan_content": params.get("shot_plan_content") or params.get("shot_plan_json") or "",
                 "output_dir": _workspace_rel(registry, control_dir),
                 "frames_per_shot": params.get("frames_per_shot", 1),

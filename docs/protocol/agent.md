@@ -27,13 +27,7 @@ v0.5 是完整独立协议。阅读或实现 v0.5 不得依赖历史 FARP 文档
 
 领域协议不是 FARP v0.5 的组成部分。使用领域协议的卡带必须把其 registry、正文和实现放入自己的 `dlc/protocols/` 与 `dlc/backend/`，并通过 descriptor 声明。未安装该卡带时，根 `protocol/` 和基座能力词表不得保留领域协议副作用。
 
-系列 3D 卡带的 CRCP 材料位于：
-
-```text
-cartridges/dev/dev.series_3d_episode_factory/dlc/protocols/
-```
-
-只有修改该卡带的创作重绘边界时才读取它；普通卡带不承担 CRCP 规则。
+正式基座不预装领域协议。只有正在开发或安装的卡带明确声明 companion protocol 时，才读取该卡带自己的 `dlc/protocols/`。
 
 ## 后续 Agent 规则
 

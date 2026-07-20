@@ -1,161 +1,182 @@
+import hashlib
 import json
+import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
 
-from core.cartridge.registry import CartridgeRegistry
-from core.cartridge.runner import CartridgeRunner
-from core.extensions import load_portable_dlc_descriptor
+from core.extensions import PortableDlcValidationError, load_portable_dlc_descriptor
 from core.lab.builtin_mcp import BuiltinMcpRegistry
 from core.lab.node_executor import LabNodeExecutor
-from core.llm.config import ModelConfig
 from core.protocol import ProtocolRegistry, load_base_implementation
 
 
 ROOT = Path(__file__).resolve().parents[2]
-CARTRIDGE_ID = "dev.series_3d_episode_factory"
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+class PortableDlcFixture:
+    def __enter__(self):
+        self.temp = tempfile.TemporaryDirectory(prefix="cartridgeflow-dlc-")
+        self.package = Path(self.temp.name) / "dev.fixture"
+        backend = self.package / "dlc" / "backend" / "entry.py"
+        frontend = self.package / "dlc" / "frontend" / "index.html"
+        backend.parent.mkdir(parents=True)
+        frontend.parent.mkdir(parents=True)
+        backend.write_text(
+            """from __future__ import annotations
+import json
+from core.extensions.worker_sdk import DlcWorkerRegistry
+
+def invoke(request: dict) -> dict:
+    registry = DlcWorkerRegistry(request[\"workspace_root\"], request[\"package_path\"])
+    registry._registry.setdefault(\"fixture\", {})[\"echo\"] = lambda params: {
+        \"ok\": True,
+        \"content\": json.dumps({\"value\": params.get(\"value\")}, ensure_ascii=False),
+    }
+    return registry.call(request.get(\"server\", \"\"), request.get(\"tool\", \"\"), request.get(\"params\") or {})
+""",
+            encoding="utf-8",
+        )
+        frontend.write_text("<!doctype html><title>Fixture DLC</title>", encoding="utf-8")
+        self.manifest = {
+            "schema_version": "1.0",
+            "id": "dev.fixture",
+            "name": "Fixture",
+            "version": "1.0.0",
+            "kind": "runtime_cartridge",
+            "category": "test",
+            "runtime_contract": {"protocol": "CF-FARP", "protocol_version": "0.5"},
+            "mcp_tools": [{
+                "id": "fixture_echo",
+                "name": "Fixture echo",
+                "type": "builtin",
+                "server": "fixture",
+                "tool": "echo",
+                "enabled": True,
+                "required": True,
+                "contract": {"side_effect": "read_only", "timeout_ms": 30000},
+            }],
+            "portable_dlc": {"protocol": "CF-FARP@0.5", "descriptor": "dlc/descriptor.json"},
+        }
+        descriptor = {
+            "schema": "cartridgeflow.portable_dlc.v1",
+            "id": "dlc.fixture",
+            "version": "1.0.0",
+            "owner_cartridge": "dev.fixture",
+            "scope": "cartridge",
+            "backend": {"transport": "json_stdio_worker", "entry": "dlc/backend/entry.py"},
+            "frontend": {"sandbox": "isolated_iframe", "entry": "dlc/frontend/index.html", "context_keys": ["fixture_project"]},
+            "tools": [{
+                "server": "fixture",
+                "tool": "echo",
+                "handler": "backend.entry:invoke",
+                "effect": "read_only",
+                "timeout_ms": 30000,
+                "description": "Return a UTF-8 test value.",
+                "params": {},
+            }],
+            "protocols": [],
+            "resources": [
+                {"path": "dlc", "ownership": "package"},
+                {"path": ".data/cartridge_dlc/dev.fixture", "ownership": "private_data"},
+                {"path": "test_output", "ownership": "user_artifact"},
+            ],
+            "files": [
+                {"path": "dlc/backend/entry.py", "sha256": _sha256(backend)},
+                {"path": "dlc/frontend/index.html", "sha256": _sha256(frontend)},
+            ],
+        }
+        descriptor_path = self.package / "dlc" / "descriptor.json"
+        descriptor_path.write_text(json.dumps(descriptor, ensure_ascii=False, indent=2), encoding="utf-8")
+        return self
+
+    def __exit__(self, exc_type, exc, traceback):
+        self.temp.cleanup()
 
 
 class ProtocolV05PortableDlcTest(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.registry = CartridgeRegistry(ROOT)
-        cls.cartridge = cls.registry.get_cartridge(CARTRIDGE_ID)
-
     def test_v05_is_standalone_and_registered(self):
         protocol = json.loads((ROOT / "protocol" / "CF-FARP-0.5.json").read_text(encoding="utf-8"))
         self.assertTrue(protocol["standalone"])
         self.assertTrue(ProtocolRegistry(ROOT).supports_protocol("CF-FARP", "0.5"))
         text = (ROOT / protocol["document"]).read_text(encoding="utf-8")
         self.assertNotIn("CF-FARP@0.4", text)
-        self.assertNotIn("CF-CRCP", text)
         self.assertIn("Portable DLC", text)
 
     def test_base_claims_portable_dlc_runtime(self):
         base = load_base_implementation(ROOT)
+        self.assertEqual("0.1.0", base["implementation_version"])
         self.assertIn("portable_dlc_runtime", base["profiles"])
-        required = {
-            "portable_dlc_descriptor",
-            "cartridge_scoped_tool_registry",
-            "isolated_dlc_worker",
-            "frontend_dlc_sandbox",
-            "dlc_uninstall_cleanup",
-        }
+        required = {"portable_dlc_descriptor", "cartridge_scoped_tool_registry", "isolated_dlc_worker", "frontend_dlc_sandbox", "dlc_uninstall_cleanup"}
         self.assertTrue(required <= set(base["capabilities"]))
 
-    def test_cartridge_descriptor_is_valid_and_core_stays_clean(self):
-        descriptor = load_portable_dlc_descriptor(self.cartridge["package_path"], self.cartridge["manifest"])
-        self.assertEqual(CARTRIDGE_ID, descriptor["owner_cartridge"])
-        self.assertNotIn("build_storyboard_project", BuiltinMcpRegistry(ROOT).list_tools()["media"])
-        scoped = BuiltinMcpRegistry.for_manifest(
-            ROOT,
-            self.cartridge["manifest"],
-            package_path=self.cartridge["package_path"],
-        )
-        self.assertIn("build_storyboard_project", scoped.list_tools()["media"])
+    def test_release_tree_contains_no_bundled_business_cartridge(self):
+        manifests = list((ROOT / "cartridges" / "dev").glob("*/manifest.json"))
+        self.assertEqual([], manifests)
 
-    def test_storyboard_flow_closes_in_mock_mode(self):
-        runner = CartridgeRunner(ROOT, self.registry)
-        report = runner.build_cartridge_compatibility_report(CARTRIDGE_ID)
-        self.assertTrue(report["ok"], report["findings"])
-        run = runner.create_run(
-            CARTRIDGE_ID,
-            {"episode_brief": "A boy hears a second footstep on an empty street."},
-            test_mode={"decision": "mock_resolved", "tool": "dry_run"},
-        )
-        self.assertEqual("completed", run["status"])
-        self.assertEqual("complete", run["current_state"])
-        self.assertTrue(run["data_chain"]["passed"])
-        names = {item["name"] for item in run["artifacts"]}
-        self.assertIn("video_shot_package.json", names)
-        self.assertIn("shot_01.png", names)
+    def test_core_registry_exposes_no_legacy_cartridge_tools(self):
+        tools = BuiltinMcpRegistry(ROOT).list_tools()
+        media = set(tools["media"])
+        self.assertNotIn("generate_pixel_shot_plan", media)
+        self.assertNotIn("generate_short_video", media)
+        self.assertNotIn("forge_spatial_blockout", media)
+
+    def test_descriptor_activates_only_in_explicit_cartridge_scope(self):
+        with PortableDlcFixture() as fixture:
+            descriptor = load_portable_dlc_descriptor(fixture.package, fixture.manifest)
+            self.assertEqual("dev.fixture", descriptor["owner_cartridge"])
+            self.assertNotIn("fixture", BuiltinMcpRegistry(ROOT).list_tools())
+            scoped = BuiltinMcpRegistry.for_manifest(ROOT, fixture.manifest, package_path=fixture.package)
+            self.assertIn("echo", scoped.list_tools()["fixture"])
+            report = scoped.dlc_report()[-1]
+            self.assertTrue(report["isolated_worker"])
+            self.assertEqual("cartridge", report["scope"])
+
+    def test_worker_transports_nested_unicode_json_as_utf8(self):
+        with PortableDlcFixture() as fixture:
+            scoped = BuiltinMcpRegistry.for_manifest(ROOT, fixture.manifest, package_path=fixture.package)
+            marker = "动作确认：继续。日本語 🎬 " * 500
+            result = scoped.call("fixture", "echo", {"value": {"marker": marker}})
+            self.assertTrue(result["ok"], result)
+            self.assertEqual(marker, json.loads(result["content"])["value"]["marker"])
+
+    def test_hash_mismatch_blocks_descriptor(self):
+        with PortableDlcFixture() as fixture:
+            entry = fixture.package / "dlc" / "backend" / "entry.py"
+            entry.write_text(entry.read_text(encoding="utf-8") + "\n# modified\n", encoding="utf-8")
+            with self.assertRaises(PortableDlcValidationError):
+                load_portable_dlc_descriptor(fixture.package, fixture.manifest)
+
+    def test_package_removal_deactivates_existing_proxy(self):
+        with PortableDlcFixture() as fixture:
+            scoped = BuiltinMcpRegistry.for_manifest(ROOT, fixture.manifest, package_path=fixture.package)
+            proxy = scoped._registry["fixture"]["echo"]
+            proxy.descriptor["_package_path"] = str(fixture.package / "missing-after-uninstall")
+            result = scoped.call("fixture", "echo", {})
+            self.assertFalse(result["ok"])
+            self.assertEqual("extension_inactive", result["code"])
 
     def test_human_gate_requires_submit_before_resume(self):
         executor = LabNodeExecutor(ROOT)
-        node = {"type": "process", "kind": "human_gate", "executor": "human", "effect": "none", "action": "confirm_checkpoint", "params": {"output": "review", "interaction": {"store_key": "reply", "ui_extension": "portable_dlc", "input_schema": {"type": "object"}}}}
+        node = {
+            "type": "process",
+            "kind": "human_gate",
+            "executor": "human",
+            "effect": "none",
+            "action": "confirm_checkpoint",
+            "params": {"output": "review", "interaction": {"store_key": "reply", "ui_extension": "portable_dlc", "input_schema": {"type": "object"}}},
+        }
         state_doc = {"context": {"store": {}}}
         run = {"run_id": "test", "test_mode": {"decision": "live_collaboration"}}
         paused = executor.execute("director", node, state_doc, run, ROOT)
         self.assertTrue(paused["paused"])
         self.assertEqual("portable_dlc", paused["pending_interaction"]["ui_extension"])
-        state_doc["context"]["store"]["reply"] = {"approval": "approve_all"}
+        state_doc["context"]["store"]["reply"] = {"approval": "approve"}
         resumed = executor.execute("director", node, state_doc, run, ROOT)
         self.assertTrue(resumed["approved"])
-
-    def test_top_level_abort_on_failed_stops_before_downstream_nodes(self):
-        runner = CartridgeRunner(ROOT, self.registry)
-        run = runner.create_run(
-            CARTRIDGE_ID,
-            {"episode_brief": "Abort this decision."},
-            test_mode={"decision": "mock_blocked"},
-        )
-        self.assertEqual("failed", run["status"])
-        events = runner.get_events(run["run_id"])
-        entered = [event["state"] for event in events if event["type"] == "state_entered"]
-        self.assertIn("write_script", entered)
-        self.assertNotIn("plan_shots", entered)
-        failed = [event for event in events if event["type"] == "lab_node_failed"]
-        self.assertEqual("write_script", failed[-1]["state"])
-
-    def test_approved_storyboard_draft_resumes_without_a_second_shot_generation(self):
-        script_question = {
-            "schema": "decision_envelope.v1",
-            "status": "needs_user_input",
-            "summary": "Confirm the story proposal.",
-            "payload": {},
-            "question": {"prompt": "Approve?", "input_schema": {"type": "object"}, "store_key": "script_reply"},
-            "resume": {"policy": "resume_same_node"},
-        }
-        script_resolved = {
-            "schema": "decision_envelope.v1",
-            "status": "resolved",
-            "summary": "Story ready.",
-            "payload": {"episode_script": {"episode_id": "approval-regression", "title": "Exact draft"}},
-        }
-        approved_draft = {
-            "schema": "shot_list.v1",
-            "shots": [{
-                "id": "exact-approved-shot",
-                "title": "Approved composition",
-                "description": "The exact proposal the user approved.",
-                "scene_design": {"location": "city park", "landmarks": ["bench"]},
-                "camera": {"template": "slow_push_in", "position": [0, -8, 2], "target": [0, 0, 1], "focal_length_mm": 42},
-                "actor_blocking": [{"actor_id": "hero", "position": [0, 1, 0], "action": "idle_hold", "pose_time": 0.4}],
-                "characters": ["hero"],
-                "action_tags": ["idle_hold"],
-                "duration": 3,
-            }],
-        }
-        shot_question = {
-            "schema": "decision_envelope.v1",
-            "status": "needs_user_input",
-            "summary": "Confirm the storyboard proposal.",
-            "payload": {"draft_shot_list": approved_draft},
-            "question": {"prompt": "Approve shots?", "input_schema": {"type": "object"}, "store_key": "shot_reply"},
-            "resume": {"policy": "resume_next_node"},
-        }
-        responses = [
-            {"content": json.dumps(script_question), "meta": {"finish_reason": "stop"}},
-            {"content": json.dumps(script_resolved), "meta": {"finish_reason": "stop"}},
-            {"content": json.dumps(shot_question), "meta": {"finish_reason": "stop"}},
-        ]
-        chat_mock = AsyncMock(side_effect=responses)
-        config = ModelConfig(provider_id="test", model="test-model", api_key="test-key")
-        runner = CartridgeRunner(ROOT, self.registry)
-        with patch("core.llm.config_manager.resolve_model", return_value=config), patch("core.llm.chat", new=chat_mock):
-            run = runner.create_run(CARTRIDGE_ID, {"episode_brief": "A park scene."}, test_mode={"decision": "live_collaboration"})
-            self.assertEqual("write_script", run["current_state"])
-            run = runner.answer_pending_interaction(run["run_id"], {"approval": "approve"})
-            self.assertEqual("plan_shots", run["current_state"])
-            run = runner.answer_pending_interaction(run["run_id"], {"approval": "approve"})
-
-        self.assertEqual(3, chat_mock.await_count)
-        self.assertEqual("paused_waiting_user", run["status"])
-        self.assertEqual("review_storyboard", run["current_state"])
-        state = runner._read_json(runner.runs_dir / run["run_id"] / "root_flow_state.json")
-        shot_list = json.loads(state["context"]["store"]["shot_list"])
-        self.assertEqual("exact-approved-shot", shot_list["shots"][0]["id"])
-        self.assertFalse([event for event in runner.get_events(run["run_id"]) if event["type"] == "lab_node_failed"])
 
 
 if __name__ == "__main__":

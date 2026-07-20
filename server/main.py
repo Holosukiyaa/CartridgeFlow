@@ -189,6 +189,7 @@ class LLMTestPayload(BaseModel):
     provider_id: str
     model: str = ""
     prompt: str = "OK"
+    vision: bool = False
 
 
 class LLMImportTextPayload(BaseModel):
@@ -404,9 +405,30 @@ async def test_llm_provider(payload: LLMTestPayload):
         timeout=int(provider.get("timeout", 120) or 120),
     )
     try:
-        response = await chat(cfg, [{"role": "user", "content": payload.prompt or "OK"}], agent_name="llm_test", phase="test")
+        if payload.vision:
+            test_image = (
+                "data:image/png;base64,"
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+            )
+            content = [
+                {"type": "text", "text": payload.prompt or "Inspect this image and reply with OK."},
+                {"type": "image_url", "image_url": {"url": test_image, "detail": "low"}},
+            ]
+        else:
+            content = payload.prompt or "OK"
+        response = await chat(
+            cfg,
+            [{"role": "user", "content": content}],
+            agent_name="llm_test",
+            phase="vision_test" if payload.vision else "test",
+        )
         mark_provider_tested(payload.provider_id, True)
-        return {"ok": True, "content": response.get("content", "")[:500], "meta": response.get("meta", {})}
+        return {
+            "ok": True,
+            "content": response.get("content", "")[:500],
+            "capability": "vision" if payload.vision else "text",
+            "meta": response.get("meta", {}),
+        }
     except Exception as e:
         from core.llm.errors import classify_llm_error
         error = classify_llm_error(e)

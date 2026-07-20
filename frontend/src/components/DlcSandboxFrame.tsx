@@ -2,6 +2,30 @@ import { useEffect, useRef, useState } from 'react'
 
 import { fetchDlcRunContext } from '../api.ts'
 
+function unwrapDlcProject(value: any): any {
+  if (!value || typeof value !== 'object') return null
+  if (value.project && typeof value.project === 'object') return value.project
+  if (value.bundle && typeof value.bundle === 'object') return unwrapDlcProject(value.bundle)
+  return value.schema || value.action_spec ? value : null
+}
+
+function selectDlcProject(context: Record<string, any>, mode: 'director' | 'result'): any {
+  const legacy = mode === 'result'
+    ? context.approved_frame_bundle?.project || context.approved_storyboard_project?.project || context.approved_storyboard_project || context.storyboard_frame_bundle?.project || context.storyboard_project?.project || context.storyboard_project
+    : context.storyboard_frame_bundle?.project || context.storyboard_project?.project || context.storyboard_project
+  if (legacy) return legacy
+
+  const entries = Object.entries(context).filter(([, value]) => value != null)
+  const preferred = mode === 'result'
+    ? entries.filter(([key]) => /final|approved|delivery|package/i.test(key))
+    : entries.filter(([key]) => /audited|candidate|project|bundle/i.test(key))
+  for (const [, value] of [...(preferred.length ? preferred : entries)].reverse()) {
+    const project = unwrapDlcProject(value)
+    if (project) return project
+  }
+  return null
+}
+
 export function DlcSandboxFrame({
   cartridgeId,
   runId,
@@ -25,9 +49,7 @@ export function DlcSandboxFrame({
     fetchDlcRunContext(runId)
       .then((result) => {
         const context = result.context || {}
-        const nextProject = mode === 'result'
-          ? context.approved_frame_bundle?.project || context.approved_storyboard_project?.project || context.approved_storyboard_project || context.storyboard_frame_bundle?.project || context.storyboard_project?.project || context.storyboard_project
-          : context.storyboard_frame_bundle?.project || context.storyboard_project?.project || context.storyboard_project
+        const nextProject = selectDlcProject(context, mode)
         setProject(nextProject || null)
         setArtifacts(result.artifacts || [])
       })

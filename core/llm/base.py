@@ -4,6 +4,7 @@ from typing import Callable
 
 from .config import ModelConfig
 from .openai_provider import openai_chat
+from .openai_responses_provider import openai_responses
 from .retry import with_retry
 
 
@@ -20,12 +21,18 @@ async def chat(
 
     async def call():
         api_type = "anthropic" if cfg.api_type == "claude" else cfg.api_type
-        if api_type == "openai" and cfg.wire_api == "chat_completions":
+        if api_type == "openai":
+            if cfg.wire_api == "chat_completions":
+                handler = openai_chat
+            elif cfg.wire_api == "responses":
+                handler = openai_responses
+            else:
+                raise ValueError(f"Unsupported OpenAI wire API: {cfg.wire_api}")
             try:
-                return await openai_chat(cfg, messages, tools, on_token, on_usage)
+                return await handler(cfg, messages, tools, on_token, on_usage)
             except (TimeoutError, asyncio.TimeoutError):
                 if on_token:
-                    return await openai_chat(cfg, messages, tools, None, on_usage)
+                    return await handler(cfg, messages, tools, None, on_usage)
                 raise
         raise ValueError(f"Unsupported LLM route: api_type={cfg.api_type}, wire_api={cfg.wire_api}")
 

@@ -245,6 +245,10 @@ function buildNodeRunStates(graph: FlowGraph, events: FlowEvent[]) {
     if (event.type === 'lab_node_executed' || event.type === 'lab_node_skipped') {
       state.status = 'completed'
       state.pendingInteraction = undefined
+    } else if (event.type === 'pending_interaction_answered') {
+      state.status = 'completed'
+      state.pendingInteraction = undefined
+      state.errorMsg = undefined
     } else if (event.type === 'lab_node_failed') {
       state.status = 'failed'
       state.errorMsg = data.error || data.reason || 'Node failed.'

@@ -1,0 +1,185 @@
+/* Content-balanced overview and unified right-side ledger. */
+.cf-home-page { height: auto; min-height: 100%; container: overview / inline-size; }
+.cf-home-inner { width: min(1560px, 100%); height: auto; min-height: 0; display: block; }
+.cf-overview-activity-total { color: var(--faint) !important; font: 9px var(--mono) !important; text-transform: uppercase; }
+.cf-overview-todo-list > button { height: 56px; min-height: 56px; }
+.cf-overview-todo-list { scrollbar-gutter: stable; }
+.cf-overview-todo-list > button { padding-right: 12px; }
+.cf-overview-todo-list > button b { margin-right: 8px; }
+.cf-overview-activity-list {
+  min-height: 0; height: 100%; display: grid; grid-auto-rows: minmax(56px, 72px); align-content: space-between;
+  overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable;
+  border-bottom: 1px solid var(--line);
+}
+.cf-overview-todo-list,
+.cf-overview-activity-list {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(188, 76, 0, .1) transparent;
+}
+.cf-overview-todo-list:hover,
+.cf-overview-todo-list:focus-within,
+.cf-overview-activity-list:hover,
+.cf-overview-activity-list:focus-within { scrollbar-color: rgba(188, 76, 0, .32) transparent; }
+.cf-overview-todo-list::-webkit-scrollbar,
+.cf-overview-activity-list::-webkit-scrollbar { width: 8px; }
+.cf-overview-todo-list::-webkit-scrollbar-track,
+.cf-overview-activity-list::-webkit-scrollbar-track { background: transparent; }
+.cf-overview-todo-list::-webkit-scrollbar-thumb,
+.cf-overview-activity-list::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 5px;
+  background: rgba(188, 76, 0, .1);
+  background-clip: padding-box;
+}
+.cf-overview-todo-list:hover::-webkit-scrollbar-thumb,
+.cf-overview-todo-list:focus-within::-webkit-scrollbar-thumb,
+.cf-overview-activity-list:hover::-webkit-scrollbar-thumb,
+.cf-overview-activity-list:focus-within::-webkit-scrollbar-thumb { background-color: rgba(188, 76, 0, .32); }
+.cf-overview-todo-list::-webkit-scrollbar-thumb:hover,
+.cf-overview-activity-list::-webkit-scrollbar-thumb:hover { background-color: rgba(159, 63, 0, .56); }
+.cf-overview-activity-row {
+  min-width: 0; min-height: 56px; padding: 7px 12px 7px 2px;
+  display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; grid-template-rows: auto auto;
+  column-gap: 10px; row-gap: 3px; align-items: center; border-bottom: 1px solid var(--line);
+}
+.cf-overview-activity-row:last-child { border-bottom: 0; }
+.cf-overview-activity-row:hover { background: var(--paper-soft); }
+.cf-overview-activity-row > i { grid-column: 1; grid-row: 1 / span 2; }
+.cf-overview-activity-identity { grid-column: 2; grid-row: 1 / span 2; min-width: 0; display: grid; gap: 3px; }
+.cf-overview-activity-identity strong { min-width: 0; display: flex; align-items: center; }
+.cf-overview-activity-identity strong em { flex: 0 0 auto; margin-right: 6px; color: var(--accent); font: normal 700 8px var(--mono); }
+.cf-overview-activity-meta { grid-column: 3; grid-row: 1; display: flex; align-items: center; justify-content: flex-end; gap: 7px; white-space: nowrap; }
+.cf-overview-activity-meta b { color: var(--text); font-size: 9px; font-weight: 700; }
+.cf-overview-activity-meta time { color: var(--faint); font: 9px var(--mono); }
+.cf-overview-activity-actions { grid-column: 3; grid-row: 2; margin-right: 8px; display: flex; align-items: center; justify-content: flex-end; gap: 0; }
+.cf-overview-activity-actions button {
+  min-height: 18px; padding: 0; border: 0; border-radius: 0;
+  background: transparent; color: var(--accent); font-size: 9px; font-weight: 700;
+}
+.cf-overview-activity-actions button + button { margin-left: 8px; padding-left: 8px; border-left: 1px solid var(--line); }
+.cf-overview-activity-actions button:hover { border-color: var(--line); background: transparent; color: var(--accent-dark); text-decoration: underline; }
+
+@media (min-width: 1001px) {
+  .cf-overview-main-grid {
+    height: 602px; min-height: 0; align-items: stretch;
+    grid-template-columns: minmax(0, 1.28fr) minmax(350px, .72fr);
+  }
+  .cf-overview-todo { min-height: 0; display: flex; flex-direction: column; }
+  .cf-overview-todo-list { flex: 0 0 auto; min-height: 0; max-height: 504px; }
+  .cf-overview-todo-footer { margin-top: auto; }
+  .cf-overview-right-stack {
+    min-height: 0; height: auto; padding-left: 24px; overflow: hidden;
+    display: grid; grid-template-rows: max-content minmax(0, 1fr); gap: 20px;
+    border-left: 1px solid var(--line);
+  }
+  .cf-overview-protocol { padding-left: 0; border-left: 0; }
+  .cf-overview-right-activity {
+    min-height: 0; margin-top: 0; padding-top: 20px; padding-bottom: 0;
+    display: grid; grid-template-rows: auto minmax(0, 1fr); border-top: 1px solid var(--line);
+  }
+}
+
+@media (min-width: 1001px) and (max-height: 900px), (min-width: 1001px) and (max-width: 1800px) {
+  .cf-home-page { padding: 20px 28px 24px; }
+  .cf-overview-heading { min-height: 72px; padding-bottom: 12px; }
+  .cf-home-title { margin-top: 3px !important; font-size: 24px !important; }
+  .cf-home-subtitle { margin-top: 4px; font-size: 12px; }
+  .cf-overview-health { min-height: 27px; }
+  .cf-overview-resume { min-height: 92px; margin-top: 14px; padding: 12px 14px; }
+  .cf-overview-resume-copy h2 { font-size: 17px; }
+  .cf-overview-resume-copy p { margin-top: 4px; }
+  .cf-overview-resume-meta { gap: 4px; }
+  .cf-overview-resume-actions button { min-height: 30px; }
+  .cf-overview-main-grid { height: 570px; margin-top: 20px; gap: 26px; }
+  .cf-overview-right-stack { padding-left: 22px; gap: 18px; }
+  .cf-overview-panel-head { min-height: 40px; padding-bottom: 8px; }
+  .cf-overview-section-label h2 { font-size: 16px; }
+  .cf-overview-protocol-copy { margin: 12px 0; line-height: 1.65; }
+  .cf-overview-protocol-facts > div { padding: 8px 7px; }
+  .cf-overview-protocol-list { margin-top: 10px; }
+  .cf-overview-right-activity { padding-top: 18px; }
+  .cf-overview-todo-list { max-height: 486px; }
+  .cf-overview-todo-list > button { height: 54px; min-height: 54px; padding-block: 7px; }
+  .cf-overview-todo-footer { min-height: 34px; }
+  .cf-overview-activity-list { grid-auto-rows: minmax(54px, 68px); align-content: space-between; }
+  .cf-overview-activity-row { min-height: 54px; padding-block: 6px; }
+}
+
+@media (min-width: 1001px) and (max-height: 800px), (min-width: 1001px) and (max-width: 1600px) {
+  .cf-home-page { padding: 14px 24px 18px; }
+  .cf-overview-heading { min-height: 60px; padding-bottom: 9px; }
+  .cf-overview-heading .cf-kicker { font-size: 8px !important; }
+  .cf-home-title { margin-top: 2px !important; font-size: 22px !important; }
+  .cf-home-subtitle { margin-top: 3px; font-size: 10px; }
+  .cf-overview-health { min-height: 25px; }
+  .cf-overview-resume { min-height: 82px; margin-top: 10px; padding: 9px 12px; }
+  .cf-overview-resume-copy h2 { font-size: 16px; }
+  .cf-overview-resume-copy p { margin-top: 3px; }
+  .cf-overview-resume-meta { gap: 2px; }
+  .cf-overview-resume-meta span { display: none; }
+  .cf-overview-resume-actions button { min-height: 28px; }
+  .cf-overview-main-grid { height: 547px; margin-top: 16px; gap: 24px; }
+  .cf-overview-right-stack { padding-left: 20px; gap: 14px; }
+  .cf-overview-panel-head { min-height: 36px; padding-bottom: 7px; }
+  .cf-overview-section-label h2 { font-size: 15px; }
+  .cf-overview-protocol-copy { margin: 8px 0; line-height: 1.55; }
+  .cf-overview-protocol-facts > div { padding: 6px; }
+  .cf-overview-protocol-list { margin-top: 8px; }
+  .cf-overview-protocol-list > span:nth-child(n + 4) { display: none; }
+  .cf-overview-right-activity { padding-top: 14px; }
+  .cf-overview-todo-list { max-height: 468px; }
+  .cf-overview-todo-list > button { height: 52px; min-height: 52px; padding-block: 6px; }
+  .cf-overview-todo-footer { min-height: 32px; }
+  .cf-overview-activity-list { grid-auto-rows: minmax(52px, 64px); align-content: space-between; }
+  .cf-overview-activity-row { min-height: 52px; padding-block: 5px; }
+}
+
+@media (min-width: 1001px) and (max-height: 700px) {
+  .cf-overview-main-grid { height: 479px; }
+  .cf-overview-todo-list { max-height: 400px; }
+  .cf-overview-todo-list > button { height: 50px; min-height: 50px; }
+  .cf-overview-activity-list { grid-auto-rows: minmax(50px, 58px); }
+  .cf-overview-activity-row { min-height: 50px; }
+}
+
+@media (max-width: 1000px) {
+  .cf-overview-main-grid { height: auto; min-height: auto; }
+  .cf-overview-todo { display: block; }
+  .cf-overview-todo-list { max-height: 336px; }
+  .cf-overview-right-stack { min-height: auto; height: auto; padding-left: 0; overflow: visible; grid-template-rows: auto auto; border-left: 0; }
+  .cf-overview-right-activity { min-height: auto; padding-top: 20px; border-top: 1px solid var(--line); }
+  .cf-overview-activity-list { height: auto; max-height: 336px; }
+}
+
+@container overview (max-width: 1020px) {
+  .cf-overview-main-grid { height: auto; grid-template-columns: 1fr; }
+  .cf-overview-todo { display: block; }
+  .cf-overview-todo-list { max-height: 336px; }
+  .cf-overview-right-stack { min-height: auto; height: auto; padding-left: 0; overflow: visible; grid-template-rows: auto auto; border-left: 0; }
+  .cf-overview-protocol { padding-left: 0; border-left: 0; }
+  .cf-overview-right-activity { min-height: auto; padding-top: 20px; border-top: 1px solid var(--line); }
+  .cf-overview-activity-list { height: auto; max-height: 336px; }
+}
+
+@media (min-width: 1001px) and (max-height: 900px), (min-width: 1001px) and (max-width: 1800px) {
+  @container overview (max-width: 1020px) {
+    .cf-overview-todo-list { max-height: 324px; }
+  }
+}
+
+@media (min-width: 1001px) and (max-height: 800px), (min-width: 1001px) and (max-width: 1600px) {
+  @container overview (max-width: 1020px) {
+    .cf-overview-todo-list { max-height: 312px; }
+  }
+}
+
+@media (min-width: 1001px) and (max-height: 700px) {
+  @container overview (max-width: 1020px) {
+    .cf-overview-todo-list { max-height: 300px; }
+  }
+}
+
+@media (max-width: 520px) {
+  .cf-overview-activity-meta { display: grid; justify-items: end; gap: 2px; }
+  .cf-overview-activity-actions button { font-size: 9px; }
+}

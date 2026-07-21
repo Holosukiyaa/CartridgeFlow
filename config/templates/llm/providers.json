@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "providers": [
+    {
+      "id": "default-deepseek",
+      "name": "Default DeepSeek",
+      "api_type": "openai",
+      "base_url": "https://api.example.com/v1",
+      "api_key": "",
+      "default_model": "example-model",
+      "wire_api": "chat_completions",
+      "enabled": false,
+      "tested_ok": false,
+      "source": "default",
+      "timeout": 120
+    },
+    {
+      "id": "env-openai",
+      "name": "Env OpenAI Compatible",
+      "api_type": "openai",
+      "base_url": "https://api.example.com/v1",
+      "api_key": "",
+      "default_model": "example-model",
+      "wire_api": "chat_completions",
+      "enabled": true,
+      "tested_ok": false,
+      "source": "env",
+      "timeout": 120
+    }
+  ]
+}

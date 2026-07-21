@@ -59,6 +59,22 @@
     { "id": "dlc_absence_verification", "profile": "portable_dlc_runtime" },
     { "id": "dlc_resource_ownership", "profile": "portable_dlc_runtime" },
     { "id": "dlc_artifact_retention_policy", "profile": "portable_dlc_runtime" },
-    { "id": "dlc_integrity_hash", "profile": "portable_dlc_runtime" }
+    { "id": "dlc_integrity_hash", "profile": "portable_dlc_runtime" },
+    { "id": "runtime_error_envelope_v1", "profile": "runtime_core" },
+    { "id": "runtime_state_machine", "profile": "runtime_core" },
+    { "id": "checkpoint_persistence", "profile": "runtime_core" },
+    { "id": "runtime_retry_policy", "profile": "runtime_core" },
+    { "id": "runtime_checkpoint_resume", "profile": "runtime_core" },
+    { "id": "runtime_rollback", "profile": "runtime_core" },
+    { "id": "runtime_restart", "profile": "runtime_core" },
+    { "id": "side_effect_replay_guard", "profile": "runtime_core" },
+    { "id": "worker_lifecycle_supervision", "profile": "portable_dlc_runtime" },
+    { "id": "model_recipe_binding", "profile": "runtime_core" },
+    { "id": "local_resource_binding", "profile": "runtime_core" },
+    { "id": "resource_preflight", "profile": "runtime_core" },
+    { "id": "artifact_revision", "profile": "runtime_core" },
+    { "id": "artifact_provenance", "profile": "runtime_core" },
+    { "id": "artifact_invalidation", "profile": "runtime_core" },
+    { "id": "delivery_primary_output_guard", "profile": "runtime_core" }
   ]
 }

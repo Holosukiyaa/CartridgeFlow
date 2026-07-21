@@ -1,0 +1,9 @@
+{
+  "schema_version": "0.2",
+  "id": "CARTRIDGEFLOW-BASE",
+  "version": "0.2",
+  "name": "CartridgeFlow Base Contract",
+  "status": "active",
+  "standalone": true,
+  "document": "docs/protocol/CARTRIDGEFLOW_BASE_CONTRACT_v0.2.md"
+}

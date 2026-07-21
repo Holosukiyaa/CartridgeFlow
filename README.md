@@ -1,107 +1,64 @@
 # CartridgeFlow
 
-CartridgeFlow 是一个面向 AI 工作流的可视化卡带运行基座。它把流程定义、结构化 AI 决策、工具副作用、用户确认、运行恢复、产物收集和扩展卸载纳入同一套可验证协议。
+CartridgeFlow 是面向专属 AI 服务开发者的本地工作流开发与运行底座。
 
-当前正式版本：`v0.1.0`
+它把模型、工具、数据来源、人工确认和交付流程组织成可以设计、测试、恢复和迁移的 Flow。开发者可以针对不同用户搭建专属服务，而不需要为每个项目重新开发一套运行框架。
 
-## 版本特点
+## 它解决什么问题
 
-- `CF-FARP@0.5`：完整、独立、自包含的流程搭建与运行协议。
-- 统一 Process Node：通过 `kind`、`executor`、`effect` 明确节点职责与副作用。
-- 结构化 AI 决策：使用 `decision_envelope.v1`，并通过显式 consume 投影传递业务数据。
-- 实时人机协作：流程可暂停为 `paused_waiting_user`，提交输入后从约定节点恢复。
-- 测试台与探针：支持全流程、子图探针、mock 决策、真实 LLM 与工具 dry-run。
-- Portable DLC：卡带可携带自己的后端工具、前端工作台、领域协议、工作流和测试。
-- 隔离执行：DLC 后端运行在 JSON stdio worker 中，前端运行在 sandbox iframe 中。
-- 可验证卸载：卡带卸载后，其工具、代码、协议 Overlay 和私有数据不再影响基座。
-- LLM Provider：支持 OpenAI Chat Completions 与 Responses wire API，并提供文本/图片理解测试。
+真实的 AI 服务通常不只是一次模型调用。它还需要连接外部工具和数据，处理失败，等待用户确认，保存中间结果，并把最终产物可靠地交付出去。
 
-## 干净基座
+CartridgeFlow 为这些共性工作提供统一底座，让开发者把精力放在具体服务的流程和体验上。
 
-`v0.1.0` 不预装任何业务卡带。首次启动时卡带架是空的，这是预期行为。
+## 核心能力
 
-```text
-cartridges/dev/                    # 本地开发卡带
-.data/installed_cartridges/        # 导入安装的卡带
-```
+- **Flow 管理**：创建、导入和维护面向不同用户或项目的工作流。
+- **本地模型配置**：在底座中配置模型实例，让 Flow 只携带可迁移的模型配方。
+- **工具与数据来源**：统一连接 MCP、远程 API 和本地或远程数据源。
+- **设计与测试**：在工作台中编辑流程，运行全流程或针对局部节点进行测试。
+- **失败恢复**：记录运行状态和检查点，为重试、继续、回滚和重新开始提供基础。
+- **专属扩展**：卡带可以携带自己的业务代码、专属界面和外部工作流。
+- **打包交付**：在发布前检查协议、环境、依赖和本地资源，生成可迁移的卡带。
 
-业务能力必须由卡带提供，不得硬编码到 `core/`、`server/` 或通用前端中。
+## 核心思路
+
+CartridgeFlow 把内容分成三部分：
+
+1. **底座**提供通用运行能力，不预装具体业务。
+2. **Flow / 卡带**保存业务流程、配方和专属体验。
+3. **本机配置**保存 URL、Key、工具实例和数据连接，不跟随卡带外传。
+
+这样，同一张卡带可以迁移到另一台安装了 CartridgeFlow 的设备，再绑定那台设备自己的模型和工具。
+
+## 适合谁
+
+- 为客户开发专属 AI 服务的独立开发者或团队。
+- 需要把多个模型、工具和人工步骤组合成稳定流程的人。
+- 希望业务卡带与运行底座分离，便于测试、迁移和维护的项目。
 
 ## 快速开始
 
-当前引导脚本支持 Windows x64。
+当前提供 Windows x64 一键启动方式。
 
-1. 克隆仓库。
-2. 双击 `run.bat`。
-3. 首次运行会下载并校验项目本地 Python 3.13.14 与 Node.js 24.18.0，然后安装依赖。
+1. 获取项目代码。
+2. 双击根目录的 `run.bat`。
+3. 首次运行会自动准备项目本地所需环境并安装依赖。
 4. 浏览器打开 `http://127.0.0.1:5173`。
 
-手动启动：
+启动后可以从全局概览进入 Flow 管理，并在左侧配置模型、工具、数据来源和本机凭据。
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/bootstrap.ps1
-.\.tools\python\python.exe launch.py
-```
+## 干净底座
 
-运行测试：
+仓库默认不携带任何业务卡带。第一次启动时 Flow 列表为空是正常状态。
 
-```powershell
-.\.tools\python\python.exe -m unittest discover -s tests/conformance -p "test_*.py"
-$env:Path = (Resolve-Path .tools/node).Path + ";" + $env:Path
-Set-Location frontend
-npm.cmd run build
-```
+具体业务应该作为独立卡带创建或导入。移除卡带后，它的业务能力也应从底座中完整消失，同时保留用户明确拥有的交付产物。
 
-## 项目结构
+## 项目状态
 
-```text
-core/protocol/       协议解释、兼容性与认证
-core/cartridge/      卡带发现、校验、运行、产物和依赖
-core/extensions/     Portable DLC 描述符、作用域注册和隔离 worker
-core/lab/            流程设计台、节点执行、探针和通用 MCP
-core/llm/            LLM provider、wire API、重试和错误分类
-server/              FastAPI 接口
-frontend/            React 工作台
-protocol/            机器可读协议 registry
-docs/protocol/       只读协议正文
-tests/conformance/   协议与基座一致性测试
-devtools/AGENT.md    AI 开发者接手指南
-```
+CartridgeFlow 正在持续迭代，目前主要面向开发、测试和专属工作流交付场景。界面展示的能力状态和发布预检结果是当前底座实际能力的依据。
 
-## 协议入口
+## 了解更多
 
-新卡带默认使用：
-
-- `docs/protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.5.md`
-- `protocol/CF-FARP-0.5.json`
-- `BASE_IMPLEMENTATION.json`
-
-已发布协议是不可变快照。协议语义需要改变时，必须建立新的完整版本。
-
-## 开发卡带
-
-一张最小卡带包含：
-
-```text
-cartridges/dev/<cartridge-id>/
-  manifest.json
-  root.flow.json
-```
-
-需要专属代码或 UI 时，使用 Portable DLC：
-
-```text
-  dlc/
-    descriptor.json
-    backend/
-    frontend/
-    protocols/
-    workflows/
-    tests/
-```
-
-详细约束、消息契约、测试与发布步骤见 `devtools/AGENT.md`。
-
-## 发布状态
-
-`v0.1.0` 是基座首个正式版本。`BASE_IMPLEMENTATION.json` 对协议支持状态的声明是权威信息；当前版本仍将各 CF-FARP 版本标记为 `partial`，不会把未通过的能力包装成完整实现。
+- [项目分层说明](docs/overview/PROJECT_STRUCTURE.md)
+- [完整文档入口](docs/README.md)
+- [AI 开发快速起点](AGENT.md)

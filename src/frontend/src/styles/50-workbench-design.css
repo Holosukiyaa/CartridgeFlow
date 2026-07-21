@@ -1,0 +1,371 @@
+/* ═══════════════════════════════════════════════
+   Markdown
+   ═══════════════════════════════════════════════ */
+
+.markdown-body { line-height: 1.65; color: var(--text); }
+.markdown-body h1 { font-size: 20px; font-weight: 700; margin: 10px 0 8px; color: var(--text); }
+.markdown-body h2 { font-size: 16px; font-weight: 700; margin: 10px 0 6px; color: var(--text); }
+.markdown-body h3 { font-size: 14px; font-weight: 700; margin: 8px 0 5px; color: var(--muted); }
+.markdown-body p { font-size: 14px; line-height: 1.75; margin: 8px 0; }
+.markdown-body ul, .markdown-body ol { margin: 8px 0; padding-left: 22px; }
+.markdown-body li { font-size: 14px; line-height: 1.75; }
+.markdown-body code {
+  background: var(--accent-soft);
+  color: var(--accent-dark);
+  padding: 2px 7px;
+  border-radius: 5px;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.markdown-body pre {
+  background: var(--paper-soft);
+  border: 1px solid var(--line);
+  padding: 14px 16px;
+  border-radius: 12px;
+  overflow-x: auto;
+}
+.markdown-body pre code { background: transparent; padding: 0; color: var(--muted); }
+.markdown-body a { color: var(--accent); text-decoration: none; }
+.markdown-body a:hover { text-decoration: underline; }
+
+/* ═══════════════════════════════════════════════
+   Utility Classes
+   ═══════════════════════════════════════════════ */
+
+.cf-input-group {
+  display: grid;
+  gap: 14px;
+}
+
+/* ═══════════════════════════════════════════════
+   Separator / Divider
+   ═══════════════════════════════════════════════ */
+
+hr {
+  border: none;
+  border-top: 1px solid var(--line);
+  margin: 0;
+}
+
+.cf-workbench-design-shell {
+  position: relative;
+  min-height: 0;
+  height: 100%;
+}
+
+.cf-mcp-floating-trigger {
+  position: absolute;
+  top: 12px;
+  right: 16px;
+  z-index: 18;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 250, 246, .94);
+  color: var(--text);
+  padding: 8px 12px;
+  box-shadow: 0 10px 26px rgba(75, 55, 40, .12);
+  cursor: pointer;
+}
+
+.cf-mcp-floating-trigger b {
+  min-width: 22px;
+  height: 22px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--accent);
+  color: white;
+  font-size: 12px;
+}
+
+.cf-mcp-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: rgba(38, 28, 20, .18);
+  display: flex;
+  justify-content: flex-end;
+}
+
+.cf-mcp-drawer {
+  width: min(460px, calc(100vw - 48px));
+  height: 100%;
+  background: var(--paper);
+  border-left: 1px solid var(--line);
+  box-shadow: -20px 0 44px rgba(75, 55, 40, .18);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.cf-mcp-drawer-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.cf-mcp-drawer-top button {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper-soft);
+  color: var(--text);
+  padding: 7px 12px;
+  cursor: pointer;
+}
+
+.cf-mcp-library {
+  padding: 14px;
+  display: grid;
+  gap: 12px;
+  min-height: 0;
+  overflow: auto;
+}
+
+.cf-mcp-library-head,
+.cf-mcp-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cf-mcp-library-head span,
+.cf-mcp-hint {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.cf-mcp-section-title {
+  display: grid;
+  gap: 3px;
+  margin-top: 2px;
+}
+
+.cf-mcp-section-title b {
+  font-size: 12px;
+  color: var(--text);
+}
+
+.cf-mcp-section-title small {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.cf-mcp-tool-list,
+.cf-mcp-presets {
+  display: grid;
+  gap: 8px;
+}
+
+.cf-mcp-tool-list button,
+.cf-mcp-presets button {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--paper);
+  color: var(--text);
+  padding: 9px 10px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cf-mcp-tool-list button {
+  position: relative;
+  padding-right: 64px;
+}
+
+.cf-mcp-tool-list button.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.cf-mcp-tool-list small,
+.cf-mcp-presets small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-family: var(--mono);
+}
+
+.cf-mcp-tool-list em {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 800;
+  color: #15803d;
+  background: #dcfce7;
+  border: 1px solid #bbf7d0;
+  border-radius: 999px;
+  padding: 2px 7px;
+}
+
+.cf-mcp-empty {
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  background: var(--paper-soft);
+  color: var(--muted);
+  padding: 12px;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.cf-mcp-presets button {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  column-gap: 8px;
+}
+
+.cf-mcp-presets button span {
+  grid-row: span 2;
+  min-width: 64px;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.cf-mcp-presets button:disabled {
+  cursor: default;
+  opacity: .68;
+  background: var(--paper-soft);
+}
+
+.cf-mcp-presets button:disabled span {
+  color: #15803d;
+}
+
+.cf-mcp-editor {
+  display: grid;
+  gap: 8px;
+}
+
+.cf-mcp-editor label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.cf-mcp-editor input,
+.cf-mcp-editor select,
+.cf-mcp-editor textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--paper);
+  color: var(--text);
+  padding: 8px 9px;
+  font: inherit;
+}
+
+.cf-mcp-param-fields {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--paper) 72%, var(--surface));
+}
+
+.cf-mcp-param-title {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: baseline;
+}
+
+.cf-mcp-param-title b {
+  color: var(--text);
+}
+
+.cf-mcp-param-title small,
+.cf-mcp-param-fields label small {
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.cf-mcp-param-fields label {
+  color: var(--text);
+}
+
+.cf-mcp-param-fields input[type="checkbox"] {
+  justify-self: start;
+  width: auto;
+}
+
+.cf-mcp-editor textarea {
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.cf-mcp-check {
+  display: flex !important;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 8px !important;
+}
+
+.cf-mcp-check input {
+  width: auto;
+}
+
+.cf-mcp-error {
+  color: #b91c1c;
+  background: #fff1f2;
+  border: 1px solid #fecdd3;
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 12px;
+  margin: 0;
+}
+
+.cf-mcp-actions .danger {
+  border-color: #fecaca !important;
+  color: #b91c1c !important;
+  background: #fff1f2 !important;
+}
+
+.cf-shelf-detail-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(280px, .8fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.cf-welcome-html-frame {
+  width: 100%;
+  min-height: 320px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: white;
+}
+
+.cf-dlc-sandbox-frame {
+  width: 100%;
+  min-height: min(820px, 78vh);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #101314;
+}
+
+.cf-dlc-frame-error {
+  padding: 12px;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+  background: #fff1f2;
+}
+
+.cf-mcp-tool-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: var(--paper);
+}

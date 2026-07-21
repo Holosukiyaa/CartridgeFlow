@@ -1,16 +1,41 @@
+# Python caches and local environments
 __pycache__/
 *.py[cod]
-*.pyc
-.env
-.data/
-.tools/
-config/llm/providers.json
-test_output/
-logs/
-temp/
+*$py.class
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+/.venv/
+/venv/
+/.coverage
+/.coverage.*
+/coverage.xml
+/htmlcov/
+
+# JavaScript dependencies and build output
+node_modules/
+/src/frontend/dist/
+/src/frontend/dist-ssr/
+
+# Local secrets and legacy machine-owned configuration paths
+.env
+.env.*
+/config/llm/providers.json*
+/config/llm/assignments.json*
+/config/studio/credentials.json*
+/config/studio/resources.json*
+
+# Project-local runtimes, state, and generated output
+/.data/
+/.tools/
+/test_output/
+/logs/
+/temp/
 *.log
+
+# Editor and operating-system files
+/.idea/
+/.vscode/
 .DS_Store
-web_static
+Thumbs.db
+Desktop.ini

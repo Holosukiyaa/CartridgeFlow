@@ -1,0 +1,346 @@
+/* Global base resources */
+.cf-nav-group + .cf-nav-group {
+  margin-top: 3px;
+  padding-top: 3px;
+  border-top: 1px solid rgba(216, 222, 228, .72);
+}
+
+.cf-nav-group .cf-sidebar-section-label {
+  margin: 0;
+  padding: 8px 6px 7px;
+}
+
+.cf-nav-entry { min-width: 0; }
+
+.cf-resource-page {
+  width: min(1460px, 100%);
+  min-height: 100%;
+  padding: 26px 30px 42px;
+  background: var(--paper);
+}
+
+.cf-resource-heading {
+  min-height: 83px;
+  padding: 0 0 18px;
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 24px;
+  border-bottom: 1px solid var(--line);
+}
+
+.cf-resource-kicker,
+.cf-resource-panel-head span,
+.cf-resource-form-head span {
+  color: var(--accent);
+  font: 800 9px var(--mono);
+  text-transform: uppercase;
+}
+
+.cf-resource-heading h1 {
+  margin-top: 5px;
+  color: var(--text);
+  font: 720 25px/1.2 Georgia, "Songti SC", "SimSun", serif;
+}
+
+.cf-resource-heading p {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.cf-resource-heading-meta {
+  min-width: 112px;
+  padding-left: 16px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  gap: 7px;
+  border-left: 2px solid var(--accent);
+}
+
+.cf-resource-heading-meta b { color: var(--text); font-size: 22px; }
+.cf-resource-heading-meta span { color: var(--muted); font-size: 10px; white-space: nowrap; }
+
+.cf-resource-alert {
+  min-height: 34px;
+  margin-top: 11px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  font-size: 11px;
+}
+
+.cf-resource-alert.danger { border-color: #e8b8b2; color: #8c2f26; background: #fff4f2; }
+.cf-resource-alert.success { border-color: #add5c4; color: #276b3a; background: #f1fbf4; }
+
+.cf-resource-layout {
+  display: grid;
+  grid-template-columns: minmax(330px, .82fr) minmax(440px, 1.28fr);
+  gap: 26px;
+  align-items: start;
+  padding-top: 20px;
+}
+
+.cf-resource-panel { min-width: 0; }
+
+.cf-resource-panel + .cf-resource-panel {
+  padding-left: 26px;
+  border-left: 1px solid var(--line);
+}
+
+.cf-resource-panel-head {
+  min-height: 48px;
+  padding: 0 0 9px;
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.cf-resource-panel-head h2 { margin-top: 4px; color: var(--text); font-size: 15px; }
+.cf-resource-panel-head small { color: var(--faint); font: 9px var(--mono); }
+.cf-resource-panel-head > button {
+  min-height: 29px;
+  padding: 0 10px;
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.cf-model-provider-list,
+.cf-resource-inventory-list {
+  max-height: 248px;
+  overflow-y: auto;
+  border-bottom: 1px solid var(--line);
+}
+
+.cf-model-provider-item,
+.cf-resource-inventory-item {
+  width: 100%;
+  min-width: 0;
+  min-height: 58px;
+  padding: 8px 5px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 9px;
+  align-items: center;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.cf-resource-inventory-item { grid-template-columns: 72px minmax(0, 1fr) auto; }
+.cf-model-provider-item:last-child,
+.cf-resource-inventory-item:last-child { border-bottom: 0; }
+.cf-model-provider-item:hover,
+.cf-resource-inventory-item:hover { background: var(--paper-soft); }
+.cf-model-provider-item.selected,
+.cf-resource-inventory-item.selected { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+.cf-resource-inventory-item.locked { cursor: grab; }
+
+.cf-provider-dot {
+  width: 9px;
+  height: 9px;
+  border: 1px solid #d29c65;
+  border-radius: 50%;
+  background: #fff4df;
+}
+
+.cf-provider-dot.ready { border-color: #62a87a; background: #bde6c9; }
+.cf-model-provider-copy,
+.cf-resource-item-copy { min-width: 0; display: grid; gap: 4px; }
+.cf-model-provider-copy strong,
+.cf-resource-item-copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-size: 11px; }
+.cf-model-provider-copy small,
+.cf-resource-item-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font: 9px var(--mono); }
+.cf-model-provider-item i,
+.cf-resource-inventory-item i { color: var(--faint); font: normal 8px var(--mono); white-space: nowrap; }
+.cf-resource-type { color: var(--accent-dark); font-size: 9px; font-weight: 750; white-space: nowrap; }
+
+.cf-model-provider-form,
+.cf-resource-editor {
+  padding-top: 14px;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 9px;
+}
+
+.cf-resource-form-head {
+  min-width: 0;
+  padding-bottom: 4px;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.cf-resource-form-head strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-size: 11px; }
+.cf-model-provider-form label,
+.cf-resource-editor label { min-width: 0; display: grid; gap: 4px; color: var(--muted); font-size: 9px; font-weight: 650; }
+.cf-model-provider-form input,
+.cf-model-provider-form select,
+.cf-resource-editor input,
+.cf-resource-editor select,
+.cf-resource-editor textarea {
+  width: 100%;
+  min-height: 32px;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  outline: none;
+  background: #fff;
+  color: var(--text);
+  font: 10px var(--mono);
+}
+
+.cf-resource-editor textarea { resize: vertical; line-height: 1.45; }
+.cf-model-provider-form input:focus,
+.cf-model-provider-form select:focus,
+.cf-resource-editor input:focus,
+.cf-resource-editor select:focus,
+.cf-resource-editor textarea:focus { border-color: #d29162; box-shadow: 0 0 0 2px var(--accent-soft); }
+.cf-model-provider-form input:disabled,
+.cf-resource-editor input:disabled { color: var(--faint); background: var(--paper-soft); }
+
+.cf-resource-form-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+.cf-model-form-actions { padding-top: 3px; display: flex; flex-wrap: wrap; gap: 6px; }
+.cf-model-form-actions button {
+  min-height: 29px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--paper);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+.cf-model-form-actions button.primary { border-color: var(--accent); background: var(--accent); color: #fff; }
+.cf-model-form-actions button.danger { color: #913c31; }
+.cf-model-form-actions button:disabled { opacity: .5; cursor: not-allowed; }
+
+.cf-model-binding-list,
+.cf-resource-binding-list { display: grid; }
+
+.cf-cartridge-resource-row {
+  min-width: 0;
+  padding: 13px 2px;
+  border-bottom: 1px solid var(--line);
+}
+
+.cf-cartridge-resource-head {
+  min-width: 0;
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.cf-cartridge-resource-head > div { min-width: 0; display: grid; gap: 3px; }
+.cf-cartridge-resource-head strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-size: 12px; }
+.cf-cartridge-resource-head code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 9px; }
+.cf-cartridge-resource-head > span { flex-shrink: 0; color: var(--faint); font-size: 9px; }
+
+.cf-model-role-drop-list { margin-top: 9px; display: grid; gap: 5px; }
+.cf-model-role-drop {
+  min-width: 0;
+  min-height: 43px;
+  padding: 6px 8px;
+  display: grid;
+  grid-template-columns: minmax(105px, .7fr) minmax(130px, 1.15fr) auto;
+  gap: 10px;
+  align-items: center;
+  border: 1px dashed var(--line-2);
+  border-radius: 5px;
+  background: var(--paper-soft);
+}
+.cf-model-role-drop.bound { border-style: solid; border-color: #e4b48f; background: #fff8f2; }
+.cf-model-role-drop.auto-match { border-color: #dca66e; background: #fffaf4; }
+.cf-role-drop-name { min-width: 0; display: grid; gap: 2px; }
+.cf-role-drop-name b,
+.cf-role-drop-name code,
+.cf-role-drop-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cf-role-drop-name b { color: var(--text); font-size: 10px; }
+.cf-role-drop-name code { color: var(--faint); font-size: 8px; }
+.cf-role-drop-value { color: var(--muted); font-size: 9px; }
+.cf-model-role-drop > button {
+  min-height: 24px;
+  padding: 0 6px;
+  border: 0;
+  background: transparent;
+  color: #963e2d;
+  font-size: 9px;
+}
+
+.cf-bound-resource-list {
+  min-height: 45px;
+  margin-top: 9px;
+  padding: 7px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  border: 1px dashed var(--line-2);
+  border-radius: 5px;
+  background: var(--paper-soft);
+}
+
+.cf-bound-resource-list > small { color: var(--faint); font-size: 9px; }
+.cf-bound-resource-chip {
+  max-width: 100%;
+  min-height: 27px;
+  padding: 0 3px 0 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #e6c4ae;
+  border-radius: 4px;
+  background: var(--accent-soft);
+}
+.cf-bound-resource-chip b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--accent-dark); font-size: 9px; }
+.cf-bound-resource-chip button { width: 21px; height: 21px; border: 0; background: transparent; color: var(--accent-dark); }
+
+.cf-resource-empty {
+  min-height: 90px;
+  display: grid;
+  place-items: center;
+  color: var(--faint);
+  font-size: 10px;
+}
+.cf-resource-empty.compact { min-height: 48px; margin-top: 7px; place-items: center start; }
+
+@media (max-width: 980px) {
+  .cf-resource-layout { grid-template-columns: 1fr; }
+  .cf-resource-panel + .cf-resource-panel { padding-left: 0; padding-top: 4px; border-left: 0; border-top: 1px solid var(--line); }
+  .cf-model-provider-list,
+  .cf-resource-inventory-list { max-height: 220px; }
+}
+
+@media (max-width: 820px) {
+  .cf-nav-stack {
+    padding: 7px 12px !important;
+    display: flex !important;
+    flex-direction: row !important;
+    gap: 6px !important;
+    overflow-x: auto;
+  }
+  .cf-nav-group { display: contents; }
+  .cf-nav-group + .cf-nav-group { border: 0; }
+  .cf-nav-entry { flex: 0 0 104px; }
+  .cf-resource-page { padding: 20px 16px 32px; }
+}
+
+@media (max-width: 580px) {
+  .cf-resource-heading { align-items: start; }
+  .cf-resource-heading-meta { display: none; }
+  .cf-resource-form-row { grid-template-columns: 1fr; }
+  .cf-model-role-drop { grid-template-columns: minmax(0, 1fr) auto; }
+  .cf-role-drop-value { grid-column: 1 / -1; grid-row: 2; }
+  .cf-model-role-drop > button { grid-column: 2; grid-row: 1; }
+}

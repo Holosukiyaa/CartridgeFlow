@@ -1,0 +1,245 @@
+/* ═══════════════════════════════════════════════════════
+   CartridgeFlow — Warm Paper Design System
+   Based on original temp/style.css aesthetic
+   ═══════════════════════════════════════════════════════ */
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; letter-spacing: 0 !important; }
+
+:root {
+  --bg:          #ffffff;
+  --paper:       #fffdfb;
+  --paper-soft:  #faf9f7;
+  --side:        #f8f7f5;
+  --line:        #d8dee4;
+  --line-2:      #c7cfd8;
+  --text:        #1f2328;
+  --muted:       #59636e;
+  --faint:       #7d8791;
+  --accent:      #bc4c00;
+  --accent-dark: #9f3f00;
+  --accent-soft: #fff1e5;
+  --green:       #1f883d;
+  --green-soft:  #dafbe1;
+  --mono:        ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+html, body, #root { height: 100%; width: 100%; overflow: hidden; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+}
+
+input, button, textarea, select { font: inherit; }
+button { cursor: pointer; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #b8a897; }
+
+/* Animations */
+@keyframes cell-hint { 0% { opacity: .3; } 100% { opacity: 1; } }
+@keyframes fadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+/* ═══════════════════════════════════════════════
+   App Shell
+   ═══════════════════════════════════════════════ */
+
+.cf-app-shell {
+  height: 100vh;
+  width: 100vw;
+  background: var(--bg) !important;
+  color: var(--text);
+  overflow: hidden;
+}
+
+/* ═══════════════════════════════════════════════
+   Sidebar
+   ═══════════════════════════════════════════════ */
+
+.cf-app-shell:has(.cf-workbench-page) .cf-sidebar {
+  display: none;
+}
+
+.cf-sidebar {
+  width: 210px !important;
+  min-width: 210px !important;
+  height: 100vh;
+  background: var(--side) !important;
+  border-right: 1px solid var(--line) !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  overflow: hidden;
+  transition: width .18s ease, min-width .18s ease;
+}
+
+.sidebar-collapsed .cf-sidebar {
+  width: 62px !important;
+  min-width: 62px !important;
+}
+
+.cf-logo-wrap {
+  padding: 14px 11px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--line);
+  min-height: 57px;
+}
+
+.cf-logo-text {
+  min-width: 0;
+  flex: 1;
+}
+
+.cf-logo-mark {
+  width: 28px;
+  height: 28px;
+  border: 1px solid #e4cbbb;
+  border-radius: 7px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+  background: var(--paper);
+  font-family: Georgia, serif;
+  font-style: italic;
+  font-weight: 800;
+  font-size: 14px;
+}
+
+.cf-logo-expand {
+  padding: 0;
+  cursor: pointer;
+  transition: border-color .16s ease, background .16s ease, box-shadow .16s ease, transform .16s ease;
+}
+
+.cf-logo-expand:hover {
+  border-color: #d99a70;
+  background: var(--accent-soft);
+  box-shadow: 0 4px 12px rgba(31, 35, 40, .08);
+  transform: translateY(-1px);
+}
+
+.cf-logo-expand:focus-visible {
+  outline: 2px solid rgba(188, 76, 0, .35);
+  outline-offset: 2px;
+}
+
+.cf-logo-title {
+  font-size: 11px !important;
+  font-weight: 900 !important;
+  font-family: Georgia, serif !important;
+  color: var(--text) !important;
+  letter-spacing: .08em !important;
+  line-height: 1 !important;
+}
+
+.cf-logo-subtitle {
+  font-size: 9px !important;
+  color: var(--muted) !important;
+  margin-top: 2px !important;
+  letter-spacing: .05em !important;
+  font-family: var(--mono) !important;
+}
+
+.cf-sidebar-toggle {
+  width: 18px !important;
+  min-height: 28px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 4px !important;
+  background: transparent !important;
+  color: var(--muted) !important;
+  font-size: 15px !important;
+  line-height: 1 !important;
+  flex-shrink: 0;
+  transition: color .14s ease, background .14s ease;
+}
+
+.cf-sidebar-toggle:hover {
+  color: var(--accent-dark) !important;
+  background: rgba(255, 241, 229, .72) !important;
+}
+
+.cf-sidebar-toggle:focus-visible {
+  outline: 2px solid rgba(188, 76, 0, .28);
+  outline-offset: 1px;
+}
+
+.sidebar-collapsed .cf-logo-wrap {
+  min-height: 57px;
+  padding: 9px;
+  justify-content: center;
+  position: relative;
+}
+
+.sidebar-collapsed .cf-logo-expand {
+  width: 38px;
+  height: 38px;
+  border-radius: 9px;
+  font-size: 15px;
+}
+
+.sidebar-collapsed .cf-logo-text,
+.sidebar-collapsed .cf-sidebar-section-label,
+.sidebar-collapsed .cf-nav-desc,
+.sidebar-collapsed .cf-nav-label {
+  display: none !important;
+}
+
+.sidebar-collapsed .cf-sidebar-toggle {
+  display: none !important;
+}
+
+.cf-sidebar-section-label {
+  font-size: 9px;
+  font-weight: 850;
+  color: #9c9287;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  padding: 6px 14px 8px;
+}
+
+.cf-nav-stack {
+  padding: 0 8px;
+  gap: 1px !important;
+}
+
+.cf-nav-desc {
+  color: var(--muted) !important;
+  font-size: 9px !important;
+  margin-left: 12px !important;
+  margin-bottom: 8px !important;
+  line-height: 1 !important;
+}
+
+.cf-nav-short {
+  display: none;
+  font-family: var(--mono);
+  font-weight: 900;
+}
+
+.sidebar-collapsed .cf-nav-stack {
+  padding: 8px;
+}
+
+.sidebar-collapsed .cf-nav-item {
+  width: 44px !important;
+  height: 40px !important;
+  min-height: 40px !important;
+  justify-content: center !important;
+  padding: 0 !important;
+}
+
+.sidebar-collapsed .cf-nav-short {
+  display: inline !important;
+}

@@ -1,0 +1,365 @@
+{
+  "schema": "cartridgeflow.capability_evidence.v1",
+  "evidence_sets": {
+    "manifest_load": {
+      "verification": "happy_path_only",
+      "implementation": ["src/core/cartridge/registry.py#CartridgeRegistry.get_cartridge", "src/core/protocol/base_manifest.py#load_base_implementation"],
+      "positive_tests": ["test_base_manifest.BaseManifestConformanceTest.test_base_manifest_loads"],
+      "failure_tests": [],
+      "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/HomePage.tsx"]},
+      "notes": "Load paths are exercised; corrupt-file fault injection is not yet covered."
+    },
+    "manifest_validate": {
+      "verification": "verified",
+      "implementation": ["src/core/cartridge/validator.py#ManifestValidator"],
+      "positive_tests": ["test_llm_recipe.LlmRecipeManifestTests.test_accepts_portable_model_role"],
+      "failure_tests": ["test_llm_recipe.LlmRecipeManifestTests.test_rejects_local_credentials_and_urls"],
+      "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/FlowWorkbench.tsx"]}
+    },
+    "compatibility": {
+      "verification": "verified",
+      "implementation": ["src/core/protocol/compatibility.py#build_compatibility_report"],
+      "positive_tests": ["test_runtime_contract.RuntimeContractConformanceTest.test_protocol_manifest_is_compatible"],
+      "failure_tests": ["test_compatibility_report.CompatibilityReportConformanceTest.test_missing_required_capability_blocks"],
+      "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/ReleasePage.tsx"]}
+    },
+    "root_runtime": {
+      "verification": "verified",
+      "implementation": ["src/core/cartridge/root_flow.py#RootFlowEngine", "src/core/cartridge/runner.py#CartridgeRunner.create_run"],
+      "positive_tests": ["test_runtime_interaction.RuntimeInteractionTests.test_pending_interaction_answer_resumes_run"],
+      "failure_tests": ["test_runtime_decision.RuntimeDecisionTests.test_run_level_blocked_mock_fails_decision"],
+      "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/flow-workbench/TestBenchView.tsx"]}
+    },
+    "builtin_tools": {
+      "verification": "verified",
+      "implementation": ["src/core/lab/builtin_mcp.py#BuiltinMcpRegistry"],
+      "positive_tests": ["test_builtin_media_core.BuiltinMediaCoreTest.test_local_probe_executes_without_cartridge_helpers"],
+      "failure_tests": ["test_builtin_media_core.BuiltinMediaCoreTest.test_default_registry_matches_explicit_base_tool_allowlist"],
+      "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/ResourceConfigPage.tsx"]}
+    },
+    "artifacts": {
+      "verification": "implementation_only",
+      "implementation": ["src/core/cartridge/artifacts.py#ArtifactManager", "src/core/cartridge/runner.py#CartridgeRunner._collect_tool_artifacts"],
+      "positive_tests": [],
+      "failure_tests": [],
+      "ui": {"status": "visible", "entries": ["src/frontend/src/pages/flow-workbench/TestBenchView.tsx"]},
+      "notes": "Collection and preview UI exist without dedicated artifact fault-injection tests."
+    },
+    "testbench": {
+      "verification": "happy_path_only",
+      "implementation": ["src/core/cartridge/runner.py#CartridgeRunner.create_run", "src/backend/main.py#create_lab_flow_test_run"],
+      "positive_tests": ["test_runtime_decision.RuntimeDecisionTests.test_mock_decision_writes_structured_envelope"],
+      "failure_tests": [],
+      "ui": {"status": "visible", "entries": ["src/frontend/src/pages/flow-workbench/TestBenchView.tsx"]}
+    },
+    "probe": {
+      "verification": "implementation_only",
+      "implementation": ["src/core/cartridge/runner.py#CartridgeRunner.validate_probe_range"],
+      "positive_tests": [],
+      "failure_tests": [],
+      "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/flow-workbench/TestBenchView.tsx"]}
+    },
+    "flow_analysis": {
+      "verification": "implementation_only",
+      "implementation": ["src/core/lab/flow_analyzer.py#analyze_flow_structure"],
+      "positive_tests": [],
+      "failure_tests": [],
+      "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/flow-workbench/TestBenchView.tsx"]}
+    },
+    "data_chain": {
+      "verification": "happy_path_only",
+      "implementation": ["src/core/cartridge/runner.py#CartridgeRunner._summarize_data_chain", "src/core/lab/node_executor.py#LabNodeExecutor._record_missing"],
+      "positive_tests": ["test_optional_input.OptionalInputConformanceTest.test_optional_input_is_structured_info"],
+      "failure_tests": [],
+      "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/flow-workbench/TestBenchView.tsx"]}
+    },
+    "delivery_readiness": {
+      "verification": "verified",
+      "implementation": ["src/core/protocol/certification.py#build_protocol_certification_report"],
+      "positive_tests": ["test_protocol_certification.ProtocolCertificationConformanceTest.test_certifiable_manifest_passes"],
+      "failure_tests": ["test_protocol_certification.ProtocolCertificationConformanceTest.test_legacy_manifest_cannot_be_certified"],
+      "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/ReleasePage.tsx"]}
+    },
+    "process_contract": {
+      "verification": "verified",
+      "implementation": ["src/core/protocol/flow_contract.py#build_v05_flow_contract_report", "src/core/cartridge/node_normalizer.py#normalize_runtime_node"],
+      "positive_tests": ["test_process_nodes.ProcessNodeContractTests.test_current_process_contract_accepts_v06_flow"],
+      "failure_tests": ["test_process_nodes.ProcessNodeContractTests.test_process_kind_is_required"],
+      "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/flow-workbench/FlowGraphView.tsx"]}
+    },
+    "multi_input": {
+      "verification": "happy_path_only",
+      "implementation": ["src/core/lab/node_executor.py#LabNodeExecutor._split_keys"],
+      "positive_tests": ["test_optional_input.OptionalInputConformanceTest.test_optional_input_is_structured_info"],
+      "failure_tests": [],
+      "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/flow-workbench/FlowGraphView.tsx"]}
+    },
+    "transfer": {
+      "verification": "verified",
+      "implementation": ["src/core/lab/node_executor.py#LabNodeExecutor._pass_result", "src/core/protocol/flow_contract.py#_validate_transfer_node"],
+      "positive_tests": ["test_process_nodes.ProcessNodeExecutionTests.test_transfer_process_passes_result"],
+      "failure_tests": ["test_process_nodes.ProcessNodeContractTests.test_transfer_rejects_tool_binding"],
+      "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/flow-workbench/FlowGraphView.tsx"]}
+    },
+    "decision": {
+      "verification": "verified",
+      "implementation": ["src/core/protocol/decision_envelope.py#validate_decision_envelope", "src/core/lab/node_executor.py#LabNodeExecutor._llm_prompt"],
+      "positive_tests": ["test_decision_consume.DecisionConsumeTests.test_resolved_decision_projects_explicit_consume_value"],
+      "failure_tests": ["test_runtime_decision.RuntimeDecisionTests.test_invalid_decision_output_blocks"],
+      "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/flow-workbench/TestBenchView.tsx"]}
+    },
+    "decision_consume": {
+      "verification": "verified",
+      "implementation": ["src/core/lab/node_executor.py#LabNodeExecutor._apply_decision_consume", "src/core/protocol/flow_contract.py#_validate_v04_llm_decision_node"],
+      "positive_tests": ["test_decision_consume.DecisionConsumeTests.test_resolved_decision_projects_explicit_consume_value"],
+      "failure_tests": ["test_decision_consume.DecisionConsumeTests.test_missing_consume_path_fails_closed"],
+      "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/flow-workbench/TestBenchView.tsx"]}
+    },
+    "mcp_process": {
+      "verification": "verified",
+      "implementation": ["src/core/protocol/flow_contract.py#_validate_mcp_read_node", "src/core/lab/node_executor.py#LabNodeExecutor._tool_call"],
+      "positive_tests": ["test_process_nodes.ProcessNodeExecutionTests.test_execute_process_consumes_tool_plan"],
+      "failure_tests": ["test_process_nodes.ProcessNodeExecutionTests.test_read_only_process_rejects_side_effecting_tool"],
+      "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/flow-workbench/TestBenchView.tsx"]}
+    },
+    "tool_plan": {
+      "verification": "verified",
+      "implementation": ["src/core/protocol/tool_plan.py#validate_tool_plan"],
+      "positive_tests": ["test_tool_plan_v1.ToolPlanV1Test.test_valid_tool_plan_passes"],
+      "failure_tests": ["test_tool_plan_v1.ToolPlanV1Test.test_unallowed_tool_blocks"],
+      "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/flow-workbench/TestBenchView.tsx"]}
+    },
+    "llm_live": {
+      "verification": "external_unverified",
+      "implementation": ["src/core/llm/base.py#chat", "src/core/llm/openai_provider.py#openai_chat", "src/core/llm/openai_responses_provider.py#openai_responses"],
+      "positive_tests": ["test_llm_responses_api.LlmResponsesApiTest.test_unified_chat_routes_responses_provider"],
+      "failure_tests": ["test_decision_consume.DecisionConsumeTests.test_empty_live_llm_response_is_reported_explicitly"],
+      "ui": {"status": "visible", "entries": ["src/frontend/src/pages/ModelConfigPage.tsx"]},
+      "notes": "Wire adapters are tested with fakes; real provider reliability is not claimed."
+    },
+    "llm_mock": {
+      "verification": "verified",
+      "implementation": ["src/core/lab/node_executor.py#LabNodeExecutor._mock_decision_envelope_for_mode"],
+      "positive_tests": ["test_runtime_decision.RuntimeDecisionTests.test_mock_decision_writes_structured_envelope"],
+      "failure_tests": ["test_runtime_decision.RuntimeDecisionTests.test_run_level_blocked_mock_fails_decision"],
+      "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/flow-workbench/TestBenchView.tsx"]}
+    },
+    "llm_offline": {
+      "verification": "mock_only",
+      "implementation": ["src/core/lab/node_executor.py#LabNodeExecutor._offline_llm_response"],
+      "positive_tests": ["test_runtime_decision.RuntimeDecisionTests.test_run_level_resolved_mock_uses_offline_decision_sample"],
+      "failure_tests": [],
+      "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/flow-workbench/TestBenchView.tsx"]},
+      "notes": "Offline results are deterministic fallback samples, not production model output."
+    },
+    "interaction_resume": {
+      "verification": "verified",
+      "implementation": ["src/core/cartridge/runner.py#CartridgeRunner.answer_pending_interaction", "src/core/lab/node_executor.py#LabNodeExecutor._pending_interaction_from_decision"],
+      "positive_tests": ["test_runtime_interaction.RuntimeInteractionTests.test_pending_interaction_answer_resumes_run"],
+      "failure_tests": ["test_runtime_interaction.RuntimeInteractionTests.test_reject_route_replays_previous_node_with_feedback"],
+      "ui": {"status": "visible", "entries": ["src/frontend/src/pages/flow-workbench/TestBenchView.tsx"]}
+    },
+    "dlc_descriptor": {
+      "verification": "verified",
+      "implementation": ["src/core/extensions/descriptor.py#load_portable_dlc_descriptor"],
+      "positive_tests": ["test_portable_dlc.PortableDlcTests.test_descriptor_activates_only_in_explicit_cartridge_scope"],
+      "failure_tests": ["test_portable_dlc.PortableDlcTests.test_hash_mismatch_blocks_descriptor"],
+      "ui": {"status": "not_applicable", "entries": []}
+    },
+    "dlc_registry": {
+      "verification": "verified",
+      "implementation": ["src/core/extensions/registry.py#register_package_dlc", "src/core/lab/builtin_mcp.py#BuiltinMcpRegistry.for_manifest"],
+      "positive_tests": ["test_portable_dlc.PortableDlcTests.test_descriptor_activates_only_in_explicit_cartridge_scope"],
+      "failure_tests": ["test_portable_dlc.PortableDlcTests.test_core_registry_exposes_no_legacy_cartridge_tools"],
+      "ui": {"status": "not_applicable", "entries": []}
+    },
+    "dlc_worker": {
+      "verification": "verified",
+      "implementation": ["src/core/extensions/worker_client.py#run_worker_call", "src/core/extensions/worker_bootstrap.py#main"],
+      "positive_tests": ["test_portable_dlc.PortableDlcTests.test_worker_transports_nested_unicode_json_as_utf8"],
+      "failure_tests": ["test_portable_dlc.PortableDlcTests.test_package_removal_deactivates_existing_proxy"],
+      "ui": {"status": "not_applicable", "entries": []}
+    },
+    "dlc_overlay": {
+      "verification": "verified",
+      "implementation": ["src/core/protocol/capability_registry.py#ProtocolRegistry", "src/core/protocol/compatibility.py#_validate_protocol_extensions"],
+      "positive_tests": ["test_protocol_extensions.ProtocolExtensionCompatibilityTest.test_card_owned_extension_is_unknown_without_package_overlay"],
+      "failure_tests": ["test_protocol_extensions.ProtocolExtensionCompatibilityTest.test_unknown_extension_is_blocked_and_reported"],
+      "ui": {"status": "not_applicable", "entries": []}
+    },
+    "dlc_frontend": {
+      "verification": "implementation_only",
+      "implementation": ["src/frontend/src/components/DlcSandboxFrame.tsx", "src/backend/main.py#serve_cartridge_dlc_frontend"],
+      "positive_tests": [],
+      "failure_tests": [],
+      "ui": {"status": "visible", "entries": ["src/frontend/src/components/DlcSandboxFrame.tsx"]},
+      "notes": "Sandbox host exists; browser isolation contract tests are still missing."
+    },
+    "package_ownership": {
+      "verification": "verified",
+      "implementation": ["src/core/studio/hygiene.py#scan_source_ownership", "src/core/studio/hygiene.py#release_tree_manifests"],
+      "positive_tests": ["test_clean_base_hygiene.CleanBaseHygieneTests.test_release_tree_has_no_business_cartridges"],
+      "failure_tests": ["test_clean_base_hygiene.CleanBaseHygieneTests.test_source_ownership_scan_catches_package_id_tool_and_ui_branch"],
+      "ui": {"status": "not_applicable", "entries": []}
+    },
+    "dlc_lifecycle": {
+      "verification": "happy_path_only",
+      "implementation": ["src/backend/main.py#uninstall_cartridge", "src/core/extensions/registry.py#PortableDlcToolProxy"],
+      "positive_tests": ["test_portable_dlc.PortableDlcTests.test_descriptor_activates_only_in_explicit_cartridge_scope"],
+      "failure_tests": ["test_portable_dlc.PortableDlcTests.test_package_removal_deactivates_existing_proxy"],
+      "ui": {"status": "visible", "entries": ["src/frontend/src/pages/LabPage.tsx"]},
+      "notes": "Proxy deactivation is tested; full install/uninstall resource cleanup is not."
+    },
+    "dlc_absence": {
+      "verification": "verified",
+      "implementation": ["src/core/extensions/registry.py#register_package_dlc", "src/core/studio/hygiene.py#release_tree_manifests"],
+      "positive_tests": ["test_portable_dlc.PortableDlcTests.test_release_tree_contains_no_bundled_business_cartridge"],
+      "failure_tests": ["test_portable_dlc.PortableDlcTests.test_core_registry_exposes_no_legacy_cartridge_tools"],
+      "ui": {"status": "not_applicable", "entries": []}
+    },
+    "dlc_resources": {
+      "verification": "happy_path_only",
+      "implementation": ["src/core/extensions/descriptor.py#_validate_resources", "src/backend/main.py#uninstall_cartridge"],
+      "positive_tests": ["test_portable_dlc.PortableDlcTests.test_descriptor_activates_only_in_explicit_cartridge_scope"],
+      "failure_tests": [],
+      "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/ReleasePage.tsx"]}
+    },
+    "dlc_integrity": {
+      "verification": "verified",
+      "implementation": ["src/core/extensions/descriptor.py#sha256_file", "src/core/extensions/descriptor.py#_validate_files"],
+      "positive_tests": ["test_portable_dlc.PortableDlcTests.test_descriptor_activates_only_in_explicit_cartridge_scope"],
+      "failure_tests": ["test_portable_dlc.PortableDlcTests.test_hash_mismatch_blocks_descriptor"],
+      "ui": {"status": "not_applicable", "entries": []}
+    },
+    "runtime_errors": {
+      "verification": "verified",
+      "implementation": ["src/core/runtime/errors.py#build_runtime_error", "src/core/cartridge/runner.py#CartridgeRunner"],
+      "positive_tests": ["test_runtime_errors.RuntimeErrorEnvelopeTests.test_public_envelope_is_complete_and_redacts_secret_causes"],
+      "failure_tests": ["test_runtime_errors.RuntimeErrorEnvelopeTests.test_missing_provider_configuration_is_not_normal_success", "test_runtime_errors.RuntimeErrorEnvelopeTests.test_tool_worker_failures_have_distinct_stable_codes"],
+      "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/flow-workbench/TestBenchView.tsx"]}
+    },
+    "runtime_state": {
+      "verification": "verified",
+      "implementation": ["src/core/runtime/state_machine.py#assert_transition", "src/core/runtime/state_machine.py#transition"],
+      "positive_tests": ["test_runtime_recovery.RuntimeRecoveryTests.test_all_lifecycle_tables_accept_declared_edges_and_reject_unknown_edges"],
+      "failure_tests": ["test_runtime_recovery.RuntimeRecoveryTests.test_illegal_state_transition_is_rejected"],
+      "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/flow-workbench/TestBenchView.tsx"]}
+    },
+    "checkpoints": {
+      "verification": "verified",
+      "implementation": ["src/core/runtime/checkpoints.py#CheckpointManager", "src/core/cartridge/runner.py#CartridgeRunner._checkpoint_handlers"],
+      "positive_tests": ["test_runtime_recovery.RuntimeRecoveryTests.test_checkpoint_round_trip_preserves_run_and_store", "test_runtime_recovery.RuntimeRecoveryTests.test_completed_flow_has_before_and_after_checkpoint_for_every_node"],
+      "failure_tests": [],
+      "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/flow-workbench/TestBenchView.tsx"]}
+    },
+    "runtime_recovery": {
+      "verification": "verified",
+      "implementation": ["src/core/cartridge/runner.py#CartridgeRunner.recover_run"],
+      "positive_tests": ["test_runtime_recovery.RuntimeRecoveryTests.test_resume_checkpoint_rollback_and_restart_are_distinct_actions", "test_runtime_recovery.RuntimeRecoveryTests.test_retry_current_node_restores_before_checkpoint"],
+      "failure_tests": ["test_runtime_recovery.RuntimeRecoveryTests.test_non_idempotent_tool_never_retries_automatically"],
+      "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/flow-workbench/TestBenchView.tsx"]}
+    },
+    "replay_guard": {
+      "verification": "verified",
+      "implementation": ["src/core/cartridge/runner.py#CartridgeRunner.recover_run"],
+      "positive_tests": ["test_runtime_recovery.RuntimeRecoveryTests.test_idempotent_transient_tool_failure_retries_with_bounds"],
+      "failure_tests": ["test_runtime_recovery.RuntimeRecoveryTests.test_side_effect_retry_requires_explicit_confirmation"],
+      "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/flow-workbench/TestBenchView.tsx"]}
+    },
+    "worker_supervision": {
+      "verification": "verified",
+      "implementation": ["src/core/extensions/worker_client.py#run_worker_call", "src/core/extensions/worker_client.py#shutdown_active_workers"],
+      "positive_tests": ["test_worker_lifecycle.WorkerLifecycleTests.test_host_shutdown_terminates_active_worker"],
+      "failure_tests": ["test_worker_lifecycle.WorkerLifecycleTests.test_timeout_terminates_worker_and_records_final_state", "test_worker_lifecycle.WorkerLifecycleTests.test_run_cancel_terminates_active_worker"],
+      "ui": {"status": "not_applicable", "entries": []}
+    },
+    "model_recipe_binding": {
+      "verification": "verified",
+      "implementation": ["src/core/cartridge/validator.py#ManifestValidator._validate_llm_recipe", "src/core/llm/config_manager.py#resolve_model"],
+      "positive_tests": ["test_llm_recipe.LlmRecipeManifestTests.test_accepts_portable_model_role"],
+      "failure_tests": ["test_llm_recipe.LlmRecipeManifestTests.test_rejects_local_credentials_and_urls"],
+      "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/ModelConfigPage.tsx"]}
+    },
+    "local_resources": {
+      "verification": "verified",
+      "implementation": ["src/core/studio/resources.py#normalize_resources", "src/core/studio/resource_resolver.py#resolve_cartridge_resources", "src/core/studio/resource_resolver.py#resolve_runtime_tool_binding", "src/core/cartridge/runner.py#CartridgeRunner.create_run", "src/core/lab/node_executor.py#LabNodeExecutor._tool_call"],
+      "positive_tests": ["test_studio_resources.StudioResourcesTests.test_normalizes_resources_and_deduplicates_bindings", "test_studio_environment.StudioEnvironmentTests.test_package_binding_descriptor_never_contains_credential_value", "test_runtime_recovery.RuntimeRecoveryTests.test_bound_external_tool_receives_private_connection_only_at_call_time"],
+      "failure_tests": ["test_studio_environment.StudioEnvironmentTests.test_resource_preflight_blocks_incomplete_bound_resources", "test_studio_environment.StudioEnvironmentTests.test_runtime_tool_binding_uses_role_snapshot_and_rejects_changes", "test_runtime_recovery.RuntimeRecoveryTests.test_required_local_resource_role_blocks_before_run"],
+      "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/ResourceConfigPage.tsx"]}
+    },
+    "delivery_guard": {
+      "verification": "verified",
+      "implementation": ["src/core/cartridge/runner.py#CartridgeRunner"],
+      "positive_tests": ["test_runtime_recovery.RuntimeRecoveryTests.test_completed_flow_has_before_and_after_checkpoint_for_every_node"],
+      "failure_tests": ["test_runtime_recovery.RuntimeRecoveryTests.test_missing_delivery_output_fails_closed"],
+      "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/flow-workbench/TestBenchView.tsx"]}
+    }
+  },
+  "capabilities": {
+    "manifest_load": "manifest_load",
+    "manifest_validate": "manifest_validate",
+    "runtime_contract_parse": "compatibility",
+    "compatibility_report": "compatibility",
+    "root_flow_execution": "root_runtime",
+    "basic_node_execution": "root_runtime",
+    "builtin_tool_call": "builtin_tools",
+    "artifact_collect": "artifacts",
+    "artifact_preview": "artifacts",
+    "testbench_run": "testbench",
+    "probe_run": "probe",
+    "structure_analysis": "flow_analysis",
+    "data_chain_diagnostics": "data_chain",
+    "optional_input": "data_chain",
+    "delivery_readiness_check": "delivery_readiness",
+    "unified_process_node": "process_contract",
+    "multi_input_node": "multi_input",
+    "process_node_kind_parse": "process_contract",
+    "process_executor_contract": "process_contract",
+    "process_effect_contract": "process_contract",
+    "transfer_process": "transfer",
+    "decision_process": "decision",
+    "mcp_read_process": "mcp_process",
+    "mcp_execute_process": "mcp_process",
+    "process_mcp_readonly_binding": "mcp_process",
+    "tool_plan_validate": "tool_plan",
+    "tool_plan_tool_binding": "tool_plan",
+    "decision_envelope_v1": "decision",
+    "decision_envelope_validate": "decision",
+    "decision_consume_contract": "decision_consume",
+    "decision_consume_projection": "decision_consume",
+    "llm_live_mode": "llm_live",
+    "llm_mock_mode": "llm_mock",
+    "llm_offline_fallback": "llm_offline",
+    "runtime_user_input_request": "interaction_resume",
+    "paused_waiting_user_status": "interaction_resume",
+    "pending_interaction_record": "interaction_resume",
+    "runtime_resume_after_user_input": "interaction_resume",
+    "portable_dlc_descriptor": "dlc_descriptor",
+    "portable_dlc_validate": "dlc_descriptor",
+    "cartridge_scoped_tool_registry": "dlc_registry",
+    "isolated_dlc_worker": "dlc_worker",
+    "dlc_worker_json_rpc": "dlc_worker",
+    "cartridge_protocol_overlay": "dlc_overlay",
+    "frontend_dlc_sandbox": "dlc_frontend",
+    "package_owned_code": "package_ownership",
+    "dlc_activation_lifecycle": "dlc_lifecycle",
+    "dlc_uninstall_cleanup": "dlc_lifecycle",
+    "dlc_absence_verification": "dlc_absence",
+    "dlc_resource_ownership": "dlc_resources",
+    "dlc_artifact_retention_policy": "dlc_resources",
+    "dlc_integrity_hash": "dlc_integrity",
+    "runtime_error_envelope_v1": "runtime_errors",
+    "runtime_state_machine": "runtime_state",
+    "checkpoint_persistence": "checkpoints",
+    "runtime_retry_policy": "runtime_recovery",
+    "runtime_checkpoint_resume": "runtime_recovery",
+    "runtime_rollback": "runtime_recovery",
+    "runtime_restart": "runtime_recovery",
+    "side_effect_replay_guard": "replay_guard",
+    "worker_lifecycle_supervision": "worker_supervision",
+    "model_recipe_binding": "model_recipe_binding",
+    "local_resource_binding": "local_resources",
+    "resource_preflight": "local_resources",
+    "delivery_primary_output_guard": "delivery_guard"
+  }
+}

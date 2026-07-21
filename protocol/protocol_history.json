@@ -1,0 +1,40 @@
+{
+  "schema_version": "1.0",
+  "protocols": [
+    {
+      "id": "CF-FARP",
+      "version": "0.1",
+      "status": "recognized",
+      "migration_target": {"id": "CF-FARP", "version": "0.6"},
+      "note": "Historical draft identity; runtime support was removed."
+    },
+    {
+      "id": "CF-FARP",
+      "version": "0.2",
+      "status": "recognized",
+      "migration_target": {"id": "CF-FARP", "version": "0.6"},
+      "note": "Historical draft identity; source document is unavailable."
+    },
+    {
+      "id": "CF-FARP",
+      "version": "0.3",
+      "status": "recognized",
+      "migration_target": {"id": "CF-FARP", "version": "0.6"},
+      "document": "docs/protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.3.md"
+    },
+    {
+      "id": "CF-FARP",
+      "version": "0.4",
+      "status": "recognized",
+      "migration_target": {"id": "CF-FARP", "version": "0.6"},
+      "document": "docs/protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.4.md"
+    },
+    {
+      "id": "CF-FARP",
+      "version": "0.5",
+      "status": "recognized",
+      "migration_target": {"id": "CF-FARP", "version": "0.6"},
+      "document": "docs/protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.5.md"
+    }
+  ]
+}

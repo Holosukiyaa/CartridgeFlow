@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "defaults": {
+    "steward": {"provider_id": "default-deepseek", "model": "deepseek-chat"},
+    "runtime": {"provider_id": "default-deepseek", "model": "deepseek-chat"},
+    "mentor": {"provider_id": "default-deepseek", "model": "deepseek-chat"},
+    "worker": {"provider_id": "default-deepseek", "model": "deepseek-chat"}
+  },
+  "cartridges": {},
+  "nodes": {}
+}

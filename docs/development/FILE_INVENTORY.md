@@ -1,6 +1,6 @@
 # CartridgeFlow 文件用途清单
 
-本清单覆盖清理后的 **202 个项目自有文件**，严格分为 **148 个源码文件**和 **54 个非源码文件**，每个文件只列一次。物理目录中另外存在项目本地依赖、运行数据和构建产物；它们在末尾按目录解释，不逐个枚举第三方包内部文件。
+本清单覆盖清理后的 **209 个项目自有文件**，严格分为 **151 个源码文件**和 **58 个非源码文件**，每个文件只列一次。物理目录中另外存在项目本地依赖、运行数据和构建产物；它们在末尾按目录解释，不逐个枚举第三方包内部文件。
 
 ## 废弃审计（2026-07-21）
 
@@ -34,7 +34,7 @@
 |---|---|---|
 | `src/backend/main.py` | `/api/settings` 与 `/api/settings/provider` 明确标为旧版快速设置；当前前端不调用。 | 确认无外部客户端后删除两个路由及专用 payload。 |
 | `src/backend/main.py`、`src/frontend/src/api.ts`、`src/core/lab/__init__.py` | 旧 Steward 的路由、请求函数、实例和导出。 | 随两个 Steward 文件一起清理。 |
-| `src/core/protocol/flow_contract.py`、`compatibility.py`、`certification.py`、`__init__.py` | 仍保留 v0.2-v0.5 validator、分支和导出；当前基座只支持 v0.6。 | 历史拒绝逻辑收敛到 `protocol_history.json` 后，移除不可达的旧解释器代码。不能删除这些整文件，因为它们同时包含当前 v0.6 实现。 |
+| `src/core/protocol/flow_contract.py`、`compatibility.py`、`certification.py`、`__init__.py` | 仍保留 v0.2-v0.5 validator、分支和导出；当前基座只支持 v0.6，最新 v0.7 尚未实现。 | 历史拒绝逻辑收敛到 `protocol_history.json` 后，移除不可达的旧解释器代码。不能删除这些整文件，因为它们同时包含当前 v0.6 实现。 |
 | `src/core/lab/mcp/dlc.py`、`src/core/lab/mcp/media_core.py` | 通用媒体工具仍通过名为 DLC 的内部注册器加载，并声明已停止支持的 `CF-FARP@0.4`。 | 保留媒体能力，改为基座 tool pack/module 命名和当前协议元数据。 |
 | `src/core/lab/flow_assistant_llm.py` | 当前 Flow Assistant 正在使用，但提示词仍写着 CF-FARP 0.3。 | 将生成约束更新为 CF-FARP 0.6；这是内容升级，不是删文件。 |
 | `src/frontend/src/components/DlcSandboxFrame.tsx` | 为旧 DLC UI 继续发送 `load_storyboard`/`load_result`。 | 按 `TODO.md` 的 `UI-001` 增加领域中立消息和显式兼容窗口。 |
@@ -49,10 +49,10 @@
 ### 非源码：本机状态与生成物
 
 - `.data/user/config/` 下的模型、绑定、凭据和资源文件是本机状态，不是废弃配置，不能随源码清理删除。
-- `.tools/`、`.data/`、`src/frontend/node_modules/` 和 `src/frontend/dist/` 分别承担本地工具链、用户与运行数据、前端依赖和可运行构建；它们不属于 202 个项目自有文件。
+- `.tools/`、`.data/`、`src/frontend/node_modules/` 和 `src/frontend/dist/` 分别承担本地工具链、用户与运行数据、前端依赖和可运行构建；它们不属于 204 个项目自有文件。
 - `.data/reports/logs/`、`.data/temp/`、`.pytest_cache/`、`__pycache__/`、`*.pyc` 属于可安全清理的运行或缓存生成物。
 
-## 源码（148）
+## 源码（151）
 
 源码分为产品源码和开发维护源码。前者参与应用启动、构建和运行，后者包括测试、测试夹具与自动化脚本；两者都是真正会被解释器、浏览器或命令行执行的代码。
 
@@ -172,12 +172,13 @@
 | `src/core/runtime/manager.py` | 注册 Runtime Adapter 并按 manifest runtime type 启动。 |
 | `src/core/runtime/state_machine.py` | 冻结 run、node、interaction 和 tool 的合法状态迁移。 |
 
-### Studio 本地配置与发布（6）
+### Studio 本地配置与发布（7）
 
 | 文件 | 作用 |
 |---|---|
 | `src/core/studio/__init__.py` | 导出资源与环境配置 API。 |
 | `src/core/studio/environment.py` | 管理本机凭据、环境引用和系统命令检查。 |
+| `src/core/studio/external_adapters.py` | 使用本机绑定实际执行 HTTP/OpenAPI、CLI 和 MCP 工具，并处理超时、取消与脱敏错误。 |
 | `src/core/studio/hygiene.py` | 扫描源码和包，阻止业务泄漏、密钥、缓存和本机文件进入发布物。 |
 | `src/core/studio/release.py` | 生成发布预检和卡带打包结果。 |
 | `src/core/studio/resource_resolver.py` | 按卡带资源角色解析本机绑定，生成脱敏摘要并在工具调用时提供私有连接上下文。 |
@@ -211,18 +212,19 @@
 | `src/frontend/src/toast.tsx` | 全局轻提示状态与视图。 |
 | `src/frontend/src/ui.tsx` | 项目自有的基础 UI 组件封装。 |
 
-### 前端页面（8）
+### 前端页面（9）
 
 | 文件 | 作用 |
 |---|---|
-| `src/frontend/src/pages/EnvironmentPage.tsx` | 本机环境、命令和凭据引用页面。 |
+| `src/frontend/src/pages/EnvironmentPage.tsx` | 系统设置内嵌的本机变量、命令依赖和凭据引用区域。 |
 | `src/frontend/src/pages/FlowWorkbench.tsx` | 单张 Flow 的设计、测试和模型配方工作区总控制器。 |
-| `src/frontend/src/pages/HomePage.tsx` | 全局概览、TODO、协议能力和近期运行页面。 |
+| `src/frontend/src/pages/HomePage.tsx` | 全局概览、TODO 摘要、协议能力和 RUN ACTIVITY 运行统计页面。 |
 | `src/frontend/src/pages/LabPage.tsx` | Flow 列表、创建、导入、克隆和删除页面。 |
 | `src/frontend/src/pages/ModelConfigPage.tsx` | 全局本地模型 Provider 配置页面。 |
 | `src/frontend/src/pages/ReleasePage.tsx` | 兼容性、预检、打包和发布页面。 |
-| `src/frontend/src/pages/ResourceConfigPage.tsx` | 工具/远程 API 与数据来源的共用配置页面。 |
-| `src/frontend/src/pages/SettingsPage.tsx` | 字号、密度、风格等全局偏好页面。 |
+| `src/frontend/src/pages/ResourceConfigPage.tsx` | MCP、远程 API 与基座插件的本机配置页面。 |
+| `src/frontend/src/pages/RunDiagnosticsPage.tsx` | 跨 Flow 运行检索、错误证据、检查点、产物、诊断导出和恢复页面。 |
+| `src/frontend/src/pages/SettingsPage.tsx` | 汇总界面偏好、本机变量、凭据引用和运行环境的系统设置页。 |
 
 ### Flow 工作台组件（10）
 
@@ -239,7 +241,7 @@
 | `src/frontend/src/pages/flow-workbench/types.ts` | 工作台局部 TypeScript 类型。 |
 | `src/frontend/src/pages/flow-workbench/views.tsx` | 组合 Design/Run 视图和工作台顶部栏。 |
 
-### 前端样式分层（11）
+### 前端样式分层（14）
 
 | 文件 | 作用 |
 |---|---|
@@ -250,12 +252,15 @@
 | `src/frontend/src/styles/40-resource-config.css` | 模型、工具和数据源页面共享控件。 |
 | `src/frontend/src/styles/50-workbench-design.css` | 设计工作区和编辑器布局。 |
 | `src/frontend/src/styles/60-overview.css` | 概览 TODO、协议、近期运行和文件浏览器。 |
+| `src/frontend/src/styles/65-run-diagnostics.css` | 全局运行诊断、证据、事件、检查点和恢复工作区。 |
 | `src/frontend/src/styles/70-home-and-model.css` | 开发者页面框架和卡带模型配方。 |
 | `src/frontend/src/styles/80-overview-layout.css` | 概览密度、100%/110%/125% 和视口适配。 |
+| `src/frontend/src/styles/85-model-config.css` | 全局模型路由页的状态摘要、双栏工具面板和缩放适配。 |
+| `src/frontend/src/styles/87-cartridge-assets.css` | Flow 资产工作区、资产清单和交互组件编辑界面。 |
 | `src/frontend/src/styles/90-environment-release.css` | 环境、凭据、预检和发布页面。 |
 | `src/frontend/src/styles/95-config-and-appearance.css` | 配置弹窗、外观和系统设置。 |
 
-### 开发维护源码：当前协议与认证测试（7）
+### 开发维护源码：当前协议与认证测试（8）
 
 | 文件 | 作用 |
 |---|---|
@@ -265,6 +270,7 @@
 | `scripts/tests/conformance/test_protocol_certification.py` | 验证当前协议认证条件和认证标签。 |
 | `scripts/tests/conformance/test_protocol_extensions.py` | 验证协议 Overlay 的身份、继承和未知扩展阻断。 |
 | `scripts/tests/conformance/test_protocol_v06_contract.py` | 验证 Base 0.2、FARP 0.6、资源隔离、认证和 DLC 协议跟随。 |
+| `scripts/tests/conformance/test_protocol_v07_specification.py` | 验证 FARP 0.7 正文、目录、版本化词表、交互节点与脚本安全约束，同时确认当前 Base 失败关闭。 |
 | `scripts/tests/conformance/test_runtime_contract.py` | 验证当前 manifest 可运行，以及旧 manifest 被明确阻断。 |
 
 ### 开发维护源码：运行时测试（11）
@@ -283,13 +289,15 @@
 | `scripts/tests/runtime/test_tool_plan_v1.py` | 验证 Tool Plan 允许列表、参数 schema 和副作用边界。 |
 | `scripts/tests/runtime/test_worker_lifecycle.py` | 真实验证 Worker 超时、run 取消和宿主退出。 |
 
-### 开发维护源码：Studio、LLM 与卫生测试（6）
+### 开发维护源码：Studio、LLM 与卫生测试（8）
 
 | 文件 | 作用 |
 |---|---|
+| `scripts/tests/studio/test_external_adapters.py` | 使用真实本机 HTTP、CLI 和 MCP 服务验证外部资源执行、超时、凭据隔离与取消。 |
 | `scripts/tests/studio/test_studio_environment.py` | 验证凭据遮罩、资源引用和环境预检。 |
 | `scripts/tests/studio/test_studio_resources.py` | 验证资源配置归一、ID 和绑定去重。 |
 | `scripts/tests/studio/test_studio_todo.py` | 验证 TODO 章节、任务和代码块解析。 |
+| `scripts/tests/llm/test_llm_connection.py` | 验证模型连接成功、真实失败和配置缺失不会被错误报告为通过。 |
 | `scripts/tests/llm/test_llm_recipe.py` | 验证卡带 LLM 配方可移植且不能携带本机密钥或 URL。 |
 | `scripts/tests/llm/test_llm_responses_api.py` | 验证 Responses API 消息、图片、工具和流转换。 |
 | `scripts/tests/hygiene/test_clean_base_hygiene.py` | 验证空卡带架、源码所有权、目录边界和发布包卫生。 |
@@ -319,7 +327,7 @@
 | `scripts/bootstrap.ps1` | 下载并校验固定版本 Python/Node，安装项目本地依赖。 |
 | `scripts/run_conformance.py` | 运行全部自动测试并生成机器报告。 |
 
-## 非源码（54）
+## 非源码（58）
 
 非源码不直接实现产品行为，包含配置、协议快照、文档、依赖元数据和本机状态说明。它们可以被运行时代码读取，但不应和产品源码放在同一类里。
 
@@ -361,7 +369,7 @@
 | `src/frontend/tsconfig.node.json` | Vite 配置文件的 Node TypeScript 设置。 |
 | `src/frontend/src/styles/README.md` | 样式文件所有权和级联顺序说明。 |
 
-### 项目文档（16）
+### 项目文档（17）
 
 | 文件 | 作用 |
 |---|---|
@@ -381,13 +389,15 @@
 | `docs/protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.4.md` | CF-FARP 0.4 已发布协议快照。 |
 | `docs/protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.5.md` | CF-FARP 0.5 已发布协议快照。 |
 | `docs/protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.6.md` | 当前 CF-FARP 0.6 完整协议正文。 |
+| `docs/protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.7.md` | 最新 CF-FARP 0.7 完整协议正文；定义资产、交互节点、组件与脚本安全，当前 Base 尚未声明支持。 |
 
-### 机器协议 Registry（12）
+### 机器协议 Registry（15）
 
 | 文件 | 作用 |
 |---|---|
 | `protocol/README.md` | 区分当前 registry、历史 draft registry、共享词表和基座支持矩阵。 |
-| `protocol/capabilities.json` | 可声明 capability 的机器词汇表。 |
+| `protocol/capabilities.json` | v0.6 与当前 Base 使用的 capability 机器词汇表。 |
+| `protocol/capabilities-0.7.json` | v0.7 独立 capability 词表快照。 |
 | `protocol/CARTRIDGEFLOW-BASE-0.2.json` | 当前 Base Contract 0.2 注册信息及正文路径。 |
 | `protocol/CF-FARP-0.1.json` | CF-FARP 0.1 注册信息。 |
 | `protocol/CF-FARP-0.2.json` | CF-FARP 0.2 兼容注册信息；其历史正文不在当前仓库。 |
@@ -395,7 +405,9 @@
 | `protocol/CF-FARP-0.4.json` | CF-FARP 0.4 注册信息及正文路径。 |
 | `protocol/CF-FARP-0.5.json` | CF-FARP 0.5 注册信息及正文路径。 |
 | `protocol/CF-FARP-0.6.json` | 当前 CF-FARP 0.6 注册信息、Base 依赖和正文路径。 |
-| `protocol/profiles.json` | capability 组合成运行 profile 的机器声明。 |
+| `protocol/CF-FARP-0.7.json` | 最新 CF-FARP 0.7 注册信息、版本化词表和正文路径；当前 Base 尚未声明支持。 |
+| `protocol/profiles.json` | v0.6 与当前 Base 使用的运行 profile 声明。 |
+| `protocol/profiles-0.7.json` | v0.7 独立 profile 词表快照。 |
 | `protocol/protocol_history.json` | 已识别但不再运行的旧协议版本及其迁移目标。 |
 | `protocol/tool_packs.json` | 基座通用 tool pack 的身份和工具集合。 |
 

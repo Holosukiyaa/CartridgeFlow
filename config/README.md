@@ -11,7 +11,7 @@ config/
 │  └─ llm_retry.json     当前底座实际采用的默认重试策略
 └─ templates/
    ├─ llm/               Provider 与模型角色绑定模板
-   └─ studio/            凭据、工具和数据来源模板
+   └─ studio/            凭据与工具模板
 
 .data/user/config/
 ├─ llm/
@@ -32,11 +32,11 @@ config/
 | `templates/llm/providers.json` | 安全模板 | Provider 地址、模型和连接字段的空白示例。 |
 | `templates/llm/assignments.json` | 安全模板 | 默认角色、卡带和节点模型绑定的空白示例。 |
 | `templates/studio/credentials.json` | 安全模板 | 本机凭据文件的空白结构。 |
-| `templates/studio/resources.json` | 安全模板 | 全局工具、数据来源和卡带绑定的空白结构。 |
+| `templates/studio/resources.json` | 安全模板 | 全局工具与卡带角色绑定的空白结构。 |
 | `.data/user/config/llm/providers.json` | 本机状态 | Provider 地址、模型和密钥入口；密钥值不能进入卡带或版本库。 |
 | `.data/user/config/llm/assignments.json` | 本机状态 | steward、runtime、mentor、worker 以及卡带节点的模型绑定。 |
 | `.data/user/config/studio/credentials.json` | 本机状态 | 环境变量凭据，界面只显示脱敏信息。 |
-| `.data/user/config/studio/resources.json` | 本机状态 | 全局 MCP、远程 API、数据来源，以及 `bindings.roles` 中卡带资源角色到本机实例的映射。 |
+| `.data/user/config/studio/resources.json` | 本机状态 | 全局 MCP、远程 API、基座插件，以及 `bindings.roles` 中卡带工具角色到本机实例的映射。旧 `sources` 会在读取时迁移为工具。 |
 
 ## 使用原则
 
@@ -47,3 +47,27 @@ config/
 5. 修改 `base/BASE_IMPLEMENTATION.json`、`base/capability_evidence.json` 或 `defaults/llm_retry.json` 时，需要同时运行 conformance 测试。
 6. 本机 JSON 采用原子写入；文件损坏时会先保存为同目录下的 `*.corrupt-时间.json`，再恢复安全默认值。
 7. 配置文件路径是运行时契约的一部分；需要改变路径时，必须同步修改 `src/core/`、后端、前端提示和测试。
+
+## 外部工具执行
+
+| 本机资源类型 | 连接方式 | 卡带保存什么 |
+|---|---|---|
+| `mcp` + `command` | 官方 MCP SDK stdio client | `resource_role`、server、tool 和行为契约 |
+| `mcp` + `endpoint` | 官方 MCP SDK Streamable HTTP client | 同上，不保存 endpoint 或认证信息 |
+| `remote_api` | 直接 HTTP endpoint，或用 OpenAPI `operationId` 解析方法和路径 | 稳定 tool ID、参数 schema 和行为契约 |
+| `plugin` + `command` | 不启用 shell 的 JSON stdin/stdout CLI | 稳定 tool ID 和行为契约 |
+
+HTTP 的 `http_method`、`auth_header` 和 `auth_scheme` 都属于本机连接配置。`auth_env` 只保存环境变量名称，真实值由 `.data/user/config/studio/credentials.json` 提供，并且只在调用瞬间注入。
+
+CLI 请求使用以下固定信封写入 stdin，进程必须在 stdout 返回 JSON 或文本：
+
+```json
+{
+  "schema": "cartridgeflow.cli_tool_request.v1",
+  "server": "tool_namespace",
+  "tool": "tool_name",
+  "arguments": {}
+}
+```
+
+所有外部调用都受卡带 `contract.timeout_ms`、幂等重试、run 取消和宿主退出清理约束。CLI/MCP 子进程只继承当前资源选择的凭据，不继承其他本机密钥。公开结果会保留 adapter、状态码和稳定错误码，但不会返回 endpoint、command、认证值或本机绝对路径。

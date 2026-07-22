@@ -23,17 +23,17 @@ export const NODE_CATEGORIES: NodeCategory[] = [
     bg: '#edf8ef',
   },
   {
-    id: 'ui',
-    label: '展示节点',
-    shortLabel: '展示',
-    templateId: 'welcome',
+    id: 'interaction',
+    label: '交互节点',
+    shortLabel: '交互',
+    templateId: 'interaction',
     defaultType: 'process',
-    defaultAction: 'show_ui',
-    defaultTitle: '展示节点',
-    description: '负责展示欢迎页、结果页、HTML/Markdown 预览或中间交互界面，不承担数据存储职责。',
-    examples: ['欢迎页', '结果展示', 'HTML 预览', 'Markdown 报告'],
-    color: '#8b4fb3',
-    bg: '#f7efff',
+    defaultAction: 'render_interaction',
+    defaultTitle: '交互节点',
+    description: '承载卡带自己的展示、填写和审核界面。界面来自卡带资产，提交动作由底座控制。',
+    examples: ['欢迎面板', '结果展示', '信息填写', '人工审核'],
+    color: '#c66837',
+    bg: '#fff7f1',
   },
   {
     id: 'process',
@@ -133,6 +133,7 @@ export const CATEGORY_BY_ID = new Map(NODE_CATEGORIES.map((item) => [item.id, it
 export type ProcessKind =
   | 'input'
   | 'ui'
+  | 'interaction'
   | 'decision'
   | 'retrieval'
   | 'transform'
@@ -167,6 +168,7 @@ export type ProcessProtocolDefaults = {
 export const PROCESS_KIND_LABELS: Record<string, string> = {
   input: '输入',
   ui: '展示',
+  interaction: '交互',
   decision: 'AI决策',
   retrieval: '检索',
   transform: '转换',
@@ -183,7 +185,8 @@ export const PROCESS_KIND_LABELS: Record<string, string> = {
 
 const PROCESS_KIND_CATEGORY: Record<string, NodeCategoryId> = {
   input: 'input',
-  ui: 'ui',
+  ui: 'interaction',
+  interaction: 'interaction',
   decision: 'process',
   retrieval: 'process',
   transform: 'process',
@@ -210,13 +213,13 @@ const CATEGORY_PROTOCOL_DEFAULTS: Record<NodeCategoryId, ProcessProtocolDefaults
     source: 'user_form',
     inputSchema: 'input.v1',
   },
-  ui: {
+  interaction: {
     type: 'process',
-    kind: 'ui',
+    kind: 'interaction',
     executor: 'deterministic',
-    effect: 'writes_store',
-    action: 'show_ui',
-    displaySuffix: '展示',
+    effect: 'none',
+    action: 'render_interaction',
+    displaySuffix: '交互',
   },
   process: {
     type: 'process',
@@ -379,10 +382,10 @@ export const NODE_PRESETS: Record<NodeCategoryId, NodePreset[]> = {
     { id: 'scan_project', label: '扫描项目', description: '生成项目结构或上下文。', fields: [{ key: 'scope', label: '扫描范围', placeholder: 'src/frontend/src' }, { key: 'output_name', label: '输出名称', placeholder: 'project_map' }] },
     { id: 'import_log', label: '导入日志', description: '导入错误日志或运行输出。', fields: [{ key: 'source', label: '日志来源', placeholder: '终端输出 / 文件路径', multiline: true }, { key: 'output_name', label: '输出名称', placeholder: 'error_log' }] },
   ],
-  ui: [
-    { id: 'welcome', label: '欢迎页', description: '展示卡带启动时的欢迎 HTML。', fields: [{ key: 'path', label: 'HTML 路径', placeholder: 'assets/welcome.html' }, { key: 'output_name', label: '输出名称', placeholder: 'welcome_ui' }] },
-    { id: 'html_view', label: 'HTML 展示', description: '在流程中展示指定 HTML 文件或内联 HTML。', fields: [{ key: 'path', label: 'HTML 路径', placeholder: 'assets/result.html' }, { key: 'output_name', label: '输出名称', placeholder: 'html_view' }] },
-    { id: 'markdown_view', label: 'Markdown 结果', description: '读取上游结果并以 Markdown 方式展示。', fields: [{ key: 'source', label: '展示数据来源', placeholder: 'final_summary' }, { key: 'output_name', label: '输出名称', placeholder: 'result_ui' }] },
+  interaction: [
+    { id: 'display', label: '展示界面', description: '展示被动 HTML 组件，不写入运行数据。', fields: [] },
+    { id: 'collect', label: '收集信息', description: '由底座表单收集输入，通过命名动作继续。', fields: [] },
+    { id: 'review', label: '审核结果', description: '展示当前结果，并由底座提供通过、退回等动作。', fields: [] },
   ],
   process: [
     { id: 'analyze', label: '分析信息', description: '分析输入内容并给出结构化结论。', fields: [{ key: 'goal', label: '分析目标', placeholder: '分析用户需求和风险', multiline: true }, { key: 'output_name', label: '输出名称', placeholder: 'requirement_analysis' }] },
@@ -437,7 +440,7 @@ export function getNodeCategory(node?: FlowNode | null): NodeCategory {
   if (kind && PROCESS_KIND_CATEGORY[kind]) return CATEGORY_BY_ID.get(PROCESS_KIND_CATEGORY[kind])!
   const explicit = node?.params?.node_category || node?.data?.params?.node_category
   if (explicit && CATEGORY_BY_ID.has(explicit)) return CATEGORY_BY_ID.get(explicit)!
-  if (node?.action === 'show_welcome' || node?.action === 'show_ui' || node?.action === 'render_ui' || node?.action === 'show_result') return CATEGORY_BY_ID.get('ui')!
+  if (node?.action === 'render_interaction' || node?.action === 'show_welcome' || node?.action === 'show_ui' || node?.action === 'render_ui' || node?.action === 'show_result') return CATEGORY_BY_ID.get('interaction')!
   if (node?.template_id === 'input' || node?.action === 'collect_inputs') return CATEGORY_BY_ID.get('input')!
   if (node?.action === 'remote_call' || node?.params?.node_category === 'remote') return CATEGORY_BY_ID.get('remote')!
   if (node?.action === 'tool_call' || node?.params?.node_category === 'tool') return CATEGORY_BY_ID.get('tool')!
@@ -466,6 +469,11 @@ export function makeNodeDraft(node: FlowNode): NodeDraft {
     kind,
     executor,
     effect,
+    displayName: String(node.display_name || node.title || ''),
+    componentRef: String(node.component_ref || ''),
+    interactionMode: String(node.interaction_mode || (category.id === 'interaction' ? 'display' : '')),
+    inputBinding: stringifyContractValue(node.input_binding || {}),
+    actionRoutes: stringifyContractValue(node.action_routes || {}),
     displaySuffix: String(display.suffix || PROCESS_KIND_LABELS[kind] || defaults.displaySuffix || ''),
     inputKind: String(node.input_kind || node.data?.input_kind || defaults.inputKind || ''),
     source: String(node.source || node.data?.source || defaults.source || ''),
@@ -532,12 +540,20 @@ export function buildProtocolNodePayload(draft: NodeDraft, category: NodeCategor
   const mcpBinding = parseJsonOrEmpty(draft.mcpBinding, {})
   const decisionContract = parseJsonOrEmpty(draft.decisionContract, defaults.decisionContract || null)
   const mockDecisionEnvelope = parseJsonOrEmpty(draft.mockDecisionEnvelope, null)
+  const inputBinding = parseJsonOrEmpty(draft.inputBinding, {})
+  const actionRoutes = parseJsonOrEmpty(draft.actionRoutes, {})
   return {
     type: 'process',
     action: draft.action || defaults.action,
     kind,
     executor: draft.executor || defaults.executor,
     effect: draft.effect || defaults.effect,
+    display_name: draft.displayName || draft.title || null,
+    component_ref: kind === 'interaction' ? draft.componentRef || null : null,
+    interaction_mode: kind === 'interaction' ? draft.interactionMode || 'display' : null,
+    input_binding: kind === 'interaction' ? inputBinding : null,
+    action_routes: kind === 'interaction' ? actionRoutes : null,
+    output: kind === 'interaction' && draft.interactionMode !== 'display' ? draft.output || null : null,
     display: {
       suffix: displaySuffix,
       label: displayLabel,

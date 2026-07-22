@@ -1,4 +1,4 @@
-# CartridgeFlow v0.2.0 AI Developer Guide
+# CartridgeFlow v0.3.0 AI Developer Guide
 
 本文用于指导一个没有历史上下文的 AI 或开发者从零接手 CartridgeFlow。它描述正式基座的事实、边界、协议运行方式、Portable DLC 插拔系统、开发顺序和验收标准。
 
@@ -8,14 +8,14 @@
 
 1. 阅读根目录 `README.md`、`docs/planning/TODO.md` 和 `docs/planning/ROADMAP.md`。
 2. 阅读 `config/base/BASE_IMPLEMENTATION.json`，确认基座真实声明的协议、profile、capability 和 tool pack。
-3. 涉及宿主或流程语义时，完整阅读 `docs/protocol/CARTRIDGEFLOW_BASE_CONTRACT_v0.2.md` 与 `docs/protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.6.md`。
+3. 涉及宿主或流程语义时，完整阅读 Base v0.2 与最新 FARP v0.7；修改当前运行实现时还要核对 v0.6 快照和 `BASE_IMPLEMENTATION.json`，不得把目标规范当作已实现事实。
 4. 涉及 DLC 时，阅读 `docs/architecture/PORTABLE_DLC_ARCHITECTURE.md` 和 `src/core/extensions/`。
 5. 检查 `git status --short`，保留用户已有改动。
 6. 先定位所有权边界，再决定修改核心还是卡带。
 
 不要从某张卡带倒推基座语义。协议和基座是宿主，卡带是消费者。
 
-## 2. v0.2.0 基线
+## 2. v0.3.0 基线
 
 本版本是无预装业务卡带的正式基座。
 
@@ -70,6 +70,9 @@ src/frontend/
 
 ```text
 protocol/CARTRIDGEFLOW-BASE-0.2.json
+protocol/CF-FARP-0.7.json
+protocol/capabilities-0.7.json
+protocol/profiles-0.7.json
 protocol/CF-FARP-0.6.json
 protocol/capabilities.json
 protocol/profiles.json
@@ -80,6 +83,7 @@ protocol/tool_packs.json
 
 ```text
 docs/protocol/CARTRIDGEFLOW_BASE_CONTRACT_v0.2.md
+docs/protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.7.md
 docs/protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.6.md
 ```
 
@@ -90,6 +94,8 @@ config/base/BASE_IMPLEMENTATION.json
 ```
 
 正文定义语义，registry 定义可发现身份，基座声明定义当前实现范围。三者不能互相冒充。
+
+v0.7 是最新目标规范，v0.6 是当前参考底座的实际运行协议。v0.7 交互节点、资产 Registry、descriptor v2 和脚本安全能力完成实现与 conformance 前，不能加入基座支持矩阵。
 
 ### 4.2 只读规则
 

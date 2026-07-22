@@ -5,49 +5,39 @@ import {
   fetchBaseImplementation,
   fetchStudioConformance,
   fetchCartridgeRuns,
-  fetchCartridgeRunEvents,
   fetchLabFlows,
   fetchStudioTodo,
   fetchStudioTodoFile,
   fetchStudioTodoTemplate,
   type FlowLabItem,
-  type FlowEvent,
   type RunResult,
   type StudioTodoResponse,
   type StudioConformanceResponse,
 } from '../api.ts'
 import { Box, Heading, Spinner, Text } from '../ui.tsx'
+import CapabilityEvidenceViewer from '../components/CapabilityEvidenceViewer.tsx'
 
-const STATUS_LABELS: Record<string, string> = {
-  completed: '运行完成',
-  failed: '运行失败',
-  interrupted: '运行中断',
-  cancelled: '已取消',
-  paused_waiting_user: '等待用户',
-  running: '运行中',
-  created: '已创建',
+const PROTOCOL_STATUS_LABELS: Record<string, string> = {
+  supported: '完整支持',
+  partial: '部分支持',
+  experimental: '实验性支持',
+  deprecated: '已弃用',
 }
 
-function formatActivityTime(value?: string) {
-  if (!value) return '时间未知'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  return new Intl.DateTimeFormat('zh-CN', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).format(date)
+const ACTIVE_RUN_STATUSES = ['running', 'retrying', 'recovering', 'rolling_back', 'created']
+const ATTENTION_RUN_STATUSES = ['failed', 'interrupted']
+const TERMINAL_RUN_STATUSES = ['completed', 'failed', 'interrupted', 'cancelled']
+
+function runTimestamp(run: RunResult) {
+  const date = new Date(run.created_at || run.updated_at || '')
+  return Number.isNaN(date.getTime()) ? 0 : date.getTime()
 }
 
-function artifactKind(item: any) {
-  const mime = String(item?.mime_type || '').toLowerCase()
-  const name = String(item?.name || '').toLowerCase()
-  if (mime.includes('html') || name.endsWith('.html')) return 'html'
-  if (mime.startsWith('image/') || /\.(png|jpe?g|gif|webp)$/i.test(name)) return 'image'
-  if (mime.startsWith('video/') || /\.(mp4|webm|mov)$/i.test(name)) return 'video'
-  return 'file'
+function protocolVersionNumber(value: any) {
+  return String(value || '')
+    .split('.')
+    .map((part) => Number.parseInt(part, 10) || 0)
+    .reduce((total, part, index) => total + part / (10 ** (index * 3)), 0)
 }
 
 export default function HomePage() {
@@ -63,10 +53,7 @@ export default function HomePage() {
   const [todoViewerFile, setTodoViewerFile] = useState<'TODO.md' | 'TODO_TEMPLATE.md'>('TODO.md')
   const [todoText, setTodoText] = useState('')
   const [todoViewerLoading, setTodoViewerLoading] = useState(false)
-  const [logRun, setLogRun] = useState<RunResult | null>(null)
-  const [logEvents, setLogEvents] = useState<FlowEvent[]>([])
-  const [logLoading, setLogLoading] = useState(false)
-  const [previewRun, setPreviewRun] = useState<RunResult | null>(null)
+  const [evidenceViewerOpen, setEvidenceViewerOpen] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -97,25 +84,56 @@ export default function HomePage() {
     return () => { active = false }
   }, [])
 
-  const projectById = useMemo(
-    () => new Map(projects.map((project) => [project.id, project])),
-    [projects],
-  )
-  const recentRuns = useMemo(() => [...runs]
-    .sort((a, b) => String(b.updated_at || b.created_at || '').localeCompare(String(a.updated_at || a.created_at || '')))
-    .slice(0, 20), [runs])
-  const openTodoItems = todo?.items.filter((item) => !item.checked).slice(0, 20) || []
+  const openTodoItems = todo?.items.filter((item) => !item.checked).slice(0, 3) || []
+  const runSummary = useMemo(() => ({
+    total: runs.length,
+    failed: runs.filter((run) => run.status === 'failed').length,
+    active: runs.filter((run) => ACTIVE_RUN_STATUSES.includes(run.status)).length,
+  }), [runs])
+  const overviewStats = useMemo(() => {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const currentStartDate = new Date(today)
+    currentStartDate.setDate(today.getDate() - 6)
+    const currentStart = currentStartDate.getTime()
+    const currentEnd = new Date(today).setDate(today.getDate() + 1)
+    const previousStart = currentStart - 7 * 24 * 60 * 60 * 1000
+    const recentRuns = runs.filter((run) => {
+      const timestamp = runTimestamp(run)
+      return timestamp >= currentStart && timestamp < currentEnd
+    })
+    const previousRuns = runs.filter((run) => {
+      const timestamp = runTimestamp(run)
+      return timestamp >= previousStart && timestamp < currentStart
+    })
+    const terminalRuns = recentRuns.filter((run) => TERMINAL_RUN_STATUSES.includes(run.status))
+    const completedRuns = terminalRuns.filter((run) => run.status === 'completed').length
+    const successRate = terminalRuns.length ? Math.round((completedRuns / terminalRuns.length) * 100) : null
+    const delta = recentRuns.length - previousRuns.length
+    const deltaLabel = previousRuns.length === 0
+      ? (recentRuns.length ? `本周期新增 ${recentRuns.length} 次` : '近两周暂无运行')
+      : delta === 0
+        ? '与前 7 天持平'
+        : `${delta > 0 ? '+' : ''}${Math.round((delta / previousRuns.length) * 100)}% 较前 7 天`
+    return {
+      recentCount: recentRuns.length,
+      successRate,
+      attention: runs.filter((run) => ATTENTION_RUN_STATUSES.includes(run.status)).length,
+      editableFlows: projects.filter((project) => project.editable).length,
+      deltaLabel,
+    }
+  }, [projects, runs])
   const storedProjectId = localStorage.getItem('cf.studio.recent_project') || ''
   const continueProject = projects.find((project) => project.id === storedProjectId)
     || projects.find((project) => project.editable)
     || projects[0]
   const supportedProtocols = base?.supported_protocols || []
-  const protocol05 = supportedProtocols.find((item: any) => item.id === 'CF-FARP' && item.version === '0.5')
-  const previewArtifacts = useMemo(() => {
-    if (!previewRun) return []
-    return [...(previewRun.delivery?.artifacts || []), ...(previewRun.artifacts || [])]
-  }, [previewRun])
-
+  const currentProtocol = supportedProtocols
+    .filter((item: any) => item?.id === 'CF-FARP' && item?.version)
+    .sort((a: any, b: any) => protocolVersionNumber(b.version) - protocolVersionNumber(a.version))[0]
+  const currentProtocolStatus = currentProtocol
+    ? (PROTOCOL_STATUS_LABELS[currentProtocol.status] || currentProtocol.status || '已声明')
+    : '未声明'
   const openTodoViewer = async (file: 'TODO.md' | 'TODO_TEMPLATE.md' = 'TODO.md') => {
     setTodoViewerFile(file)
     setTodoViewerOpen(true)
@@ -127,20 +145,6 @@ export default function HomePage() {
       setTodoText(`读取 ${file} 失败\n\n${reason?.message || reason}`)
     } finally {
       setTodoViewerLoading(false)
-    }
-  }
-
-  const openRunLog = async (run: RunResult) => {
-    setLogRun(run)
-    setLogEvents([])
-    setLogLoading(true)
-    try {
-      const result = await fetchCartridgeRunEvents(run.run_id)
-      setLogEvents(result.items || [])
-    } catch (reason: any) {
-      setLogEvents([{ type: 'error', message: reason?.message || '运行日志读取失败' }])
-    } finally {
-      setLogLoading(false)
     }
   }
 
@@ -186,7 +190,29 @@ export default function HomePage() {
               </div>
             </section>
 
-            <div className="cf-overview-main-grid">
+            <section className="cf-overview-activity-block" aria-label="运行活动">
+              <header className="cf-overview-activity-heading">
+                <div><span>RUN ACTIVITY</span><h2>运行活动</h2></div>
+                <p>Flow 执行状态与近七日运行节奏</p>
+              </header>
+
+            <section className="cf-overview-stat-strip" aria-label="开发统计">
+              <button type="button" onClick={() => navigate('/projects')}>
+                <span>Flow 总数</span><strong>{projects.length}</strong><small>{overviewStats.editableFlows} 个可编辑 Flow</small><i><b style={{ width: `${projects.length ? Math.max(12, (overviewStats.editableFlows / projects.length) * 100) : 0}%` }} /></i>
+              </button>
+              <button type="button" onClick={() => navigate('/diagnostics?range=7d')}>
+                <span>近 7 日运行</span><strong>{overviewStats.recentCount}</strong><small>{overviewStats.deltaLabel}</small><i className="neutral"><b style={{ width: `${Math.min(100, overviewStats.recentCount * 8)}%` }} /></i>
+              </button>
+              <button type="button" onClick={() => navigate('/diagnostics?range=7d&status=completed')}>
+                <span>运行成功率</span><strong>{overviewStats.successRate === null ? '--' : `${overviewStats.successRate}%`}</strong><small>{overviewStats.successRate === null ? '暂无终态运行' : '按近 7 日终态运行计算'}</small><i className="success"><b style={{ width: `${overviewStats.successRate || 0}%` }} /></i>
+              </button>
+              <button type="button" className={overviewStats.attention ? 'attention' : ''} onClick={() => navigate('/diagnostics?status=attention')}>
+                <span>需要关注</span><strong>{overviewStats.attention}</strong><small>{overviewStats.attention ? '失败或中断的运行' : '当前没有待诊断运行'}</small><i><b style={{ width: `${overviewStats.attention ? Math.min(100, overviewStats.attention * 18) : 0}%` }} /></i>
+              </button>
+            </section>
+            </section>
+
+            <div className="cf-overview-comfort-grid">
               <section className="cf-overview-panel cf-overview-todo">
                 <div className="cf-overview-panel-head">
                   <div className="cf-overview-section-label"><span>Source: {todo?.source || 'TODO.md'}</span><h2>待处理事项</h2></div>
@@ -206,23 +232,23 @@ export default function HomePage() {
                   </div>
                 )}
                 <div className="cf-overview-todo-footer">
-                  <span>已完成 {todo?.completed || 0} 项</span>
+                  <span>{(todo?.open || 0) > openTodoItems.length ? `首页仅展示 ${openTodoItems.length} 项，还有 ${(todo?.open || 0) - openTodoItems.length} 项` : `已完成 ${todo?.completed || 0} 项`}</span>
                   <button type="button" onClick={() => void openTodoViewer()}>浏览完整 todo.md</button>
                   <button type="button" onClick={() => void openTodoViewer('TODO_TEMPLATE.md')}>查看基础模板</button>
                 </div>
               </section>
 
-              <div className="cf-overview-right-stack">
+              <div className="cf-overview-comfort-side">
               <section className="cf-overview-panel cf-overview-protocol">
                 <div className="cf-overview-panel-head">
                   <div className="cf-overview-section-label"><span>Base Contract</span><h2>底座支持的协议</h2></div>
-                  <b className="cf-overview-protocol-status">{protocol05?.status || 'unknown'}</b>
+                  <b className="cf-overview-protocol-status">{currentProtocolStatus}</b>
                 </div>
                 <p className="cf-overview-protocol-copy">CF-FARP 定义卡带的清单读取、流程搭建、节点执行、用户交互、测试探针、产物交付与兼容性边界。业务逻辑仍由具体卡带和模型配方负责，底座只提供通用运行能力。</p>
                 <div className="cf-overview-protocol-facts">
                   <div><span>协议族</span><strong>CF-FARP</strong></div>
-                  <div><span>当前推荐</span><strong>CF-FARP@0.6</strong></div>
-                  <div><span>能力证据</span><strong>{conformance?.report?.capabilities?.counts?.verified || 0} / {conformance?.report?.capabilities?.declared || 0}</strong></div>
+                  <div><span>当前推荐</span><strong>{currentProtocol ? `${currentProtocol.id}@${currentProtocol.version}` : '等待声明'}</strong></div>
+                  <button type="button" className="cf-overview-evidence-entry" onClick={() => setEvidenceViewerOpen(true)} title="查看底座能力证据列表"><span>能力证据</span><strong>{conformance?.report?.capabilities?.counts?.verified || 0} / {conformance?.report?.capabilities?.declared || 0}</strong></button>
                 </div>
                 <div className="cf-overview-conformance-line">
                   <span>自动测试 {conformance?.report?.tests?.counts?.passed || 0} / {conformance?.report?.tests?.total || 0}</span>
@@ -230,42 +256,22 @@ export default function HomePage() {
                 </div>
                 <div className="cf-overview-protocol-list">
                   {supportedProtocols.slice().reverse().map((protocol: any) => (
-                    <span key={`${protocol.id}-${protocol.version}`} className={protocol.version === '0.5' ? 'current' : ''}>{protocol.id}@{protocol.version}<b>{protocol.status}</b></span>
+                    <span key={`${protocol.id}-${protocol.version}`} className={protocol.version === currentProtocol?.version ? 'current' : ''}>
+                      {protocol.id}@{protocol.version}
+                      <b>{PROTOCOL_STATUS_LABELS[protocol.status] || protocol.status || '已声明'}</b>
+                    </span>
                   ))}
                 </div>
               </section>
 
-              <section className="cf-overview-panel cf-overview-activity cf-overview-right-activity">
-                <div className="cf-overview-panel-head">
-                  <div className="cf-overview-section-label"><span>Run Ledger</span><h2>近期运行</h2></div>
-                  <span className="cf-overview-activity-total">{runs.length > recentRuns.length ? `最近 ${recentRuns.length} / ${runs.length}` : `${recentRuns.length} 条记录`}</span>
-                </div>
-                {recentRuns.length === 0 ? (
-                  <div className="cf-overview-activity-empty">暂无运行记录</div>
-                ) : (
-                  <div className="cf-overview-activity-list">
-                    {recentRuns.map((run) => {
-                      const project = projectById.get(run.cartridge_id)
-                      return (
-                        <div className="cf-overview-activity-row" key={run.run_id}>
-                          <i className={run.status} />
-                          <span className="cf-overview-activity-identity">
-                            <strong><em>卡带</em>{project?.name || run.cartridge_id}</strong>
-                            <small title={`${run.cartridge_id} · ${run.run_id}`}>{run.cartridge_id} · {run.run_id}</small>
-                          </span>
-                          <span className="cf-overview-activity-meta"><b>{STATUS_LABELS[run.status] || run.status}</b><time>{formatActivityTime(run.updated_at || run.created_at)}</time></span>
-                          <span className="cf-overview-activity-actions">
-                            <button type="button" onClick={() => void openRunLog(run)}>查看日志</button>
-                            <button type="button" onClick={() => setPreviewRun(run)}>预览产物</button>
-                          </span>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
+              <section className="cf-overview-run-summary" aria-label="运行诊断摘要">
+                <div><span>Runtime Health</span><h2>运行诊断</h2><p>运行明细、日志、产物和恢复操作已统一移至独立工作区。</p></div>
+                <div className="cf-overview-run-counts"><span><b>{runSummary.total}</b>全部</span><span className={runSummary.failed ? 'danger' : ''}><b>{runSummary.failed}</b>失败</span><span className={runSummary.active ? 'active' : ''}><b>{runSummary.active}</b>进行中</span></div>
+                <button type="button" onClick={() => navigate('/diagnostics')}>进入运行诊断</button>
               </section>
               </div>
             </div>
+
           </>
         )}
 
@@ -287,60 +293,7 @@ export default function HomePage() {
           </div>
         )}
 
-        {logRun && (
-          <div className="cf-modal-backdrop" role="presentation" onClick={() => setLogRun(null)}>
-            <section className="cf-run-log-viewer" role="dialog" aria-modal="true" aria-label="运行日志" onClick={(event) => event.stopPropagation()}>
-              <header className="cf-modal-head">
-                <div>
-                  <span className="cf-modal-kicker">Run log</span>
-                  <h2>{logRun.run_id}</h2>
-                </div>
-                <button type="button" className="cf-modal-close" onClick={() => setLogRun(null)} aria-label="关闭运行日志">关闭</button>
-              </header>
-              <div className="cf-run-log-meta"><span>{projectById.get(logRun.cartridge_id)?.name || logRun.cartridge_id}</span><b className={logRun.status}>{STATUS_LABELS[logRun.status] || logRun.status}</b></div>
-              <div className="cf-run-log-body">
-                {logLoading ? <div className="cf-modal-empty">读取运行事件...</div> : logEvents.length === 0 ? <div className="cf-modal-empty">没有可显示的运行事件</div> : logEvents.map((event, index) => (
-                  <div className="cf-run-log-row" key={`${event.timestamp || 'event'}-${index}`}>
-                    <time>{formatActivityTime(event.timestamp)}</time>
-                    <span className="cf-run-log-state">{event.state || event.type || 'event'}</span>
-                    <p>{event.message || event.data?.output || event.data?.action || '状态已更新'}</p>
-                  </div>
-                ))}
-              </div>
-            </section>
-          </div>
-        )}
-
-        {previewRun && (
-          <div className="cf-modal-backdrop" role="presentation" onClick={() => setPreviewRun(null)}>
-            <section className="cf-run-preview-viewer" role="dialog" aria-modal="true" aria-label="运行预览" onClick={(event) => event.stopPropagation()}>
-              <header className="cf-modal-head">
-                <div>
-                  <span className="cf-modal-kicker">Run preview</span>
-                  <h2>{previewRun.run_id}</h2>
-                </div>
-                <button type="button" className="cf-modal-close" onClick={() => setPreviewRun(null)} aria-label="关闭运行预览">关闭</button>
-              </header>
-              <div className="cf-run-preview-body">
-                {previewRun.delivery?.summary && <p className="cf-run-preview-summary">{previewRun.delivery.summary}</p>}
-                {previewArtifacts.length === 0 ? (
-                  <div className="cf-modal-empty">这个运行还没有可预览的交付产物</div>
-                ) : previewArtifacts.map((item, index) => {
-                  const kind = artifactKind(item)
-                  return (
-                    <article className="cf-preview-artifact" key={`${item.artifact_id || item.name}-${index}`}>
-                      <div className="cf-preview-artifact-head"><strong>{item.name}</strong><span>{item.mime_type || item.type || kind}</span></div>
-                      {kind === 'html' && item.url ? <iframe className="cf-run-preview-iframe" src={item.url} title={item.name} /> : null}
-                      {kind === 'image' && item.url ? <img className="cf-run-preview-image" src={item.url} alt={item.name} /> : null}
-                      {kind === 'video' && item.url ? <video className="cf-run-preview-video" controls src={item.url} /> : null}
-                      {kind === 'file' && <div className="cf-preview-file"><code>{item.display_path || item.path || item.url}</code>{item.url && <a href={item.url} target="_blank" rel="noreferrer">打开文件</a>}</div>}
-                    </article>
-                  )
-                })}
-              </div>
-            </section>
-          </div>
-        )}
+        <CapabilityEvidenceViewer open={evidenceViewerOpen} report={conformance?.report} onClose={() => setEvidenceViewerOpen(false)} />
       </Box>
     </Box>
   )

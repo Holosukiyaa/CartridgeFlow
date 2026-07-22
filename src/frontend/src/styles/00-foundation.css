@@ -38,10 +38,14 @@ input, button, textarea, select { font: inherit; }
 button { cursor: pointer; }
 
 /* Scrollbar */
-::-webkit-scrollbar { width: 6px; height: 6px; }
+html[data-cf-scrollbar-mode="subtle"] ::-webkit-scrollbar { width: 8px; height: 8px; }
+html[data-cf-scrollbar-mode="always"] ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #b8a897; }
+html[data-cf-scrollbar-mode="subtle"] ::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 5px; background: rgba(188, 76, 0, .1); background-clip: padding-box; }
+html[data-cf-scrollbar-mode="subtle"] ::-webkit-scrollbar-thumb:hover,
+html[data-cf-scrollbar-mode="subtle"] :focus-within::-webkit-scrollbar-thumb { background-color: rgba(188, 76, 0, .32); }
+html[data-cf-scrollbar-mode="always"] ::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 5px; background: rgba(188, 76, 0, .34); background-clip: padding-box; }
+html[data-cf-scrollbar-mode="always"] ::-webkit-scrollbar-thumb:hover { background-color: rgba(159, 63, 0, .56); }
 
 /* Animations */
 @keyframes cell-hint { 0% { opacity: .3; } 100% { opacity: 1; } }

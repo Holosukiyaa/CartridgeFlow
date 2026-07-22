@@ -20,6 +20,7 @@ PROCESS_KINDS = {
     "gate",
     "ui",
     "human_gate",
+    "interaction",
     "delivery",
 }
 
@@ -111,6 +112,18 @@ def build_v06_flow_contract_report(root_flow: dict | None, manifest: dict | None
         "ok": counts["blocker"] == 0,
         "status": report_status(findings),
         "protocol": "CF-FARP@0.6",
+        "summary": counts,
+        "findings": findings,
+    }
+
+
+def build_v07_flow_contract_report(root_flow: dict | None, manifest: dict | None = None) -> dict:
+    findings = validate_v07_flow_contract(root_flow, manifest)
+    counts = summarize_findings(findings)
+    return {
+        "ok": counts["blocker"] == 0,
+        "status": report_status(findings),
+        "protocol": "CF-FARP@0.7",
         "summary": counts,
         "findings": findings,
     }
@@ -289,6 +302,50 @@ def validate_v06_flow_contract(root_flow: dict | None, manifest: dict | None = N
     return findings
 
 
+def validate_v07_flow_contract(root_flow: dict | None, manifest: dict | None = None) -> list[dict]:
+    findings: list[dict] = []
+    root_flow = root_flow if isinstance(root_flow, dict) else {}
+    manifest = manifest if isinstance(manifest, dict) else {}
+
+    if not _root_flow_declares_version(root_flow, "0.7"):
+        findings.append(_finding(
+            "blocker",
+            "v07_root_flow_protocol_missing",
+            "root flow must declare protocol CF-FARP@0.7.",
+        ))
+
+    states = root_flow.get("states")
+    if not isinstance(states, dict) or not states:
+        findings.append(_finding("blocker", "v07_invalid_states", "root_flow.states must be a non-empty object."))
+        return findings
+
+    manifest_tools = {
+        str(tool.get("id")): tool
+        for tool in manifest.get("mcp_tools") or []
+        if isinstance(tool, dict) and tool.get("id")
+    }
+    produced_keys = _produced_keys(states, include_decision_consume=True)
+
+    for node_id, node in states.items():
+        node_id = str(node_id)
+        if not isinstance(node, dict):
+            findings.append(_node_finding("blocker", "v07_node_not_object", node_id, "node must be an object."))
+            continue
+        findings.extend(_validate_v02_node(node_id, node, manifest_tools, produced_keys, protocol_version="0.7"))
+        findings.extend(_validate_v03_node(node_id, node))
+        findings.extend(_validate_v04_node(node_id, node))
+        findings.extend(_validate_v06_node(node_id, node, manifest_tools))
+        if str(node.get("type") or "") == "process" and _contract_field(node, "kind") == "ui":
+            findings.append(_node_finding(
+                "blocker",
+                "v07_legacy_ui_kind_forbidden",
+                node_id,
+                "kind=ui was replaced by kind=interaction in CF-FARP@0.7.",
+            ))
+
+    return findings
+
+
 def _validate_v02_node(
     node_id: str,
     node: dict,
@@ -317,6 +374,8 @@ def _validate_v02_node(
         findings.append(_node_finding("blocker", "v02_process_kind_missing", node_id, "process node must declare kind."))
     elif kind not in PROCESS_KINDS:
         findings.append(_node_finding("blocker", "v02_process_kind_unknown", node_id, f"unknown process kind: {kind}"))
+    elif kind == "interaction" and protocol_version != "0.7":
+        findings.append(_node_finding("blocker", "v07_interaction_kind_not_available", node_id, "kind=interaction requires CF-FARP@0.7."))
 
     if not executor:
         findings.append(_node_finding("blocker", "v02_process_executor_missing", node_id, "process node must declare executor."))
@@ -348,7 +407,7 @@ def _validate_v02_node(
     elif kind == "delivery":
         findings.extend(_validate_delivery_node(node_id, node, produced_keys))
     elif kind == "remote_call":
-        if protocol_version != "0.6":
+        if protocol_version not in {"0.6", "0.7"}:
             findings.extend(_validate_remote_call_node(node_id, node, executor))
 
     if effect in SIDE_EFFECT_EFFECTS:

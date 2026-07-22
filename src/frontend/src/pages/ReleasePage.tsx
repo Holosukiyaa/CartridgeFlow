@@ -99,7 +99,7 @@ export default function ReleasePage() {
     { id: 'environment', label: '运行环境', status: preflight.environment.status, count: preflight.environment.items?.length || 0, detail: preflight.environment.summary || '环境检查' },
     { id: 'dependencies', label: '卡带依赖', status: preflight.dependencies.status, count: preflight.dependencies.items?.length || 0, detail: preflight.dependencies.summary || '依赖检查' },
     { id: 'models', label: '模型配方', status: preflight.models.status, count: preflight.models.items?.length || 0, detail: '本机连接状态' },
-    { id: 'resources', label: '本地资源', status: preflight.resources.status, count: preflight.resources.items?.length || 0, detail: '工具与数据来源' },
+    { id: 'resources', label: '本地工具', status: preflight.resources.status, count: preflight.resources.items?.length || 0, detail: 'MCP、远程 API 与插件' },
     { id: 'package_hygiene', label: '发布包卫生', status: preflight.package_hygiene.status, count: preflight.package_hygiene.items?.length || 0, detail: `${preflight.package_hygiene.scanned_files || 0} 个文件已扫描` },
   ] : []
   const canPackage = packageMode === 'production' ? preflight?.production_ready : preflight?.dev_ready
@@ -122,6 +122,12 @@ export default function ReleasePage() {
           <div className="cf-release-toolbar"><div><span>RELEASE TARGET</span><h2>{selectedFlow?.name || '未选择卡带'}</h2><code>{selectedFlow?.id}</code></div><div className="cf-release-toolbar-actions"><button type="button" className="cf-release-refresh" onClick={() => void refreshPreflight()} disabled={loading || !selectedId}>刷新预检</button><div className="cf-release-mode" role="group" aria-label="打包模式"><button type="button" className={packageMode === 'dev' ? 'active' : ''} onClick={() => setPackageMode('dev')}>开发包</button><button type="button" className={packageMode === 'production' ? 'active' : ''} onClick={() => setPackageMode('production')}>生产包</button></div></div></div>
           {preflight ? <>
             <div className="cf-release-summary"><div><span>版本</span><b>{preflight.cartridge.version}</b></div><div><span>问题</span><b>{preflight.issues.length}</b></div><div><span>认证</span><b>{preflight.certification.label || statusLabel(preflight.certification.status)}</b></div><div className={preflight.production_ready ? 'ready' : 'warning'}><span>生产交付</span><b>{preflight.production_ready ? '可打包' : '未就绪'}</b></div></div>
+            <div className="cf-portability-strip" aria-label="卡带迁移报告">
+              <div className="portable"><span>随包携带</span><b>{preflight.portability.summary.portable}</b></div>
+              <div className="rebind"><span>本机重绑</span><b>{preflight.portability.summary.local_rebind}</b></div>
+              <div className={preflight.portability.summary.missing_blockers ? 'blocked' : ''}><span>缺失阻断</span><b>{preflight.portability.summary.missing_blockers}</b></div>
+              <div className={preflight.portability.summary.forbidden ? 'blocked' : ''}><span>禁止打包</span><b>{preflight.portability.summary.forbidden}</b></div>
+            </div>
             <div className="cf-release-check-grid">{checks.map((check) => <section key={check.id} className={`cf-release-check ${check.status}`}><span className={`cf-check-status ${check.status}`} /><div><strong>{check.label}</strong><small>{check.detail}</small></div><b>{check.count}</b><i>{statusLabel(check.status)}</i></section>)}</div>
             <section className="cf-release-issues"><div className="cf-environment-subhead"><span>PREFLIGHT FINDINGS</span><h3>待处理项</h3><b>{preflight.issues.length}</b></div>{preflight.issues.length ? <div>{preflight.issues.map((issue, index) => <article key={`${issue.area}-${index}`}><span className={`cf-check-status ${issue.severity === 'blocker' ? 'blocked' : 'warning'}`} /><b>{AREA_LABELS[issue.area] || issue.area}</b><p>{issue.message}</p></article>)}</div> : <div className="cf-release-clear">当前预检没有阻塞或警告</div>}</section>
             <div className="cf-release-actionbar"><span><b>{packageMode === 'production' ? '生产包' : '开发包'}</b><small>{packageMode === 'production' ? '要求全部生产预检通过' : '保留诊断信息与本地绑定描述'}</small></span><button type="button" onClick={() => void createPackage()} disabled={!canPackage || packaging}>{packaging ? '正在打包…' : packageMode === 'production' ? '生成生产包' : '生成开发包'}</button></div>

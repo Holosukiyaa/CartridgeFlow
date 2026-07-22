@@ -153,16 +153,14 @@ def _build_references(resources: dict) -> list[dict]:
     grouped: dict[str, dict] = {}
     for key, label, owner in STANDARD_REFERENCES:
         grouped[key] = {"key": key, "label": label, "owners": [owner], "configured": False}
-    for kind in ("tools", "sources"):
-        owner_label = "工具配置" if kind == "tools" else "数据来源"
-        for item in resources.get(kind) or []:
-            key = str(item.get("auth_env") or "").strip().upper()
-            if not key:
-                continue
-            entry = grouped.setdefault(key, {"key": key, "label": key, "owners": [], "configured": False})
-            owner = f"{owner_label} / {item.get('name') or item.get('id')}"
-            if owner not in entry["owners"]:
-                entry["owners"].append(owner)
+    for item in resources.get("tools") or []:
+        key = str(item.get("auth_env") or "").strip().upper()
+        if not key:
+            continue
+        entry = grouped.setdefault(key, {"key": key, "label": key, "owners": [], "configured": False})
+        owner = f"工具配置 / {item.get('name') or item.get('id')}"
+        if owner not in entry["owners"]:
+            entry["owners"].append(owner)
     return list(grouped.values())
 
 

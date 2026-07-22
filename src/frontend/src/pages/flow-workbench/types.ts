@@ -1,7 +1,7 @@
 import type { FlowFiles, FlowGraph, FlowLabDetail, FlowNode, ValidationResponse } from '../../api.ts'
 
-export type WorkbenchMode = 'design' | 'run' | 'models'
-export type NodeCategoryId = 'input' | 'ui' | 'process' | 'tool' | 'remote' | 'transfer' | 'store' | 'control' | 'custom'
+export type WorkbenchMode = 'design' | 'assets' | 'run' | 'models'
+export type NodeCategoryId = 'input' | 'interaction' | 'process' | 'tool' | 'remote' | 'transfer' | 'store' | 'control' | 'custom'
 
 export type NodePreset = {
   id: string
@@ -35,6 +35,11 @@ export type NodeDraft = {
   kind: string
   executor: string
   effect: string
+  displayName: string
+  componentRef: string
+  interactionMode: string
+  inputBinding: string
+  actionRoutes: string
   displaySuffix: string
   inputKind: string
   source: string

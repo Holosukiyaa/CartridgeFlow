@@ -1,8 +1,10 @@
 import json
 import re
 import shutil
+from html import escape
 from pathlib import Path
 
+from core.cartridge.assets import ASSET_SCHEMA, COMPONENT_SCHEMA, sha256_bytes
 from core.cartridge.validator import ManifestValidator
 from core.cartridge.validator import ManifestValidationError
 from core.data_paths import DEV_CARTRIDGES_DIR
@@ -13,6 +15,8 @@ class DevFlowManager:
         "manifest": "manifest.json",
         "root_flow": "root.flow.json",
         "welcome": "assets/welcome.md",
+        "asset_registry": "assets/registry.json",
+        "interaction_components": "assets/components.json",
     }
 
     def __init__(self, root: str | Path):
@@ -27,15 +31,39 @@ class DevFlowManager:
         if path.exists():
             raise FileExistsError(f"Dev flow already exists: {flow_id}")
         (path / "assets").mkdir(parents=True, exist_ok=True)
+        welcome_markdown = f"# {name}\n\n这是一个开发中的 Flow。"
+        welcome_html = (
+            "<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">"
+            f"<title>{escape(name)}</title><style>body{{font-family:system-ui;padding:24px;color:#2f2923}}"
+            "main{max-width:720px;margin:auto}h1{color:#b84b24;font-size:26px;line-height:1.25;overflow-wrap:anywhere}</style></head>"
+            f"<body><main><h1>{escape(name)}</h1><p>{escape(description or '这是一个开发中的 Flow。')}</p></main></body></html>"
+        )
+        (path / "assets" / "welcome.md").write_bytes(welcome_markdown.encode("utf-8"))
+        (path / "assets" / "welcome.html").write_bytes(welcome_html.encode("utf-8"))
+        self._write_json(path / "assets" / "registry.json", {
+            "schema": ASSET_SCHEMA,
+            "assets": [
+                self._asset_entry("ui.welcome", "interaction_template", "assets/welcome.html", "text/html", welcome_html.encode("utf-8")),
+                self._asset_entry("copy.welcome", "prompt", "assets/welcome.md", "text/markdown", welcome_markdown.encode("utf-8")),
+            ],
+        })
+        self._write_json(path / "assets" / "components.json", {
+            "schema": COMPONENT_SCHEMA,
+            "components": [{
+                "id": "welcome.panel",
+                "version": "1.0.0",
+                "runtime": "passive",
+                "entry": {"type": "asset", "ref": "asset:ui.welcome"},
+                "supported_modes": ["display"],
+                "input_schema": {"type": "object"},
+                "actions": [],
+                "host_capabilities": [],
+            }],
+        })
         manifest = self._manifest_template(flow_id, name, description)
         root_flow = self._root_flow_template(flow_id, name)
         self._write_json(path / "manifest.json", manifest)
         self._write_json(path / "root.flow.json", root_flow)
-        (path / "assets" / "welcome.md").write_text(f"# {name}\n\n这是一个开发中的 Flow。", encoding="utf-8")
-        (path / "assets" / "welcome.html").write_text(
-            f"<!doctype html><meta charset=\"utf-8\"><title>{name}</title><main><h1>{name}</h1><p>{description or '这是一个开发中的 Flow。'}</p></main>",
-            encoding="utf-8",
-        )
         return {"id": flow_id, "path": str(path), "manifest": manifest, "root_flow": root_flow}
 
     def read_files(self, flow_id: str) -> dict:
@@ -183,11 +211,13 @@ class DevFlowManager:
             "branding": {"tags": ["dev", "flow", "lab"]},
             "welcome": {"type": "markdown", "entry": "assets/welcome.md"},
             "root_flow": {"entry": "root.flow.json", "mode": "lifecycle", "required": True},
+            "asset_registry": "assets/registry.json",
+            "interaction_components": "assets/components.json",
             "base_contract": {"id": "CARTRIDGEFLOW-BASE", "version": "0.2"},
             "runtime_contract": {
                 "protocol": "CF-FARP",
-                "protocol_version": "0.6",
-                "required_profiles": ["runtime_core", "dynamic_decision_runtime", "interactive_decision_runtime"],
+                "protocol_version": "0.7",
+                "required_profiles": ["runtime_core", "dynamic_decision_runtime", "interactive_decision_runtime", "interaction_runtime"],
                 "recommended_profiles": ["testbench_core", "dev_authoring"],
                 "required_capabilities": [
                     "manifest_load",
@@ -211,8 +241,15 @@ class DevFlowManager:
                     "decision_consume_projection",
                     "runtime_user_input_request",
                     "paused_waiting_user_status",
-                    "pending_interaction_record",
+                    "pending_interaction_record_v2",
                     "runtime_resume_after_user_input",
+                    "node_display_name",
+                    "package_asset_registry",
+                    "stable_asset_reference",
+                    "interaction_component_registry",
+                    "interaction_node",
+                    "interaction_named_action_routes",
+                    "passive_html_safety",
                     "builtin_tool_call",
                     "artifact_collect",
                     "data_chain_diagnostics",
@@ -238,7 +275,7 @@ class DevFlowManager:
                 "required_tools": [],
                 "optional_tools": [],
             },
-            "delivery_readiness": {"level": "dev", "certification_target": "CF-FARP@0.6", "notes": "Development flow generated by Flow Developer Lab."},
+            "delivery_readiness": {"level": "dev", "certification_target": "CF-FARP@0.7", "notes": "Development flow generated by Flow Developer Lab."},
             "runtime": {"type": "html_generator", "adapter": "builtin:html_generator"},
             "workspace": {"type": "none", "required": False, "open_policy": "manual"},
             "environment": {"os": ["windows", "macos", "linux"], "requires": []},
@@ -286,24 +323,26 @@ class DevFlowManager:
             "name": f"{name or flow_id} Root Flow",
             "mode": "lifecycle",
             "cartridge_id": flow_id,
-            "protocol": {"id": "CF-FARP", "version": "0.6"},
+            "protocol": {"id": "CF-FARP", "version": "0.7"},
             "start": "start",
             "states": {
-                "start": {"type": "terminal", "title": "开始", "action": "start", "next": "welcome"},
+                "start": {"type": "system", "title": "开始", "display_name": "开始", "action": "start", "locked": True, "next": "welcome"},
                 "welcome": {
                     "type": "process",
-                    "kind": "ui",
+                    "kind": "interaction",
                     "executor": "deterministic",
-                    "effect": "writes_store",
-                    "display": {"suffix": "展示", "label": "展示节点"},
-                    "title": "展示节点",
-                    "action": "show_ui",
+                    "effect": "none",
+                    "display": {"suffix": "交互", "label": "交互节点"},
+                    "title": "欢迎界面",
+                    "display_name": "欢迎界面",
+                    "action": "render_interaction",
+                    "interaction_mode": "display",
+                    "component_ref": "welcome.panel",
+                    "input_binding": {},
                     "params": {
-                        "node_category": "ui",
-                        "preset": "welcome",
-                        "preset_config": {"path": "assets/welcome.html", "format": "html", "output_name": "welcome_ui"},
+                        "node_category": "interaction",
+                        "preset": "display",
                         "description": "展示卡带欢迎页。",
-                        "output": "welcome_ui",
                     },
                     "scope": "sub_flow",
                     "entry_kind": "sub_flow",
@@ -311,8 +350,19 @@ class DevFlowManager:
                     "locked": False,
                     "next": "complete",
                 },
-                "complete": {"type": "terminal", "title": "完成"},
+                "complete": {"type": "terminal", "title": "完成", "display_name": "完成", "locked": True},
             },
+        }
+
+    def _asset_entry(self, asset_id: str, kind: str, path: str, media_type: str, content: bytes) -> dict:
+        return {
+            "id": asset_id,
+            "kind": kind,
+            "path": path,
+            "media_type": media_type,
+            "sha256": sha256_bytes(content),
+            "size": len(content),
+            "executable": False,
         }
 
     def _write_json(self, path: Path, data: dict):

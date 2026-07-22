@@ -217,10 +217,8 @@ class RuntimeRecoveryTests(unittest.TestCase):
         self.assertEqual(1, tools.calls)
         self.assertTrue(result["retry_blocked"][0]["requires_confirmation"])
 
-    def test_bound_external_tool_receives_private_connection_only_at_call_time(self):
+    def test_bound_external_tool_is_dispatched_without_exposing_connection_in_params(self):
         executor = LabNodeExecutor()
-        tools = _SequenceTools([{"ok": True, "content": "found"}])
-        executor._builtin_mcp = tools
         run = {
             "run_id": "run_resource",
             "cartridge_id": "test.resources",
@@ -242,11 +240,17 @@ class RuntimeRecoveryTests(unittest.TestCase):
             "connection": {"id": "local-search", "kind": "remote_api", "endpoint": "https://example.test/search", "auth_env": "SEARCH_KEY"},
         }
 
-        with patch("core.studio.resource_resolver.resolve_runtime_tool_binding", return_value=binding):
+        with (
+            patch("core.studio.resource_resolver.resolve_runtime_tool_binding", return_value=binding),
+            patch("core.studio.external_adapters.execute_external_tool", return_value={"ok": True, "content": "found"}) as execute,
+        ):
             result = executor.execute("lookup", state, {"context": {"store": {}}}, run, ".")
 
         self.assertFalse(result["failed"])
-        self.assertEqual("https://example.test/search", tools.last_params["_local_resource"]["endpoint"])
+        call_binding, server, tool, call_params, _contract = execute.call_args.args
+        self.assertEqual("https://example.test/search", call_binding["connection"]["endpoint"])
+        self.assertEqual(("docs", "search"), (server, tool))
+        self.assertNotIn("_local_resource", call_params)
         self.assertEqual("document_lookup", result["tool_results"][0]["resource_role"])
         self.assertEqual("local-search", result["tool_results"][0]["resource_id"])
 

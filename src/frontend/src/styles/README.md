@@ -7,11 +7,14 @@ order unless the cascade has been checked across every Studio page.
 - `10-workbench-shell.css`: Flow workbench shell and assistant surfaces.
 - `20-flow-management.css`: Flow management page, cards, buttons, and badges.
 - `30-workbench-runtime.css`: runtime canvas, node panels, logs, and inspectors.
-- `40-resource-config.css`: shared model, tool, and data-source configuration UI.
+- `40-resource-config.css`: shared model and tool configuration UI.
 - `50-workbench-design.css`: design workspace and editor-specific layout.
 - `60-overview.css`: global overview, TODO, protocol, run ledger, and viewers.
+- `65-run-diagnostics.css`: global run evidence, recovery, and AI diagnostic export.
 - `70-home-and-model.css`: shared developer page and cartridge model-recipe UI.
 - `80-overview-layout.css`: overview density and viewport adaptations.
+- `85-model-config.css`: global model routing console and viewport adaptations.
+- `87-cartridge-assets.css`: cartridge asset and interaction-component workbench.
 - `90-environment-release.css`: environment, credentials, preflight, and release.
 - `95-config-and-appearance.css`: config dialogs, bounded layouts, and settings.
 

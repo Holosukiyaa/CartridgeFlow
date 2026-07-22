@@ -8,7 +8,7 @@
 |---|---|
 | 第一次了解项目 | 根目录 `README.md` -> [项目分层](overview/PROJECT_STRUCTURE.md) -> [路线图](planning/ROADMAP.md) |
 | AI 接手或准备开发 | 根目录 `AGENT.md` -> [任务清单](planning/TODO.md) -> 与需求直接相关的源码；产品边界和里程碑再查 [路线图](planning/ROADMAP.md) |
-| 修改 Base、Flow 或运行时 | [当前 Base 0.2 契约](protocol/CARTRIDGEFLOW_BASE_CONTRACT_v0.2.md) -> [当前 CF-FARP 0.6 协议](protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.6.md) -> [机器 registry](../protocol/README.md) -> `src/core/protocol/` -> 对应 conformance 测试 |
+| 修改 Base、Flow 或运行时 | [当前 Base 0.2 契约](protocol/CARTRIDGEFLOW_BASE_CONTRACT_v0.2.md) -> [最新 CF-FARP 0.7 协议](protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.7.md) -> [机器 registry](../protocol/README.md) -> `src/core/protocol/` -> 对应 conformance 测试；修复现有运行时还要核对 v0.6 快照 |
 | 修改 Portable DLC | [Portable DLC 架构](architecture/PORTABLE_DLC_ARCHITECTURE.md) -> [协议治理](protocol/GOVERNANCE.md) |
 | 开发和运行自动测试 | [开发与维护](development/README.md) -> `scripts/` |
 | 查找某个文件 | [逐文件清单](development/FILE_INVENTORY.md) |
@@ -31,7 +31,8 @@ docs/
 - [逐文件清单](development/FILE_INVENTORY.md)：登记全部项目自有文件的用途，供维护时查阅。
 - [路线图](planning/ROADMAP.md)：长期产品边界、阶段里程碑和生产验收门槛。
 - [Base Contract 0.2](protocol/CARTRIDGEFLOW_BASE_CONTRACT_v0.2.md)：当前基座宿主契约。
-- [CF-FARP 0.6](protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.6.md)：当前默认 Flow 协议正文。
+- [CF-FARP 0.7](protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.7.md)：最新 Flow 协议正文，定义卡带资产、交互节点和脚本安全边界。
+- [CF-FARP 0.6](protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.6.md)：当前参考底座仍在运行的上一版协议快照。
 - [Portable DLC 架构](architecture/PORTABLE_DLC_ARCHITECTURE.md)：基座与卡带私有能力的激活、隔离和所有权约束。
 - [协议治理](protocol/GOVERNANCE.md)：修改协议、实现 Flow 和发布快照时必须遵守的规则。
 
@@ -40,7 +41,8 @@ docs/
 | 协议 | 基座声明 | 用途 |
 |---|---|---|
 | CARTRIDGEFLOW-BASE v0.2 | 当前实现契约 | 基座所有权、本机配置、恢复、扩展和卸载边界。 |
-| CF-FARP v0.6 | `partial` | 当前默认协议。 |
+| CF-FARP v0.7 | 未声明支持 | 最新规范；实现与 conformance 完成前禁止运行。 |
+| CF-FARP v0.6 | `partial` | 当前参考底座实际运行的协议。 |
 | CF-FARP v0.1-v0.5 | `recognized` | 仅保留身份、迁移目标和历史测试；不可运行、不可认证。 |
 
 ### 历史快照

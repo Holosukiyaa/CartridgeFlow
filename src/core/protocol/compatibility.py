@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from .capability_registry import ProtocolRegistry
-from .flow_contract import build_v02_flow_contract_report, build_v03_flow_contract_report, build_v04_flow_contract_report, build_v05_flow_contract_report, build_v06_flow_contract_report
+from .flow_contract import build_v02_flow_contract_report, build_v03_flow_contract_report, build_v04_flow_contract_report, build_v05_flow_contract_report, build_v06_flow_contract_report, build_v07_flow_contract_report
 from .report import report_status, summarize_findings
 
 
@@ -74,7 +74,7 @@ def build_compatibility_report(
     implementation_base_id = str(implementation_base_contract.get("id") or "")
     implementation_base_version = str(implementation_base_contract.get("version") or "")
     base_contract_supported = True
-    if protocol_id == "CF-FARP" and protocol_version == "0.6":
+    if protocol_id == "CF-FARP" and protocol_version in {"0.6", "0.7"}:
         base_contract_supported = bool(
             required_base_id
             and required_base_version
@@ -82,7 +82,7 @@ def build_compatibility_report(
             and required_base_version == implementation_base_version
         )
         if not required_base_id or not required_base_version:
-            findings.append(_finding("blocker", "missing_base_contract", "CF-FARP@0.6 requires manifest.base_contract."))
+            findings.append(_finding("blocker", "missing_base_contract", f"CF-FARP@{protocol_version} requires manifest.base_contract."))
         elif not base_contract_supported:
             findings.append(_finding(
                 "blocker",
@@ -190,6 +190,9 @@ def build_compatibility_report(
     elif (protocol_id, protocol_version) in base_protocols and protocol_id == "CF-FARP" and protocol_version == "0.6":
         flow_contract = build_v06_flow_contract_report(root_flow, manifest)
         findings.extend(flow_contract.get("findings") or [])
+    elif (protocol_id, protocol_version) in base_protocols and protocol_id == "CF-FARP" and protocol_version == "0.7":
+        flow_contract = build_v07_flow_contract_report(root_flow, manifest)
+        findings.extend(flow_contract.get("findings") or [])
 
     delivery = manifest.get("delivery_readiness")
     if not isinstance(delivery, dict):
@@ -225,7 +228,13 @@ def build_compatibility_report(
             "id": protocol_id,
             "version": protocol_version,
             "supported": (protocol_id, protocol_version) in base_protocols,
-            "lifecycle": lifecycle.get("status") or ("supported" if (protocol_id, protocol_version) in base_protocols else "unknown"),
+            "lifecycle": lifecycle.get("status") or (
+                "supported"
+                if (protocol_id, protocol_version) in base_protocols
+                else "unsupported"
+                if registry.supports_protocol(protocol_id, protocol_version)
+                else "unknown"
+            ),
             "migration_target": lifecycle.get("migration_target"),
             "mode": "legacy_compatibility" if legacy else "protocol_aware",
         },

@@ -1,6 +1,8 @@
+import json
 from pathlib import Path
 
 from core.extensions import PortableDlcValidationError, load_portable_dlc_descriptor
+from core.cartridge.assets import CartridgeAssetError, load_asset_bundle, validate_interaction_nodes
 
 
 class ManifestValidationError(ValueError):
@@ -80,10 +82,11 @@ class ManifestValidator:
 
         runtime_protocol = runtime_contract if isinstance(runtime_contract, dict) else {}
         is_v06 = runtime_protocol.get("protocol") == "CF-FARP" and runtime_protocol.get("protocol_version") == "0.6"
-        if is_v06:
+        is_v07 = runtime_protocol.get("protocol") == "CF-FARP" and runtime_protocol.get("protocol_version") == "0.7"
+        if is_v06 or is_v07:
             base_contract = manifest.get("base_contract")
             if not isinstance(base_contract, dict) or base_contract.get("id") != "CARTRIDGEFLOW-BASE" or not base_contract.get("version"):
-                errors.append("CF-FARP@0.6 requires manifest.base_contract with id CARTRIDGEFLOW-BASE and a version")
+                errors.append(f"CF-FARP@{'0.7' if is_v07 else '0.6'} requires manifest.base_contract with id CARTRIDGEFLOW-BASE and a version")
 
         protocol_extensions = manifest.get("protocol_extensions", [])
         if not isinstance(protocol_extensions, list):
@@ -242,7 +245,7 @@ class ManifestValidator:
                     errors.append(f"manifest.mcp_tools[{i}].tool is required")
                 if "required" in tool and not isinstance(tool.get("required"), bool):
                     errors.append(f"manifest.mcp_tools[{i}].required must be a boolean")
-                if is_v06:
+                if is_v06 or is_v07:
                     self._reject_llm_recipe_local_fields(tool, f"manifest.mcp_tools[{i}]", errors)
                     tool_type = tool.get("type") or "builtin"
                     resource_role = str(tool.get("resource_role") or "").strip()
@@ -267,13 +270,30 @@ class ManifestValidator:
         if portable_dlc is not None:
             if not isinstance(portable_dlc, dict):
                 errors.append("manifest.portable_dlc must be an object")
-            elif (manifest.get("runtime_contract") or {}).get("protocol_version") != "0.6":
-                errors.append("manifest.portable_dlc activation requires CF-FARP@0.6")
+            elif not (is_v06 or is_v07):
+                errors.append("manifest.portable_dlc activation requires a supported CF-FARP version")
             else:
                 try:
                     load_portable_dlc_descriptor(package_path, manifest)
                 except PortableDlcValidationError as exc:
                     errors.append(str(exc))
+
+        if is_v07:
+            asset_registry = manifest.get("asset_registry")
+            if not isinstance(asset_registry, str) or not asset_registry.strip():
+                errors.append("CF-FARP@0.7 requires manifest.asset_registry")
+            else:
+                try:
+                    bundle = load_asset_bundle(package_path, manifest)
+                    root_entry = str((manifest.get("root_flow") or {}).get("entry") or "root.flow.json")
+                    root_path = package_path / root_entry
+                    root_flow = json.loads(root_path.read_text(encoding="utf-8")) if root_path.is_file() else {}
+                    for finding in validate_interaction_nodes(root_flow, bundle):
+                        if finding.get("severity") == "blocker":
+                            errors.append(f"{finding.get('code')}: {finding.get('node')}: {finding.get('message')}")
+                except (CartridgeAssetError, json.JSONDecodeError, UnicodeError) as exc:
+                    code = getattr(exc, "code", "CARTRIDGE_ASSET_INVALID")
+                    errors.append(f"{code}: {exc}")
 
         if errors:
             raise ManifestValidationError("; ".join(errors))

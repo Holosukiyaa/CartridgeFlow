@@ -8,13 +8,21 @@ from copy import deepcopy
 from core.studio.resources import load_resources
 
 
-TOOL_KIND_ALIASES = {"remote": "remote_api"}
+TOOL_KIND_ALIASES = {
+    "remote": "remote_api",
+    "web": "remote_api",
+    "structured": "remote_api",
+    "local_path": "plugin",
+}
 PRIVATE_CONNECTION_FIELDS = {
     "endpoint",
     "command",
     "args",
     "openapi_url",
+    "http_method",
     "auth_env",
+    "auth_header",
+    "auth_scheme",
     "location",
     "format",
     "refresh_mode",
@@ -173,7 +181,7 @@ def resolve_runtime_tool_binding(
 
 def _resource_index(resources: dict) -> dict[str, dict]:
     result = {}
-    for item in [*(resources.get("tools") or []), *(resources.get("sources") or [])]:
+    for item in resources.get("tools") or []:
         if isinstance(item, dict) and item.get("id"):
             result[str(item["id"])] = item
     return result
@@ -193,8 +201,6 @@ def _connection_error(resource: dict) -> str:
         return "远程 API 缺少 Endpoint 或 OpenAPI URL"
     if kind == "plugin" and not resource.get("endpoint") and not resource.get("command"):
         return "底座插件缺少入口地址或启动命令"
-    if kind in {"local_path", "web", "structured"} and not resource.get("location"):
-        return "数据来源缺少位置或 URL"
     return ""
 
 

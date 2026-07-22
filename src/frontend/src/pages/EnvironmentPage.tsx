@@ -13,7 +13,7 @@ import ConfigModal from '../components/ConfigModal.tsx'
 type CredentialDraft = { key: string; label: string; value: string; secret: boolean }
 const EMPTY_DRAFT: CredentialDraft = { key: '', label: '', value: '', secret: true }
 
-export default function EnvironmentPage() {
+export default function EnvironmentPage({ embedded = false }: { embedded?: boolean }) {
   const [snapshot, setSnapshot] = useState<StudioEnvironmentSnapshot | null>(null)
   const [providers, setProviders] = useState<LlmProvider[]>([])
   const [selectedKey, setSelectedKey] = useState('')
@@ -110,12 +110,7 @@ export default function EnvironmentPage() {
   const configuredCount = snapshot?.references.filter((item) => item.configured).length || 0
   const readyProviders = providers.filter((item) => item.base_url && item.has_key).length
 
-  return (
-    <div className="cf-resource-page cf-environment-page">
-      <header className="cf-resource-heading">
-        <div><span className="cf-resource-kicker">BASE / ENVIRONMENT</span><h1>环境与凭据</h1><p>当前底座进程的本机变量、引用关系和运行依赖。</p></div>
-        <div className="cf-resource-heading-meta"><b>{configuredCount}</b><span>项引用已配置</span></div>
-      </header>
+  const content = <>
       {error && <div className="cf-resource-alert danger">{error}</div>}
       {notice && <div className="cf-resource-alert success">{notice}</div>}
       <div className="cf-environment-layout">
@@ -149,6 +144,17 @@ export default function EnvironmentPage() {
           <small className="cf-credential-storage">保存后立即应用到当前底座进程；密钥不会出现在 API 响应或卡带包中。</small>
         </form>
       </ConfigModal>
+    </>
+
+  if (embedded) return <section className="cf-settings-environment-section" aria-label="本机环境设置">{content}</section>
+
+  return (
+    <div className="cf-resource-page cf-environment-page">
+      <header className="cf-resource-heading">
+        <div><span className="cf-resource-kicker">BASE / ENVIRONMENT</span><h1>本机环境</h1><p>当前底座进程的本机变量、引用关系和运行依赖。</p></div>
+        <div className="cf-resource-heading-meta"><b>{configuredCount}</b><span>项引用已配置</span></div>
+      </header>
+      {content}
     </div>
   )
 }

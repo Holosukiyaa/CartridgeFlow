@@ -30,8 +30,7 @@ class StudioEnvironmentTests(unittest.TestCase):
         }
         resources = {
             "tools": [{"id": "search", "name": "Search", "kind": "remote_api", "endpoint": "https://example.test/search", "auth_env": "SEARCH_KEY", "package_mode": "descriptor"}],
-            "sources": [{"id": "docs", "name": "Docs", "kind": "local_path", "location": "docs/", "package_mode": "snapshot"}],
-            "bindings": {"roles": {"demo": {"document_lookup": "search"}}, "tools": {}, "sources": {}},
+            "bindings": {"roles": {"demo": {"document_lookup": "search"}}, "tools": {}},
         }
         descriptor = build_binding_descriptor(manifest, resources, set())
         report = resource_preflight(manifest, resources, set())
@@ -57,12 +56,11 @@ class StudioEnvironmentTests(unittest.TestCase):
                 {"id": "mcp", "kind": "mcp"},
                 {"id": "api", "kind": "remote_api"},
                 {"id": "plugin", "kind": "plugin"},
+                {"id": "docs", "kind": "remote_api"},
             ],
-            "sources": [{"id": "docs", "kind": "web"}],
             "bindings": {
                 "roles": {"demo": {"mcp_role": "mcp", "api_role": "api", "plugin_role": "plugin", "docs_role": "docs"}},
                 "tools": {},
-                "sources": {},
             },
         }
 
@@ -76,7 +74,6 @@ class StudioEnvironmentTests(unittest.TestCase):
                 "MCP 服务缺少 Endpoint 或启动命令",
                 "远程 API 缺少 Endpoint 或 OpenAPI URL",
                 "底座插件缺少入口地址或启动命令",
-                "数据来源缺少位置或 URL",
             },
         )
 
@@ -88,8 +85,7 @@ class StudioEnvironmentTests(unittest.TestCase):
         }
         resources = {
             "tools": [{"id": "search-a", "kind": "remote_api", "endpoint": "https://example.test/search", "enabled": True}],
-            "sources": [],
-            "bindings": {"roles": {"demo": {"document_lookup": "search-a"}}, "tools": {}, "sources": {}},
+            "bindings": {"roles": {"demo": {"document_lookup": "search-a"}}, "tools": {}},
         }
         report = resolve_cartridge_resources(manifest, resources, set())
         run = {
@@ -103,7 +99,7 @@ class StudioEnvironmentTests(unittest.TestCase):
         self.assertEqual("search-a", resolved["resource_id"])
         self.assertEqual("https://example.test/search", resolved["connection"]["endpoint"])
 
-        changed = {**resources, "bindings": {"roles": {"demo": {"document_lookup": "search-b"}}, "tools": {}, "sources": {}}}
+        changed = {**resources, "bindings": {"roles": {"demo": {"document_lookup": "search-b"}}, "tools": {}}}
         with self.assertRaises(LocalResourceBindingError):
             resolve_runtime_tool_binding(run, "lookup", changed, set())
 

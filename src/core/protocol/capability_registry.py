@@ -15,8 +15,8 @@ class ProtocolRegistry:
         self.overlay_dirs = [Path(item) for item in (overlay_dirs or [])]
         self.protocols = self._load_protocols()
         self.protocol_history = self._load_protocol_history()
-        self.profiles = self._load_id_set("profiles.json", "profiles")
-        self.capabilities = self._load_id_set("capabilities.json", "capabilities")
+        self.profiles = self._load_versioned_id_set("profiles", "profiles")
+        self.capabilities = self._load_versioned_id_set("capabilities", "capabilities")
         self.tool_packs = self._load_id_set("tool_packs.json", "tool_packs")
 
     def validate_base(self, base: dict) -> list[dict]:
@@ -84,6 +84,23 @@ class ProtocolRegistry:
             if not isinstance(item, dict) or not isinstance(item.get("id"), str) or not item.get("id").strip():
                 raise ProtocolRegistryError(f"protocol/{filename}.{key}[{index}].id is required")
             result.add(item["id"])
+        return result
+
+    def _load_versioned_id_set(self, stem: str, key: str) -> set[str]:
+        """Merge the base vocabulary with protocol-version vocabulary snapshots."""
+        result: set[str] = set()
+        paths = sorted(self.protocol_dir.glob(f"{stem}*.json"))
+        if not paths:
+            raise ProtocolRegistryError(f"protocol registry file not found: {stem}.json")
+        for path in paths:
+            data = self._read_json(path)
+            items = data.get(key)
+            if not isinstance(items, list):
+                raise ProtocolRegistryError(f"protocol/{path.name}.{key} must be an array")
+            for index, item in enumerate(items):
+                if not isinstance(item, dict) or not isinstance(item.get("id"), str) or not item.get("id").strip():
+                    raise ProtocolRegistryError(f"protocol/{path.name}.{key}[{index}].id is required")
+                result.add(item["id"])
         return result
 
     def _read_json(self, path: Path) -> dict:

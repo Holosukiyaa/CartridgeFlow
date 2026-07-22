@@ -2,7 +2,7 @@
   "schema_version": "0.2",
   "implementation_id": "cartridgeflow.reference-dev",
   "implementation_name": "CartridgeFlow Reference Development Base",
-  "implementation_version": "0.2.0",
+  "implementation_version": "0.3.0",
   "environment": "development",
   "base_contract": {
     "id": "CARTRIDGEFLOW-BASE",
@@ -13,6 +13,11 @@
       "id": "CF-FARP",
       "version": "0.6",
       "status": "partial"
+    },
+    {
+      "id": "CF-FARP",
+      "version": "0.7",
+      "status": "partial"
     }
   ],
   "profiles": [
@@ -21,6 +26,7 @@
     "dev_authoring",
     "dynamic_decision_runtime",
     "interactive_decision_runtime",
+    "interaction_runtime",
     "portable_dlc_runtime"
   ],
   "capabilities": [
@@ -31,6 +37,7 @@
     "root_flow_execution",
     "basic_node_execution",
     "builtin_tool_call",
+    "remote_tool_call",
     "artifact_collect",
     "artifact_preview",
     "testbench_run",
@@ -61,7 +68,22 @@
     "runtime_user_input_request",
     "paused_waiting_user_status",
     "pending_interaction_record",
+    "pending_interaction_record_v2",
     "runtime_resume_after_user_input",
+    "node_display_name",
+    "package_asset_registry",
+    "stable_asset_reference",
+    "interaction_component_registry",
+    "interaction_node",
+    "interaction_named_action_routes",
+    "passive_html_safety",
+    "sandboxed_interaction_component",
+    "interaction_script_csp",
+    "interaction_network_guard",
+    "interaction_process_isolation",
+    "interaction_host_channel",
+    "interaction_host_capability_guard",
+    "cartridge_portability_report",
     "portable_dlc_descriptor",
     "portable_dlc_validate",
     "cartridge_scoped_tool_registry",

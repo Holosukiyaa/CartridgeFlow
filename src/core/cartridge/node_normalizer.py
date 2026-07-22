@@ -6,6 +6,7 @@ from copy import deepcopy
 V02_KIND_ACTIONS = {
     "input": "collect_inputs",
     "ui": "show_ui",
+    "interaction": "render_interaction",
     "human_gate": "confirm_checkpoint",
     "decision": "llm_prompt",
     "transfer": "pass_result",
@@ -40,6 +41,11 @@ CONTRACT_FIELDS = {
     "decision_contract",
     "decision_test_mode",
     "mock_decision_envelope",
+    "display_name",
+    "component_ref",
+    "interaction_mode",
+    "input_binding",
+    "action_routes",
 }
 
 

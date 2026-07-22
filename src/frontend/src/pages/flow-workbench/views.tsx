@@ -52,6 +52,7 @@ export function WorkbenchHeader({ detail, tags, mode, onBack, onModeChange, onCl
           </Button>
         )}
         <Button className={mode === 'design' ? 'cf-accent-btn' : 'cf-outline-btn'} onClick={() => onModeChange('design')}>设计</Button>
+        <Button className={mode === 'assets' ? 'cf-accent-btn' : 'cf-outline-btn'} onClick={() => onModeChange('assets')}>卡带资产</Button>
         <Button className={mode === 'run' ? 'cf-accent-btn' : 'cf-outline-btn'} onClick={() => onModeChange('run')}>测试</Button>
         <Button className={mode === 'models' ? 'cf-accent-btn' : 'cf-outline-btn'} onClick={() => onModeChange('models')}>模型配方</Button>
       </HStack>
@@ -115,7 +116,7 @@ export function RunView({ detail, runs, events, onTestRun, onAnswerPendingIntera
   runs: RunResult[]
   events: FlowEvent[]
   onTestRun: (inputs: Record<string, string>, probeRange?: TestProbeRange, mode?: 'full' | 'probe', testMode?: Record<string, any>) => Promise<void> | void
-  onAnswerPendingInteraction?: (runId: string, values: Record<string, any>) => Promise<void> | void
+  onAnswerPendingInteraction?: (runId: string, values: Record<string, any>, options?: Record<string, any>) => Promise<void> | void
   onRefresh: () => void
   onManageMcp?: () => void
 }) {

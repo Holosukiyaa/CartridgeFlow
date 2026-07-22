@@ -44,7 +44,7 @@ export async function api<T = any>(path: string, options: RequestInit = {}): Pro
     try { payload = JSON.parse(raw) } catch { /* retain plain-text server errors */ }
     const envelope = payload?.error_envelope as RuntimeErrorEnvelope | undefined
     const detail = payload?.detail
-    const message = envelope?.message || (typeof detail === 'string' ? detail : raw || `Request failed (${res.status})`)
+    const message = envelope?.message || (typeof detail === 'string' ? detail : detail?.message || raw || `Request failed (${res.status})`)
     throw new ApiError(message, res.status, envelope, detail)
   }
   return res.json() as Promise<T>
@@ -184,6 +184,12 @@ export interface FlowNode {
   kind?: string
   executor?: string
   effect?: string
+  display_name?: string
+  component_ref?: string
+  interaction_mode?: 'display' | 'collect' | 'review' | string
+  input_binding?: Record<string, string>
+  action_routes?: Record<string, string>
+  output?: string
   display?: { label?: string; suffix?: string; [key: string]: any }
   input_kind?: string
   source?: string
@@ -254,6 +260,7 @@ export interface FlowEvent {
   }
   error_envelope?: RuntimeErrorEnvelope
   timestamp?: string
+  created_at?: string
 }
 
 export interface TestProbeRange {
@@ -267,6 +274,36 @@ export interface FlowFiles {
   root_flow?: string
   welcome?: string
   [key: string]: string | undefined
+}
+
+export interface CartridgeAsset {
+  id: string
+  kind: string
+  path: string
+  media_type: string
+  sha256: string
+  size: number
+  executable: false
+  content?: string
+  encoding?: string
+}
+
+export interface InteractionComponent {
+  id: string
+  version: string
+  runtime: 'passive' | 'sandboxed'
+  entry: { type: 'asset'; ref: string }
+  supported_modes: Array<'display' | 'collect' | 'review'>
+  input_schema?: Record<string, any> | string
+  actions: Array<{ id: string; label?: string; payload_schema?: Record<string, any> | string }>
+  host_capabilities?: string[]
+}
+
+export interface CartridgeAssetsResponse {
+  cartridge_id: string
+  assets: CartridgeAsset[]
+  components: InteractionComponent[]
+  files: FlowFiles
 }
 
 export interface McpTool {
@@ -479,6 +516,17 @@ export interface LlmAssignments {
   nodes: Record<string, Record<string, LlmAssignment>>
 }
 
+export interface LlmTestResult {
+  ok: boolean
+  provider_id?: string
+  model?: string
+  content?: string
+  capability?: string
+  error?: string
+  status_code?: number
+  retryable?: boolean
+}
+
 export interface StudioToolResource {
   id: string
   name: string
@@ -488,7 +536,10 @@ export interface StudioToolResource {
   command?: string
   args?: string
   openapi_url?: string
+  http_method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | string
   auth_env?: string
+  auth_header?: string
+  auth_scheme?: string
   capabilities?: string[]
   read_only?: boolean
   package_mode?: 'base' | 'descriptor' | 'external' | string
@@ -498,29 +549,12 @@ export interface StudioToolResource {
   tool?: string
 }
 
-export interface StudioSourceResource {
-  id: string
-  name: string
-  kind: 'local_path' | 'web' | 'structured' | string
-  description?: string
-  location?: string
-  format?: string
-  auth_env?: string
-  capabilities?: string[]
-  read_only?: boolean
-  refresh_mode?: 'manual' | 'run' | 'scheduled' | string
-  package_mode?: 'reference' | 'snapshot' | 'external' | string
-  enabled?: boolean
-}
-
 export interface StudioResources {
   version: number
   tools: StudioToolResource[]
-  sources: StudioSourceResource[]
   bindings: {
     roles?: Record<string, Record<string, string>>
     tools?: Record<string, string[]>
-    sources?: Record<string, string[]>
   }
   builtin_tools: StudioToolResource[]
 }
@@ -568,6 +602,22 @@ export interface StudioPackageItem {
   package_mode: string
 }
 
+export interface PortabilityReport {
+  schema: 'cartridgeflow.portability_report.v1' | string
+  status: 'ok' | 'blocked' | string
+  summary: {
+    portable: number
+    local_rebind: number
+    missing_blockers: number
+    forbidden: number
+    scanned_files: number
+  }
+  portable: any[]
+  local_rebind: any[]
+  missing_blockers: any[]
+  forbidden: any[]
+}
+
 export interface StudioReleasePreflight {
   cartridge: { id: string; name: string; version: string; source: string; editable: boolean }
   compatibility: CompatibilityReport
@@ -577,6 +627,7 @@ export interface StudioReleasePreflight {
   models: { status: string; items: any[] }
   resources: { status: string; items: any[]; descriptor?: any }
   package_hygiene: { status: string; items: any[]; scanned_files?: number }
+  portability: PortabilityReport
   issues: { area: string; severity: string; message: string }[]
   dev_ready: boolean
   production_ready: boolean
@@ -614,6 +665,31 @@ export const createCartridgeRun = (cartridgeId: string, inputs: Record<string, a
 export const fetchCartridgeRun = (runId: string) =>
   api<RunResult>(`/api/cartridge-runs/${runId}`)
 
+export const deleteCartridgeRun = (runId: string) =>
+  api<{ run_id: string; deleted: boolean }>(`/api/cartridge-runs/${encodeURIComponent(runId)}`, { method: 'DELETE' })
+
+export interface RunDiagnosticBundle {
+  schema: string
+  generated_at?: string
+  run_id: string
+  cartridge_id: string
+  summary: {
+    status?: string
+    current_state?: string
+    error_code?: string | null
+    error_category?: string | null
+    event_count: number
+    checkpoint_count: number
+    artifact_count: number
+  }
+  run: RunResult
+  events: FlowEvent[]
+  checkpoints: any[]
+}
+
+export const fetchCartridgeRunDiagnostics = (runId: string) =>
+  api<RunDiagnosticBundle>(`/api/cartridge-runs/${encodeURIComponent(runId)}/diagnostics`)
+
 export const fetchCartridgeRunEvents = (runId: string) =>
   api<{ items: FlowEvent[] }>(`/api/cartridge-runs/${runId}/events`)
 
@@ -629,17 +705,50 @@ export const controlCartridgeRun = (
 export const fetchCartridgeRunCheckpoints = (runId: string) =>
   api<{ run_id: string; items: any[] }>(`/api/cartridge-runs/${runId}/checkpoints`)
 
-export const answerPendingInteraction = (runId: string, values: Record<string, any> | string) =>
+export const answerPendingInteraction = (
+  runId: string,
+  values: Record<string, any> | string,
+  options: { action_id?: string; input_revision?: string | number; idempotency_key?: string; draft_hash?: string } = {},
+) =>
   api<{ run: RunResult; events: FlowEvent[] }>(`/api/cartridge-runs/${runId}/pending-interaction/answer`, {
     method: 'POST',
-    body: JSON.stringify(typeof values === 'string' ? { answer: values } : { values }),
+    body: JSON.stringify({ ...(typeof values === 'string' ? { answer: values } : { values }), ...options }),
+  })
+
+export interface InteractionSandboxSession {
+  schema: string
+  run_id: string
+  cartridge_id: string
+  node_id: string
+  component_id: string
+  interaction_id: string
+  channel_id: string
+  nonce: string
+  url: string
+  origin: string
+  host_capabilities: string[]
+  input_revision: number | string
+  input: Record<string, any>
+  policy: Record<string, any>
+}
+
+export const fetchInteractionSandbox = (runId: string, interactionId: string) =>
+  api<InteractionSandboxSession>(`/api/cartridge-runs/${encodeURIComponent(runId)}/interaction/${encodeURIComponent(interactionId)}/sandbox`)
+
+export const revokeInteractionSandbox = (runId: string, interactionId: string) =>
+  api<{ ok: boolean }>(`/api/cartridge-runs/${encodeURIComponent(runId)}/interaction/${encodeURIComponent(interactionId)}/sandbox`, { method: 'DELETE' })
+
+export const sendInteractionHostRequest = (runId: string, interactionId: string, message: Record<string, any>) =>
+  api<Record<string, any>>(`/api/cartridge-runs/${encodeURIComponent(runId)}/interaction/${encodeURIComponent(interactionId)}/host-request`, {
+    method: 'POST',
+    body: JSON.stringify(message),
   })
 
 export const fetchDlcRunContext = (runId: string) =>
   api<{ schema: string; run_id: string; cartridge_id: string; frontend_url: string; context: Record<string, any>; artifacts?: Array<Record<string, any>>; pending_interaction?: any }>(`/api/cartridge-runs/${runId}/dlc-context`)
 
 export const packageCartridge = (id: string, packageMode: 'dev' | 'production' = 'dev') =>
-  api<{ ok: boolean; cartridge_id: string; filename: string; package_mode: string; url: string; size: number; mcp_tool_count: number; compatibility?: any }>(`/api/cartridges/${id}/package`, {
+  api<{ ok: boolean; cartridge_id: string; filename: string; package_mode: string; url: string; size: number; mcp_tool_count: number; compatibility?: any; portability?: PortabilityReport }>(`/api/cartridges/${id}/package`, {
     method: 'POST',
     body: JSON.stringify({ package_mode: packageMode }),
   })
@@ -700,6 +809,27 @@ export const fetchLabFlow = (id: string) => api<FlowLabDetail>(`/api/lab/flows/$
 
 export const fetchLabFlowFiles = (id: string) =>
   api<{ cartridge_id: string; files: FlowFiles }>(`/api/lab/flows/${id}/files`)
+
+export const fetchCartridgeAssets = (id: string) =>
+  api<CartridgeAssetsResponse>(`/api/lab/flows/${id}/assets`)
+
+export const saveCartridgeAsset = (id: string, assetId: string, asset: Omit<CartridgeAsset, 'sha256' | 'size' | 'executable'> & { encoding?: string }) =>
+  api<{ status: string; asset: CartridgeAsset; files: FlowFiles }>(`/api/lab/flows/${id}/assets/${assetId}`, {
+    method: 'PUT',
+    body: JSON.stringify(asset),
+  })
+
+export const deleteCartridgeAsset = (id: string, assetId: string) =>
+  api<{ status: string; asset_id: string; files: FlowFiles }>(`/api/lab/flows/${id}/assets/${assetId}`, { method: 'DELETE' })
+
+export const saveInteractionComponent = (id: string, componentId: string, component: InteractionComponent) =>
+  api<{ status: string; component: InteractionComponent; files: FlowFiles }>(`/api/lab/flows/${id}/interaction-components/${componentId}`, {
+    method: 'PUT',
+    body: JSON.stringify({ component }),
+  })
+
+export const deleteInteractionComponent = (id: string, componentId: string) =>
+  api<{ status: string; component_id: string; files: FlowFiles }>(`/api/lab/flows/${id}/interaction-components/${componentId}`, { method: 'DELETE' })
 
 export const fetchMcpTools = (id: string) =>
   api<McpToolsResponse>(`/api/lab/flows/${id}/mcp-tools`)
@@ -844,7 +974,7 @@ export const activateLlmProvider = (providerId: string) =>
   api<{ ok: boolean; provider: LlmProvider }>(`/api/llm/providers/${encodeURIComponent(providerId)}/activate`, { method: 'POST' })
 
 export const testLlmProvider = (providerId: string, model = '') =>
-  api<{ ok: boolean; provider_id: string; model?: string; content?: string }>('/api/llm/test', {
+  api<LlmTestResult>('/api/llm/test', {
     method: 'POST',
     body: JSON.stringify({ provider_id: providerId, model, prompt: 'OK' }),
   })

@@ -348,7 +348,7 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
           </strong>
           {isImportantNode && <span className="flow-node-milestone">{milestoneLabel || '重点'}</span>}
           {remoteServiceLabel && <span className="flow-node-remote">{remoteServiceLabel}</span>}
-          {node.title}
+          {node.display_name || node.title}
           {runState?.status === 'running' && <span className="node-run-pulse" aria-hidden="true" />}
           {runState?.status === 'completed' && <span className="node-run-check">✓</span>}
           {runState?.status === 'paused' && <span className="node-run-pause">?</span>}

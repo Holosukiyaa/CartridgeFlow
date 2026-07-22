@@ -204,7 +204,7 @@ CartridgeFlow-main/
 │  └─ templates/        本机配置的安全空白模板
 ├─ .data/                本机数据，不进版本库
 │  ├─ user/              Flow、卡带、包、私有配置、数据和用户产物
-│  │  └─ config/         模型、凭据、工具和数据来源的本机配置
+│  │  └─ config/         模型、凭据和工具的本机配置
 │  ├─ runtime/           运行、检查点和 Worker 状态
 │  ├─ reports/           服务日志、错误报告和 conformance 报告
 │  └─ temp/              上传与导入缓存

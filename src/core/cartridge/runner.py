@@ -1,4 +1,5 @@
 import json
+import hashlib
 import shutil
 import uuid
 from copy import deepcopy
@@ -14,8 +15,10 @@ from core.extensions import cancel_worker_calls_for_run
 from core.workspace.host import WorkspaceHostManager
 from core.lab.node_executor import LabNodeExecutor
 from core.protocol import CompatibilityBlockedError, build_compatibility_report, load_base_implementation
+from core.studio.external_adapters import cancel_external_calls_for_run
 from core.studio.resource_resolver import resolve_cartridge_resources
 from .artifacts import ArtifactManager
+from .assets import load_asset_bundle
 from .dependencies import DependencyResolver
 from .environment import EnvironmentChecker
 from .permissions import PermissionManager
@@ -131,6 +134,7 @@ class CartridgeRunner:
             "environment": self.environment_checker.init_environment_state(manifest),
             "dependencies": self.dependency_resolver.init_dependency_state(manifest),
             "runtime": manifest.get("runtime", {}),
+            "runtime_contract": manifest.get("runtime_contract", {}),
             "base": compatibility.get("base", {}),
             "protocol": compatibility.get("protocol", {}),
             "compatibility": {
@@ -146,6 +150,8 @@ class CartridgeRunner:
             "local_resources": local_resource_report.get("descriptor", {}),
             "protocol_extensions": manifest.get("protocol_extensions", []),
             "portable_dlc": manifest.get("portable_dlc"),
+            "asset_registry": manifest.get("asset_registry"),
+            "interaction_components": manifest.get("interaction_components"),
             "run_mode": "probe_range" if normalized_probe_range else "full_flow",
             "probe_range": normalized_probe_range,
             "package_path": cartridge.get("package_path"),
@@ -941,6 +947,22 @@ class CartridgeRunner:
             raise FileNotFoundError(f"Run not found: {run_id}")
         return self._read_json(path)
 
+    def delete_run(self, run_id: str) -> dict:
+        """Delete one completed or stopped run and its local evidence directory."""
+        normalized_id = str(run_id or "").strip()
+        if not normalized_id or Path(normalized_id).name != normalized_id:
+            raise ValueError("Invalid run id")
+        run = self.get_run(normalized_id)
+        if run.get("status") in {"created", "running", "retrying", "recovering", "rolling_back", "paused_waiting_user"}:
+            raise ValueError("Active runs cannot be deleted")
+        runs_root = self.runs_dir.resolve()
+        run_dir = (self.runs_dir / normalized_id).resolve()
+        if runs_root not in run_dir.parents:
+            raise ValueError("Invalid run directory")
+        if run_dir.exists():
+            shutil.rmtree(run_dir)
+        return {"run_id": normalized_id, "deleted": True}
+
     def get_events(self, run_id: str) -> list[dict]:
         path = self.runs_dir / run_id / "events.jsonl"
         if not path.exists():
@@ -959,11 +981,27 @@ class CartridgeRunner:
             raise FileNotFoundError(f"Delivery not found: {run_id}")
         return self._read_json(path)
 
-    def answer_pending_interaction(self, run_id: str, values: dict | str | None = None) -> dict:
+    def answer_pending_interaction(
+        self,
+        run_id: str,
+        values: dict | str | None = None,
+        *,
+        action_id: str | None = None,
+        input_revision: str | int | None = None,
+        idempotency_key: str | None = None,
+        draft_hash: str | None = None,
+    ) -> dict:
         run_dir = self.runs_dir / run_id
         run = self.get_run(run_id)
         pending = run.get("pending_interaction")
         if run.get("status") != "paused_waiting_user" or not isinstance(pending, dict):
+            if idempotency_key and any(
+                isinstance(item, dict)
+                and isinstance(item.get("value"), dict)
+                and item["value"].get("idempotency_key") == idempotency_key
+                for item in run.get("answered_interactions") or []
+            ):
+                return run
             raise ValueError("Run is not waiting for a pending interaction answer")
 
         state_path = run_dir / "root_flow_state.json"
@@ -975,11 +1013,49 @@ class CartridgeRunner:
         question = pending.get("question") if isinstance(pending.get("question"), dict) else {}
         store_key = str(question.get("store_key") or "user_reply").strip() or "user_reply"
         answer_value = values if values is not None else {}
+        if pending.get("schema") == "cartridgeflow.pending_interaction.v2":
+            allowed_actions = {str(item) for item in pending.get("allowed_actions") or [] if str(item).strip()}
+            selected_action = str(action_id or "").strip()
+            if selected_action not in allowed_actions:
+                raise ValueError("action_id is not allowed by the pending interaction")
+            if not str(idempotency_key or "").strip():
+                raise ValueError("idempotency_key is required for pending interaction v2")
+            expected_revision = (pending.get("input_snapshot") or {}).get("input_revision")
+            if expected_revision is not None and str(input_revision) != str(expected_revision):
+                raise ValueError("pending interaction input revision is stale")
+            self._validate_pending_interaction_identity(run, pending)
+            schema = (pending.get("action_schemas") or {}).get(selected_action) or {"type": "object"}
+            try:
+                from jsonschema import Draft202012Validator
+                Draft202012Validator(schema).validate(answer_value)
+            except Exception as exc:
+                raise ValueError(f"interaction action payload does not match its schema: {exc}") from exc
+            computed_draft_hash = hashlib.sha256(
+                json.dumps(answer_value, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
+            ).hexdigest()
+            pending_draft = pending.get("draft") if isinstance(pending.get("draft"), dict) else {}
+            if (pending.get("presentation") or {}).get("component_runtime") == "sandboxed":
+                if not pending_draft or str(draft_hash or "") != str(pending_draft.get("sha256") or ""):
+                    raise ValueError("sandboxed interaction commit is not bound to the current Host draft")
+                if computed_draft_hash != pending_draft.get("sha256"):
+                    raise ValueError("sandboxed interaction payload changed after the Host draft was reviewed")
+            answer_value = {
+                "schema": "cartridgeflow.interaction_answer.v1",
+                "interaction_id": pending.get("interaction_id"),
+                "action_id": selected_action,
+                "value": answer_value,
+                "input_revision": expected_revision,
+                "answer_revision": int(pending.get("answer_revision") or 0) + 1,
+                "draft_hash": computed_draft_hash,
+                "idempotency_key": str(idempotency_key),
+            }
         store[store_key] = answer_value
 
         answered_at = now_iso()
         assert_transition("interaction", pending.get("status") or "waiting_user", "answered")
         pending["status"] = "answered"
+        pending["answered_at"] = answered_at
+        pending["answer_revision"] = answer_value.get("answer_revision", 1) if isinstance(answer_value, dict) else 1
         answer_record = {
             "interaction_id": pending.get("interaction_id"),
             "node_id": pending.get("node_id"),
@@ -1060,6 +1136,21 @@ class CartridgeRunner:
             completed_parents=completed_parents,
             initial_queue=initial_queue,
         )
+
+    def _validate_pending_interaction_identity(self, run: dict, pending: dict) -> None:
+        cartridge = self.registry.get_cartridge(run.get("cartridge_id"))
+        bundle = load_asset_bundle(cartridge.get("package_path"), cartridge.get("manifest") or {})
+        presentation = pending.get("presentation") if isinstance(pending.get("presentation"), dict) else {}
+        component = (bundle.get("component_by_id") or {}).get(str(presentation.get("component_id") or "")) or {}
+        asset = (bundle.get("asset_by_id") or {}).get(str(component.get("entry_asset_id") or "")) or {}
+        current_entry_hash = component.get("entry_sha256") or asset.get("sha256")
+        if (
+            not component
+            or component.get("version") != presentation.get("component_version")
+            or component.get("runtime") != presentation.get("component_runtime")
+            or current_entry_hash != presentation.get("entry_sha256")
+        ):
+            raise ValueError("pending interaction component identity changed; restart the run explicitly")
 
     def _continue_run(
         self,
@@ -1353,6 +1444,17 @@ class CartridgeRunner:
 
     def _resolve_answer_resume(self, resume: dict | None, answer_value) -> dict:
         base_resume = dict(resume) if isinstance(resume, dict) else {}
+        if base_resume.get("policy") == "resume_by_action_route":
+            action_id = str(answer_value.get("action_id") or "") if isinstance(answer_value, dict) else ""
+            action_routes = base_resume.get("action_routes") if isinstance(base_resume.get("action_routes"), dict) else {}
+            target = str(action_routes.get(action_id) or "").strip()
+            if not target:
+                raise ValueError(f"pending interaction action has no resume route: {action_id}")
+            return {
+                "policy": "resume_target_node",
+                "target_node": target,
+                "action_id": action_id,
+            }
         routes = base_resume.get("answer_routes")
         if not isinstance(routes, list):
             return base_resume
@@ -1703,7 +1805,7 @@ class CartridgeRunner:
             if not isinstance(item, dict):
                 continue
             tool_result = item.get("result") if isinstance(item.get("result"), dict) else item
-            if tool_result.get("code") == "dlc_worker_cancelled":
+            if tool_result.get("code") in {"dlc_worker_cancelled", "tool_cancelled"}:
                 return True
         return False
 
@@ -1764,9 +1866,11 @@ class CartridgeRunner:
         run = self.get_run(run_id)
         if action == "cancel":
             cancelled_workers = cancel_worker_calls_for_run(run_id)
+            cancelled_external_calls = cancel_external_calls_for_run(run_id)
             self._set_run_status(run, "cancelled", "user_cancelled")
             run["current_state"] = "cancelled"
             run["cancelled_worker_calls"] = cancelled_workers
+            run["cancelled_external_calls"] = cancelled_external_calls
         elif action == "pause":
             self._set_run_status(run, "paused", "user_paused")
             run["current_state"] = "paused"

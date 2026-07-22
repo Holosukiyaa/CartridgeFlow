@@ -1,8 +1,8 @@
 # Portable DLC Architecture
 
-更新日期：2026-07-19
+更新日期：2026-07-21
 
-本文记录 `CARTRIDGEFLOW-BASE@0.2 + CF-FARP@0.6` 的 Portable DLC 专项架构，包括激活链路、隔离方式、资源所有权和不可破坏的实现边界。规范正文位于 `docs/protocol/CARTRIDGEFLOW_BASE_CONTRACT_v0.2.md` 和 `docs/protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.6.md`，本文不能替代协议。
+本文记录 `CARTRIDGEFLOW-BASE@0.2 + CF-FARP@0.7` 的 Portable DLC 目标架构，包括激活链路、交互组件脚本隔离、资源所有权和不可破坏的实现边界。当前参考底座仍只实现 v0.6 partial；规范正文位于 `docs/protocol/CARTRIDGEFLOW_BASE_CONTRACT_v0.2.md` 和 `docs/protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.7.md`，本文不能替代协议。
 
 ## 核心原则
 
@@ -23,6 +23,7 @@ cartridges/<source>/<cartridge-id>/
     descriptor.json
     backend/
     frontend/
+      components/
     protocols/
     workflows/
     tests/
@@ -34,7 +35,10 @@ cartridges/<source>/<cartridge-id>/
 2. `load_portable_dlc_descriptor` 校验 owner、作用域、工具集合、入口路径、协议覆盖、资源归属和 SHA-256。
 3. `BuiltinMcpRegistry.for_manifest(..., package_path=...)` 为当前卡带建立作用域注册表。
 4. 每次工具调用启动隔离 Python worker，以 JSON stdin/stdout 通信。
-5. 前端入口只通过经过 descriptor 校验的服务端路由提供，并进入 `sandbox="allow-scripts"` 的 iframe。
+5. 前端交互组件只通过经过 descriptor v2 文件成员、media type 和 hash 校验的专用不可信 origin 提供，并进入只有 `allow-scripts`、无 ambient credential 的无同源 iframe。
+6. 生产宿主使用独立 renderer/process 或等价资源隔离，组件卡死或崩溃不得拖垮 Host UI 与 Runner。
+7. 每个交互节点通过 Component Registry 解析具名 frontend component，Host 使用一次性 MessageChannel 提供最小授权能力。
+8. 组件只维护草稿或提出 action intent；iframe 外的 Host controls 才能提交 Pending Interaction 并恢复 Flow。
 
 未声明 `portable_dlc` 的卡带只获得基座工具。默认 `BuiltinMcpRegistry(root)` 不加载任何卡带代码。
 
@@ -57,6 +61,8 @@ descriptor 中的资源必须标记为：
 - 不得在 import、descriptor 校验、工具描述或卡带列表阶段启动 Blender、ComfyUI、网络请求或文件生产。
 - 不得让卡带工具进入全局默认 Registry。
 - 不得让 iframe 获得 `allow-same-origin`、顶层导航或任意文件访问。
+- 不得执行 inline script、eval、未登记模块、Worker、WebAssembly 或允许组件直接联网。
+- 不得让交互组件直接调用模型、工具、任意节点或 Store；组件只提交已声明 action，Runner 负责路由。
 - 不得把用户产物当作卡带私有数据随卸载删除。
 
 ## 空基座验收

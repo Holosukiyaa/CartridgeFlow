@@ -1,0 +1,226 @@
+/* Model routing console: overview-aligned status, density, and bounded tool surface. */
+.cf-model-config-page {
+  width: min(1560px, 100%);
+  container: model-config / inline-size;
+}
+
+.cf-model-config-page .cf-model-config-heading {
+  border-bottom-color: var(--line-2);
+}
+
+.cf-model-config-page .cf-overview-health {
+  flex: 0 0 auto;
+}
+
+.cf-model-config-stats {
+  flex: 0 0 auto;
+  min-height: 76px;
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: minmax(250px, 1.45fr) repeat(3, minmax(112px, .55fr));
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--accent);
+  border-radius: 6px;
+  background: var(--paper);
+}
+
+.cf-model-config-stats > div {
+  min-width: 0;
+  min-height: 74px;
+  padding: 11px 14px;
+  display: grid;
+  align-content: center;
+  gap: 3px;
+  border-right: 1px solid var(--line);
+}
+
+.cf-model-config-stats > div:last-child { border-right: 0; }
+.cf-model-config-stats span { color: var(--accent); font: 750 8px var(--mono); text-transform: uppercase; }
+.cf-model-config-stats strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font: 720 23px/1.1 Georgia, "Songti SC", "SimSun", serif; }
+.cf-model-config-stats .primary strong { font-size: 15px; }
+.cf-model-config-stats small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font: 9px var(--mono); }
+.cf-model-config-stats em { margin-left: 3px; color: var(--faint); font: normal 600 11px var(--mono); }
+
+.cf-model-config-page .cf-model-routing-surface {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin-top: 14px;
+  padding-top: 0;
+  grid-template-columns: minmax(310px, .82fr) minmax(390px, 1.18fr);
+  gap: 0;
+  align-items: stretch;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--paper);
+}
+
+.cf-model-config-page .cf-model-routing-surface > .cf-resource-panel {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--paper);
+}
+
+.cf-model-config-page .cf-model-routing-surface > .cf-resource-panel + .cf-resource-panel {
+  padding-left: 0;
+  border-left: 1px solid var(--line-2);
+}
+
+.cf-model-config-page .cf-model-routing-surface .cf-resource-panel-head {
+  flex: 0 0 58px;
+  min-height: 58px;
+  padding: 9px 14px 10px;
+  align-items: center;
+  border-bottom-color: var(--line-2);
+  background: rgba(250, 249, 247, .72);
+}
+
+.cf-model-config-page .cf-resource-panel-head h2 {
+  font: 700 16px/1.2 Georgia, "Songti SC", "SimSun", serif;
+}
+
+.cf-model-config-page .cf-resource-panel-head > button {
+  min-height: 31px;
+  padding-inline: 11px;
+}
+
+.cf-model-config-page .cf-model-provider-list {
+  flex: 0 1 238px;
+  min-height: 58px;
+  max-height: 238px;
+  overflow-y: auto;
+  border-bottom: 1px solid var(--line-2);
+  scrollbar-gutter: stable;
+}
+
+.cf-model-config-page .cf-model-provider-item {
+  min-height: 62px;
+  padding: 9px 13px;
+  gap: 11px;
+  transition: background .15s ease, box-shadow .15s ease;
+}
+
+.cf-model-config-page .cf-model-provider-item:hover { background: #fffaf5; }
+.cf-model-config-page .cf-provider-dot { width: 10px; height: 10px; border-color: #c5ccd3; background: #f5f6f7; }
+.cf-model-config-page .cf-provider-dot.pending { border-color: #d49a55; background: #fff1d5; }
+.cf-model-config-page .cf-provider-dot.verified { border-color: #5f9d70; background: #ccebd5; }
+.cf-model-config-page .cf-provider-dot.incomplete { border-color: #c9a29a; background: #fff0ed; }
+.cf-model-config-page .cf-model-provider-copy { gap: 5px; }
+.cf-model-config-page .cf-model-provider-copy strong { font-size: 12px; }
+.cf-model-config-page .cf-model-provider-copy small { font-size: 9px; }
+
+.cf-model-provider-state {
+  display: grid;
+  justify-items: end;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.cf-model-provider-state b {
+  color: var(--muted);
+  font: 700 8px var(--mono);
+}
+
+.cf-model-provider-state b.verified { color: var(--green); }
+.cf-model-provider-state b.pending { color: #8a6019; }
+.cf-model-provider-state b.incomplete { color: #9a4638; }
+.cf-model-provider-state i { color: var(--accent-dark); font: normal 700 8px var(--mono); }
+
+.cf-model-config-page .cf-selected-resource-summary {
+  flex: 0 0 auto;
+  min-height: 0;
+  padding: 14px;
+  border-top: 0;
+  background: #fff;
+}
+
+.cf-model-config-page .cf-selected-resource-title {
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.cf-model-config-page .cf-selected-resource-title strong { font-size: 13px; }
+.cf-model-config-page .cf-selected-resource-title code { font-size: 9px; }
+.cf-model-config-page .cf-selected-resource-summary dl { margin: 0 0 12px; border-top: 0; }
+.cf-model-config-page .cf-selected-resource-summary dl > div { min-height: 43px; padding: 8px 9px; }
+.cf-model-config-page .cf-selected-resource-summary dt { color: var(--faint); }
+.cf-model-config-page .cf-selected-resource-summary dd { font-size: 9px; }
+.cf-model-config-page .cf-selected-resource-summary .cf-model-form-actions { padding-top: 0; gap: 7px; }
+.cf-model-config-page .cf-selected-resource-summary .cf-model-form-actions button { min-height: 31px; }
+.cf-model-config-page .cf-selection-hint { flex: 0 0 auto; min-height: 118px; padding: 18px 14px; border-top: 0; }
+
+.cf-model-config-page .cf-model-binding-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0 14px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.cf-model-config-page .cf-cartridge-resource-row { padding: 15px 0; }
+.cf-model-config-page .cf-cartridge-resource-head strong { font-size: 12px; }
+.cf-model-config-page .cf-cartridge-resource-head > span { padding: 3px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--paper-soft); }
+.cf-model-config-page .cf-model-role-drop-list { margin-top: 11px; gap: 7px; }
+.cf-model-config-page .cf-model-role-drop {
+  min-height: 49px;
+  padding: 7px 9px;
+  grid-template-columns: minmax(112px, .7fr) minmax(130px, 1fr) minmax(150px, .9fr);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #fff;
+}
+
+.cf-model-config-page .cf-model-role-drop:hover { border-color: #d8a078; background: #fffaf6; }
+.cf-model-config-page .cf-model-role-drop.bound { border-color: #ddb18d; background: #fff9f4; box-shadow: inset 3px 0 0 var(--accent); }
+.cf-model-config-page .cf-model-role-drop.auto-match { border-style: dashed; border-color: #d7a468; background: #fffaf1; }
+.cf-model-config-page .cf-model-role-drop.unavailable { border-color: #dfb4aa; background: #fff6f4; box-shadow: inset 3px 0 0 #b65343; }
+.cf-model-config-page .cf-role-drop-name b { font-size: 11px; }
+.cf-model-config-page .cf-role-drop-value { font-size: 9px; }
+.cf-model-config-page .cf-role-binding-select { width: 100%; min-width: 0; max-width: none; background: #fff; }
+
+@media (min-width: 821px) and (max-height: 800px) {
+  .cf-model-config-page { padding: 14px 24px 16px; }
+  .cf-model-config-page .cf-model-config-heading { min-height: 60px; padding-bottom: 9px; }
+  .cf-model-config-page .cf-model-config-heading h1 { margin-top: 2px; font-size: 22px; }
+  .cf-model-config-page .cf-model-config-heading p { margin-top: 3px; font-size: 10px; }
+  .cf-model-config-stats { min-height: 62px; margin-top: 10px; }
+  .cf-model-config-stats > div { min-height: 60px; padding-block: 8px; }
+  .cf-model-config-page .cf-model-routing-surface { margin-top: 10px; }
+  .cf-model-config-page .cf-model-routing-surface .cf-resource-panel-head { flex-basis: 50px; min-height: 50px; padding-block: 7px; }
+  .cf-model-config-page .cf-model-provider-list { flex-basis: 176px; max-height: 176px; }
+  .cf-model-config-page .cf-model-provider-item { min-height: 55px; padding-block: 7px; }
+  .cf-model-config-page .cf-selected-resource-summary { padding: 10px 12px; }
+  .cf-model-config-page .cf-selected-resource-summary dl > div { min-height: 36px; padding-block: 5px; }
+  .cf-model-config-page .cf-selected-resource-title { padding-bottom: 7px; }
+  .cf-model-config-page .cf-selected-resource-summary dl { margin-bottom: 8px; }
+  .cf-model-config-page .cf-cartridge-resource-row { padding-block: 11px; }
+  .cf-model-config-page .cf-model-role-drop { min-height: 43px; padding-block: 5px; }
+}
+
+@media (min-width: 821px) {
+  .cf-model-config-page .cf-model-routing-surface {
+    grid-template-columns: minmax(290px, .82fr) minmax(360px, 1.18fr);
+  }
+}
+
+@media (max-width: 820px) {
+  .cf-model-config-page { height: auto; min-height: 100%; overflow: visible; }
+  .cf-model-config-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cf-model-config-stats > div:nth-child(2) { border-right: 0; }
+  .cf-model-config-stats > div:nth-child(-n + 2) { border-bottom: 1px solid var(--line); }
+  .cf-model-config-page .cf-model-routing-surface { grid-template-columns: 1fr; overflow: visible; }
+  .cf-model-config-page .cf-model-routing-surface > .cf-resource-panel + .cf-resource-panel { border-left: 0; border-top: 1px solid var(--line-2); }
+  .cf-model-config-page .cf-model-provider-list { flex-basis: auto; max-height: 250px; }
+  .cf-model-config-page .cf-model-binding-list { max-height: none; overflow: visible; }
+}
+
+@media (max-width: 580px) {
+  .cf-model-config-stats { grid-template-columns: 1fr; }
+  .cf-model-config-stats > div { border-right: 0; border-bottom: 1px solid var(--line); }
+  .cf-model-config-stats > div:last-child { border-bottom: 0; }
+  .cf-model-config-page .cf-model-role-drop { grid-template-columns: 1fr; }
+  .cf-model-config-page .cf-role-drop-value { grid-column: auto; grid-row: auto; }
+}

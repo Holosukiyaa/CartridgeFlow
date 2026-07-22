@@ -2725,3 +2725,47 @@ textarea.cf-input {
     width: 100%;
   }
 }
+.cf-passive-interaction-frame {
+  width: 100%;
+  min-height: 220px;
+  max-height: 42vh;
+  margin: 10px 0 14px;
+  border: 1px solid #e2d8cf;
+  border-radius: 4px;
+  background: #fff;
+}
+
+.cf-host-action-picker {
+  margin: 10px 0 14px;
+  padding: 11px 12px;
+  border: 1px solid #ead9ca;
+  background: #fff9f4;
+}
+
+.cf-host-action-picker > span {
+  display: block;
+  margin-bottom: 8px;
+  color: #756b63;
+  font-size: 11px;
+}
+
+.cf-host-action-picker > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.cf-host-action-picker button {
+  padding: 7px 11px;
+  border: 1px solid #dfcbbb;
+  background: #fff;
+  color: #5f554e;
+  cursor: pointer;
+}
+
+.cf-host-action-picker button.active {
+  border-color: #ce7545;
+  background: #fff2e8;
+  color: #994821;
+  box-shadow: 0 3px 10px rgb(125 68 35 / 10%);
+}

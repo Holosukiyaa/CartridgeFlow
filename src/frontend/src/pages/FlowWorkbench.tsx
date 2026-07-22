@@ -34,6 +34,7 @@ import type { FlowAssistantApplyResult, FlowAssistantDraft, FlowAssistantGraphOp
 import type { GraphResult, NodeCategoryId, WorkbenchMode } from './flow-workbench/types.ts'
 import { McpLibraryPanel } from './flow-workbench/McpLibraryPanel.tsx'
 import { ModelRecipeView } from './flow-workbench/ModelRecipeView.tsx'
+import { AssetWorkbench } from './flow-workbench/AssetWorkbench.tsx'
 
 const firstText = (...values: any[]) => values.find((value) => typeof value === 'string' && value.trim())?.trim() || ''
 const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms))
@@ -974,11 +975,11 @@ export default function FlowWorkbench({ flowId, mode: controlledMode, onBack, on
                 showToast({ title: '测试失败', description: e.message, type: 'error' })
               }
             }}
-            onAnswerPendingInteraction={async (runId: string, values: Record<string, any>) => {
+            onAnswerPendingInteraction={async (runId: string, values: Record<string, any>, options?: Record<string, any>) => {
               try {
                 let answerSettled = false
                 let liveLatest: RunResult | null = null
-                const answerPromise = answerPendingInteraction(runId, values)
+                const answerPromise = answerPendingInteraction(runId, values, options)
                   .finally(() => {
                     answerSettled = true
                   })
@@ -1023,6 +1024,15 @@ export default function FlowWorkbench({ flowId, mode: controlledMode, onBack, on
                 showToast({ title: '刷新失败', description: e.message, type: 'error' })
               }
             }}
+          />
+        )}
+
+        {mode === 'assets' && (
+          <AssetWorkbench
+            flowId={flowId}
+            editable={editable}
+            available={detail.cartridge.runtime_contract?.protocol_version === '0.7' && Boolean(files.asset_registry && files.interaction_components)}
+            onFilesChange={setFiles}
           />
         )}
 

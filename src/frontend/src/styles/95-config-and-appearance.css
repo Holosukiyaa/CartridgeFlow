@@ -152,6 +152,12 @@ html[data-cf-density="compact"] .cf-credential-item { min-height: 48px; }
 html[data-cf-density="compact"] .cf-cartridge-resource-row { padding-block: 9px; }
 
 .cf-settings-reset { min-height: 31px; padding: 0 10px; border: 1px solid var(--line); border-radius: 5px; background: var(--paper); color: var(--muted); font-weight: 700; }
+.cf-settings-tabs { flex: 0 0 43px; min-height: 43px; display: flex; align-items: end; gap: 22px; border-bottom: 1px solid var(--line-2); }
+.cf-settings-tabs button { position: relative; min-height: 42px; padding: 0 2px; border: 0; background: transparent; color: var(--muted); font-size: 11px; font-weight: 700; }
+.cf-settings-tabs button::after { content: ""; position: absolute; right: 50%; bottom: -1px; left: 50%; height: 2px; background: #c77b4e; transition: right .18s ease, left .18s ease; }
+.cf-settings-tabs button:hover { color: var(--text); }
+.cf-settings-tabs button.active { color: var(--text); }
+.cf-settings-tabs button.active::after { right: 0; left: 0; }
 .cf-settings-layout { flex: 1; min-height: 0; padding-top: 14px; display: grid; grid-template-columns: minmax(430px, .95fr) minmax(380px, 1.05fr); gap: 26px; overflow: hidden; }
 .cf-settings-controls,
 .cf-settings-preview { min-width: 0; min-height: 0; }
@@ -178,6 +184,12 @@ html[data-cf-density="compact"] .cf-cartridge-resource-row { padding-block: 9px;
 .cf-settings-toggle span { display: grid; gap: 3px; }
 .cf-settings-toggle strong { color: var(--text); font-size: 10px; }
 .cf-settings-toggle small { color: var(--muted); font-size: 8px; }
+html[data-cf-scrollbar-mode="always"] .cf-diagnostics-detail-card,
+html[data-cf-scrollbar-mode="always"] .cf-overview-todo-list,
+html[data-cf-scrollbar-mode="always"] .cf-overview-activity-list { scrollbar-color: rgba(188, 76, 0, .34) transparent; }
+html[data-cf-scrollbar-mode="always"] .cf-diagnostics-detail-card::-webkit-scrollbar-thumb,
+html[data-cf-scrollbar-mode="always"] .cf-overview-todo-list::-webkit-scrollbar-thumb,
+html[data-cf-scrollbar-mode="always"] .cf-overview-activity-list::-webkit-scrollbar-thumb { background-color: rgba(188, 76, 0, .34); }
 .cf-settings-preview-surface { min-height: 250px; padding: 24px 4px; display: grid; align-content: center; justify-items: start; gap: 11px; border-bottom: 1px solid var(--line); }
 .cf-settings-preview-surface > span { color: var(--accent); font: 800 8px var(--mono); text-transform: uppercase; }
 .cf-settings-preview-surface h2 { color: var(--text); font: 720 calc(22px * var(--cf-user-font-scale))/1.2 Georgia, "Songti SC", serif; }
@@ -191,6 +203,8 @@ html[data-cf-density="compact"] .cf-cartridge-resource-row { padding-block: 9px;
 .cf-settings-facts > div:nth-child(2n) { border-right: 0; }
 .cf-settings-facts dt { color: var(--muted); font-size: 8px; }
 .cf-settings-facts dd { color: var(--text); font: 9px var(--mono); }
+.cf-settings-environment-section { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.cf-settings-environment-section .cf-environment-layout { flex: 1; min-height: 0; padding-top: 14px; }
 
 @media (max-width: 1050px) {
   .cf-settings-layout { grid-template-columns: 1fr; overflow-y: auto; }
@@ -206,6 +220,8 @@ html[data-cf-density="compact"] .cf-cartridge-resource-row { padding-block: 9px;
   .cf-logo-wrap { padding-right: 58px; }
   .cf-resource-page { height: auto; overflow: visible; }
   .cf-settings-layout { overflow: visible; }
+  .cf-settings-environment-section { overflow: visible; }
+  .cf-settings-environment-section .cf-environment-layout { overflow: visible; }
 }
 
 @media (max-width: 620px) {
@@ -218,4 +234,50 @@ html[data-cf-density="compact"] .cf-cartridge-resource-row { padding-block: 9px;
   .cf-settings-range { grid-template-columns: 1fr auto; }
   .cf-settings-range input { grid-column: 1 / -1; grid-row: 2; }
   .cf-settings-options { grid-template-columns: 1fr; }
+}
+
+/* Shared record selection feedback across Studio configuration pages. */
+:is(
+  .cf-model-config-page .cf-model-provider-item.selected,
+  .cf-resource-inventory-item.selected,
+  .cf-credential-item.selected,
+  .cf-release-project-list > button.selected,
+  .cf-settings-options button.active
+) {
+  position: relative;
+  z-index: 1;
+  background: #fff8f3;
+  box-shadow: inset 0 0 0 1px #dfb89f, inset 4px 0 0 #c77b4e;
+  animation: cf-record-selection-enter .22s ease-out both;
+}
+
+:is(
+  .cf-model-config-page .cf-model-provider-item.selected,
+  .cf-resource-inventory-item.selected,
+  .cf-credential-item.selected,
+  .cf-release-project-list > button.selected,
+  .cf-settings-options button.active
+):hover {
+  background: #fff6ef;
+}
+
+@keyframes cf-record-selection-enter {
+  from {
+    background: #fffdfb;
+    box-shadow: inset 0 0 0 1px rgba(223, 184, 159, 0), inset 0 0 0 #c77b4e;
+  }
+  to {
+    background: #fff8f3;
+    box-shadow: inset 0 0 0 1px #dfb89f, inset 4px 0 0 #c77b4e;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :is(
+    .cf-model-config-page .cf-model-provider-item.selected,
+    .cf-resource-inventory-item.selected,
+    .cf-credential-item.selected,
+    .cf-release-project-list > button.selected,
+    .cf-settings-options button.active
+  ) { animation: none; }
 }

@@ -27,6 +27,12 @@ class FlowGraphBuilder:
                 "kind": state.get("kind"),
                 "executor": state.get("executor"),
                 "effect": state.get("effect"),
+                "display_name": state.get("display_name"),
+                "component_ref": state.get("component_ref"),
+                "interaction_mode": state.get("interaction_mode"),
+                "input_binding": state.get("input_binding"),
+                "action_routes": state.get("action_routes"),
+                "output": state.get("output"),
                 "display": state.get("display") or {},
                 "input_kind": state.get("input_kind"),
                 "source": state.get("source"),
@@ -77,6 +83,13 @@ class FlowGraphBuilder:
         }
 
     def _answer_route_edges(self, state_id: str, state: dict) -> list[dict]:
+        named_routes = state.get("action_routes") if isinstance(state.get("action_routes"), dict) else {}
+        if named_routes:
+            return [
+                {"from": state_id, "to": target, "scope": "branch", "label": action_id}
+                for action_id, target in named_routes.items()
+                if target and target != state_id
+            ]
         decision_contract = state.get("decision_contract") if isinstance(state.get("decision_contract"), dict) else {}
         interaction = decision_contract.get("interaction") if isinstance(decision_contract.get("interaction"), dict) else {}
         routes = interaction.get("answer_routes")

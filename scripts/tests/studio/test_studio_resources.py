@@ -35,9 +35,13 @@ class StudioResourcesTests(unittest.TestCase):
 
             self.assertEqual(result["tools"][0]["id"], "remote-search")
             self.assertEqual(result["tools"][0]["openapi_url"], "https://example.test/openapi.json")
-            self.assertEqual(result["sources"][0]["package_mode"], "snapshot")
+            self.assertEqual([item["id"] for item in result["tools"]], ["remote-search", "product-docs"])
+            self.assertEqual(result["tools"][1]["kind"], "plugin")
+            self.assertEqual(result["tools"][1]["endpoint"], "docs")
+            self.assertEqual(result["tools"][1]["package_mode"], "descriptor")
+            self.assertNotIn("sources", result)
             self.assertEqual(result["bindings"]["roles"]["demo.flow"]["document_lookup"], "remote-search")
-            self.assertEqual(result["bindings"]["tools"]["demo.flow"], ["remote-search"])
+            self.assertEqual(result["bindings"]["tools"]["demo.flow"], ["remote-search", "product-docs"])
             self.assertEqual(json.loads(target.read_text(encoding="utf-8")), result)
 
     def test_creates_default_file_when_missing(self):
@@ -46,7 +50,7 @@ class StudioResourcesTests(unittest.TestCase):
             result = load_resources(target)
 
             self.assertEqual(result["version"], 1)
-            self.assertEqual(result["bindings"], {"roles": {}, "tools": {}, "sources": {}})
+            self.assertEqual(result["bindings"], {"roles": {}, "tools": {}})
             self.assertTrue(target.is_file())
 
     def test_generates_stable_id_for_chinese_name(self):
@@ -54,8 +58,9 @@ class StudioResourcesTests(unittest.TestCase):
             target = Path(temp_dir) / "resources.json"
             result = save_resources({"sources": [{"name": "产品文档"}]}, target)
 
-            self.assertRegex(result["sources"][0]["id"], r"^resource-[0-9a-f]{10}$")
-            self.assertEqual(load_resources(target)["sources"][0]["id"], result["sources"][0]["id"])
+            self.assertRegex(result["tools"][0]["id"], r"^resource-[0-9a-f]{10}$")
+            self.assertEqual(load_resources(target)["tools"][0]["id"], result["tools"][0]["id"])
+            self.assertNotIn("sources", json.loads(target.read_text(encoding="utf-8")))
 
     def test_invalid_local_json_is_preserved_before_default_is_restored(self):
         with tempfile.TemporaryDirectory() as temp_dir:

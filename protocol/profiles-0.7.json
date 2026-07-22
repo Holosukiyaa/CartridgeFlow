@@ -1,0 +1,41 @@
+{
+  "schema_version": "0.1",
+  "profiles": [
+    {
+      "id": "runtime_core",
+      "description": "Load a cartridge, parse its manifest and root flow, execute standard runtime nodes, and produce run metadata."
+    },
+    {
+      "id": "testbench_core",
+      "description": "Run cartridges in a development test bench with events, diagnostics, and artifacts."
+    },
+    {
+      "id": "dev_authoring",
+      "description": "Create, edit, validate, and preview development cartridges."
+    },
+    {
+      "id": "shelf_runner",
+      "description": "Run packaged cartridges from a user-facing shelf or launcher."
+    },
+    {
+      "id": "production_runtime",
+      "description": "Run production-ready cartridges without development-only authoring tools."
+    },
+    {
+      "id": "dynamic_decision_runtime",
+      "description": "Run protocol-aware flows with runtime inputs, retrieval processes, decision processes, and tool-plan-mediated tool execution."
+    },
+    {
+      "id": "interactive_decision_runtime",
+      "description": "Run protocol-aware AI decision nodes with decision_envelope.v1 output, explicit user-input pauses, LLM test modes, and declared resume semantics."
+    },
+    {
+      "id": "interaction_runtime",
+      "description": "Resolve cartridge interaction components, render passive templates safely, persist component-backed interactions, validate named actions, and resume through declared routes."
+    },
+    {
+      "id": "portable_dlc_runtime",
+      "description": "Discover, validate, activate, isolate, sandbox, deactivate, and uninstall cartridge-owned portable DLC packages without leaking domain behavior into the base."
+    }
+  ]
+}

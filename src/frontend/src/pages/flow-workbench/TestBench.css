@@ -3000,3 +3000,23 @@
   background: var(--paper);
   color: var(--text);
 }
+.cf-interaction-sandbox { margin: 10px 0; border: 1px solid #edb88f; border-radius: 6px; overflow: hidden; background: #fff; box-shadow: 0 6px 18px rgba(114, 61, 24, .08); }
+.cf-interaction-sandbox iframe { width: 100%; height: clamp(240px, 38vh, 430px); display: block; border: 0; background: #fff; }
+.cf-sandbox-security { min-height: 34px; padding: 6px 9px; display: flex; align-items: center; justify-content: space-between; gap: 10px; border-bottom: 1px solid var(--line); background: #fff8f2; }
+.cf-sandbox-security span { color: #8f5c38; font-size: 9px; font-weight: 750; }
+.cf-sandbox-security span.ready { color: var(--green); }
+.cf-sandbox-security code { overflow: hidden; color: var(--muted); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.cf-sandbox-status { min-height: 82px; margin: 10px 0; padding: 14px; display: grid; align-content: center; gap: 5px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper-soft); }
+.cf-sandbox-status strong { color: var(--text); font-size: 10px; }
+.cf-sandbox-status span { color: var(--muted); font-size: 9px; }
+.cf-sandbox-status.error { border-color: #e8b4aa; background: #fff5f3; }
+.cf-sandbox-status.error strong { color: #a93b2f; }
+.cf-sandbox-draft-state { min-height: 38px; margin: 8px 0; padding: 7px 10px; display: flex; align-items: center; justify-content: space-between; gap: 10px; border: 1px dashed var(--line-strong); border-radius: 5px; color: var(--muted); }
+.cf-sandbox-draft-state.ready { border-style: solid; border-color: #b8d6bd; background: #f5fbf6; }
+.cf-sandbox-draft-state strong { color: inherit; font-size: 9px; }
+.cf-sandbox-draft-state span { font: 8px var(--mono); }
+
+@media (max-width: 640px) {
+  .cf-sandbox-security, .cf-sandbox-draft-state { align-items: flex-start; flex-direction: column; }
+  .cf-interaction-sandbox iframe { height: 300px; }
+}

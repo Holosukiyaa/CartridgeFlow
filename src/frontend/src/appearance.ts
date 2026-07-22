@@ -1,11 +1,13 @@
 export type FontFamilyMode = 'system' | 'classic' | 'developer'
 export type DensityMode = 'comfortable' | 'compact'
+export type ScrollbarMode = 'subtle' | 'always'
 
 export type AppearanceSettings = {
   fontScale: number
   fontFamily: FontFamilyMode
   density: DensityMode
   reducedMotion: boolean
+  scrollbarMode: ScrollbarMode
 }
 
 export const DEFAULT_APPEARANCE: AppearanceSettings = {
@@ -13,6 +15,7 @@ export const DEFAULT_APPEARANCE: AppearanceSettings = {
   fontFamily: 'system',
   density: 'comfortable',
   reducedMotion: false,
+  scrollbarMode: 'subtle',
 }
 
 const STORAGE_KEY = 'cf.studio.appearance'
@@ -40,11 +43,13 @@ export function applyAppearance(settings: AppearanceSettings) {
   root.dataset.cfFontFamily = settings.fontFamily
   root.dataset.cfDensity = settings.density
   root.dataset.cfReducedMotion = settings.reducedMotion ? 'true' : 'false'
+  root.dataset.cfScrollbarMode = settings.scrollbarMode
 }
 
 function normalizeAppearance(value: Partial<AppearanceSettings>): AppearanceSettings {
   const fontScale = Math.min(115, Math.max(90, Math.round(Number(value.fontScale || 100) / 5) * 5))
   const fontFamily: FontFamilyMode = ['system', 'classic', 'developer'].includes(String(value.fontFamily)) ? value.fontFamily as FontFamilyMode : 'system'
   const density: DensityMode = value.density === 'compact' ? 'compact' : 'comfortable'
-  return { fontScale, fontFamily, density, reducedMotion: Boolean(value.reducedMotion) }
+  const scrollbarMode: ScrollbarMode = value.scrollbarMode === 'always' ? 'always' : 'subtle'
+  return { fontScale, fontFamily, density, reducedMotion: Boolean(value.reducedMotion), scrollbarMode }
 }

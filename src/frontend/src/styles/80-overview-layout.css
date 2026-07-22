@@ -95,7 +95,8 @@
   .cf-overview-panel-head { min-height: 40px; padding-bottom: 8px; }
   .cf-overview-section-label h2 { font-size: 16px; }
   .cf-overview-protocol-copy { margin: 12px 0; line-height: 1.65; }
-  .cf-overview-protocol-facts > div { padding: 8px 7px; }
+  .cf-overview-protocol-facts > div,
+  .cf-overview-protocol-facts > button { padding: 8px 7px; }
   .cf-overview-protocol-list { margin-top: 10px; }
   .cf-overview-right-activity { padding-top: 18px; }
   .cf-overview-todo-list { max-height: 486px; }
@@ -123,7 +124,8 @@
   .cf-overview-panel-head { min-height: 36px; padding-bottom: 7px; }
   .cf-overview-section-label h2 { font-size: 15px; }
   .cf-overview-protocol-copy { margin: 8px 0; line-height: 1.55; }
-  .cf-overview-protocol-facts > div { padding: 6px; }
+  .cf-overview-protocol-facts > div,
+  .cf-overview-protocol-facts > button { padding: 6px; }
   .cf-overview-protocol-list { margin-top: 8px; }
   .cf-overview-protocol-list > span:nth-child(n + 4) { display: none; }
   .cf-overview-right-activity { padding-top: 14px; }
@@ -182,4 +184,151 @@
 @media (max-width: 520px) {
   .cf-overview-activity-meta { display: grid; justify-items: end; gap: 2px; }
   .cf-overview-activity-actions button { font-size: 9px; }
+}
+
+/* Comfortable overview: bounded TODO preview and a single route into run diagnostics. */
+.cf-overview-stat-strip {
+  min-width: 0;
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 253, 251, .62);
+}
+.cf-overview-stat-strip > button {
+  min-width: 0;
+  min-height: 62px;
+  padding: 8px 13px 7px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto 3px;
+  gap: 3px 10px;
+  align-content: center;
+  border: 0;
+  border-right: 1px solid var(--line);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  transition: background .14s ease;
+}
+.cf-overview-stat-strip > button:last-child { border-right: 0; }
+.cf-overview-stat-strip > button:hover { background: #fff8f1; }
+.cf-overview-stat-strip span { color: var(--muted); font-size: 9px; font-weight: 700; }
+.cf-overview-stat-strip strong { grid-column: 2; grid-row: 1 / span 2; align-self: center; color: var(--text); font: 700 21px/1 Georgia, serif; }
+.cf-overview-stat-strip small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--faint); font-size: 8px; }
+.cf-overview-stat-strip > button > i { grid-column: 1 / -1; width: 100%; height: 2px; align-self: end; overflow: hidden; background: #ede9e4; }
+.cf-overview-stat-strip > button > i > b { display: block; height: 100%; background: #d47a3e; transition: width .2s ease; }
+.cf-overview-stat-strip > button > i.neutral > b { background: #6d7883; }
+.cf-overview-stat-strip > button > i.success > b { background: #4d9b65; }
+.cf-overview-stat-strip > button.attention strong { color: #9b382e; }
+.cf-overview-stat-strip > button.attention > i > b { background: #c45b4f; }
+
+.cf-overview-comfort-grid {
+  margin-top: 22px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.08fr) minmax(390px, .92fr);
+  gap: 38px;
+  align-items: start;
+}
+.cf-overview-comfort-grid .cf-overview-todo-list { max-height: none; overflow: hidden; }
+.cf-overview-comfort-grid .cf-overview-todo-list > button { height: 56px; min-height: 56px; }
+.cf-overview-comfort-side {
+  min-width: 0;
+  padding-left: 32px;
+  display: grid;
+  gap: 24px;
+  border-left: 1px solid var(--line);
+}
+.cf-overview-comfort-side .cf-overview-protocol { padding-left: 0; border-left: 0; }
+.cf-overview-run-summary {
+  min-width: 0;
+  min-height: 96px;
+  padding: 12px 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  gap: 8px 16px;
+  align-items: center;
+  border-top: 1px solid var(--line-2);
+  border-bottom: 1px solid var(--line);
+}
+.cf-overview-run-summary > div:first-child { min-width: 0; }
+.cf-overview-run-summary > div:first-child > span { color: var(--accent); font: 750 8px var(--mono); text-transform: uppercase; }
+.cf-overview-run-summary h2 { margin-top: 3px; font: 700 15px Georgia, "Songti SC", "SimSun", serif; }
+.cf-overview-run-summary p { margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 9px; }
+.cf-overview-run-counts { grid-column: 1; display: flex; gap: 14px; color: var(--muted); font-size: 9px; }
+.cf-overview-run-counts span { display: inline-flex; align-items: baseline; gap: 4px; }
+.cf-overview-run-counts b { color: var(--text); font: 700 13px Georgia, serif; }
+.cf-overview-run-counts span.danger b { color: #9b382e; }
+.cf-overview-run-counts span.active b { color: var(--accent); }
+.cf-overview-run-summary > button {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  min-height: 31px;
+  padding: 0 10px;
+  border: 1px solid #deb18e;
+  border-radius: 5px;
+  background: #fff8f1;
+  color: var(--accent-dark);
+  font-size: 9px;
+  font-weight: 700;
+}
+.cf-overview-run-summary > button:hover { border-color: var(--accent); background: var(--accent-soft); }
+
+@media (min-width: 1001px) and (max-width: 1600px), (min-width: 1001px) and (max-height: 800px) {
+  .cf-overview-stat-strip { margin-top: 10px; }
+  .cf-overview-stat-strip > button { min-height: 55px; padding-block: 6px; }
+  .cf-overview-comfort-grid { margin-top: 13px; gap: 26px; }
+  .cf-overview-comfort-side { padding-left: 24px; gap: 18px; }
+  .cf-overview-run-summary { min-height: 86px; padding: 9px 0; }
+}
+
+@container overview (max-width: 800px) {
+  .cf-overview-stat-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cf-overview-stat-strip > button:nth-child(2) { border-right: 0; }
+  .cf-overview-stat-strip > button:nth-child(-n + 2) { border-bottom: 1px solid var(--line); }
+  .cf-overview-comfort-grid { grid-template-columns: 1fr; gap: 24px; }
+  .cf-overview-comfort-side { padding-left: 0; border-left: 0; }
+}
+
+@media (max-width: 700px) {
+  .cf-overview-comfort-grid { grid-template-columns: 1fr; gap: 24px; }
+  .cf-overview-comfort-side { padding-left: 0; border-left: 0; }
+  .cf-overview-run-summary { grid-template-columns: 1fr; }
+  .cf-overview-run-summary > button { grid-column: 1; grid-row: auto; justify-self: start; }
+}
+
+/* Run Activity owns the metric strip. Keep its hierarchy clear at a glance. */
+.cf-overview-activity-block { min-width: 0; margin-top: 14px; }
+.cf-overview-activity-heading {
+  min-height: 31px;
+  padding-bottom: 6px;
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 14px;
+  border-bottom: 1px solid var(--line-2);
+}
+.cf-overview-activity-heading > div { min-width: 0; }
+.cf-overview-activity-heading span { color: var(--accent); font: 750 9px var(--mono); }
+.cf-overview-activity-heading h2 { margin-top: 3px; font: 700 17px/1 Georgia, "Songti SC", "SimSun", serif; }
+.cf-overview-activity-heading p { color: var(--muted); font-size: 9px; }
+.cf-overview-activity-block .cf-overview-stat-strip { margin-top: 0; }
+.cf-overview-stat-strip > button { min-height: 68px; padding: 9px 14px 8px; }
+.cf-overview-stat-strip span { font-size: 10px; }
+.cf-overview-stat-strip strong { font-size: 25px; }
+.cf-overview-stat-strip small { font-size: 9px; }
+.cf-overview-stat-strip > button > i { height: 3px; }
+@media (min-width: 1001px) and (max-width: 1600px), (min-width: 1001px) and (max-height: 800px) {
+  .cf-overview-activity-block { margin-top: 10px; }
+  .cf-overview-activity-heading { min-height: 28px; padding-bottom: 5px; }
+  .cf-overview-activity-heading h2 { font-size: 16px; }
+  .cf-overview-stat-strip > button { min-height: 64px; padding-block: 7px; }
+  .cf-overview-stat-strip strong { font-size: 23px; }
+}
+
+@media (max-width: 700px) {
+  .cf-overview-activity-heading { display: grid; align-items: start; gap: 4px; }
+  .cf-overview-stat-strip > button { min-height: 66px; }
 }

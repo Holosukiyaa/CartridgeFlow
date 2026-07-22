@@ -75,9 +75,46 @@
 }
 
 .cf-workbench-titlebar {
+  flex: 1 1 auto;
   min-width: 0;
   align-items: baseline !important;
   overflow: hidden;
+}
+
+.cf-workbench-header > div:last-child {
+  flex: 0 0 auto;
+}
+
+.cf-workbench-header > div:last-child button {
+  white-space: nowrap;
+}
+
+@media (max-width: 1250px) {
+  .cf-workbench-header > div:last-child {
+    gap: 5px !important;
+  }
+
+  .cf-workbench-header > div:last-child .cf-outline-btn,
+  .cf-workbench-header > div:last-child .cf-accent-btn {
+    min-height: 29px !important;
+    padding-inline: 7px !important;
+    font-size: 11px !important;
+  }
+
+  .cf-workbench-titlebar .cf-page-subtitle {
+    display: none;
+  }
+
+  .cf-workbench-titlebar .cf-page-title {
+    max-width: 210px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .cf-contract-strip {
+    max-width: 275px;
+  }
 }
 
 .cf-contract-strip {

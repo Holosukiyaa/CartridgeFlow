@@ -3,8 +3,10 @@ import type { ArtifactItem, FlowEvent, FlowGraph, FlowLabDetail, FlowNode, RunRe
 import { ApiError, controlCartridgeRun, fetchCartridgeRunCheckpoints, uploadWorkspaceFile } from '../../api.ts'
 import { showToast } from '../../toast.tsx'
 import { DlcSandboxFrame } from '../../components/DlcSandboxFrame.tsx'
+import { InteractionSandboxFrame } from '../../components/InteractionSandboxFrame.tsx'
 import { FlowGraphView } from './FlowGraphView.tsx'
 import { getProcessDisplayLabel, getProtocolKind } from './nodeModel.ts'
+import { passiveHtmlDocument } from './passiveHtml.ts'
 import './TestBench.css'
 
 export type NodeRunState = {
@@ -467,16 +469,25 @@ function PendingInteractionForm({
 }: {
   pending: any
   disabled?: boolean
-  onSubmit: (values: Record<string, any>) => void
+  onSubmit: (values: Record<string, any>, options?: Record<string, any>) => void
   artifacts?: ArtifactItem[]
   nodeById?: Map<string, FlowNode>
   artifactScopeLabel?: string
 }) {
   const question = pending?.question || {}
-  const schema = question.input_schema || {}
-  const properties = schema?.type === 'object' && schema.properties ? schema.properties : { answer: { type: 'string', title: '回复' } }
+  const isV2 = pending?.schema === 'cartridgeflow.pending_interaction.v2'
+  const isSandboxed = isV2 && pending?.presentation?.component_runtime === 'sandboxed'
+  const allowedActions = isV2 && Array.isArray(pending?.allowed_actions)
+    ? pending.allowed_actions.map((item: any) => typeof item === 'string'
+      ? { id: item, label: pending?.action_labels?.[item] || item }
+      : item)
+    : []
+  const [selectedActionId, setSelectedActionId] = useState(String(allowedActions[0]?.id || ''))
+  const schema = isV2 ? pending?.action_schemas?.[selectedActionId] || { type: 'object' } : question.input_schema || {}
+  const properties = schema?.type === 'object' ? schema.properties || {} : { answer: { type: 'string', title: '回复' } }
   const required = new Set<string>(Array.isArray(schema.required) ? schema.required : [])
   const [values, setValues] = useState<Record<string, any>>({})
+  const [sandboxDraftHash, setSandboxDraftHash] = useState('')
   const [showArtifacts, setShowArtifacts] = useState(false)
   const canSubmitValues = (candidate: Record<string, any>) => Object.keys(properties).every((key) => !required.has(key) || candidate[key] !== undefined && candidate[key] !== '')
   const isConfirmValue = (item: string) => ['approve', 'approved', 'confirm', 'confirmed', 'yes', '通过'].includes(item.trim().toLowerCase())
@@ -505,7 +516,10 @@ function PendingInteractionForm({
   }
   useEffect(() => {
     setValues({})
+    setSandboxDraftHash('')
     setShowArtifacts(false)
+    const firstAction = pending?.allowed_actions?.[0]
+    setSelectedActionId(String(typeof firstAction === 'string' ? firstAction : firstAction?.id || ''))
   }, [pending?.interaction_id])
   return (
     <div className="cf-pending-card">
@@ -514,6 +528,28 @@ function PendingInteractionForm({
         <code>{question.store_key || pending?.interaction_id || 'user_reply'}</code>
       </div>
       <p>{question.prompt || '该节点需要用户输入后继续。'}</p>
+      {isV2 && pending?.presentation?.html && (
+        <iframe className="cf-passive-interaction-frame" title="interaction preview" sandbox="" srcDoc={passiveHtmlDocument(pending.presentation.html)} />
+      )}
+      {isSandboxed && (
+        <InteractionSandboxFrame
+          pending={pending}
+          onDraft={(value, draftHash) => { setValues(value); setSandboxDraftHash(draftHash) }}
+          onPropose={(actionId) => { if (allowedActions.some((item: any) => item.id === actionId)) setSelectedActionId(actionId) }}
+        />
+      )}
+      {isV2 && allowedActions.length > 0 && (
+        <div className="cf-host-action-picker">
+          <span>由底座提交下一步</span>
+          <div>
+            {allowedActions.map((action: any) => (
+              <button key={action.id} type="button" className={selectedActionId === action.id ? 'active' : ''} onClick={() => { setSelectedActionId(action.id); setValues({}) }}>
+                {action.label || action.id}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="cf-pending-draft-entry">
         <div className="cf-pending-draft-copy">
           <strong>草稿作品</strong>
@@ -537,7 +573,7 @@ function PendingInteractionForm({
           <ArtifactList artifacts={artifacts} nodeById={nodeById} compact />
         </div>
       )}
-      <div className="cf-pending-fields">
+      {!isSandboxed && <div className="cf-pending-fields">
         {Object.entries(properties).map(([key, config]: [string, any]) => {
           const enumValues = Array.isArray(config?.enum) ? config.enum.map((item: any) => String(item)) : []
           const enumNames = Array.isArray(config?.enumNames) ? config.enumNames.map((item: any) => String(item)) : []
@@ -577,11 +613,17 @@ function PendingInteractionForm({
             </label>
           )
         })}
-      </div>
+      </div>}
+      {isSandboxed && <div className={`cf-sandbox-draft-state ${sandboxDraftHash ? 'ready' : ''}`}><strong>{sandboxDraftHash ? '草稿已由底座保存' : '等待组件写入草稿'}</strong><span>{sandboxDraftHash ? `sha256:${sandboxDraftHash.slice(0, 12)}…` : '脚本不能直接提交或改变 Flow'}</span></div>}
       {revisionSelected && !hasRevisionFeedback && (
         <p className="cf-pending-validation">回到上一步前，请填写本次不满意的原因或具体修改要求。</p>
       )}
-      <button type="button" className="cf-btn-accent" disabled={disabled || !canSubmit} onClick={() => onSubmit(values)}>
+      <button type="button" className="cf-btn-accent" disabled={disabled || !canSubmit || (isV2 && !selectedActionId) || (isSandboxed && !sandboxDraftHash)} onClick={() => onSubmit(values, isV2 ? {
+        action_id: selectedActionId,
+        input_revision: pending?.input_snapshot?.input_revision,
+        idempotency_key: `${pending?.interaction_id}:${selectedActionId}:${pending?.input_snapshot?.input_revision || ''}`,
+        ...(isSandboxed ? { draft_hash: sandboxDraftHash } : {}),
+      } : undefined)}>
         提交并继续
       </button>
     </div>
@@ -856,7 +898,7 @@ export function TestBenchView({
   runs: RunResult[]
   events: FlowEvent[]
   onTestRun: (inputs: Record<string, string>, probeRange?: TestProbeRange, mode?: 'full' | 'probe', testMode?: Record<string, any>) => Promise<void> | void
-  onAnswerPendingInteraction?: (runId: string, values: Record<string, any>) => Promise<void> | void
+  onAnswerPendingInteraction?: (runId: string, values: Record<string, any>, options?: Record<string, any>) => Promise<void> | void
   onRefresh: () => void
   onManageMcp?: () => void
 }) {
@@ -1096,7 +1138,7 @@ export function TestBenchView({
     }
   }
 
-  const answerPending = (values: Record<string, any>) => {
+  const answerPending = (values: Record<string, any>, options?: Record<string, any>) => {
     if (!latestRun?.run_id || !onAnswerPendingInteraction) return
     if (rawPendingKey) setLockedPendingKey(rawPendingKey)
     setIsRunning(true)
@@ -1109,7 +1151,7 @@ export function TestBenchView({
     const releaseTimer = window.setTimeout(() => {
       setIsRunning(false)
     }, 900)
-    void Promise.resolve(onAnswerPendingInteraction(latestRun.run_id, values))
+    void Promise.resolve(onAnswerPendingInteraction(latestRun.run_id, values, options))
       .catch(() => {
         setLockedPendingKey('')
       })

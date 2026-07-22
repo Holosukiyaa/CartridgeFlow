@@ -8,23 +8,22 @@ import HomePage from './pages/HomePage.tsx'
 import FlowWorkbench from './pages/FlowWorkbench.tsx'
 import ModelConfigPage from './pages/ModelConfigPage.tsx'
 import ResourceConfigPage from './pages/ResourceConfigPage.tsx'
-import EnvironmentPage from './pages/EnvironmentPage.tsx'
 import ReleasePage from './pages/ReleasePage.tsx'
+import RunDiagnosticsPage from './pages/RunDiagnosticsPage.tsx'
 import SettingsPage from './pages/SettingsPage.tsx'
 import type { WorkbenchMode } from './pages/flow-workbench/types.ts'
 
-const STUDIO_VERSION = versionSource.trim().replace(/^CartridgeFlow-/, '') || 'v0.2.0'
+const STUDIO_VERSION = versionSource.trim().replace(/^CartridgeFlow-/, '') || 'v0.3.0'
 
 const NAV_GROUPS = [
   { label: '工作台', items: [
     { path: '/', label: '全局概览', desc: 'Base Overview', short: '总' },
     { path: '/projects', label: 'Flow管理', desc: 'Flows', short: '流' },
+    { path: '/diagnostics', label: '运行诊断', desc: 'Runs & Recovery', short: '诊' },
   ] },
   { label: '本地资源', items: [
     { path: '/models', label: '模型配置', desc: 'Local Models', short: '模' },
     { path: '/tools', label: '工具配置', desc: 'Tools & APIs', short: '工' },
-    { path: '/sources', label: '数据来源', desc: 'Data Sources', short: '数' },
-    { path: '/environment', label: '环境与凭据', desc: 'Local Secrets', short: '环' },
   ] },
   { label: '交付', items: [
     { path: '/release', label: '打包发布', desc: 'Package & Release', short: '发' },
@@ -32,7 +31,7 @@ const NAV_GROUPS = [
 ]
 
 function projectPath(flowId: string, mode: WorkbenchMode) {
-  const workspace = mode === 'run' ? 'test' : mode === 'models' ? 'models' : 'design'
+  const workspace = mode === 'run' ? 'test' : mode === 'models' ? 'models' : mode === 'assets' ? 'assets' : 'design'
   return `/projects/${encodeURIComponent(flowId)}/${workspace}`
 }
 
@@ -43,10 +42,10 @@ function ProjectWorkbenchRoute() {
     if (flowId) localStorage.setItem('cf.studio.recent_project', flowId)
   }, [flowId])
   if (!flowId) return <Navigate to="/projects" replace />
-  if (!['design', 'test', 'models'].includes(workspaceMode)) {
+  if (!['design', 'assets', 'test', 'models'].includes(workspaceMode)) {
     return <Navigate to={projectPath(flowId, 'design')} replace />
   }
-  const mode: WorkbenchMode = workspaceMode === 'test' ? 'run' : workspaceMode === 'models' ? 'models' : 'design'
+  const mode: WorkbenchMode = workspaceMode === 'test' ? 'run' : workspaceMode === 'models' ? 'models' : workspaceMode === 'assets' ? 'assets' : 'design'
   return (
     <FlowWorkbench
       flowId={flowId}
@@ -135,10 +134,11 @@ export default function App() {
           <Route path="/projects" element={<LabPage />} />
           <Route path="/projects/:flowId" element={<ProjectWorkbenchRoute />} />
           <Route path="/projects/:flowId/:workspaceMode" element={<ProjectWorkbenchRoute />} />
+          <Route path="/diagnostics" element={<RunDiagnosticsPage />} />
           <Route path="/models" element={<ModelConfigPage />} />
-          <Route path="/tools" element={<ResourceConfigPage mode="tools" />} />
-          <Route path="/sources" element={<ResourceConfigPage mode="sources" />} />
-          <Route path="/environment" element={<EnvironmentPage />} />
+          <Route path="/tools" element={<ResourceConfigPage />} />
+          <Route path="/sources" element={<Navigate to="/tools" replace />} />
+          <Route path="/environment" element={<Navigate to="/settings?section=environment" replace />} />
           <Route path="/release" element={<ReleasePage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/preview/*" element={<Navigate to="/" replace />} />

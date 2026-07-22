@@ -1,7 +1,7 @@
 """MCP Tool Slot Skeleton。
 
 声明 MCP 工具槽的元数据结构，让 Root Flow node 的 tools 支持 type="mcp"。
-当前只做声明和展示，不执行真实 MCP 工具调用。
+本模块只负责声明和展示；角色绑定后的真实 MCP 调用由 Studio 外部资源适配层执行。
 """
 
 # 支持的 tool 类型

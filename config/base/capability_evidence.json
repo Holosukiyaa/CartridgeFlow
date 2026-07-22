@@ -21,7 +21,7 @@
       "implementation": ["src/core/protocol/compatibility.py#build_compatibility_report"],
       "positive_tests": ["test_runtime_contract.RuntimeContractConformanceTest.test_protocol_manifest_is_compatible"],
       "failure_tests": ["test_compatibility_report.CompatibilityReportConformanceTest.test_missing_required_capability_blocks"],
-      "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/ReleasePage.tsx"]}
+      "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/ReleasePage.tsx", "src/frontend/src/components/CapabilityEvidenceViewer.tsx"]}
     },
     "root_runtime": {
       "verification": "verified",
@@ -234,9 +234,9 @@
     "runtime_errors": {
       "verification": "verified",
       "implementation": ["src/core/runtime/errors.py#build_runtime_error", "src/core/cartridge/runner.py#CartridgeRunner"],
-      "positive_tests": ["test_runtime_errors.RuntimeErrorEnvelopeTests.test_public_envelope_is_complete_and_redacts_secret_causes"],
+      "positive_tests": ["test_runtime_errors.RuntimeErrorEnvelopeTests.test_public_envelope_is_complete_and_redacts_secret_causes", "test_runtime_errors.RuntimeErrorEnvelopeTests.test_diagnostic_bundle_aggregates_run_evidence_and_redacts_secrets"],
       "failure_tests": ["test_runtime_errors.RuntimeErrorEnvelopeTests.test_missing_provider_configuration_is_not_normal_success", "test_runtime_errors.RuntimeErrorEnvelopeTests.test_tool_worker_failures_have_distinct_stable_codes"],
-      "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/flow-workbench/TestBenchView.tsx"]}
+      "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/flow-workbench/TestBenchView.tsx", "src/frontend/src/pages/RunDiagnosticsPage.tsx"]}
     },
     "runtime_state": {
       "verification": "verified",
@@ -250,14 +250,14 @@
       "implementation": ["src/core/runtime/checkpoints.py#CheckpointManager", "src/core/cartridge/runner.py#CartridgeRunner._checkpoint_handlers"],
       "positive_tests": ["test_runtime_recovery.RuntimeRecoveryTests.test_checkpoint_round_trip_preserves_run_and_store", "test_runtime_recovery.RuntimeRecoveryTests.test_completed_flow_has_before_and_after_checkpoint_for_every_node"],
       "failure_tests": [],
-      "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/flow-workbench/TestBenchView.tsx"]}
+      "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/flow-workbench/TestBenchView.tsx", "src/frontend/src/pages/RunDiagnosticsPage.tsx"]}
     },
     "runtime_recovery": {
       "verification": "verified",
       "implementation": ["src/core/cartridge/runner.py#CartridgeRunner.recover_run"],
       "positive_tests": ["test_runtime_recovery.RuntimeRecoveryTests.test_resume_checkpoint_rollback_and_restart_are_distinct_actions", "test_runtime_recovery.RuntimeRecoveryTests.test_retry_current_node_restores_before_checkpoint"],
       "failure_tests": ["test_runtime_recovery.RuntimeRecoveryTests.test_non_idempotent_tool_never_retries_automatically"],
-      "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/flow-workbench/TestBenchView.tsx"]}
+      "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/flow-workbench/TestBenchView.tsx", "src/frontend/src/pages/RunDiagnosticsPage.tsx"]}
     },
     "replay_guard": {
       "verification": "verified",
@@ -283,9 +283,39 @@
     "local_resources": {
       "verification": "verified",
       "implementation": ["src/core/studio/resources.py#normalize_resources", "src/core/studio/resource_resolver.py#resolve_cartridge_resources", "src/core/studio/resource_resolver.py#resolve_runtime_tool_binding", "src/core/cartridge/runner.py#CartridgeRunner.create_run", "src/core/lab/node_executor.py#LabNodeExecutor._tool_call"],
-      "positive_tests": ["test_studio_resources.StudioResourcesTests.test_normalizes_resources_and_deduplicates_bindings", "test_studio_environment.StudioEnvironmentTests.test_package_binding_descriptor_never_contains_credential_value", "test_runtime_recovery.RuntimeRecoveryTests.test_bound_external_tool_receives_private_connection_only_at_call_time"],
+      "positive_tests": ["test_studio_resources.StudioResourcesTests.test_normalizes_resources_and_deduplicates_bindings", "test_studio_environment.StudioEnvironmentTests.test_package_binding_descriptor_never_contains_credential_value", "test_runtime_recovery.RuntimeRecoveryTests.test_bound_external_tool_is_dispatched_without_exposing_connection_in_params"],
       "failure_tests": ["test_studio_environment.StudioEnvironmentTests.test_resource_preflight_blocks_incomplete_bound_resources", "test_studio_environment.StudioEnvironmentTests.test_runtime_tool_binding_uses_role_snapshot_and_rejects_changes", "test_runtime_recovery.RuntimeRecoveryTests.test_required_local_resource_role_blocks_before_run"],
       "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/ResourceConfigPage.tsx"]}
+    },
+    "external_resources": {
+      "verification": "verified",
+      "implementation": ["src/core/studio/external_adapters.py#execute_external_tool", "src/core/studio/external_adapters.py#cancel_external_calls_for_run", "src/core/studio/external_adapters.py#shutdown_active_external_calls", "src/core/lab/node_executor.py#LabNodeExecutor._tool_call", "src/core/cartridge/runner.py#CartridgeRunner.control_with_options"],
+      "positive_tests": ["test_external_adapters.ExternalAdapterTests.test_remote_http_executes_openapi_operation_with_local_auth", "test_external_adapters.ExternalAdapterTests.test_cli_adapter_uses_json_stdio_and_local_environment", "test_external_adapters.ExternalAdapterTests.test_mcp_stdio_performs_real_initialize_and_tool_call", "test_external_adapters.ExternalAdapterTests.test_mcp_streamable_http_performs_real_tool_call", "test_external_adapters.ExternalAdapterTests.test_node_executor_uses_real_external_adapter_path"],
+      "failure_tests": ["test_external_adapters.ExternalAdapterTests.test_remote_http_reports_auth_and_timeout_without_private_connection_details", "test_external_adapters.ExternalAdapterTests.test_cli_adapter_is_terminated_when_run_is_cancelled"],
+      "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/ResourceConfigPage.tsx"]}
+    },
+    "interaction_assets": {
+      "verification": "verified",
+      "implementation": ["src/core/cartridge/assets.py#load_asset_bundle", "src/core/lab/node_executor.py#LabNodeExecutor._render_interaction", "src/core/cartridge/runner.py#CartridgeRunner.answer_pending_interaction"],
+      "positive_tests": ["test_interaction_assets.InteractionAssetRuntimeTests.test_new_dev_flow_is_v07_compatible_and_asset_backed", "test_interaction_assets.InteractionAssetRuntimeTests.test_interaction_executor_displays_or_pauses_without_running_html", "test_interaction_assets.InteractionAssetRuntimeTests.test_named_action_resume_is_static_and_fail_closed"],
+      "failure_tests": ["test_interaction_assets.InteractionAssetRuntimeTests.test_passive_html_rejects_script_events_and_external_navigation", "test_interaction_assets.InteractionAssetRuntimeTests.test_asset_bundle_validates_integrity_and_interaction_nodes"],
+      "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/flow-workbench/AssetWorkbench.tsx", "src/frontend/src/pages/flow-workbench/NodeDrawer.tsx", "src/frontend/src/pages/flow-workbench/TestBenchView.tsx"]},
+      "notes": "Passive HTML remains non-executable; scripted components use the separately evidenced sandbox path."
+    },
+    "sandbox_interactions": {
+      "verification": "verified",
+      "implementation": ["src/core/extensions/descriptor.py#load_portable_dlc_descriptor", "src/core/extensions/sandbox_renderer.py#serve", "src/core/extensions/sandbox_service.py#SandboxRendererManager", "src/backend/main.py#get_interaction_sandbox", "src/backend/main.py#handle_interaction_host_request", "src/frontend/src/components/InteractionSandboxFrame.tsx"],
+      "positive_tests": ["test_sandboxed_interaction.SandboxedInteractionTests.test_descriptor_bundle_and_dedicated_renderer"],
+      "failure_tests": ["test_sandboxed_interaction.SandboxedInteractionTests.test_inline_script_is_rejected_before_activation"],
+      "ui": {"status": "developer_visible", "entries": ["src/frontend/src/components/InteractionSandboxFrame.tsx", "src/frontend/src/pages/flow-workbench/TestBenchView.tsx"]},
+      "notes": "Each component receives a token-scoped resource process, strict CSP, credentialless opaque iframe, one-time MessageChannel and Host-enforced capability allowlist."
+    },
+    "portability_report": {
+      "verification": "verified",
+      "implementation": ["src/core/studio/portability.py#build_portability_report", "src/backend/main.py#_release_preflight_for_cartridge", "src/backend/main.py#package_cartridge"],
+      "positive_tests": ["test_portability.PortabilityReportTests.test_reports_packaged_assets_and_local_rebinds"],
+      "failure_tests": ["test_portability.PortabilityReportTests.test_missing_binding_and_secret_file_block_packaging", "test_portability.PortabilityReportTests.test_sensitive_connection_fields_and_absolute_paths_are_forbidden", "test_portability.PortabilityReportTests.test_permission_declarations_are_audited"],
+      "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/ReleasePage.tsx"]}
     },
     "delivery_guard": {
       "verification": "verified",
@@ -303,6 +333,7 @@
     "root_flow_execution": "root_runtime",
     "basic_node_execution": "root_runtime",
     "builtin_tool_call": "builtin_tools",
+    "remote_tool_call": "external_resources",
     "artifact_collect": "artifacts",
     "artifact_preview": "artifacts",
     "testbench_run": "testbench",
@@ -333,7 +364,22 @@
     "runtime_user_input_request": "interaction_resume",
     "paused_waiting_user_status": "interaction_resume",
     "pending_interaction_record": "interaction_resume",
+    "pending_interaction_record_v2": "interaction_assets",
     "runtime_resume_after_user_input": "interaction_resume",
+    "node_display_name": "interaction_assets",
+    "package_asset_registry": "interaction_assets",
+    "stable_asset_reference": "interaction_assets",
+    "interaction_component_registry": "interaction_assets",
+    "interaction_node": "interaction_assets",
+    "interaction_named_action_routes": "interaction_assets",
+    "passive_html_safety": "interaction_assets",
+    "sandboxed_interaction_component": "sandbox_interactions",
+    "interaction_script_csp": "sandbox_interactions",
+    "interaction_network_guard": "sandbox_interactions",
+    "interaction_process_isolation": "sandbox_interactions",
+    "interaction_host_channel": "sandbox_interactions",
+    "interaction_host_capability_guard": "sandbox_interactions",
+    "cartridge_portability_report": "portability_report",
     "portable_dlc_descriptor": "dlc_descriptor",
     "portable_dlc_validate": "dlc_descriptor",
     "cartridge_scoped_tool_registry": "dlc_registry",

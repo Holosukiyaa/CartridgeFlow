@@ -63,6 +63,7 @@ class ConformanceReportingTests(unittest.TestCase):
         self.assertEqual("scripts/run_conformance.py", conformance["report_command"].split()[-1])
 
     def test_report_expands_all_declared_capabilities_and_round_trips(self):
+        base = json.loads((ROOT / "config" / "base" / "BASE_IMPLEMENTATION.json").read_text(encoding="utf-8"))
         evidence = json.loads((ROOT / "config" / "base" / "capability_evidence.json").read_text(encoding="utf-8"))
         selectors = set()
         for record in evidence["evidence_sets"].values():
@@ -72,9 +73,11 @@ class ConformanceReportingTests(unittest.TestCase):
         report = build_conformance_report(ROOT, cases)
 
         self.assertEqual(REPORT_SCHEMA, report["schema"])
-        self.assertEqual(65, report["capabilities"]["declared"])
+        self.assertEqual(len(base["capabilities"]), report["capabilities"]["declared"])
         self.assertFalse(report["capabilities"]["configuration_errors"])
         self.assertEqual(0, report["capabilities"]["counts"]["failing"])
+        status_by_id = {item["id"]: item["status"] for item in report["capabilities"]["items"]}
+        self.assertEqual("verified", status_by_id["remote_tool_call"])
         with tempfile.TemporaryDirectory() as temp_dir:
             target = Path(temp_dir) / "latest.json"
             write_conformance_report(ROOT, report, target)

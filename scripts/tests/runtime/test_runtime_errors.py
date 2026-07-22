@@ -98,9 +98,15 @@ class RuntimeErrorEnvelopeTests(unittest.TestCase):
             "failed": True,
             "tool_results": [{"result": {"ok": False, "code": "dlc_worker_failed", "error": "exit 1"}}],
         }, run_id="run_test", node_id="render")
+        cancelled = error_from_node_result({
+            "action": "tool_call",
+            "failed": True,
+            "tool_results": [{"result": {"ok": False, "code": "tool_cancelled", "error": "cancelled"}}],
+        }, run_id="run_test", node_id="render")
 
         self.assertEqual("TOOL_TIMEOUT", timeout["code"])
         self.assertEqual("TOOL_WORKER_CRASHED", crashed["code"])
+        self.assertEqual("TOOL_CANCELLED", cancelled["code"])
 
     def test_run_snapshot_and_events_share_one_error_identity(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -160,6 +166,41 @@ class RuntimeErrorEnvelopeTests(unittest.TestCase):
         handler_payload = json.loads(handler_response.body)
         self.assertEqual(original["error_id"], handler_payload["error_envelope"]["error_id"])
         self.assertEqual(original["code"], handler_payload["error_envelope"]["code"])
+
+    def test_diagnostic_bundle_aggregates_run_evidence_and_redacts_secrets(self):
+        from fastapi.testclient import TestClient
+        from backend.main import app
+
+        class DiagnosticRunner:
+            def get_run(self, run_id):
+                return {
+                    "run_id": run_id,
+                    "cartridge_id": "test.diagnostic",
+                    "status": "failed",
+                    "current_state": "writer",
+                    "inputs": {"api_key": "must-not-leak", "topic": "safe"},
+                    "error": build_runtime_error("PROVIDER_AUTH_FAILED", run_id=run_id, node_id="writer"),
+                    "artifacts": [],
+                }
+
+            def get_events(self, run_id):
+                return [{"type": "run_failed", "message": "Authorization: Bearer secret-value", "created_at": "2026-01-01T00:00:00"}]
+
+            def list_checkpoints(self, run_id):
+                return [{"checkpoint_id": "cp_1", "node_id": "writer", "phase": "before", "outcome": "entered"}]
+
+        with patch("backend.main.runner", DiagnosticRunner()):
+            response = TestClient(app).get("/api/cartridge-runs/run_ai/diagnostics")
+        payload = response.json()
+        serialized = json.dumps(payload)
+
+        self.assertEqual(200, response.status_code)
+        self.assertEqual("cartridgeflow.diagnostic_bundle.v1", payload["schema"])
+        self.assertEqual("PROVIDER_AUTH_FAILED", payload["summary"]["error_code"])
+        self.assertEqual(1, payload["summary"]["event_count"])
+        self.assertEqual(1, payload["summary"]["checkpoint_count"])
+        self.assertNotIn("must-not-leak", serialized)
+        self.assertNotIn("secret-value", serialized)
 
 
 if __name__ == "__main__":

@@ -13,12 +13,15 @@ IO 约定：
 
 from __future__ import annotations
 import asyncio
+import hashlib
 import json
 import re
 import time
+from datetime import datetime
 from pathlib import Path
 
 from core.cartridge.node_normalizer import normalize_runtime_node
+from core.cartridge.assets import load_asset_bundle, materialize_passive_html
 from core.protocol import parse_decision_envelope, validate_decision_envelope, validate_tool_plan
 from core.protocol.decision_envelope import make_blocked_decision_envelope, make_mock_decision_envelope
 from core.runtime.state_machine import assert_transition
@@ -100,6 +103,7 @@ class LabNodeExecutor:
             "show_ui": self._show_ui,
             "render_ui": self._show_ui,
             "show_result": self._show_ui,
+            "render_interaction": self._render_interaction,
             "llm_prompt": self._llm_prompt,
             "tool_call": self._tool_call,
             "remote_call": self._remote_call,
@@ -397,8 +401,6 @@ class LabNodeExecutor:
                         "contract": self._contract_metadata({}),
                     })
                     continue
-            if local_binding:
-                tool_params["_local_resource"] = local_binding["connection"]
             if params.get("include_runtime_test_mode"):
                 tool_params["_runtime_test_mode"] = dict(_run.get("test_mode") or {})
             if server == "filesystem" and isinstance(tool_params.get("path"), str):
@@ -411,13 +413,8 @@ class LabNodeExecutor:
                     tool_name,
                     tool_params,
                     contract,
+                    external_binding=local_binding,
                 )
-                if local_binding and result.get("ok") is False and not result.get("code"):
-                    result = {
-                        **result,
-                        "code": "dependency_unavailable",
-                        "error": f"No runtime adapter is registered for local resource role {local_binding['role']}",
-                    }
                 tool_results.append({
                     "server": server,
                     "tool": tool_name,
@@ -473,7 +470,16 @@ class LabNodeExecutor:
             "unreplayable_reason": str(contract.get("unreplayable_reason") or ""),
         }
 
-    def _call_tool_with_retry(self, registry, server: str, tool_name: str, params: dict, contract: dict) -> tuple[dict, list[dict], dict | None]:
+    def _call_tool_with_retry(
+        self,
+        registry,
+        server: str,
+        tool_name: str,
+        params: dict,
+        contract: dict,
+        *,
+        external_binding: dict | None = None,
+    ) -> tuple[dict, list[dict], dict | None]:
         retry_policy = contract.get("retry_policy") if isinstance(contract.get("retry_policy"), dict) else {}
         try:
             max_attempts = max(1, min(5, int(retry_policy.get("max_attempts") or 1)))
@@ -495,11 +501,24 @@ class LabNodeExecutor:
             assert_transition("tool", state, "running")
             state = "running"
             attempt_started = time.monotonic()
-            result = registry.call(server, tool_name, params)
+            if external_binding:
+                from core.studio.external_adapters import execute_external_tool
+
+                result = execute_external_tool(external_binding, server, tool_name, params, contract)
+            else:
+                result = registry.call(server, tool_name, params)
             result = result if isinstance(result, dict) else {"ok": False, "code": "tool_invalid_response", "error": "Tool response must be an object"}
             duration_ms = round((time.monotonic() - attempt_started) * 1000, 3)
             code = str(result.get("code") or "")
-            target = "succeeded" if result.get("ok") is not False else "timed_out" if code in {"dlc_worker_timeout", "tool_timeout"} else "failed"
+            target = (
+                "succeeded"
+                if result.get("ok") is not False
+                else "timed_out"
+                if code in {"dlc_worker_timeout", "tool_timeout"}
+                else "cancelled"
+                if code in {"dlc_worker_cancelled", "tool_cancelled"}
+                else "failed"
+            )
             assert_transition("tool", state, target)
             state = target
             attempts.append({
@@ -532,6 +551,8 @@ class LabNodeExecutor:
         return result, attempts, retry_blocked
 
     def _tool_result_retryable(self, result: dict) -> bool:
+        if isinstance(result.get("retryable"), bool):
+            return result["retryable"]
         code = str(result.get("code") or "").lower()
         if code in {"dlc_worker_timeout", "dlc_worker_failed", "tool_timeout", "dependency_unavailable"}:
             return True
@@ -676,6 +697,150 @@ class LabNodeExecutor:
             "ui_markdown": markdown,
             "path": path,
         }
+
+    def _render_interaction(self, params: dict, store: dict, run: dict, _run_dir) -> dict:
+        package_path = run.get("package_path")
+        if not package_path:
+            raise RuntimeError("interaction node requires a cartridge package path")
+        manifest = {
+            "id": run.get("cartridge_id"),
+            "version": run.get("cartridge_version"),
+            "runtime_contract": run.get("runtime_contract") or {},
+            "mcp_tools": run.get("mcp_tools") or [],
+            "portable_dlc": run.get("portable_dlc"),
+            "asset_registry": run.get("asset_registry"),
+            "interaction_components": run.get("interaction_components"),
+        }
+        bundle = load_asset_bundle(package_path, manifest, include_content=True)
+        component_id = str(params.get("component_ref") or "").strip()
+        component = (bundle.get("component_by_id") or {}).get(component_id)
+        if not component:
+            raise RuntimeError(f"interaction component not found: {component_id}")
+        mode = str(params.get("interaction_mode") or "display").strip()
+        if mode not in component.get("supported_modes", []):
+            raise RuntimeError(f"interaction mode is not supported by {component_id}: {mode}")
+        asset = (bundle.get("asset_by_id") or {}).get(component.get("entry_asset_id")) or {}
+        html = materialize_passive_html(str(asset.get("content") or ""), bundle) if component.get("runtime") == "passive" else ""
+        bindings = self._resolve_interaction_bindings(params.get("input_binding"), store, run)
+        presentation = {
+            "component_id": component_id,
+            "component_version": component.get("version"),
+            "component_runtime": component.get("runtime"),
+            "asset_id": asset.get("id"),
+            "entry_sha256": component.get("entry_sha256") or asset.get("sha256"),
+            "html": html,
+            "bindings": bindings,
+        }
+        if component.get("runtime") == "sandboxed":
+            presentation.update({
+                "frontend_ref": component.get("dlc_frontend_ref"),
+                "descriptor_sha256": component.get("descriptor_sha256"),
+                "host_capabilities": component.get("host_capabilities") or [],
+            })
+        if mode == "display":
+            return {
+                "action": "render_interaction",
+                "interaction_mode": mode,
+                "presentation": presentation,
+                "ui_type": "html",
+                "ui_html": html,
+            }
+
+        action_routes = params.get("action_routes") if isinstance(params.get("action_routes"), dict) else {}
+        declared_actions = {
+            str(item.get("id")): item
+            for item in component.get("actions") or []
+            if isinstance(item, dict) and item.get("id") in action_routes
+        }
+        if not declared_actions:
+            raise RuntimeError("collect/review interaction requires at least one routed component action")
+        input_schema = self._interaction_schema(bundle, component.get("input_schema"))
+        action_schemas = {
+            action_id: self._interaction_schema(bundle, action.get("payload_schema"))
+            for action_id, action in declared_actions.items()
+        }
+        revision_source = json.dumps(bindings, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
+        input_hash = hashlib.sha256(revision_source).hexdigest()
+        input_revision = 1
+        presentation["input_revision"] = input_revision
+        import uuid
+        pending = {
+            "schema": "cartridgeflow.pending_interaction.v2",
+            "interaction_id": f"pi_{uuid.uuid4().hex[:12]}",
+            "run_id": run.get("run_id"),
+            "status": "waiting_user",
+            "mode": mode,
+            "presentation": presentation,
+            "created_at": datetime.now().isoformat(timespec="seconds"),
+            "answered_at": None,
+            "answer_revision": 0,
+            "input_snapshot": {
+                "bindings": bindings,
+                "input_revision": input_revision,
+                "input_hash": input_hash,
+            },
+            "question": {
+                "id": f"{component_id}.{mode}",
+                "prompt": str(params.get("prompt") or component.get("label") or params.get("display_name") or "Please review and continue."),
+                "input_schema": input_schema,
+                "store_key": str(params.get("output") or "interaction_result"),
+            },
+            "allowed_actions": list(declared_actions.keys()),
+            "action_labels": {
+                action_id: str(action.get("label") or action_id)
+                for action_id, action in declared_actions.items()
+            },
+            "action_schemas": action_schemas,
+            "resume": {
+                "policy": "resume_by_action_route",
+                "action_routes": dict(action_routes),
+            },
+        }
+        store["_pending_interaction"] = pending
+        return {
+            "action": "render_interaction",
+            "interaction_mode": mode,
+            "paused": True,
+            "pause_status": "paused_waiting_user",
+            "pending_interaction": pending,
+        }
+
+    def _interaction_schema(self, bundle: dict, value) -> dict:
+        if isinstance(value, dict):
+            return value
+        reference = str(value or "").strip()
+        if not reference.startswith("asset:"):
+            return {"type": "object"}
+        asset = (bundle.get("asset_by_id") or {}).get(reference.removeprefix("asset:")) or {}
+        try:
+            parsed = json.loads(str(asset.get("content") or "{}"))
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"interaction schema asset is invalid JSON: {reference}") from exc
+        if not isinstance(parsed, dict):
+            raise RuntimeError(f"interaction schema asset must contain an object: {reference}")
+        return parsed
+
+    def _resolve_interaction_bindings(self, raw, store: dict, run: dict) -> dict:
+        if raw is None:
+            return {}
+        if not isinstance(raw, dict):
+            raise RuntimeError("interaction input_binding must be an object")
+        resolved = {}
+        for name, reference in raw.items():
+            reference = str(reference or "")
+            if reference.startswith("store:"):
+                path = reference.removeprefix("store:")
+                found, value = self._resolve_mapping_path(store, path)
+                resolved[str(name)] = value if found else None
+            elif reference.startswith("artifact:"):
+                artifact_id = reference.removeprefix("artifact:")
+                resolved[str(name)] = next(
+                    (item for item in run.get("artifacts") or [] if str(item.get("id") or item.get("artifact_id")) == artifact_id),
+                    None,
+                )
+            else:
+                raise RuntimeError(f"unsupported interaction binding: {reference}")
+        return resolved
 
     def _llm_prompt(self, params: dict, store: dict, run: dict, _run_dir) -> dict:
         preset_config = params.get("preset_config") or {}

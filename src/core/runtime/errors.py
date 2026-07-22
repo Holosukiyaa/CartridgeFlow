@@ -223,7 +223,7 @@ def _tool_error_code(result: dict) -> str:
             return "TOOL_TIMEOUT"
         if tool_code in {"dlc_worker_failed", "dlc_worker_invalid_response"}:
             return "TOOL_WORKER_CRASHED"
-        if tool_code == "dlc_worker_cancelled":
+        if tool_code in {"dlc_worker_cancelled", "tool_cancelled"}:
             return "TOOL_CANCELLED"
         if tool_code == "dlc_worker_host_exited":
             return "TOOL_HOST_EXITED"

@@ -1,4 +1,6 @@
 import os
+import json
+import re
 import sys
 import threading
 import uuid
@@ -14,7 +16,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from core.cartridge import CartridgeRegistry, CartridgeRunner
 from core.data_paths import (
@@ -30,6 +32,14 @@ from core.data_paths import (
 )
 from core.extensions import PortableDlcValidationError, load_portable_dlc_descriptor
 from core.cartridge.artifacts import ArtifactManager
+from core.cartridge.assets import (
+    CartridgeAssetError,
+    delete_asset,
+    delete_component,
+    load_asset_bundle,
+    write_asset,
+    write_component,
+)
 from core.lab import DevFlowManager, FlowGraphBuilder, FlowSteward
 from core.lab.todo import parse_todo_markdown
 from core.llm.config_manager import ensure_llm_config
@@ -71,6 +81,31 @@ def _http_error_code(status_code: int) -> str:
     if status_code in {400, 409, 422}:
         return "REQUEST_INVALID"
     return "INTERNAL_UNEXPECTED"
+
+
+_DIAGNOSTIC_SECRET_KEYS = {
+    "api_key", "apikey", "authorization", "auth", "token", "access_token",
+    "refresh_token", "secret", "password", "credential", "credentials", "private_key",
+}
+
+
+def _redact_diagnostic_value(value, key: str = ""):
+    """Keep diagnostic bundles useful to an AI without copying local secrets."""
+    lowered = str(key or "").lower().replace("-", "_")
+    if lowered in _DIAGNOSTIC_SECRET_KEYS or re.search(
+        r"api_?key|authorization|password|secret|token|cookie|credential", lowered, re.IGNORECASE,
+    ):
+        return "[redacted]"
+    if isinstance(value, dict):
+        return {str(child_key): _redact_diagnostic_value(child_value, str(child_key)) for child_key, child_value in value.items()}
+    if isinstance(value, list):
+        return [_redact_diagnostic_value(item, key) for item in value]
+    if isinstance(value, str):
+        text = value[:5000]
+        text = re.sub(r"(?i)(bearer\s+)[a-z0-9._~+/-]+", r"\1[redacted]", text)
+        text = re.sub(r"(?i)(api[_-]?key|token|secret|password|authorization)\s*[:=]\s*\S+", r"\1=[redacted]", text)
+        return text
+    return value
 
 
 @app.exception_handler(RuntimeFailure)
@@ -217,7 +252,26 @@ class CartridgeRunControl(BaseModel):
 class PendingInteractionAnswerPayload(BaseModel):
     values: dict = Field(default_factory=dict)
     answer: str | None = None
+    action_id: str | None = None
+    input_revision: str | int | None = None
+    idempotency_key: str | None = None
+    draft_hash: str | None = None
 
+
+class SandboxHostRequestPayload(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_: str = Field(alias="schema")
+    type: str
+    request_id: str
+    channel_id: str
+    run_id: str
+    cartridge_id: str
+    node_id: str
+    component_id: str
+    interaction_id: str
+    nonce: str
+    payload: dict = Field(default_factory=dict)
 
 class DevFlowCreate(BaseModel):
     flow_id: str
@@ -237,6 +291,19 @@ class DevFlowFileSave(BaseModel):
 
 class DevFlowFilesPayload(BaseModel):
     files: dict = Field(default_factory=dict)
+
+
+class CartridgeAssetPayload(BaseModel):
+    id: str
+    kind: str
+    path: str
+    media_type: str
+    content: str = ""
+    encoding: str = "utf-8"
+
+
+class InteractionComponentPayload(BaseModel):
+    component: dict = Field(default_factory=dict)
 
 
 class FlowStewardSuggestPayload(BaseModel):
@@ -301,9 +368,10 @@ class LLMSimpleProviderPayload(BaseModel):
 
 
 class StudioResourcesPayload(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
     version: int = 1
     tools: list[dict] = Field(default_factory=list)
-    sources: list[dict] = Field(default_factory=list)
     bindings: dict = Field(default_factory=dict)
 
 
@@ -327,6 +395,12 @@ class NodeUpdatePayload(BaseModel):
     kind: str | None = None
     executor: str | None = None
     effect: str | None = None
+    display_name: str | None = None
+    component_ref: str | None = None
+    interaction_mode: str | None = None
+    input_binding: dict | None = None
+    action_routes: dict | None = None
+    output: str | None = None
     display: dict | None = None
     input_kind: str | None = None
     source: str | None = None
@@ -635,11 +709,22 @@ async def test_llm_provider(payload: LLMTestPayload):
     provider = get_provider(payload.provider_id)
     if not provider:
         raise HTTPException(status_code=404, detail="Provider not found")
+    model = str(payload.model or provider.get("default_model") or "").strip()
+    missing = []
+    if not str(provider.get("base_url") or "").strip():
+        missing.append("URL")
+    if not str(provider.get("api_key") or "").strip():
+        missing.append("Key")
+    if not model:
+        missing.append("默认模型")
+    if missing:
+        mark_provider_tested(payload.provider_id, False)
+        raise HTTPException(status_code=400, detail=f"连接信息不完整：请填写{'、'.join(missing)}")
     cfg = ModelConfig(
         provider_id=provider.get("id", ""),
         api_type=provider.get("api_type", "openai"),
         wire_api=provider.get("wire_api", "chat_completions"),
-        model=payload.model or provider.get("default_model", ""),
+        model=model,
         api_key=provider.get("api_key", ""),
         base_url=provider.get("base_url") or None,
         max_tokens=64,
@@ -673,7 +758,13 @@ async def test_llm_provider(payload: LLMTestPayload):
     except Exception as e:
         from core.llm.errors import classify_llm_error
         error = classify_llm_error(e)
-        return {"ok": False, "error": str(error)[:500], "status_code": error.status_code, "retryable": error.retryable}
+        mark_provider_tested(payload.provider_id, False)
+        message = str(error)
+        api_key = str(provider.get("api_key") or "")
+        if api_key:
+            message = message.replace(api_key, "***")
+        status_code = error.status_code or (504 if "timeout" in message.lower() else 502)
+        raise HTTPException(status_code=status_code, detail=f"连接测试失败：{message[:500]}") from e
 
 
 @app.post("/api/llm/import/opencode")
@@ -867,6 +958,7 @@ def _release_preflight_for_cartridge(cartridge: dict) -> dict:
     from core.llm.config_manager import get_assignments, list_providers
     from core.studio.environment import environment_snapshot
     from core.studio.hygiene import scan_package_hygiene
+    from core.studio.portability import build_portability_report
     from core.studio.release import resource_preflight
     from core.studio.resources import load_resources
 
@@ -885,6 +977,13 @@ def _release_preflight_for_cartridge(cartridge: dict) -> dict:
         "items": [{"path": ".", "category": "missing_package", "message": "Package directory does not exist."}],
         "scanned_files": 0,
     }
+    portability_report = build_portability_report(
+        package_path_value or "",
+        manifest,
+        cartridge.get("root_flow") or {},
+        resources=resources,
+        configured_keys=configured_keys,
+    )
 
     providers = {item.get("id"): item for item in list_providers()}
     assignments = get_assignments()
@@ -939,6 +1038,10 @@ def _release_preflight_for_cartridge(cartridge: dict) -> dict:
             issues.append({"area": "resources", "severity": "blocker" if item.get("status") == "blocked" else "warning", "message": f"{item.get('name')}: {item.get('message')}"})
     for item in package_report.get("items") or []:
         issues.append({"area": "package_hygiene", "severity": "blocker", "message": f"{item.get('path')}: {item.get('message')}"})
+    for item in portability_report.get("missing_blockers") or []:
+        issues.append({"area": "portability", "severity": "blocker", "message": item.get("reason") or item.get("id")})
+    for item in portability_report.get("forbidden") or []:
+        issues.append({"area": "portability", "severity": "blocker", "message": item.get("reason") or item.get("id")})
 
     delivery_level = (compatibility.get("delivery_readiness") or {}).get("level")
     if compatibility.get("legacy"):
@@ -954,6 +1057,7 @@ def _release_preflight_for_cartridge(cartridge: dict) -> dict:
         and model_report.get("status") != "blocked"
         and resource_report.get("status") == "ok"
         and package_report.get("status") == "ok"
+        and portability_report.get("status") == "ok"
     )
     return {
         "cartridge": {key: cartridge.get(key) for key in ("id", "name", "version", "source", "editable")},
@@ -964,8 +1068,9 @@ def _release_preflight_for_cartridge(cartridge: dict) -> dict:
         "models": model_report,
         "resources": resource_report,
         "package_hygiene": package_report,
+        "portability": portability_report,
         "issues": issues,
-        "dev_ready": bool(cartridge.get("package_path") and Path(cartridge.get("package_path")).is_dir() and package_report.get("status") == "ok"),
+        "dev_ready": bool(cartridge.get("package_path") and Path(cartridge.get("package_path")).is_dir() and package_report.get("status") == "ok" and portability_report.get("status") == "ok"),
         "production_ready": production_ready,
     }
 
@@ -1207,6 +1312,16 @@ def get_studio_release_preflight(cartridge_id: str):
         raise HTTPException(status_code=500, detail=str(exc))
 
 
+@app.get("/api/cartridges/{cartridge_id}/portability")
+def get_cartridge_portability(cartridge_id: str):
+    try:
+        return _release_preflight_for_cartridge(registry.get_cartridge(cartridge_id))["portability"]
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except BaseManifestError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
 @app.post("/api/cartridges/{cartridge_id}/package")
 def package_cartridge(cartridge_id: str, payload: CartridgePackagePayload | None = None):
     try:
@@ -1234,8 +1349,15 @@ def package_cartridge(cartridge_id: str, payload: CartridgePackagePayload | None
             "message": "Package contains local, secret, model, cache, log, or runtime artifacts.",
             "report": package_hygiene,
         })
+    release_preflight = _release_preflight_for_cartridge(cartridge)
+    portability = release_preflight["portability"]
+    if portability.get("status") != "ok":
+        raise HTTPException(status_code=400, detail={
+            "error": "portability_preflight_failed",
+            "message": "Package portability report contains blocking items.",
+            "report": portability,
+        })
     if package_mode == "production":
-        release_preflight = _release_preflight_for_cartridge(cartridge)
         if not release_preflight.get("production_ready"):
             raise HTTPException(status_code=400, detail={
                 "error": "production_preflight_failed",
@@ -1257,6 +1379,7 @@ def package_cartridge(cartridge_id: str, payload: CartridgePackagePayload | None
                 zf.write(item, item.relative_to(root).as_posix())
         zf.writestr("package.compatibility.json", _json.dumps(compatibility, ensure_ascii=False, indent=2))
         zf.writestr("package.local-bindings.json", _json.dumps(binding_descriptor, ensure_ascii=False, indent=2))
+        zf.writestr("package.portability.json", _json.dumps(portability, ensure_ascii=False, indent=2))
         zf.writestr("package.metadata.json", _json.dumps({
             "schema": "cartridgeflow.package_metadata.v1",
             "package_mode": package_mode,
@@ -1269,6 +1392,7 @@ def package_cartridge(cartridge_id: str, payload: CartridgePackagePayload | None
         "package_mode": package_mode,
         "url": f"/packages/{out_file.name}",
         "size": out_file.stat().st_size,
+        "portability": portability,
         "mcp_tool_count": len(cartridge.get("mcp_tools") or []),
         "compatibility": {
             "ok": compatibility.get("ok"),
@@ -1582,6 +1706,96 @@ def save_lab_flow_file(cartridge_id: str, file_type: str, payload: DevFlowFileSa
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@app.get("/api/lab/flows/{cartridge_id}/assets")
+def get_lab_flow_assets(cartridge_id: str):
+    try:
+        cartridge = registry.get_cartridge(cartridge_id)
+        if not cartridge.get("editable"):
+            raise HTTPException(status_code=403, detail="Only dev flows are editable")
+        bundle = load_asset_bundle(cartridge.get("package_path"), cartridge.get("manifest") or {}, include_content=True)
+        return {
+            "cartridge_id": cartridge_id,
+            "assets": bundle["assets"],
+            "components": bundle["components"],
+            "files": dev_flow_manager.read_files(cartridge_id),
+        }
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except CartridgeAssetError as exc:
+        raise HTTPException(status_code=400, detail={"code": exc.code, "message": str(exc)})
+
+
+@app.put("/api/lab/flows/{cartridge_id}/assets/{asset_id}")
+def put_lab_flow_asset(cartridge_id: str, asset_id: str, payload: CartridgeAssetPayload):
+    try:
+        cartridge = registry.get_cartridge(cartridge_id)
+        if not cartridge.get("editable"):
+            raise HTTPException(status_code=403, detail="Only dev flows are editable")
+        if payload.id != asset_id:
+            raise HTTPException(status_code=400, detail="asset id cannot be changed by the route payload")
+        item = write_asset(
+            cartridge.get("package_path"),
+            cartridge.get("manifest") or {},
+            asset_id=asset_id,
+            kind=payload.kind,
+            relative_path=payload.path,
+            media_type=payload.media_type,
+            content=payload.content,
+            encoding=payload.encoding,
+        )
+        return {"status": "asset_saved", "asset": item, "files": dev_flow_manager.read_files(cartridge_id)}
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except CartridgeAssetError as exc:
+        raise HTTPException(status_code=400, detail={"code": exc.code, "message": str(exc)})
+
+
+@app.delete("/api/lab/flows/{cartridge_id}/assets/{asset_id}")
+def delete_lab_flow_asset(cartridge_id: str, asset_id: str):
+    try:
+        cartridge = registry.get_cartridge(cartridge_id)
+        if not cartridge.get("editable"):
+            raise HTTPException(status_code=403, detail="Only dev flows are editable")
+        delete_asset(cartridge.get("package_path"), cartridge.get("manifest") or {}, cartridge.get("root_flow") or {}, asset_id)
+        return {"status": "asset_deleted", "asset_id": asset_id, "files": dev_flow_manager.read_files(cartridge_id)}
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except CartridgeAssetError as exc:
+        raise HTTPException(status_code=409 if exc.code == "ASSET_IN_USE" else 400, detail={"code": exc.code, "message": str(exc)})
+
+
+@app.put("/api/lab/flows/{cartridge_id}/interaction-components/{component_id}")
+def put_lab_flow_interaction_component(cartridge_id: str, component_id: str, payload: InteractionComponentPayload):
+    try:
+        cartridge = registry.get_cartridge(cartridge_id)
+        if not cartridge.get("editable"):
+            raise HTTPException(status_code=403, detail="Only dev flows are editable")
+        component = dict(payload.component)
+        if component.get("id") not in {None, "", component_id}:
+            raise HTTPException(status_code=400, detail="component id cannot be changed by the route payload")
+        component["id"] = component_id
+        item = write_component(cartridge.get("package_path"), cartridge.get("manifest") or {}, component)
+        return {"status": "component_saved", "component": item, "files": dev_flow_manager.read_files(cartridge_id)}
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except CartridgeAssetError as exc:
+        raise HTTPException(status_code=400, detail={"code": exc.code, "message": str(exc)})
+
+
+@app.delete("/api/lab/flows/{cartridge_id}/interaction-components/{component_id}")
+def delete_lab_flow_interaction_component(cartridge_id: str, component_id: str):
+    try:
+        cartridge = registry.get_cartridge(cartridge_id)
+        if not cartridge.get("editable"):
+            raise HTTPException(status_code=403, detail="Only dev flows are editable")
+        delete_component(cartridge.get("package_path"), cartridge.get("manifest") or {}, cartridge.get("root_flow") or {}, component_id)
+        return {"status": "component_deleted", "component_id": component_id, "files": dev_flow_manager.read_files(cartridge_id)}
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except CartridgeAssetError as exc:
+        raise HTTPException(status_code=409 if exc.code == "COMPONENT_IN_USE" else 400, detail={"code": exc.code, "message": str(exc)})
+
+
 @app.get("/api/lab/flows/{cartridge_id}/mcp-tools")
 def list_lab_flow_mcp_tools(cartridge_id: str):
     try:
@@ -1869,6 +2083,20 @@ def create_lab_flow_node(cartridge_id: str, payload: NodeCreatePayload):
     if node_id in states:
         raise HTTPException(status_code=409, detail=f"Node already exists: {node_id}")
     templates = {
+        "interaction": {
+            "type": "process",
+            "kind": "interaction",
+            "executor": "deterministic",
+            "effect": "none",
+            "display_name": "交互展示",
+            "title": "交互节点",
+            "action": "render_interaction",
+            "component_ref": "welcome.panel",
+            "interaction_mode": "display",
+            "input_binding": {},
+            "action_routes": {},
+            "params": {"node_category": "interaction"},
+        },
         "welcome": {
             "type": "process",
             "kind": "ui",
@@ -2084,6 +2312,12 @@ def update_lab_flow_node(cartridge_id: str, node_id: str, payload: NodeUpdatePay
         "kind": payload.kind,
         "executor": payload.executor,
         "effect": payload.effect,
+        "display_name": payload.display_name,
+        "component_ref": payload.component_ref,
+        "interaction_mode": payload.interaction_mode,
+        "input_binding": payload.input_binding,
+        "action_routes": payload.action_routes,
+        "output": payload.output,
         "display": payload.display,
         "input_kind": payload.input_kind,
         "source": payload.source,
@@ -2113,6 +2347,8 @@ def update_lab_flow_node(cartridge_id: str, node_id: str, payload: NodeUpdatePay
 
     files["root_flow"] = _json.dumps(root_flow, ensure_ascii=False, indent=2)
     validation = dev_flow_manager.validate_files(cartridge_id, files)
+    if validation.get("valid"):
+        dev_flow_manager.save_file(cartridge_id, "root_flow", files["root_flow"])
     graph = flow_graph_builder.build(dev_flow_manager.preview_graph(cartridge_id, files))
     return {
         "status": "node_updated",
@@ -2346,16 +2582,66 @@ def get_cartridge_run(run_id: str):
         raise HTTPException(status_code=404, detail=str(e))
 
 
+@app.delete("/api/cartridge-runs/{run_id}")
+def delete_cartridge_run(run_id: str):
+    try:
+        return runner.delete_run(run_id)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/cartridge-runs/{run_id}/diagnostics")
+def get_cartridge_run_diagnostics(run_id: str):
+    """Return one stable, redacted evidence bundle for humans and AI tools."""
+    try:
+        run = runner.get_run(run_id)
+        events = runner.get_events(run_id)
+        checkpoints = runner.list_checkpoints(run_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    redacted_run = _redact_diagnostic_value(run)
+    redacted_events = _redact_diagnostic_value(events)
+    redacted_checkpoints = _redact_diagnostic_value(checkpoints)
+    error = redacted_run.get("error") if isinstance(redacted_run, dict) else None
+    artifacts = []
+    if isinstance(redacted_run, dict):
+        artifacts = [*(redacted_run.get("artifacts") or []), *((redacted_run.get("delivery") or {}).get("artifacts") or [])]
+    return {
+        "schema": "cartridgeflow.diagnostic_bundle.v1",
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "run_id": run_id,
+        "cartridge_id": run.get("cartridge_id"),
+        "summary": {
+            "status": run.get("status"),
+            "current_state": run.get("current_state"),
+            "error_code": error.get("code") if isinstance(error, dict) else None,
+            "error_category": error.get("category") if isinstance(error, dict) else None,
+            "event_count": len(redacted_events),
+            "checkpoint_count": len(redacted_checkpoints),
+            "artifact_count": len(artifacts),
+        },
+        "run": redacted_run,
+        "events": redacted_events,
+        "checkpoints": redacted_checkpoints,
+    }
+
+
 @app.post("/api/cartridge-runs/{run_id}/control")
 def control_cartridge_run(run_id: str, payload: CartridgeRunControl):
     try:
-        return runner.control_with_options(
+        result = runner.control_with_options(
             run_id,
             payload.action,
             target_node=payload.target_node,
             confirm_side_effect=payload.confirm_side_effect,
             feedback=payload.feedback,
         )
+        if payload.action in {"cancel", "restart", "rollback"}:
+            from core.extensions.sandbox_service import sandbox_renderer_manager
+            sandbox_renderer_manager.revoke_run(run_id)
+        return result
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except ValueError as e:
@@ -2373,13 +2659,190 @@ def get_cartridge_run_checkpoints(run_id: str):
 @app.post("/api/cartridge-runs/{run_id}/pending-interaction/answer")
 def answer_pending_interaction(run_id: str, payload: PendingInteractionAnswerPayload):
     try:
+        current = runner.get_run(run_id)
+        interaction_id = ((current.get("pending_interaction") or {}).get("interaction_id") or "")
         values = payload.values if payload.values else payload.answer
-        run = runner.answer_pending_interaction(run_id, values)
+        run = runner.answer_pending_interaction(
+            run_id,
+            values,
+            action_id=payload.action_id,
+            input_revision=payload.input_revision,
+            idempotency_key=payload.idempotency_key,
+            draft_hash=payload.draft_hash,
+        )
+        from core.extensions.sandbox_service import sandbox_renderer_manager
+        if interaction_id:
+            sandbox_renderer_manager.revoke(f"{run_id}:{interaction_id}")
         return {"run": run, "events": runner.get_events(run_id)}
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+def _sandbox_origin(request: Request) -> str:
+    from urllib.parse import urlparse
+    origin = str(request.headers.get("origin") or "").strip().rstrip("/")
+    if not origin:
+        referer = urlparse(str(request.headers.get("referer") or ""))
+        if referer.scheme and referer.netloc:
+            origin = f"{referer.scheme}://{referer.netloc}"
+    parsed = urlparse(origin)
+    if parsed.scheme not in {"http", "https"} or parsed.hostname not in {"localhost", "127.0.0.1", "::1"}:
+        raise HTTPException(status_code=403, detail="Sandbox renderer requires a trusted local Base UI origin")
+    return origin
+
+
+def _write_sandbox_audit(event: dict) -> None:
+    from core.data_paths import REPORTS_DATA_ROOT
+    target = ROOT / REPORTS_DATA_ROOT / "security" / "sandbox-audit.jsonl"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with target.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps({"at": datetime.now().isoformat(timespec="seconds"), **event}, ensure_ascii=False) + "\n")
+
+
+@app.get("/api/cartridge-runs/{run_id}/interaction/{interaction_id}/sandbox")
+def get_interaction_sandbox(run_id: str, interaction_id: str, request: Request):
+    from core.extensions.sandbox_service import SandboxRendererError, sandbox_renderer_manager
+    try:
+        run = runner.get_run(run_id)
+        pending = run.get("pending_interaction") if isinstance(run.get("pending_interaction"), dict) else {}
+        presentation = pending.get("presentation") if isinstance(pending.get("presentation"), dict) else {}
+        if pending.get("interaction_id") != interaction_id or presentation.get("component_runtime") != "sandboxed":
+            raise HTTPException(status_code=409, detail="Run is not waiting for this sandboxed interaction")
+        supported = {"run.read_declared", "artifact.read", "draft.read", "draft.write", "interaction.propose", "notification.request"}
+        requested = set(presentation.get("host_capabilities") or [])
+        unsupported = sorted(requested - supported)
+        if unsupported:
+            raise HTTPException(status_code=400, detail=f"Unsupported sandbox host capabilities: {', '.join(unsupported)}")
+        cartridge = registry.get_cartridge(run["cartridge_id"])
+        channel_id = f"channel_{uuid.uuid4().hex}"
+        nonce = uuid.uuid4().hex + uuid.uuid4().hex
+        scope_key = f"{run_id}:{interaction_id}"
+        renderer = sandbox_renderer_manager.launch(
+            cartridge["package_path"],
+            cartridge["manifest"],
+            str(presentation.get("frontend_ref") or ""),
+            scope_key,
+            _sandbox_origin(request),
+        )
+        presentation["host_channel"] = {
+            "channel_id": channel_id,
+            "nonce": nonce,
+            "status": "issued",
+            "messages": 0,
+            "max_messages": 120,
+            "max_message_bytes": 65536,
+        }
+        runner._write_json(runner.runs_dir / run_id / "run.json", run)
+        _write_sandbox_audit({"event": "renderer_started", "run_id": run_id, "interaction_id": interaction_id, "component_id": presentation.get("component_id"), "policy": renderer["policy"]})
+        return {
+            "schema": "cartridgeflow.interaction_sandbox_session.v1",
+            "run_id": run_id,
+            "cartridge_id": run["cartridge_id"],
+            "node_id": pending.get("node_id"),
+            "component_id": presentation.get("component_id"),
+            "interaction_id": interaction_id,
+            "channel_id": channel_id,
+            "nonce": nonce,
+            "url": renderer["url"],
+            "origin": renderer["origin"],
+            "host_capabilities": sorted(requested),
+            "input_revision": (pending.get("input_snapshot") or {}).get("input_revision"),
+            "input": (pending.get("input_snapshot") or {}).get("bindings") or {},
+            "policy": renderer["policy"],
+        }
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except SandboxRendererError as exc:
+        _write_sandbox_audit({"event": "renderer_failed", "run_id": run_id, "interaction_id": interaction_id, "message": str(exc)})
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.delete("/api/cartridge-runs/{run_id}/interaction/{interaction_id}/sandbox")
+def delete_interaction_sandbox(run_id: str, interaction_id: str):
+    from core.extensions.sandbox_service import sandbox_renderer_manager
+    sandbox_renderer_manager.revoke(f"{run_id}:{interaction_id}")
+    _write_sandbox_audit({"event": "renderer_revoked", "run_id": run_id, "interaction_id": interaction_id})
+    return {"ok": True}
+
+
+@app.post("/api/cartridge-runs/{run_id}/interaction/{interaction_id}/host-request")
+def handle_interaction_host_request(run_id: str, interaction_id: str, payload: SandboxHostRequestPayload):
+    import hashlib as _hashlib
+    try:
+        raw_size = len(json.dumps(payload.dict(by_alias=True), ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+        if raw_size > 65536:
+            raise HTTPException(status_code=413, detail="Sandbox host message exceeds 64 KiB")
+        run = runner.get_run(run_id)
+        pending = run.get("pending_interaction") if isinstance(run.get("pending_interaction"), dict) else {}
+        presentation = pending.get("presentation") if isinstance(pending.get("presentation"), dict) else {}
+        channel = presentation.get("host_channel") if isinstance(presentation.get("host_channel"), dict) else {}
+        expected = {
+            "run_id": run_id,
+            "cartridge_id": run.get("cartridge_id"),
+            "node_id": pending.get("node_id"),
+            "component_id": presentation.get("component_id"),
+            "interaction_id": interaction_id,
+            "channel_id": channel.get("channel_id"),
+            "nonce": channel.get("nonce"),
+        }
+        actual = {key: getattr(payload, key) for key in expected}
+        if payload.schema_ != "cartridgeflow.interaction_component_message.v1" or actual != expected:
+            raise HTTPException(status_code=403, detail="Sandbox host message scope is invalid")
+        if int(channel.get("messages") or 0) >= int(channel.get("max_messages") or 120):
+            raise HTTPException(status_code=429, detail="Sandbox host message limit exceeded")
+        capability = payload.type
+        granted = set(presentation.get("host_capabilities") or [])
+        if capability not in granted:
+            raise HTTPException(status_code=403, detail=f"Sandbox host capability was not granted: {capability}")
+        response_payload: dict = {}
+        if capability == "draft.write":
+            value = payload.payload.get("value")
+            encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
+            if len(encoded) > 128 * 1024:
+                raise HTTPException(status_code=413, detail="Sandbox draft exceeds 128 KiB")
+            draft = {
+                "value": value,
+                "revision": int((pending.get("draft") or {}).get("revision") or 0) + 1,
+                "sha256": _hashlib.sha256(encoded).hexdigest(),
+            }
+            pending["draft"] = draft
+            response_payload = {"revision": draft["revision"], "draft_hash": draft["sha256"]}
+        elif capability == "draft.read":
+            response_payload = pending.get("draft") or {"value": None, "revision": 0, "sha256": None}
+        elif capability == "interaction.propose":
+            action_id = str(payload.payload.get("action_id") or "")
+            if action_id not in {str(item) for item in pending.get("allowed_actions") or []}:
+                raise HTTPException(status_code=400, detail="Proposed action is not in the interaction allowlist")
+            response_payload = {"action_id": action_id, "accepted": True, "requires_host_click": True}
+        elif capability == "run.read_declared":
+            response_payload = {"input": (pending.get("input_snapshot") or {}).get("bindings") or {}, "input_revision": (pending.get("input_snapshot") or {}).get("input_revision")}
+        elif capability == "artifact.read":
+            response_payload = {"artifacts": [{key: item.get(key) for key in ("name", "type", "mime_type", "url")} for item in run.get("artifacts") or [] if isinstance(item, dict)]}
+        elif capability == "notification.request":
+            response_payload = {"accepted": True}
+        else:
+            raise HTTPException(status_code=400, detail="Sandbox host capability is not implemented")
+        channel["messages"] = int(channel.get("messages") or 0) + 1
+        channel["status"] = "ready"
+        runner._write_json(runner.runs_dir / run_id / "run.json", run)
+        _write_sandbox_audit({"event": "host_capability", "run_id": run_id, "interaction_id": interaction_id, "component_id": presentation.get("component_id"), "capability": capability, "request_id": payload.request_id, "ok": True})
+        return {
+            "schema": "cartridgeflow.interaction_host_message.v1",
+            "type": f"{capability}.result",
+            "request_id": payload.request_id,
+            "channel_id": payload.channel_id,
+            "run_id": run_id,
+            "cartridge_id": payload.cartridge_id,
+            "node_id": payload.node_id,
+            "component_id": payload.component_id,
+            "interaction_id": interaction_id,
+            "ok": True,
+            "payload": response_payload,
+        }
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
 
 
 @app.get("/api/cartridge-runs/{run_id}/events")

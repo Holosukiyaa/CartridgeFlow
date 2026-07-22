@@ -5,6 +5,15 @@ import { showToast } from '../../toast.tsx'
 import type { GraphResult, NodeCategoryId, NodeDraft } from './types.ts'
 import { CATEGORY_BY_ID, NODE_CATEGORIES, buildProtocolNodePayload, getNodeCategory, getProcessDisplayLabel, getPreset, getPresets, getProtocolDefaults, makeNodeDraft } from './nodeModel.ts'
 
+function readInteractionComponents(files: FlowFiles) {
+  try {
+    const document = JSON.parse(files.interaction_components || '{}')
+    return Array.isArray(document.components) ? document.components : []
+  } catch {
+    return []
+  }
+}
+
 function DrawerSection({ title, children, defaultOpen = false }: { title: string; children: ReactNode; defaultOpen?: boolean }) {
   const [isOpen, setIsOpen] = useState(defaultOpen)
   return (
@@ -34,6 +43,8 @@ export function NodeDrawer({ node, graphEdges, flowId, files, editable, open, on
   const presets = category && draft ? getPresets(draft.category) : []
   const activePreset = category && draft ? getPreset(draft.category, draft.preset) : null
   const isCustom = draft?.category === 'custom'
+  const isInteraction = draft?.category === 'interaction'
+  const interactionComponents = readInteractionComponents(files)
   const incomingEdges = node ? graphEdges.filter((edge) => edge.to === node.id) : []
   const outgoingEdges = node ? graphEdges.filter((edge) => edge.from === node.id) : []
 
@@ -58,6 +69,8 @@ export function NodeDrawer({ node, graphEdges, flowId, files, editable, open, on
       if (draft.params.trim()) paramsParsed = JSON.parse(draft.params)
       if (draft.decisionContract.trim()) JSON.parse(draft.decisionContract)
       if (draft.mockDecisionEnvelope.trim()) JSON.parse(draft.mockDecisionEnvelope)
+      if (draft.inputBinding.trim()) JSON.parse(draft.inputBinding)
+      if (draft.actionRoutes.trim()) JSON.parse(draft.actionRoutes)
     } catch (e: any) {
       showToast({ title: 'JSON 解析失败', description: e.message, type: 'error' })
       return
@@ -135,6 +148,10 @@ export function NodeDrawer({ node, graphEdges, flowId, files, editable, open, on
                   <Input value={draft.title} onChange={(e) => updateDraft({ title: e.target.value })} />
                 </Field.Root>
                 <Field.Root>
+                  <Field.Label>画布显示名称</Field.Label>
+                  <Input value={draft.displayName} onChange={(e) => updateDraft({ displayName: e.target.value })} placeholder={draft.title || node.id} />
+                </Field.Root>
+                <Field.Root>
                   <Field.Label>节点类型</Field.Label>
                   <NativeSelect.Field value={draft.category} onChange={(e) => {
                     const nextCategory = CATEGORY_BY_ID.get(e.target.value as NodeCategoryId)!
@@ -161,6 +178,11 @@ export function NodeDrawer({ node, graphEdges, flowId, files, editable, open, on
                       failurePolicy: defaults.failurePolicy || '',
                       permission: defaults.permission || '',
                       auditLog: Boolean(defaults.auditLog),
+                      displayName: draft.displayName || draft.title || nextCategory.defaultTitle,
+                      componentRef: nextCategory.id === 'interaction' ? interactionComponents[0]?.id || '' : '',
+                      interactionMode: nextCategory.id === 'interaction' ? 'display' : '',
+                      inputBinding: '{}',
+                      actionRoutes: '{}',
                       title: draft.title || nextCategory.defaultTitle,
                     })
                   }}>
@@ -174,7 +196,55 @@ export function NodeDrawer({ node, graphEdges, flowId, files, editable, open, on
               </VStack>
             </DrawerSection>
 
-            {!isCustom && activePreset && (
+            {isInteraction && (
+              <DrawerSection title="02 / 交互组件" defaultOpen>
+                <VStack align="stretch" gap={3}>
+                  <Field.Root>
+                    <Field.Label>卡带组件</Field.Label>
+                    <NativeSelect.Field value={draft.componentRef} onChange={(e) => updateDraft({ componentRef: e.target.value })}>
+                      <option value="">请选择组件</option>
+                      {interactionComponents.map((item: any) => <option key={item.id} value={item.id}>{item.id} · {item.runtime}</option>)}
+                    </NativeSelect.Field>
+                  </Field.Root>
+                  <Field.Root>
+                    <Field.Label>交互模式</Field.Label>
+                    <NativeSelect.Field value={draft.interactionMode} onChange={(e) => {
+                      const mode = e.target.value
+                      updateDraft({
+                        interactionMode: mode,
+                        preset: mode,
+                        next: mode === 'display' ? draft.next : '',
+                        executor: mode === 'display' ? 'deterministic' : 'user',
+                        effect: mode === 'display' ? 'none' : 'writes_store',
+                      })
+                    }}>
+                      <option value="display">展示</option>
+                      <option value="collect">收集</option>
+                      <option value="review">审核</option>
+                    </NativeSelect.Field>
+                  </Field.Root>
+                  <Field.Root>
+                    <Field.Label>输入绑定 JSON</Field.Label>
+                    <Textarea value={draft.inputBinding} onChange={(e) => updateDraft({ inputBinding: e.target.value })} rows={4} placeholder={'{"summary":"store:final_summary"}'} />
+                  </Field.Root>
+                  {draft.interactionMode !== 'display' && (
+                    <>
+                      <Field.Root>
+                        <Field.Label>写入 Store</Field.Label>
+                        <Input value={draft.output} onChange={(e) => updateDraft({ output: e.target.value })} placeholder="review_result" />
+                      </Field.Root>
+                      <Field.Root>
+                        <Field.Label>动作路由 JSON</Field.Label>
+                        <Textarea value={draft.actionRoutes} onChange={(e) => updateDraft({ actionRoutes: e.target.value })} rows={5} placeholder={'{"approve":"complete","revise":"draft"}'} />
+                      </Field.Root>
+                    </>
+                  )}
+                  <Text fontSize="xs" color="fg.muted">HTML 只负责显示。最终动作按钮由底座生成并校验，组件不能自行提交运行结果。</Text>
+                </VStack>
+              </DrawerSection>
+            )}
+
+            {!isCustom && !isInteraction && activePreset && (
               <DrawerSection title="02 / 选择用途" defaultOpen>
                 <Text fontSize="sm" color="fg.muted" mb={3}>这个{category.shortLabel}节点要做什么？先选一个简单用途，再填写少量配置。</Text>
                 <div className="cf-preset-grid">
@@ -212,7 +282,7 @@ export function NodeDrawer({ node, graphEdges, flowId, files, editable, open, on
               </DrawerSection>
             )}
 
-            {!isCustom && activePreset && activePreset.fields.length > 0 && (
+            {!isCustom && !isInteraction && activePreset && activePreset.fields.length > 0 && (
               <DrawerSection title="03 / 用途配置" defaultOpen>
                 <VStack align="stretch" gap={3}>
                   {activePreset.fields.map((field) => (

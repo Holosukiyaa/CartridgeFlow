@@ -90,11 +90,28 @@ export default function ModelConfigPage() {
   const [draft, setDraft] = useState<ProviderDraft>(EMPTY_DRAFT)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [testing, setTesting] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [editorOpen, setEditorOpen] = useState(false)
 
   const selectedProvider = useMemo(() => providers.find((item) => item.id === selectedId), [providers, selectedId])
+  const activeProvider = useMemo(() => providers.find((item) => item.enabled), [providers])
+  const modelStats = useMemo(() => {
+    const readyProviders = providers.filter((item) => item.base_url && item.has_key && item.default_model).length
+    const testedProviders = providers.filter((item) => item.tested_ok).length
+    let totalRoles = 0
+    let boundRoles = 0
+    for (const flow of flows) {
+      const roles = normalizeRecipeRoles(flow.llm_recipe)
+      totalRoles += roles.length
+      for (const role of roles) {
+        const providerId = assignments?.cartridges?.[flow.id]?.[role.id]?.provider_id
+        if (providerId && providers.some((item) => item.id === providerId)) boundRoles += 1
+      }
+    }
+    return { readyProviders, testedProviders, totalRoles, boundRoles }
+  }, [assignments, flows, providers])
 
   async function load(preferredId = selectedId) {
     setLoading(true)
@@ -202,15 +219,18 @@ export default function ModelConfigPage() {
 
   async function testProvider() {
     if (!selectedProvider) return
-    setSaving(true)
+    setTesting(true)
+    setError('')
+    setNotice('')
     try {
-      await testLlmProvider(selectedProvider.id, draft.default_model)
+      const result = await testLlmProvider(selectedProvider.id, draft.default_model)
+      if (!result.ok) throw new Error(result.error || '模型服务没有通过连接测试')
       setNotice('连接测试通过')
       await load()
     } catch (reason: any) {
-      setError(reason?.message || '连接测试失败')
+      setError((typeof reason?.detail === 'string' && reason.detail) || reason?.message || '连接测试失败')
     } finally {
-      setSaving(false)
+      setTesting(false)
     }
   }
 
@@ -244,38 +264,57 @@ export default function ModelConfigPage() {
 
   return (
     <div className="cf-resource-page cf-model-config-page">
-      <header className="cf-resource-heading">
+      <header className="cf-resource-heading cf-model-config-heading">
         <div>
-          <span className="cf-resource-kicker">BASE / MODELS</span>
+          <span className="cf-resource-kicker">MODEL ROUTING</span>
           <h1>模型配置</h1>
-          <p>本机连接名与卡带模型配方的接入表。</p>
+          <p>本机模型连接与卡带配方角色的路由总表</p>
         </div>
-        <div className="cf-resource-heading-meta"><b>{providers.length}</b><span>个本机连接</span></div>
+        <div className={`cf-overview-health ${modelStats.testedProviders > 0 ? 'ok' : 'partial'}`}>
+          <i />
+          <span>{modelStats.testedProviders > 0 ? `${modelStats.testedProviders} 个连接已验证` : '尚无已验证连接'}</span>
+        </div>
       </header>
       {error && <div className="cf-resource-alert danger">{error}</div>}
       {notice && <div className="cf-resource-alert success">{notice}</div>}
-      <div className="cf-resource-layout">
+
+      <section className="cf-model-config-stats" aria-label="模型路由摘要">
+        <div className="primary">
+          <span>DEFAULT ROUTE</span>
+          <strong>{activeProvider?.name || '未设置默认连接'}</strong>
+          <small>{activeProvider ? `${activeProvider.api_type} / ${activeProvider.default_model || '未指定模型'}` : '选择一个本机连接作为默认路由'}</small>
+        </div>
+        <div><span>本机连接</span><strong>{providers.length}</strong><small>{modelStats.readyProviders} 个配置完整</small></div>
+        <div><span>真实验证</span><strong>{modelStats.testedProviders}</strong><small>最近连接测试通过</small></div>
+        <div><span>配方接入</span><strong>{modelStats.boundRoles}<em>/ {modelStats.totalRoles}</em></strong><small>已绑定模型角色</small></div>
+      </section>
+
+      <div className="cf-resource-layout cf-model-routing-surface">
         <section className="cf-resource-panel cf-model-provider-panel">
-          <div className="cf-resource-panel-head"><div><span>LOCAL CONNECTIONS</span><h2>本机模型</h2></div><button type="button" onClick={startNew}>新增</button></div>
+          <div className="cf-resource-panel-head"><div><span>LOCAL CONNECTIONS</span><h2>连接目录</h2></div><button type="button" onClick={startNew}>新增连接</button></div>
           <div className="cf-model-provider-list">
-            {providers.map((provider) => (
-              <button key={provider.id} type="button" draggable onDragStart={(event) => onProviderDrag(event, provider.id)} className={`cf-model-provider-item ${selectedId === provider.id ? 'selected' : ''}`} onClick={() => selectProvider(provider)}>
-                <span className={`cf-provider-dot ${provider.has_key && provider.base_url ? 'ready' : ''}`} />
+            {providers.map((provider) => {
+              const complete = Boolean(provider.has_key && provider.base_url && provider.default_model)
+              const state = provider.tested_ok ? 'verified' : complete ? 'pending' : 'incomplete'
+              const stateLabel = provider.tested_ok ? '已验证' : complete ? '待验证' : '未配置'
+              return <button key={provider.id} type="button" draggable onDragStart={(event) => onProviderDrag(event, provider.id)} className={`cf-model-provider-item ${selectedId === provider.id ? 'selected' : ''}`} onClick={() => selectProvider(provider)}>
+                <span className={`cf-provider-dot ${state}`} />
                 <span className="cf-model-provider-copy"><strong>{provider.name}</strong><small>{provider.api_type} / {provider.default_model || '未指定模型'}</small></span>
-                <i>{provider.enabled ? '默认' : provider.tested_ok ? '已测' : '本机'}</i>
+                <span className="cf-model-provider-state"><b className={state}>{stateLabel}</b>{provider.enabled && <i>默认</i>}</span>
               </button>
-            ))}
+            })}
+            {loading && <div className="cf-resource-empty compact">正在读取本机连接</div>}
             {!providers.length && !loading && <div className="cf-resource-empty">还没有本机连接</div>}
           </div>
           {selectedProvider ? <div className="cf-selected-resource-summary">
             <div className="cf-selected-resource-title"><span>SELECTED CONNECTION</span><strong>{selectedProvider.name}</strong><code>{selectedProvider.id}</code></div>
             <dl><div><dt>URL</dt><dd>{selectedProvider.base_url || '未填写'}</dd></div><div><dt>模型</dt><dd>{selectedProvider.default_model || '未填写'}</dd></div><div><dt>Key</dt><dd>{selectedProvider.has_key ? `已保存 ${selectedProvider.key_preview || ''}` : '未填写'}</dd></div><div><dt>协议</dt><dd>{selectedProvider.api_type} / {selectedProvider.wire_api}</dd></div></dl>
-            <div className="cf-model-form-actions"><button type="button" className="primary" onClick={editSelected}>编辑连接</button><button type="button" onClick={() => void testProvider()} disabled={saving}>测试</button><button type="button" onClick={() => void activateProvider()} disabled={saving || selectedProvider.enabled}>设为默认</button><button type="button" className="danger" onClick={() => void removeProvider()} disabled={saving}>删除</button></div>
+            <div className="cf-model-form-actions"><button type="button" className="primary" onClick={editSelected}>编辑连接</button><button type="button" onClick={() => void testProvider()} disabled={saving || testing}>{testing ? '测试中…' : '测试连接'}</button><button type="button" onClick={() => void activateProvider()} disabled={saving || testing || selectedProvider.enabled}>设为默认</button><button type="button" className="danger" onClick={() => void removeProvider()} disabled={saving || testing}>删除</button></div>
           </div> : <div className="cf-selection-hint"><strong>选择一个本机连接</strong><span>查看状态，或将它拖到右侧配方角色。</span></div>}
         </section>
 
         <section className="cf-resource-panel cf-model-binding-panel">
-          <div className="cf-resource-panel-head"><div><span>CARTRIDGE RECIPES</span><h2>卡带配方绑定</h2></div><small>拖动或下拉选择连接</small></div>
+          <div className="cf-resource-panel-head"><div><span>CARTRIDGE RECIPES</span><h2>卡带模型路由</h2></div><small>{modelStats.boundRoles} / {modelStats.totalRoles} 已接入</small></div>
           <div className="cf-model-binding-list">
             {flows.map((flow) => {
               const roles = normalizeRecipeRoles(flow.llm_recipe)
@@ -285,10 +324,14 @@ export default function ModelConfigPage() {
                   const binding = assignments?.cartridges?.[flow.id]?.[role.id]
                   const provider = providers.find((item) => item.id === binding?.provider_id)
                   const match = !binding ? findExactProviderMatch(role, providers) : undefined
-                  return <div className={`cf-model-role-drop ${binding ? 'bound' : match ? 'auto-match' : ''}`} key={role.id} onDragOver={(event) => event.preventDefault()} onDrop={(event) => onRoleDrop(event, flow.id, role)}><span className="cf-role-drop-name"><b>{role.label}</b><code>{role.id}</code></span><span className="cf-role-drop-value">{provider ? (provider.base_url && provider.has_key ? '本机连接就绪' : '连接信息不完整') : match ? `可精确匹配：${match.name}` : '尚未绑定'}</span><select className="cf-role-binding-select" value={binding?.provider_id || ''} onChange={(event) => void bindProvider(flow.id, role, event.target.value)} aria-label={`为 ${role.label} 选择本机连接`}><option value="">未绑定</option>{providers.map((item) => { const compatible = (!role.api_type || item.api_type === role.api_type) && (!role.wire_api || !item.wire_api || item.wire_api === role.wire_api); return <option key={item.id} value={item.id} disabled={!compatible}>{item.name}{compatible ? '' : '（协议不兼容）'}</option> })}</select></div>
+                  const providerComplete = Boolean(provider?.base_url && provider?.has_key && provider?.default_model)
+                  const bindingState = provider ? (providerComplete ? 'bound' : 'unavailable') : binding ? 'unavailable' : match ? 'auto-match' : ''
+                  const bindingLabel = provider ? (provider.tested_ok ? '连接已验证' : providerComplete ? '等待连接验证' : '连接信息不完整') : match ? `可精确匹配：${match.name}` : binding ? '绑定的连接已不存在' : '尚未绑定'
+                  return <div className={`cf-model-role-drop ${bindingState}`} key={role.id} onDragOver={(event) => event.preventDefault()} onDrop={(event) => onRoleDrop(event, flow.id, role)}><span className="cf-role-drop-name"><b>{role.label}</b><code>{role.id}</code></span><span className="cf-role-drop-value">{bindingLabel}</span><select className="cf-role-binding-select" value={binding?.provider_id || ''} onChange={(event) => void bindProvider(flow.id, role, event.target.value)} aria-label={`为 ${role.label} 选择本机连接`}><option value="">未绑定</option>{providers.map((item) => { const compatible = (!role.api_type || item.api_type === role.api_type) && (!role.wire_api || !item.wire_api || item.wire_api === role.wire_api); return <option key={item.id} value={item.id} disabled={!compatible}>{item.name}{compatible ? '' : '（协议不兼容）'}</option> })}</select></div>
                 })}</div> : <div className="cf-resource-empty compact">配方未声明模型角色</div>}
               </article>
             })}
+            {loading && <div className="cf-resource-empty">正在读取卡带配方</div>}
             {!flows.length && !loading && <div className="cf-resource-empty">还没有可绑定的卡带</div>}
           </div>
         </section>

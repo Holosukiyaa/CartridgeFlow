@@ -2716,14 +2716,6 @@ textarea.cf-input {
     height: 190px;
   }
 
-  .cf-flow-card {
-    grid-template-columns: 1fr;
-    gap: 12px;
-  }
-
-  .cf-flow-actions {
-    width: 100%;
-  }
 }
 .cf-passive-interaction-frame {
   width: 100%;

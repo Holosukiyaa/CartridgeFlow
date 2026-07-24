@@ -30,6 +30,7 @@ ERROR_CATALOG: dict[str, ErrorSpec] = {
     "DECISION_CONSUME_FAILED": ErrorSpec("decision", "决策已经生成，但下游需要的数据无法提取。", False, True, ("inspect_decision", "edit_consume_contract", "retry_node"), 422),
     "PROVIDER_CONFIGURATION_MISSING": ErrorSpec("provider", "当前模型配方还没有连接可用的本地模型配置。", False, True, ("configure_provider", "switch_provider"), 409),
     "PROVIDER_AUTH_FAILED": ErrorSpec("provider", "模型服务拒绝了当前凭据。", False, True, ("update_credentials", "switch_provider"), 401),
+    "PROVIDER_MODEL_UNAVAILABLE": ErrorSpec("provider", "当前连接无法使用所选模型。", False, True, ("change_model", "switch_provider", "review_provider_group"), 404),
     "PROVIDER_RATE_LIMITED": ErrorSpec("provider", "模型服务当前请求过于频繁。", True, True, ("retry_node", "switch_provider"), 429),
     "PROVIDER_TIMEOUT": ErrorSpec("provider", "模型服务在限定时间内没有响应。", True, True, ("retry_node", "switch_provider"), 504),
     "PROVIDER_UNAVAILABLE": ErrorSpec("provider", "模型服务当前不可用。", True, True, ("retry_node", "switch_provider"), 503),
@@ -146,6 +147,8 @@ def classify_exception(exception: Exception | None, source: str = "runtime") -> 
         return "PERMISSION_DENIED"
     if status_code == 401:
         return "PROVIDER_AUTH_FAILED" if "provider" in lowered_source or "llm" in lowered_source else "PERMISSION_DENIED"
+    if status_code == 404 and ("provider" in lowered_source or "llm" in lowered_source):
+        return "PROVIDER_MODEL_UNAVAILABLE"
     if status_code == 429:
         return "PROVIDER_RATE_LIMITED"
     if isinstance(exception, (TimeoutError,)) or "timed out" in lowered or "timeout" in lowered:
@@ -188,6 +191,8 @@ def _provider_code(provider_error: dict) -> str:
     status = provider_error.get("status_code")
     if status == 401 or status == 403:
         return "PROVIDER_AUTH_FAILED"
+    if status == 404:
+        return "PROVIDER_MODEL_UNAVAILABLE"
     if status == 429:
         return "PROVIDER_RATE_LIMITED"
     if status in {500, 502, 503, 504}:

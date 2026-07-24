@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Children, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import ReactMarkdown from 'react-markdown'
 
 import {
   fetchBaseImplementation,
@@ -9,13 +10,20 @@ import {
   fetchStudioTodo,
   fetchStudioTodoFile,
   fetchStudioTodoTemplate,
+  fetchLlmProviders,
+  fetchStudioResources,
+  fetchStudioEnvironment,
   type FlowLabItem,
+  type LlmProvider,
   type RunResult,
+  type StudioEnvironmentSnapshot,
+  type StudioResources,
   type StudioTodoResponse,
   type StudioConformanceResponse,
 } from '../api.ts'
-import { Box, Heading, Spinner, Text } from '../ui.tsx'
+import { Box, Spinner } from '../ui.tsx'
 import CapabilityEvidenceViewer from '../components/CapabilityEvidenceViewer.tsx'
+import PrimaryPageHeader from '../components/PrimaryPageHeader.tsx'
 
 const PROTOCOL_STATUS_LABELS: Record<string, string> = {
   supported: '完整支持',
@@ -47,25 +55,34 @@ export default function HomePage() {
   const [todo, setTodo] = useState<StudioTodoResponse | null>(null)
   const [base, setBase] = useState<any>(null)
   const [conformance, setConformance] = useState<StudioConformanceResponse | null>(null)
+  const [providers, setProviders] = useState<LlmProvider[]>([])
+  const [resources, setResources] = useState<StudioResources | null>(null)
+  const [environment, setEnvironment] = useState<StudioEnvironmentSnapshot | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [todoViewerOpen, setTodoViewerOpen] = useState(false)
   const [todoViewerFile, setTodoViewerFile] = useState<'TODO.md' | 'TODO_TEMPLATE.md'>('TODO.md')
+  const [todoViewerMode, setTodoViewerMode] = useState<'preview' | 'source'>('preview')
+  const [todoViewerLine, setTodoViewerLine] = useState<number | null>(null)
   const [todoText, setTodoText] = useState('')
   const [todoViewerLoading, setTodoViewerLoading] = useState(false)
   const [evidenceViewerOpen, setEvidenceViewerOpen] = useState(false)
+  const todoSourceRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     let active = true
     const load = async () => {
       setLoading(true)
       try {
-        const [flowData, baseData, runData, todoData, conformanceData] = await Promise.all([
+        const [flowData, baseData, runData, todoData, conformanceData, providerData, resourceData, environmentData] = await Promise.all([
           fetchLabFlows(),
           fetchBaseImplementation(),
           fetchCartridgeRuns(),
           fetchStudioTodo(),
           fetchStudioConformance(),
+          fetchLlmProviders().catch(() => ({ providers: [] })),
+          fetchStudioResources().catch(() => null),
+          fetchStudioEnvironment().catch(() => null),
         ])
         if (!active) return
         setProjects(flowData.items || [])
@@ -73,6 +90,9 @@ export default function HomePage() {
         setConformance(conformanceData)
         setRuns(runData.items || [])
         setTodo(todoData)
+        setProviders(providerData.providers || [])
+        setResources(resourceData)
+        setEnvironment(environmentData)
         setError('')
       } catch (reason: any) {
         if (active) setError(reason?.message || '概览加载失败')
@@ -109,6 +129,23 @@ export default function HomePage() {
     const terminalRuns = recentRuns.filter((run) => TERMINAL_RUN_STATUSES.includes(run.status))
     const completedRuns = terminalRuns.filter((run) => run.status === 'completed').length
     const successRate = terminalRuns.length ? Math.round((completedRuns / terminalRuns.length) * 100) : null
+    const dailyRuns = Array.from({ length: 7 }, (_, index) => {
+      const date = new Date(today)
+      date.setDate(today.getDate() - (6 - index))
+      const start = date.getTime()
+      const end = new Date(date).setDate(date.getDate() + 1)
+      const count = runs.filter((run) => {
+        const timestamp = runTimestamp(run)
+        return timestamp >= start && timestamp < end
+      }).length
+      return {
+        key: `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`,
+        label: index === 6 ? '今' : '日一二三四五六'[date.getDay()],
+        fullLabel: `${date.getMonth() + 1}月${date.getDate()}日`,
+        count,
+      }
+    })
+    const dailyMax = Math.max(1, ...dailyRuns.map((day) => day.count))
     const delta = recentRuns.length - previousRuns.length
     const deltaLabel = previousRuns.length === 0
       ? (recentRuns.length ? `本周期新增 ${recentRuns.length} 次` : '近两周暂无运行')
@@ -121,6 +158,8 @@ export default function HomePage() {
       attention: runs.filter((run) => ATTENTION_RUN_STATUSES.includes(run.status)).length,
       editableFlows: projects.filter((project) => project.editable).length,
       deltaLabel,
+      dailyRuns,
+      dailyMax,
     }
   }, [projects, runs])
   const storedProjectId = localStorage.getItem('cf.studio.recent_project') || ''
@@ -134,8 +173,10 @@ export default function HomePage() {
   const currentProtocolStatus = currentProtocol
     ? (PROTOCOL_STATUS_LABELS[currentProtocol.status] || currentProtocol.status || '已声明')
     : '未声明'
-  const openTodoViewer = async (file: 'TODO.md' | 'TODO_TEMPLATE.md' = 'TODO.md') => {
+  const openTodoViewer = async (file: 'TODO.md' | 'TODO_TEMPLATE.md' = 'TODO.md', line: number | null = null) => {
     setTodoViewerFile(file)
+    setTodoViewerMode(line ? 'source' : 'preview')
+    setTodoViewerLine(line)
     setTodoViewerOpen(true)
     setTodoText('')
     setTodoViewerLoading(true)
@@ -148,20 +189,42 @@ export default function HomePage() {
     }
   }
 
+  useEffect(() => {
+    if (!todoViewerOpen || todoViewerMode !== 'source' || !todoViewerLine || todoViewerLoading) return
+    requestAnimationFrame(() => {
+      todoSourceRef.current?.querySelector<HTMLElement>(`[data-line="${todoViewerLine}"]`)?.scrollIntoView({ block: 'center' })
+    })
+  }, [todoViewerLine, todoViewerLoading, todoViewerMode, todoViewerOpen])
+
+  const resourceSummary = useMemo(() => {
+    const readyModels = providers.filter((provider) => provider.enabled !== false && provider.has_key && provider.base_url && provider.default_model && provider.tested_ok).length
+    const enabledTools = resources ? [...(resources.builtin_tools || []), ...(resources.tools || [])].filter((tool) => tool.enabled !== false).length : 0
+    const totalTools = resources ? (resources.builtin_tools || []).length + (resources.tools || []).length : 0
+    const configuredCredentials = environment?.credentials.filter((credential) => credential.has_value).length || 0
+    return {
+      readyModels,
+      totalModels: providers.length,
+      enabledTools,
+      totalTools,
+      configuredCredentials,
+      totalCredentials: environment?.credentials.length || 0,
+    }
+  }, [environment, providers, resources])
+
   return (
-    <Box className="cf-page cf-home-page">
+    <Box className="cf-page cf-home-page cf-primary-page-surface">
       <Box className="cf-page-inner cf-home-inner">
-        <header className="cf-overview-heading">
-          <div>
-            <Text className="cf-kicker">Developer Console</Text>
-            <Heading className="cf-home-title">开发控制台</Heading>
-            <Text className="cf-home-subtitle">专属服务卡带的底座入口与工作记录</Text>
-          </div>
-          <div className={`cf-overview-health ${conformance?.report?.status === 'passed' ? 'ok' : 'partial'}`}>
-            <i />
-            <span>底座 {conformance?.report?.status === 'passed' ? '自动测试通过' : '能力部分验证'}</span>
-          </div>
-        </header>
+        <PrimaryPageHeader
+          eyebrow="Developer Console"
+          title="开发控制台"
+          description="专属服务卡带的底座入口与工作记录"
+          actions={(
+            <div className={`cf-overview-health ${conformance?.report?.status === 'passed' ? 'ok' : 'partial'}`}>
+              <i />
+              <span>底座 {conformance?.report?.status === 'passed' ? '自动测试通过' : '能力部分验证'}</span>
+            </div>
+          )}
+        />
 
         {loading && <div className="cf-home-loading"><Spinner /></div>}
         {error && <div className="cf-home-alert danger">{error}</div>}
@@ -200,8 +263,14 @@ export default function HomePage() {
               <button type="button" onClick={() => navigate('/projects')}>
                 <span>Flow 总数</span><strong>{projects.length}</strong><small>{overviewStats.editableFlows} 个可编辑 Flow</small><i><b style={{ width: `${projects.length ? Math.max(12, (overviewStats.editableFlows / projects.length) * 100) : 0}%` }} /></i>
               </button>
-              <button type="button" onClick={() => navigate('/diagnostics?range=7d')}>
-                <span>近 7 日运行</span><strong>{overviewStats.recentCount}</strong><small>{overviewStats.deltaLabel}</small><i className="neutral"><b style={{ width: `${Math.min(100, overviewStats.recentCount * 8)}%` }} /></i>
+              <button type="button" className="cf-overview-trend-card" onClick={() => navigate('/diagnostics?range=7d')} aria-label={`近 7 日共运行 ${overviewStats.recentCount} 次。${overviewStats.deltaLabel}`}>
+                <div className="cf-overview-trend-head"><span>近 7 日运行</span><strong>{overviewStats.recentCount}</strong></div>
+                <div className="cf-overview-mini-chart" role="img" aria-label={overviewStats.dailyRuns.map((day) => `${day.fullLabel} ${day.count} 次`).join('，')}>
+                  {overviewStats.dailyRuns.map((day, index) => (
+                    <i key={day.key} className={index === 6 ? 'today' : ''} title={`${day.fullLabel} · ${day.count} 次`}><b style={{ height: `${day.count ? Math.max(16, (day.count / overviewStats.dailyMax) * 100) : 5}%` }} /><em>{day.label}</em></i>
+                  ))}
+                </div>
+                <small className="cf-overview-trend-summary">{overviewStats.deltaLabel}</small>
               </button>
               <button type="button" onClick={() => navigate('/diagnostics?range=7d&status=completed')}>
                 <span>运行成功率</span><strong>{overviewStats.successRate === null ? '--' : `${overviewStats.successRate}%`}</strong><small>{overviewStats.successRate === null ? '暂无终态运行' : '按近 7 日终态运行计算'}</small><i className="success"><b style={{ width: `${overviewStats.successRate || 0}%` }} /></i>
@@ -223,7 +292,7 @@ export default function HomePage() {
                 ) : (
                   <div className="cf-overview-todo-list">
                     {openTodoItems.map((item) => (
-                      <button type="button" key={`${item.line}-${item.id}`} onClick={() => void openTodoViewer()}>
+                      <button type="button" key={`${item.line}-${item.id}`} onClick={() => void openTodoViewer('TODO.md', item.line)}>
                         <i />
                         <span><small>{item.priority || item.section} · L{item.line}</small><strong>{item.id ? `${item.id} ` : ''}{item.text}</strong></span>
                         <b>查看</b>
@@ -272,6 +341,29 @@ export default function HomePage() {
               </div>
             </div>
 
+            <section className="cf-overview-resource-dock" aria-label="本地资源接线">
+              <div className="cf-overview-resource-intro">
+                <span>LOCAL RESOURCE ROUTING</span>
+                <h2>本地资源接线</h2>
+                <p>卡带只携带模型配方和工具声明，真正的连接信息留在本机。</p>
+              </div>
+              <button type="button" onClick={() => navigate('/resources/config?kind=model')}>
+                <span>模型线路</span>
+                <strong>{resourceSummary.readyModels}<small> / {resourceSummary.totalModels}</small></strong>
+                <em>{resourceSummary.totalModels ? '已通过连通性测试' : '还没有本地模型'}</em>
+              </button>
+              <button type="button" onClick={() => navigate('/resources/config?kind=tool')}>
+                <span>工具资源</span>
+                <strong>{resourceSummary.enabledTools}<small> / {resourceSummary.totalTools}</small></strong>
+                <em>{resourceSummary.totalTools ? '已启用本地工具' : '还没有接入工具'}</em>
+              </button>
+              <button type="button" onClick={() => navigate('/resources/config?kind=tool')}>
+                <span>本机凭据</span>
+                <strong>{resourceSummary.configuredCredentials}<small> / {resourceSummary.totalCredentials}</small></strong>
+                <em>{resourceSummary.totalCredentials ? '密钥保存在本机' : '等待添加本机变量'}</em>
+              </button>
+            </section>
+
           </>
         )}
 
@@ -281,13 +373,39 @@ export default function HomePage() {
               <header className="cf-modal-head">
                 <div>
                   <span className="cf-modal-kicker">Markdown file</span>
-                  <h2>{todoViewerFile}</h2>
+                  <h2>{todoViewerLine ? `定位任务 · L${todoViewerLine}` : todoViewerFile}</h2>
                 </div>
                 <button type="button" className="cf-modal-close" onClick={() => setTodoViewerOpen(false)} aria-label="关闭文件浏览器">关闭</button>
               </header>
-              <div className="cf-file-viewer-meta"><span>{todoViewerFile === 'TODO.md' ? `${todo?.open || 0} open / ${todo?.total || 0} tasks` : '基础待办模板'}</span><code>docs/planning/{todoViewerFile}</code></div>
+              <div className="cf-file-viewer-toolbar">
+                <div className="cf-file-viewer-tabs" role="tablist" aria-label="文档查看模式">
+                  <button type="button" className={todoViewerMode === 'preview' ? 'active' : ''} onClick={() => setTodoViewerMode('preview')}>预览</button>
+                  <button type="button" className={todoViewerMode === 'source' ? 'active' : ''} onClick={() => setTodoViewerMode('source')}>源码</button>
+                </div>
+                <div className="cf-file-viewer-meta"><span>{todoViewerFile === 'TODO.md' ? `${todo?.open || 0} open / ${todo?.total || 0} tasks` : '基础待办模板'}</span><code>docs/planning/{todoViewerFile}</code></div>
+              </div>
               <div className="cf-file-viewer-body">
-                {todoViewerLoading ? <div className="cf-modal-empty">读取 {todoViewerFile}...</div> : <pre>{todoText}</pre>}
+                {todoViewerLoading ? <div className="cf-modal-empty">读取 {todoViewerFile}...</div> : todoViewerMode === 'preview' ? (
+                  <article className="cf-markdown-document">
+                    <ReactMarkdown components={{
+                      li: ({ children }) => {
+                        const parts = Children.toArray(children)
+                        const first = parts[0]
+                        const task = typeof first === 'string' ? first.match(/^\[([ xX])\]\s*/) : null
+                        if (!task) return <li>{children}</li>
+                        parts[0] = String(first).slice(task[0].length)
+                        return <li className="cf-markdown-task"><input type="checkbox" checked={task[1].toLowerCase() === 'x'} readOnly tabIndex={-1} />{parts}</li>
+                      },
+                    }}>{todoText}</ReactMarkdown>
+                  </article>
+                ) : (
+                  <div className="cf-source-document" ref={todoSourceRef}>
+                    {todoText.split(/\r?\n/).map((line, index) => {
+                      const lineNumber = index + 1
+                      return <div key={lineNumber} data-line={lineNumber} className={lineNumber === todoViewerLine ? 'highlighted' : ''}><span>{lineNumber}</span><code>{line || ' '}</code></div>
+                    })}
+                  </div>
+                )}
               </div>
             </section>
           </div>

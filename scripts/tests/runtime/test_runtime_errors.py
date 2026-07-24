@@ -147,10 +147,40 @@ class RuntimeErrorEnvelopeTests(unittest.TestCase):
             self.assertEqual(run["error"]["error_id"], failed_event["data"]["error_envelope"]["error_id"])
             self.assertEqual(run["error"]["error_id"], final_event["data"]["error_envelope"]["error_id"])
 
+    def test_required_model_binding_blocks_before_run_directory_is_created(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            package = root / "package"
+            package.mkdir()
+            cartridge = {
+                "id": "test.model-binding",
+                "package_path": str(package),
+                "manifest": {"id": "test.model-binding", "version": "1.0.0", "inputs": [], "runtime": {"type": "none"}},
+                "root_flow": {"id": "test.root", "start": "complete", "states": {"complete": {"type": "terminal"}}},
+            }
+            runner = CartridgeRunner(root, _Registry(cartridge))
+            runner.build_compatibility_report = lambda *args, **kwargs: {
+                "ok": True, "status": "compatible", "legacy": False, "base": {}, "protocol": {}, "summary": {}, "findings": [],
+            }
+            report = {"status": "blocked", "items": [{"id": "writer", "status": "blocked", "message": "未绑定本机模型连接"}]}
+            with patch("core.cartridge.runner.build_model_binding_report", return_value=report):
+                with self.assertRaises(RuntimeFailure) as raised:
+                    runner.create_run("test.model-binding", run_id="run_missing_model")
+
+            self.assertEqual("PROVIDER_CONFIGURATION_MISSING", raised.exception.envelope["code"])
+            self.assertFalse((root / ".data" / "runtime" / "runs" / "run_missing_model").exists())
+
     def test_http_error_handler_preserves_structured_error_identity(self):
         from fastapi.testclient import TestClient
         from starlette.requests import Request
-        from backend.main import app, runtime_failure_handler
+        from backend.main import _http_error_code, app, runtime_failure_handler
+
+        self.assertEqual("PROVIDER_AUTH_FAILED", _http_error_code(401, "/api/llm/test"))
+        self.assertEqual("PROVIDER_MODEL_UNAVAILABLE", _http_error_code(404, "/api/llm/test"))
+        self.assertEqual("PROVIDER_RATE_LIMITED", _http_error_code(429, "/api/llm/test"))
+        self.assertEqual("PROVIDER_UNAVAILABLE", _http_error_code(502, "/api/llm/test"))
+        self.assertEqual("PROVIDER_TIMEOUT", _http_error_code(504, "/api/llm/test"))
+        self.assertEqual("INTERNAL_UNEXPECTED", _http_error_code(502, "/api/studio/todo"))
 
         response = TestClient(app).get("/api/cartridge-runs/run_does_not_exist")
         payload = response.json()

@@ -44,7 +44,12 @@ export async function api<T = any>(path: string, options: RequestInit = {}): Pro
     try { payload = JSON.parse(raw) } catch { /* retain plain-text server errors */ }
     const envelope = payload?.error_envelope as RuntimeErrorEnvelope | undefined
     const detail = payload?.detail
-    const message = envelope?.message || (typeof detail === 'string' ? detail : detail?.message || raw || `Request failed (${res.status})`)
+    const detailMessage = typeof detail === 'string' ? detail : detail?.message
+    const message = (path.startsWith('/api/llm/') && detailMessage)
+      || envelope?.message
+      || detailMessage
+      || raw
+      || `Request failed (${res.status})`
     throw new ApiError(message, res.status, envelope, detail)
   }
   return res.json() as Promise<T>
@@ -496,11 +501,19 @@ export interface LlmProvider {
   base_url?: string
   default_model?: string
   wire_api?: string
+  capabilities?: string[]
+  available_models?: string[]
+  adapter_profile?: string
+  adapter_label?: string
+  adapter_supported?: boolean
   enabled?: boolean
   timeout?: number
   has_key?: boolean
   key_preview?: string
   tested_ok?: boolean
+  tested_at?: string
+  runtime_supported?: boolean
+  runtime_issue?: string
   source?: string
 }
 
@@ -516,12 +529,45 @@ export interface LlmAssignments {
   nodes: Record<string, Record<string, LlmAssignment>>
 }
 
+export interface LlmConfigBundle {
+  version: number
+  providers: LlmProvider[]
+  assignments: LlmAssignments
+}
+
+export interface LlmDetectionResult {
+  ok: boolean
+  status: string
+  provider: {
+    name: string
+    api_type: string
+    base_url: string
+    default_model: string
+    wire_api: string
+    capabilities: string[]
+    adapter_profile: string
+    timeout: number
+  }
+  detection: {
+    capability: string
+    adapter_label: string
+    confidence: string
+    model_count: number
+    models: string[]
+    models_endpoint: string
+    summary: string
+  }
+  used_stored_key?: boolean
+}
+
 export interface LlmTestResult {
   ok: boolean
   provider_id?: string
   model?: string
   content?: string
   capability?: string
+  adapter_profile?: string
+  tested_scope?: string
   error?: string
   status_code?: number
   retryable?: boolean
@@ -805,6 +851,9 @@ export const createDevFlow = (flowId: string, name: string, description: string)
 export const deleteLabFlow = (id: string) =>
   api<{ ok: boolean; id: string }>(`/api/lab/flows/${id}`, { method: 'DELETE' })
 
+export const openLabFlowDirectory = (id: string) =>
+  api<{ ok: boolean; id: string; path: string }>(`/api/lab/flows/${encodeURIComponent(id)}/open-directory`, { method: 'POST' })
+
 export const fetchLabFlow = (id: string) => api<FlowLabDetail>(`/api/lab/flows/${id}`)
 
 export const fetchLabFlowFiles = (id: string) =>
@@ -973,10 +1022,28 @@ export const deleteLlmProvider = (providerId: string) =>
 export const activateLlmProvider = (providerId: string) =>
   api<{ ok: boolean; provider: LlmProvider }>(`/api/llm/providers/${encodeURIComponent(providerId)}/activate`, { method: 'POST' })
 
+export const detectLlmProvider = (payload: { provider_id?: string; base_url: string; api_key?: string; preferred_model?: string }) =>
+  api<LlmDetectionResult>('/api/llm/detect', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+
 export const testLlmProvider = (providerId: string, model = '') =>
   api<LlmTestResult>('/api/llm/test', {
     method: 'POST',
-    body: JSON.stringify({ provider_id: providerId, model, prompt: 'OK' }),
+    body: JSON.stringify({
+      provider_id: providerId,
+      model,
+      prompt: 'OK',
+    }),
+  })
+
+export const exportLlmConfig = () => api<LlmConfigBundle>('/api/llm/config/export')
+
+export const importOpenCodeConfig = (content: string) =>
+  api<{ ok: boolean; providers: LlmProvider[]; detections: LlmDetectionResult['detection'][] }>('/api/llm/import/opencode', {
+    method: 'POST',
+    body: JSON.stringify({ content }),
   })
 
 export const fetchStudioResources = () => api<StudioResources>('/api/studio/resources')

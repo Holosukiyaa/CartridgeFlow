@@ -11,6 +11,7 @@
 | 修改 Base、Flow 或运行时 | [当前 Base 0.2 契约](protocol/CARTRIDGEFLOW_BASE_CONTRACT_v0.2.md) -> [最新 CF-FARP 0.7 协议](protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.7.md) -> [机器 registry](../protocol/README.md) -> `src/core/protocol/` -> 对应 conformance 测试；修复现有运行时还要核对 v0.6 快照 |
 | 修改 Portable DLC | [Portable DLC 架构](architecture/PORTABLE_DLC_ARCHITECTURE.md) -> [协议治理](protocol/GOVERNANCE.md) |
 | 开发和运行自动测试 | [开发与维护](development/README.md) -> `scripts/` |
+| 重做一级页面视觉 | [Img2 UI 重设计提示词包](design/IMG2_UI_REDESIGN_PROMPTS.md) -> [前端图标、素材与动效规范](design/FRONTEND_ASSET_SYSTEM.md) -> 逐页评审与迁移 |
 | 查找某个文件 | [逐文件清单](development/FILE_INVENTORY.md) |
 
 ## 文档分区
@@ -22,6 +23,7 @@ docs/
 ├─ development/          维护入口、文件清单、深层 AI 参考和可选 Skill
 ├─ planning/             路线图、当前任务和任务模板
 ├─ architecture/         专项架构决策与不可破坏的设计约束
+├─ design/               产品界面设计基线、生成提示词和视觉评审规则
 └─ protocol/             当前协议、已发布历史快照和治理规则
 ```
 
@@ -34,6 +36,8 @@ docs/
 - [CF-FARP 0.7](protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.7.md)：最新 Flow 协议正文，定义卡带资产、交互节点和脚本安全边界。
 - [CF-FARP 0.6](protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.6.md)：当前参考底座仍在运行的上一版协议快照。
 - [Portable DLC 架构](architecture/PORTABLE_DLC_ARCHITECTURE.md)：基座与卡带私有能力的激活、隔离和所有权约束。
+- [Img2 UI 重设计提示词包](design/IMG2_UI_REDESIGN_PROMPTS.md)：锁定现有侧栏，先生成运行诊断视觉母版，再为各一级页面生成统一视觉稿。
+- [前端图标、素材与动效规范](design/FRONTEND_ASSET_SYSTEM.md)：规定 Lucide、Simple Icons、Motion 与项目自有品牌资产的使用边界。
 - [协议治理](protocol/GOVERNANCE.md)：修改协议、实现 Flow 和发布快照时必须遵守的规则。
 
 当前基座支持矩阵以 `config/base/BASE_IMPLEMENTATION.json` 为准：

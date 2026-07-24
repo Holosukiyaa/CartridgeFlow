@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -12,6 +12,8 @@ class ModelConfig:
     temperature: float = 0.7
     max_tokens: int = 8192
     timeout: int = 120
+    capabilities: list[str] = field(default_factory=list)
+    adapter_profile: str = "standard"
 
     @property
     def provider(self) -> str:

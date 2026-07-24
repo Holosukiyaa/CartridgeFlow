@@ -1,6 +1,6 @@
 # CartridgeFlow 文件用途清单
 
-本清单覆盖清理后的 **209 个项目自有文件**，严格分为 **151 个源码文件**和 **58 个非源码文件**，每个文件只列一次。物理目录中另外存在项目本地依赖、运行数据和构建产物；它们在末尾按目录解释，不逐个枚举第三方包内部文件。
+本清单覆盖清理后的 **212 个项目自有文件**，严格分为 **153 个源码文件**和 **59 个非源码文件**，每个文件只列一次。物理目录中另外存在项目本地依赖、运行数据和构建产物；它们在末尾按目录解释，不逐个枚举第三方包内部文件。
 
 ## 废弃审计（2026-07-21）
 
@@ -131,7 +131,7 @@
 | `src/core/lab/steward_llm.py` | Steward 的系统提示、用户提示和模型响应解析。 |
 | `src/core/lab/todo.py` | 解析 `TODO.md` 的章节、任务 ID、优先级和完成状态。 |
 
-### 模型适配（9）
+### 模型适配（10）
 
 | 文件 | 作用 |
 |---|---|
@@ -139,6 +139,7 @@
 | `src/core/llm/base.py` | 根据 wire API 把统一请求路由到 Chat 或 Responses Provider。 |
 | `src/core/llm/config.py` | 定义 Provider/模型运行配置结构。 |
 | `src/core/llm/config_manager.py` | 读取、保存、脱敏和解析本地 Provider 与角色绑定。 |
+| `src/core/llm/detection.py` | 通过 OpenAI Compatible Models API 检测普通 LLM 地址、模型目录和推荐默认模型。 |
 | `src/core/llm/errors.py` | 把模型异常归类为可重试或不可重试错误。 |
 | `src/core/llm/importers.py` | 从外部或旧格式导入 Provider 配置。 |
 | `src/core/llm/openai_provider.py` | OpenAI 兼容 Chat Completions 调用与流式处理。 |
@@ -209,22 +210,38 @@
 | `src/frontend/src/index.css` | 按固定顺序导入各页面样式文件。 |
 | `src/frontend/src/llmRecipe.ts` | LLM 配方前端类型、默认值和校验辅助函数。 |
 | `src/frontend/src/main.tsx` | React、Router、Toast 和外观设置启动入口。 |
+| `src/frontend/src/next/NextRedesignPage.tsx` | `/next/*` 平行预览路由的六个一级页面骨架，不连接真实数据或写操作。 |
+| `src/frontend/src/next/next-redesign.css` | 新版骨架独立视觉 token、布局、内部滚动与缩放规则，全部限制在 `cf-next-*` 作用域。 |
 | `src/frontend/src/toast.tsx` | 全局轻提示状态与视图。 |
 | `src/frontend/src/ui.tsx` | 项目自有的基础 UI 组件封装。 |
 
-### 前端页面（9）
+### 独立 HTML 前端候选（9，验收前不计入正式文件总数）
 
 | 文件 | 作用 |
 |---|---|
-| `src/frontend/src/pages/EnvironmentPage.tsx` | 系统设置内嵌的本机变量、命令依赖和凭据引用区域。 |
+| `src/frontend-new/index.html` | 与旧 React 前端完全分离的原始 HTML 入口、共享侧栏和概览页结构。 |
+| `src/frontend-new/styles.css` | 独立概览页与共享外壳的视觉、容器响应和缩放规则。 |
+| `src/frontend-new/overview-rational.css` | 概览页的独立双列空间分配、内容填充和 100%/125% 高度适配规则。 |
+| `src/frontend-new/pages.js` | Flow、运行诊断、资源中心、资源弹窗、打包发布和系统设置的独立 HTML 模板。 |
+| `src/frontend-new/pages.css` | 六类子页面的布局、组件、内部滚动和 100%/125% 容器响应规则。 |
+| `src/frontend-new/app.js` | 独立原生路由、页面交互和后端 HTTP 请求，不导入旧前端 API 或组件。 |
+| `src/frontend-new/component-system.js` | 集中注册独立前端按需使用的 Web Awesome 成品组件，避免页面自行散落导入。 |
+| `src/frontend-new/assets-motion.css` | Lucide 与 Simple Icons 的统一尺寸、品牌色、焦点状态和减少动效样式。 |
+| `src/frontend-new/motion-system.js` | 页面、选择、弹窗、删除、折叠、Toast、刷新与设置预览的统一 Motion 动效层。 |
+| `src/frontend-new/server.py` | 独立前端开发服务器，为静态资源发送禁用缓存响应头并监听 5174。 |
+
+### 前端页面（10）
+
+| 文件 | 作用 |
+|---|---|
 | `src/frontend/src/pages/FlowWorkbench.tsx` | 单张 Flow 的设计、测试和模型配方工作区总控制器。 |
 | `src/frontend/src/pages/HomePage.tsx` | 全局概览、TODO 摘要、协议能力和 RUN ACTIVITY 运行统计页面。 |
 | `src/frontend/src/pages/LabPage.tsx` | Flow 列表、创建、导入、克隆和删除页面。 |
-| `src/frontend/src/pages/ModelConfigPage.tsx` | 全局本地模型 Provider 配置页面。 |
+| `src/frontend/src/pages/ResourceOverviewPage.tsx` | 固定四面板只读展示模型、底座、工具和环境变量情况，并提供详情弹窗。 |
+| `src/frontend/src/pages/ResourceConfigurationPage.tsx` | 通过资源卡片弹窗管理模型、工具、凭据和角色分配。 |
 | `src/frontend/src/pages/ReleasePage.tsx` | 兼容性、预检、打包和发布页面。 |
-| `src/frontend/src/pages/ResourceConfigPage.tsx` | MCP、远程 API 与基座插件的本机配置页面。 |
 | `src/frontend/src/pages/RunDiagnosticsPage.tsx` | 跨 Flow 运行检索、错误证据、检查点、产物、诊断导出和恢复页面。 |
-| `src/frontend/src/pages/SettingsPage.tsx` | 汇总界面偏好、本机变量、凭据引用和运行环境的系统设置页。 |
+| `src/frontend/src/pages/SettingsPage.tsx` | 与业务资产无关的外观、字体、密度和动效设置页面。 |
 
 ### Flow 工作台组件（10）
 
@@ -234,6 +251,7 @@
 | `src/frontend/src/pages/flow-workbench/FlowGraphView.tsx` | React Flow 画布、节点、边、执行高亮和探针拖拽。 |
 | `src/frontend/src/pages/flow-workbench/McpLibraryPanel.tsx` | Flow 内 MCP 工具库选择和编辑面板。 |
 | `src/frontend/src/pages/flow-workbench/ModelRecipeView.tsx` | 卡带模型角色配方和本机连接绑定视图。 |
+| `src/frontend/src/pages/flow-workbench/CartridgeResourcesView.tsx` | Flow 内以卡带为目标管理模型、工具需求及本机资源绑定。 |
 | `src/frontend/src/pages/flow-workbench/NodeDrawer.tsx` | 新建节点抽屉和预设选择。 |
 | `src/frontend/src/pages/flow-workbench/nodeModel.ts` | 节点分类、预设、默认值和协议显示模型。 |
 | `src/frontend/src/pages/flow-workbench/TestBench.css` | 测试台、日志、交互、恢复和产物预览的独立样式。 |
@@ -241,7 +259,7 @@
 | `src/frontend/src/pages/flow-workbench/types.ts` | 工作台局部 TypeScript 类型。 |
 | `src/frontend/src/pages/flow-workbench/views.tsx` | 组合 Design/Run 视图和工作台顶部栏。 |
 
-### 前端样式分层（14）
+### 前端样式分层（17）
 
 | 文件 | 作用 |
 |---|---|
@@ -257,8 +275,11 @@
 | `src/frontend/src/styles/80-overview-layout.css` | 概览密度、100%/110%/125% 和视口适配。 |
 | `src/frontend/src/styles/85-model-config.css` | 全局模型路由页的状态摘要、双栏工具面板和缩放适配。 |
 | `src/frontend/src/styles/87-cartridge-assets.css` | Flow 资产工作区、资产清单和交互组件编辑界面。 |
+| `src/frontend/src/styles/88-cartridge-resources.css` | Flow 卡带资源工作区与工具需求编辑布局。 |
 | `src/frontend/src/styles/90-environment-release.css` | 环境、凭据、预检和发布页面。 |
 | `src/frontend/src/styles/95-config-and-appearance.css` | 配置弹窗、外观和系统设置。 |
+| `src/frontend/src/styles/97-resource-configuration.css` | 资源概览、资源卡片、集成配置弹窗和待分配需求布局。 |
+| `src/frontend/src/styles/98-reference-theme.css` | 从 img2-ui 参考图收敛出的统一浅白工作台主题，覆盖共享外壳、标题、卡片、按钮与缩放基线。 |
 
 ### 开发维护源码：当前协议与认证测试（8）
 
@@ -289,15 +310,19 @@
 | `scripts/tests/runtime/test_tool_plan_v1.py` | 验证 Tool Plan 允许列表、参数 schema 和副作用边界。 |
 | `scripts/tests/runtime/test_worker_lifecycle.py` | 真实验证 Worker 超时、run 取消和宿主退出。 |
 
-### 开发维护源码：Studio、LLM 与卫生测试（8）
+### 开发维护源码：Studio、LLM 与卫生测试（12）
 
 | 文件 | 作用 |
 |---|---|
 | `scripts/tests/studio/test_external_adapters.py` | 使用真实本机 HTTP、CLI 和 MCP 服务验证外部资源执行、超时、凭据隔离与取消。 |
+| `scripts/tests/studio/test_portability.py` | 验证发布包中可迁移内容、本机重绑内容与禁止打包内容的分类。 |
 | `scripts/tests/studio/test_studio_environment.py` | 验证凭据遮罩、资源引用和环境预检。 |
+| `scripts/tests/studio/test_studio_flow_directory.py` | 验证从卡带管理打开本地 Flow 目录的路径与权限边界。 |
 | `scripts/tests/studio/test_studio_resources.py` | 验证资源配置归一、ID 和绑定去重。 |
 | `scripts/tests/studio/test_studio_todo.py` | 验证 TODO 章节、任务和代码块解析。 |
+| `scripts/tests/llm/test_llm_config_manager.py` | 验证默认模型路由同步、连接变更后的验证失效、Provider 删除清理和支持矩阵。 |
 | `scripts/tests/llm/test_llm_connection.py` | 验证模型连接成功、真实失败和配置缺失不会被错误报告为通过。 |
+| `scripts/tests/llm/test_llm_detection.py` | 验证普通 LLM 自动检测、模型选择、OpenCode 导入和密钥脱敏。 |
 | `scripts/tests/llm/test_llm_recipe.py` | 验证卡带 LLM 配方可移植且不能携带本机密钥或 URL。 |
 | `scripts/tests/llm/test_llm_responses_api.py` | 验证 Responses API 消息、图片、工具和流转换。 |
 | `scripts/tests/hygiene/test_clean_base_hygiene.py` | 验证空卡带架、源码所有权、目录边界和发布包卫生。 |
@@ -368,13 +393,18 @@
 | `src/frontend/tsconfig.json` | TypeScript 工程引用入口。 |
 | `src/frontend/tsconfig.node.json` | Vite 配置文件的 Node TypeScript 设置。 |
 | `src/frontend/src/styles/README.md` | 样式文件所有权和级联顺序说明。 |
+| `src/frontend-new/package.json` | 独立 HTML 前端的工程身份和静态开发服务器命令。 |
+| `src/frontend-new/package-lock.json` | 锁定独立前端使用的 Lucide、Simple Icons、Web Awesome 与 Motion 依赖版本。 |
+| `src/frontend-new/README.md` | 独立前端边界、启动方式和后端 API 地址说明。 |
 
-### 项目文档（17）
+### 项目文档（21）
 
 | 文件 | 作用 |
 |---|---|
 | `docs/README.md` | 文档总入口，区分当前文档、历史快照、开发规则和运行产物。 |
 | `docs/architecture/PORTABLE_DLC_ARCHITECTURE.md` | Portable DLC 的激活、隔离、资源所有权和不可破坏边界。 |
+| `docs/design/IMG2_UI_REDESIGN_PROMPTS.md` | 锁定现有侧栏并为一级页面生成统一 Img2 视觉稿的母提示词、逐页提示词、负面提示词和评审门槛。 |
+| `docs/design/FRONTEND_ASSET_SYSTEM.md` | 规定独立前端的品牌资产、功能图标、技术标识、状态图形与交互动效边界。 |
 | `docs/development/README.md` | 开发与维护文档入口，说明根目录 `scripts/` 的结构和常用命令。 |
 | `docs/development/AI_DEVELOPER_GUIDE.md` | 深层架构、协议、DLC 和验收参考；不是 AI 接手项目的前置入口。 |
 | `docs/development/FILE_INVENTORY.md` | 本文件，逐项解释项目自有文件。 |

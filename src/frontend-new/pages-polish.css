@@ -1,0 +1,928 @@
+/* Container-level refinement for non-overview workspaces. */
+.workspace-page .page-button {
+  min-height: 39px;
+  padding-inline: 15px;
+  font-size: 13px;
+}
+
+.workspace-page .panel-frame > h2,
+.workspace-page .panel-title h2 {
+  font-size: 19px;
+  line-height: 24px;
+}
+
+/* Flow management */
+.flows-scroll {
+  padding: 18px 10px 32px 11px;
+}
+
+.section-row {
+  height: 38px;
+}
+
+.section-row h2 {
+  font-size: 19px;
+  line-height: 28px;
+  display: flex;
+  align-items: center;
+}
+
+.section-row h2 span {
+  line-height: 22px;
+}
+
+.flow-card-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.flow-card-grid > .flow-card:only-child {
+  grid-column: auto;
+}
+
+.flow-card,
+.flow-create-card {
+  height: 220px;
+}
+
+.flow-card-open {
+  height: 54px;
+  padding-inline: 20px;
+}
+
+.flow-card-open strong {
+  font-size: 18px;
+}
+
+.flow-card-open em,
+.flow-enter,
+.flow-card > p {
+  font-size: 13px;
+}
+
+.flow-card > p {
+  height: 42px;
+  padding-inline: 21px;
+  line-height: 20px;
+}
+
+.flow-meta {
+  height: 74px;
+  padding-inline: 20px;
+}
+
+.flow-meta span {
+  justify-content: center;
+  gap: 7px;
+}
+
+.flow-meta small {
+  font-size: 12px;
+}
+
+.flow-meta b {
+  font-size: 13px;
+}
+
+.flow-card-actions {
+  height: 48px;
+}
+
+.flow-card-actions button {
+  font-size: 13px;
+}
+
+.flow-create-card {
+  width: 100%;
+  border: 1px dashed #efaa8e;
+  border-radius: 7px;
+  background: #fffdfc;
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding: 0 24px;
+  text-align: left;
+  transition: border-color 160ms ease, background-color 160ms ease;
+}
+
+.flow-create-card:hover {
+  border-color: #f4511e;
+  background: #fff9f6;
+}
+
+.flow-create-icon {
+  width: 52px;
+  height: 52px;
+  border: 1px solid #ffc0a8;
+  border-radius: 8px;
+  color: #f4511e;
+  display: grid;
+  place-items: center;
+}
+
+.flow-create-icon .line-icon {
+  width: 24px;
+  height: 24px;
+}
+
+.flow-create-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.flow-create-copy strong {
+  font-size: 18px;
+}
+
+.flow-create-copy small {
+  color: #707a82;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.flow-create-enter {
+  color: #f4511e;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+}
+
+.flow-empty-panel h2 {
+  font-size: 23px;
+}
+
+.flow-empty-panel > p {
+  max-width: 560px;
+  font-size: 14px;
+  line-height: 22px;
+  text-align: center;
+}
+
+.empty-actions .page-button {
+  min-width: 168px;
+  min-height: 44px;
+}
+
+/* Diagnostics */
+.run-search {
+  height: 40px;
+  font-size: 13px;
+}
+
+.run-list-head {
+  font-size: 12px;
+}
+
+.run-list-head,
+.run-row {
+  grid-template-columns: 178px minmax(85px, 1fr) 88px;
+}
+
+.run-row {
+  min-height: 58px;
+}
+
+.run-row strong {
+  font-size: 12px;
+}
+
+.run-row small,
+.run-row time,
+.run-row em {
+  font-size: 11px;
+}
+
+.diagnostic-detail {
+  grid-template-rows: 112px 228px minmax(0, 1fr) 88px;
+}
+
+.selected-run {
+  grid-template-columns: minmax(250px, 1.25fr) minmax(120px, .58fr) minmax(155px, .72fr);
+  grid-template-rows: 42px 40px;
+  gap: 8px 14px;
+  padding: 10px 14px;
+}
+
+.selected-run-main strong {
+  font-size: 15px;
+}
+
+.selected-run-main small,
+.selected-run > div small,
+.selected-run > div b {
+  font-size: 12px;
+}
+
+.selected-actions {
+  grid-column: 1 / -1;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.selected-actions .page-button {
+  height: 38px;
+  padding-inline: 14px;
+  font-size: 12px;
+}
+
+.cause-recovery {
+  padding: 11px;
+}
+
+.cause-recovery h2,
+.artifact-strip h2 {
+  font-size: 19px;
+}
+
+.root-cause dl {
+  grid-template-columns: 84px minmax(0, 1fr);
+  font-size: 12px;
+}
+
+.root-cause,
+.recovery-actions {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.root-cause dt,
+.root-cause dd {
+  padding-block: 8px;
+}
+
+.recovery-actions button {
+  min-height: 48px;
+  font-size: 14px;
+}
+
+.recovery-actions button small {
+  font-size: 11px;
+  line-height: 15px;
+}
+
+.event-panel,
+.checkpoint-panel {
+  grid-template-rows: 35px minmax(0, 1fr);
+}
+
+.panel-title span {
+  font-size: 12px;
+}
+
+.timeline-row {
+  min-height: 46px;
+  height: auto;
+  grid-template-columns: 82px 13px minmax(0, 1fr) 18px;
+  font-size: 12px;
+}
+
+.timeline-row small {
+  font-size: 11px;
+}
+
+.checkpoint-table > div {
+  min-height: 39px;
+  font-size: 12px;
+}
+
+.artifact-strip {
+  grid-template-rows: 34px minmax(0, 1fr);
+  padding-bottom: 7px;
+}
+
+.artifact-strip h2 span,
+.artifact-strip p strong,
+.artifact-strip p small {
+  font-size: 12px;
+}
+
+/* Resource center */
+.resources-content {
+  grid-template-rows: 82px 250px minmax(0, 1fr);
+}
+
+.resource-table-card h2,
+.tool-empty-card h2,
+.environment-card h2,
+.requirements-card h2,
+.local-vars-card h2 {
+  font-size: 20px;
+  line-height: 25px;
+}
+
+.resource-table > div {
+  min-height: 56px;
+  font-size: 13px;
+}
+
+.resource-table button {
+  min-height: 36px;
+  padding-inline: 10px;
+  font-size: 12px;
+}
+
+.compact-empty {
+  height: 174px;
+}
+
+.compact-empty strong {
+  font-size: 19px;
+}
+
+.compact-empty p {
+  font-size: 13px;
+}
+
+.environment-list > div {
+  min-height: 48px;
+  font-size: 13px;
+}
+
+.environment-list button,
+.environment-card footer,
+.environment-card footer button {
+  min-height: 34px;
+  font-size: 12px;
+}
+
+.requirements-card strong {
+  font-size: 15px;
+}
+
+.requirements-card p {
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.local-vars-card > div {
+  min-height: 52px;
+  font-size: 13px;
+}
+
+.local-vars-card .page-button {
+  min-height: 36px;
+  font-size: 12px;
+}
+
+.resource-modal {
+  width: min(1240px, 90vw);
+  height: min(780px, 88vh);
+  grid-template-rows: 60px 86px minmax(0, 1fr);
+}
+
+.resource-modal > header h2 {
+  font-size: 22px;
+}
+
+.modal-summary em,
+.modal-summary b {
+  font-size: 12px;
+}
+
+.modal-summary b {
+  font-size: 13px;
+}
+
+.modal-table > div {
+  min-height: 60px;
+  font-size: 12px;
+}
+
+.modal-empty-row {
+  display: flex !important;
+  justify-content: center;
+  color: #737d85;
+}
+
+.modal-tool-empty.has-tools {
+  height: auto;
+  min-height: 120px;
+  display: block;
+  padding: 8px 14px;
+}
+
+.modal-tool-row {
+  min-height: 48px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 140px 100px;
+  align-items: center;
+  border-bottom: 1px solid #e2e6e9;
+  font-size: 12px;
+}
+
+.modal-tool-row > span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.modal-tool-empty {
+  height: 170px;
+}
+
+.modal-tool-empty p,
+.modal-footnote {
+  font-size: 12px;
+}
+
+/* Release */
+.target-flow h2,
+.release-history h2,
+.preflight > h2,
+.migration h2,
+.package-strategy h2,
+.package-preview h2 {
+  font-size: 18px;
+  line-height: 23px;
+}
+
+.target-flow strong,
+.target-flow small,
+.target-flow b {
+  font-size: 12px;
+}
+
+.release-history > div:not(.panel-title) {
+  min-height: 50px;
+  font-size: 11px;
+}
+
+.release-history small,
+.release-history time {
+  font-size: 11px;
+}
+
+.preflight-summary span {
+  font-size: 12px;
+}
+
+.preflight-body .table-head {
+  font-size: 12px;
+}
+
+.preflight-body p {
+  font-size: 12px;
+}
+
+.preflight-body aside h3,
+.preflight-body aside > div,
+.preflight-body aside p {
+  font-size: 12px;
+}
+
+.preflight-body aside p {
+  height: auto;
+  min-height: 0;
+  margin: 5px 0 0;
+  padding: 0;
+  border: 0;
+  display: block;
+  line-height: 16px;
+}
+
+.migration > div span,
+.migration > p {
+  font-size: 12px;
+}
+
+.migration {
+  padding: 7px;
+}
+
+.migration h2 {
+  margin-bottom: 4px;
+}
+
+.migration > div {
+  height: 54px;
+}
+
+.migration > div span {
+  line-height: 14px;
+}
+
+.migration > div b {
+  line-height: 25px;
+}
+
+.package-strategy .page-button {
+  min-height: 36px;
+  font-size: 12px;
+}
+
+.package-strategy > p,
+.package-strategy dl,
+.package-preview dl {
+  font-size: 12px;
+}
+
+.package-strategy dt,
+.package-strategy dd,
+.package-preview dt,
+.package-preview dd {
+  padding-block: 4px;
+}
+
+.release-footer small {
+  font-size: 11px;
+}
+
+.release-footer .page-button {
+  min-height: 39px;
+  font-size: 13px;
+}
+
+/* Settings */
+.setting-section > p {
+  font-size: 12px;
+  line-height: 18px;
+}
+
+@container dashboard (min-height: 940px) {
+  .settings-controls {
+    padding: 24px;
+  }
+
+  .setting-block {
+    margin-bottom: 24px;
+  }
+
+  .setting-section {
+    padding-top: 20px;
+    margin-top: 24px;
+  }
+
+  .setting-line {
+    margin-block: 16px;
+  }
+
+  .setting-block .segmented button,
+  .setting-line .segmented button {
+    min-height: 40px;
+  }
+}
+
+@container dashboard (max-height: 939px) {
+  .workspace-page .page-button {
+    min-height: 36px;
+  }
+
+  .flow-card,
+  .flow-create-card {
+    height: 202px;
+  }
+
+  .flow-card-open {
+    height: 50px;
+  }
+
+  .flow-card > p {
+    height: 38px;
+  }
+
+  .flow-meta {
+    height: 70px;
+  }
+
+  .flow-card-actions {
+    height: 42px;
+  }
+
+  .diagnostic-detail {
+    grid-template-rows: 112px 190px minmax(0, 1fr) 84px;
+  }
+
+  .selected-run-main strong {
+    font-size: 14px;
+  }
+
+  .selected-run > .selected-run-main small,
+  .selected-run > div small,
+  .selected-run > div b {
+    font-size: 11px;
+  }
+
+  .selected-actions .page-button {
+    height: 36px;
+    font-size: 12px;
+  }
+
+  .cause-recovery {
+    padding: 9px;
+  }
+
+  .root-cause dt,
+  .root-cause dd {
+    padding-block: 3px;
+    line-height: 16px;
+  }
+
+  .recovery-actions button {
+    min-height: 44px;
+  }
+
+  .timeline-row {
+    min-height: 43px;
+  }
+
+  .checkpoint-table > div {
+    min-height: 36px;
+  }
+
+  .resources-content {
+    grid-template-rows: 69px 230px minmax(0, 1fr);
+  }
+
+  .resource-table-card,
+  .tool-empty-card,
+  .environment-card,
+  .requirements-card,
+  .local-vars-card {
+    padding: 13px;
+  }
+
+  .resource-table-card h2,
+  .tool-empty-card h2,
+  .environment-card h2,
+  .requirements-card h2,
+  .local-vars-card h2 {
+    margin-bottom: 10px;
+    font-size: 18px;
+  }
+
+  .resource-table > div {
+    min-height: 50px;
+    font-size: 12px;
+  }
+
+  .compact-empty {
+    height: 162px;
+  }
+
+  .environment-list > div {
+    min-height: 39px;
+    font-size: 12px;
+  }
+
+  .resource-modal {
+    height: min(720px, 90vh);
+  }
+
+  .modal-table > div {
+    min-height: 54px;
+    font-size: 11px;
+  }
+
+  .release-history > div:not(.panel-title),
+  .release-history small,
+  .release-history time {
+    font-size: 11px;
+  }
+
+  .preflight-body p,
+  .preflight-body aside h3,
+  .preflight-body aside > div,
+  .preflight-body aside p,
+  .migration > div span,
+  .migration > p,
+  .package-strategy > p,
+  .package-strategy dl,
+  .package-preview dl {
+    font-size: 11px;
+  }
+
+  .migration > p {
+    margin-block: 4px 0;
+    line-height: 14px;
+  }
+
+  .migration > div {
+    height: 41px;
+  }
+
+  .release-footer .page-button {
+    min-height: 36px;
+  }
+
+  .preflight-body {
+    height: 176px;
+  }
+
+  .package-strategy dl,
+  .package-preview dl {
+    margin-block: 4px 0;
+  }
+}
+
+/* Diagnostics readability: this page is read repeatedly while troubleshooting. */
+.diagnostics-page .run-search {
+  font-size: 14px;
+}
+
+.diagnostics-page .run-tabs button,
+.diagnostics-page .time-filter,
+.diagnostics-page .run-list-head {
+  font-size: 13px;
+}
+
+.diagnostics-page .run-list-head,
+.diagnostics-page .run-row {
+  grid-template-columns: 192px minmax(72px, 1fr) 84px;
+}
+
+.diagnostics-page .run-row {
+  min-height: 62px;
+}
+
+.diagnostics-page .run-row strong {
+  font-size: 14px;
+  line-height: 18px;
+}
+
+.diagnostics-page .run-row em {
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.diagnostics-page .run-row small,
+.diagnostics-page .run-row time,
+.diagnostics-page .run-row em small {
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.diagnostics-page .run-row > .tone-dot {
+  width: 9px;
+  height: 9px;
+}
+
+.diagnostics-page .failure-badge {
+  font-size: 13px;
+}
+
+.diagnostics-page .selected-run-main strong {
+  font-size: 16px;
+  line-height: 20px;
+}
+
+.diagnostics-page .selected-run-main > small,
+.diagnostics-page .selected-run > div small {
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.diagnostics-page .selected-run > div b {
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.diagnostics-page .selected-actions .page-button {
+  font-size: 13px;
+}
+
+.diagnostics-page .cause-recovery h2,
+.diagnostics-page .panel-title h2,
+.diagnostics-page .artifact-strip h2 {
+  font-size: 20px;
+  line-height: 25px;
+}
+
+.diagnostics-page .root-cause dl {
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.diagnostics-page .root-cause dt,
+.diagnostics-page .root-cause dd {
+  padding-block: 7px;
+}
+
+.diagnostics-page .recovery-actions button {
+  font-size: 14px;
+  line-height: 18px;
+}
+
+.diagnostics-page .recovery-actions button small {
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.diagnostics-page .panel-title span {
+  font-size: 13px;
+}
+
+.diagnostics-page .timeline-row {
+  min-height: 49px;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.diagnostics-page .timeline-row time,
+.diagnostics-page .timeline-row small {
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.diagnostics-page .checkpoint-table > div {
+  min-height: 41px;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.diagnostics-page .checkpoint-table .table-head {
+  font-size: 12px;
+}
+
+.diagnostics-page .artifact-strip h2 span,
+.diagnostics-page .artifact-strip p strong,
+.diagnostics-page .artifact-strip p small {
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.diagnostics-page .line-icon {
+  width: 16px;
+  height: 16px;
+}
+
+@container dashboard (min-height: 940px) {
+  .preflight-body {
+    height: 233px;
+  }
+}
+
+/* Readable typography: keep 11px only for compact technical annotations. */
+.run-row em {
+  font-size: 12px;
+}
+
+.selected-run > div small,
+.selected-run > div b,
+.recovery-actions button small {
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.selected-run-main > small {
+  font-size: 11px;
+}
+
+.resource-table-card .status-pill,
+.environment-card .status-pill,
+.local-vars-card .status-pill,
+.settings-preview .status-pill {
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.modal-table > div {
+  font-size: 12px;
+}
+
+.release-history > div:not(.panel-title) {
+  font-size: 12px;
+}
+
+.release-history small,
+.release-history time {
+  font-size: 11px;
+}
+
+.release-footer small {
+  font-size: 12px;
+  line-height: 16px;
+}
+
+@container dashboard (max-height: 939px) {
+  .diagnostics-page .root-cause dt,
+  .diagnostics-page .root-cause dd {
+    padding-block: 3px;
+  }
+
+  .selected-run > .selected-run-main small,
+  .selected-run > div small,
+  .selected-run > div b,
+  .recovery-actions button small {
+    font-size: 12px;
+  }
+
+  .selected-run-main > small {
+    font-size: 11px;
+  }
+
+  .modal-table > div,
+  .preflight-body p,
+  .preflight-body aside h3,
+  .preflight-body aside > div,
+  .preflight-body aside p,
+  .migration > div span,
+  .migration > p,
+  .package-strategy > p,
+  .package-strategy dl,
+  .package-preview dl {
+    font-size: 12px;
+  }
+}

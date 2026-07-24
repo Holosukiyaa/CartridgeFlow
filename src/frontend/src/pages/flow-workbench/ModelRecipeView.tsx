@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 
 import {
   fetchLlmAssignments,
@@ -10,30 +11,25 @@ import {
   type LlmAssignments,
   type LlmProvider,
 } from '../../api.ts'
-import { getRoleReadiness, normalizeRecipeRoles, type LlmRecipeRole } from '../../llmRecipe.ts'
+import { getRoleReadiness, normalizeRecipeRoles, providerRoleCompatibilityIssue, type LlmRecipeRole } from '../../llmRecipe.ts'
 import { showToast } from '../../toast.tsx'
 
 const EMPTY_ASSIGNMENTS: LlmAssignments = { version: 1, defaults: {}, cartridges: {}, nodes: {} }
 
 const CAPABILITIES = [
   { value: 'text_generation', label: '文本生成' },
+  { value: 'text_reasoning', label: '文本推理' },
   { value: 'vision', label: '视觉理解' },
-  { value: 'image_generation', label: '图片生成' },
-  { value: 'embedding', label: '向量嵌入' },
-  { value: 'audio', label: '音频处理' },
+  { value: 'image_generation', label: '图像生成' },
 ]
 
 const API_TYPES = [
   { value: 'openai', label: 'OpenAI Compatible' },
-  { value: 'anthropic', label: 'Anthropic' },
 ]
 
 const WIRE_APIS = [
   { value: 'chat_completions', label: 'Chat Completions' },
   { value: 'responses', label: 'Responses' },
-  { value: 'messages', label: 'Messages' },
-  { value: 'images', label: 'Images' },
-  { value: 'embeddings', label: 'Embeddings' },
 ]
 
 function parseManifest(detail: FlowLabDetail, files: FlowFiles) {
@@ -55,9 +51,8 @@ function roleStateLabel(state: string) {
 }
 
 function defaultWireApi(apiType: string, capability: string) {
-  if (capability === 'image_generation') return 'images'
-  if (capability === 'embedding') return 'embeddings'
-  return apiType === 'anthropic' ? 'messages' : 'chat_completions'
+  void apiType
+  return capability === 'vision' ? 'responses' : 'chat_completions'
 }
 
 export function ModelRecipeView({ detail, files, flowId, editable, onRefresh }: {
@@ -122,7 +117,7 @@ export function ModelRecipeView({ detail, files, flowId, editable, onRefresh }: 
       capability: 'text_generation',
       api_type: 'openai',
       wire_api: 'chat_completions',
-      model: '',
+      model: 'configured-locally',
       required: true,
     }])
     setDirty(true)
@@ -141,7 +136,7 @@ export function ModelRecipeView({ detail, files, flowId, editable, onRefresh }: 
       if (ids.has(role.id)) return `角色 ID 重复：${role.id}`
       ids.add(role.id)
       if (!role.label.trim()) return `${prefix}缺少名称`
-      if (!role.model.trim()) return `${prefix}缺少固定模型名`
+      if (!role.model.trim()) return `${prefix}缺少模型约束`
       if (!role.api_type.trim() || !role.wire_api.trim()) return `${prefix}缺少接口约束`
     }
     return ''
@@ -176,7 +171,9 @@ export function ModelRecipeView({ detail, files, flowId, editable, onRefresh }: 
         .filter(([roleId]) => retainedIds.has(roleId))
         .map(([roleId, binding]) => {
           const role = roles.find((item) => item.id === roleId)
-          return [roleId, { ...binding, model: role?.model || binding.model }]
+          const provider = providers.find((item) => item.id === binding.provider_id)
+          const model = role?.model && role.model !== 'configured-locally' ? role.model : provider?.default_model || binding.model
+          return [roleId, { ...binding, model }]
         }))
       if (JSON.stringify(currentBindings) !== JSON.stringify(syncedBindings)) {
         const nextAssignments = {
@@ -199,10 +196,21 @@ export function ModelRecipeView({ detail, files, flowId, editable, onRefresh }: 
   }
 
   const bindProvider = async (role: LlmRecipeRole, providerId: string) => {
+    const provider = providers.find((item) => item.id === providerId)
+    if (provider) {
+      const compatibilityIssue = providerRoleCompatibilityIssue(role, provider)
+      if (compatibilityIssue) {
+        setError(compatibilityIssue)
+        return
+      }
+    }
     setSavingBinding(role.id)
     try {
       const cartridgeBindings = { ...(assignments.cartridges?.[flowId] || {}) }
-      if (providerId) cartridgeBindings[role.id] = { provider_id: providerId, model: role.model }
+      if (providerId) cartridgeBindings[role.id] = {
+        provider_id: providerId,
+        model: role.model && role.model !== 'configured-locally' ? role.model : provider?.default_model || '',
+      }
       else delete cartridgeBindings[role.id]
       const nextAssignments: LlmAssignments = {
         ...assignments,
@@ -239,8 +247,8 @@ export function ModelRecipeView({ detail, files, flowId, editable, onRefresh }: 
 
       {error && <div className="cf-model-alert danger">{error}</div>}
       <div className="cf-model-alert privacy">
-        <b>本机凭据隔离</b>
-        <span>发布或复制卡带时不会携带连接地址与密钥。缺失项需在当前底座的 <code>.data/user/config/llm/providers.json</code> 中补齐。</span>
+        <b>双向配置</b>
+        <span>这里从卡带模型角色选择本机连接；服务地址和密钥统一在 <Link to="/resources/config">资源配置</Link> 中维护，发布卡带时不会携带这些本机信息。</span>
       </div>
 
       <div className="cf-model-section-head">
@@ -280,13 +288,13 @@ export function ModelRecipeView({ detail, files, flowId, editable, onRefresh }: 
                     <label><span>能力</span><select value={role.capability} disabled={!editable} onChange={(event) => {
                       const capability = event.target.value
                       updateRole(index, { capability, wire_api: defaultWireApi(role.api_type, capability) })
-                    }}>{CAPABILITIES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
+                    }}>{!CAPABILITIES.some((item) => item.value === role.capability) && <option value={role.capability}>{role.capability}（当前不支持）</option>}{CAPABILITIES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
                     <label><span>接口类型</span><select value={role.api_type} disabled={!editable} onChange={(event) => {
                       const apiType = event.target.value
                       updateRole(index, { api_type: apiType, wire_api: defaultWireApi(apiType, role.capability) })
-                    }}>{API_TYPES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
-                    <label><span>调用协议</span><select value={role.wire_api} disabled={!editable} onChange={(event) => updateRole(index, { wire_api: event.target.value })}>{WIRE_APIS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
-                    <label><span>固定模型</span><input value={role.model} disabled={!editable} placeholder="例如 gpt-4.1-mini" onChange={(event) => updateRole(index, { model: event.target.value })} /></label>
+                    }}>{!API_TYPES.some((item) => item.value === role.api_type) && <option value={role.api_type}>{role.api_type}（当前不支持）</option>}{API_TYPES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
+                    <label><span>调用协议</span><select value={role.wire_api} disabled={!editable} onChange={(event) => updateRole(index, { wire_api: event.target.value })}>{!WIRE_APIS.some((item) => item.value === role.wire_api) && <option value={role.wire_api}>{role.wire_api}（当前不支持）</option>}{WIRE_APIS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
+                    <label><span>模型约束</span><input value={role.model} disabled={!editable} placeholder="configured-locally 或固定模型名" onChange={(event) => updateRole(index, { model: event.target.value })} /></label>
                     <label className="cf-model-required"><input type="checkbox" checked={role.required} disabled={!editable} onChange={(event) => updateRole(index, { required: event.target.checked })} /><span>运行必需</span></label>
                   </div>
 
@@ -298,7 +306,7 @@ export function ModelRecipeView({ detail, files, flowId, editable, onRefresh }: 
                       onChange={(event) => void bindProvider(role, event.target.value)}
                     >
                       <option value="">未绑定</option>
-                      {providers.map((provider) => <option key={provider.id} value={provider.id}>{provider.name} · {provider.api_type}</option>)}
+                      {providers.map((provider) => { const issue = providerRoleCompatibilityIssue(role, provider); return <option key={provider.id} value={provider.id} disabled={Boolean(issue)}>{provider.name} · {provider.api_type}{issue ? '（不兼容）' : ''}</option> })}
                     </select>
                     <div className={`cf-model-binding-result ${status?.state || 'unbound'}`}>
                       <strong>{dirty ? '请先保存配方，再绑定本机 Provider' : status?.message || '未绑定本机 Provider；URL / Key 待填写'}</strong>

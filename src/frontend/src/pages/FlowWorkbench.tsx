@@ -33,7 +33,7 @@ import { CATEGORY_BY_ID, PROCESS_KIND_LABELS, buildAutoAlignLayout, formatProces
 import type { FlowAssistantApplyResult, FlowAssistantDraft, FlowAssistantGraphOps } from './flow-workbench/FlowAssistantPanel.tsx'
 import type { GraphResult, NodeCategoryId, WorkbenchMode } from './flow-workbench/types.ts'
 import { McpLibraryPanel } from './flow-workbench/McpLibraryPanel.tsx'
-import { ModelRecipeView } from './flow-workbench/ModelRecipeView.tsx'
+import { CartridgeResourcesView } from './flow-workbench/CartridgeResourcesView.tsx'
 import { AssetWorkbench } from './flow-workbench/AssetWorkbench.tsx'
 
 const firstText = (...values: any[]) => values.find((value) => typeof value === 'string' && value.trim())?.trim() || ''
@@ -1036,8 +1036,8 @@ export default function FlowWorkbench({ flowId, mode: controlledMode, onBack, on
           />
         )}
 
-        {mode === 'models' && (
-          <ModelRecipeView
+        {mode === 'resources' && (
+          <CartridgeResourcesView
             detail={detail}
             files={files}
             flowId={flowId}

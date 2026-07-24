@@ -1,6 +1,6 @@
 import type { FlowFiles, FlowGraph, FlowLabDetail, FlowNode, ValidationResponse } from '../../api.ts'
 
-export type WorkbenchMode = 'design' | 'assets' | 'run' | 'models'
+export type WorkbenchMode = 'design' | 'assets' | 'run' | 'resources'
 export type NodeCategoryId = 'input' | 'interaction' | 'process' | 'tool' | 'remote' | 'transfer' | 'store' | 'control' | 'custom'
 
 export type NodePreset = {

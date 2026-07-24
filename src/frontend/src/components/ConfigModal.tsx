@@ -1,30 +1,47 @@
 import { useEffect, useId, useRef, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 
-export default function ConfigModal({ open, title, kicker, onClose, children, className = '' }: {
+const openModalStack: symbol[] = []
+
+export default function ConfigModal({ open, title, kicker, onClose, children, className = '', initialFocus = 'control' }: {
   open: boolean
   title: string
   kicker: string
   onClose: () => void
   children: ReactNode
   className?: string
+  initialFocus?: 'control' | 'dialog'
 }) {
   const titleId = useId()
   const dialogRef = useRef<HTMLElement>(null)
+  const modalToken = useRef(Symbol('config-modal')).current
+  const onCloseRef = useRef(onClose)
+
+  useEffect(() => {
+    onCloseRef.current = onClose
+  }, [onClose])
 
   useEffect(() => {
     if (!open) return
+    openModalStack.push(modalToken)
     const previousFocus = document.activeElement as HTMLElement | null
-    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || openModalStack.at(-1) !== modalToken) return
+      event.stopImmediatePropagation()
+      onCloseRef.current()
+    }
     window.addEventListener('keydown', closeOnEscape)
     const focusTimer = window.setTimeout(() => {
-      dialogRef.current?.querySelector<HTMLElement>('input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled])')?.focus()
+      if (initialFocus === 'dialog') dialogRef.current?.focus({ preventScroll: true })
+      else dialogRef.current?.querySelector<HTMLElement>('input:not([disabled]):not([type="hidden"]):not([hidden]), select:not([disabled]), textarea:not([disabled]), button:not([disabled])')?.focus({ preventScroll: true })
     })
     return () => {
+      const stackIndex = openModalStack.lastIndexOf(modalToken)
+      if (stackIndex >= 0) openModalStack.splice(stackIndex, 1)
       window.removeEventListener('keydown', closeOnEscape)
       window.clearTimeout(focusTimer)
       previousFocus?.focus()
     }
-  }, [open, onClose])
+  }, [initialFocus, modalToken, open])
 
   function keepFocusInside(event: ReactKeyboardEvent<HTMLElement>) {
     if (event.key !== 'Tab') return
@@ -39,7 +56,7 @@ export default function ConfigModal({ open, title, kicker, onClose, children, cl
   if (!open) return null
   return (
     <div className="cf-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
-      <section ref={dialogRef} className={`cf-modal cf-config-modal ${className}`} role="dialog" aria-modal="true" aria-labelledby={titleId} onKeyDown={keepFocusInside}>
+      <section ref={dialogRef} tabIndex={-1} className={`cf-modal cf-config-modal ${className}`} role="dialog" aria-modal="true" aria-labelledby={titleId} onKeyDown={keepFocusInside}>
         <header className="cf-modal-head">
           <div><span className="cf-modal-kicker">{kicker}</span><h2 id={titleId}>{title}</h2></div>
           <button type="button" className="cf-modal-close cf-config-modal-close" onClick={onClose} aria-label="关闭">×</button>

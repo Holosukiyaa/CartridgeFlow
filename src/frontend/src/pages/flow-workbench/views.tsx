@@ -44,17 +44,21 @@ export function WorkbenchHeader({ detail, tags, mode, onBack, onModeChange, onCl
           </HStack>
         )}
       </HStack>
-      <HStack gap={2}>
-        <Button className="cf-outline-btn" onClick={onBack}>返回项目</Button>
+      <HStack gap={2} className="cf-workbench-actions">
+        <Button className="cf-outline-btn cf-workbench-back-btn" onClick={onBack}>卡带管理</Button>
         {!detail.cartridge.editable && onCloneToDev && (
           <Button className="cf-outline-btn" onClick={onCloneToDev} loading={cloningToDev} loadingText="复制中...">
             复制为可编辑版本
           </Button>
         )}
-        <Button className={mode === 'design' ? 'cf-accent-btn' : 'cf-outline-btn'} onClick={() => onModeChange('design')}>设计</Button>
-        <Button className={mode === 'assets' ? 'cf-accent-btn' : 'cf-outline-btn'} onClick={() => onModeChange('assets')}>卡带资产</Button>
-        <Button className={mode === 'run' ? 'cf-accent-btn' : 'cf-outline-btn'} onClick={() => onModeChange('run')}>测试</Button>
-        <Button className={mode === 'models' ? 'cf-accent-btn' : 'cf-outline-btn'} onClick={() => onModeChange('models')}>模型配方</Button>
+        <div className="cf-workbench-mode-switch" aria-label="工作台模式">
+          <Button className={mode === 'design' ? 'active' : ''} onClick={() => onModeChange('design')}>设计</Button>
+          <Button className={mode === 'run' ? 'active' : ''} onClick={() => onModeChange('run')}>测试</Button>
+        </div>
+        <div className="cf-workbench-config-actions">
+          <Button className={mode === 'assets' ? 'active' : ''} onClick={() => onModeChange('assets')}>交互节点</Button>
+          <Button className={mode === 'resources' ? 'active' : ''} onClick={() => onModeChange('resources')}>绑定资源</Button>
+        </div>
       </HStack>
     </HStack>
   )

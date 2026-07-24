@@ -275,10 +275,10 @@
     },
     "model_recipe_binding": {
       "verification": "verified",
-      "implementation": ["src/core/cartridge/validator.py#ManifestValidator._validate_llm_recipe", "src/core/llm/config_manager.py#resolve_model"],
-      "positive_tests": ["test_llm_recipe.LlmRecipeManifestTests.test_accepts_portable_model_role"],
-      "failure_tests": ["test_llm_recipe.LlmRecipeManifestTests.test_rejects_local_credentials_and_urls"],
-      "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/ModelConfigPage.tsx"]}
+      "implementation": ["src/core/cartridge/validator.py#ManifestValidator._validate_llm_recipe", "src/core/llm/config_manager.py#build_model_binding_report", "src/core/llm/config_manager.py#resolve_model", "src/core/cartridge/runner.py#CartridgeRunner.create_run"],
+      "positive_tests": ["test_llm_recipe.LlmRecipeManifestTests.test_accepts_portable_model_role", "test_llm_config_manager.LlmConfigManagerTests.test_required_recipe_role_needs_explicit_compatible_binding"],
+      "failure_tests": ["test_llm_recipe.LlmRecipeManifestTests.test_rejects_local_credentials_and_urls", "test_runtime_errors.RuntimeErrorEnvelopeTests.test_required_model_binding_blocks_before_run_directory_is_created"],
+      "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/ModelConfigPage.tsx", "src/frontend/src/pages/flow-workbench/ModelRecipeView.tsx"]}
     },
     "local_resources": {
       "verification": "verified",

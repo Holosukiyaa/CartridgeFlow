@@ -277,14 +277,6 @@
 .cf-model-local-binding dt { color: var(--muted); font-size: 9px; }
 .cf-model-local-binding dd { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font: 9px var(--mono); }
 
-/* Dense project list actions now contain three primary destinations. */
-.cf-flow-card { grid-template-columns: minmax(0, 1fr) 270px; }
-.cf-flow-actions { width: 270px; }
-.cf-project-card-actions button { min-width: 0; padding-inline: 8px !important; }
-.cf-flow-card,
-.cf-flow-card > div,
-.cf-project-card-actions { min-width: 0; }
-
 @media (max-width: 1050px) {
   .cf-home-layout { grid-template-columns: 1fr; }
   .cf-home-attention { padding-left: 0; }
@@ -331,18 +323,17 @@
   .cf-workbench-titlebar .cf-page-subtitle { grid-column: 1 / -1; min-height: 0 !important; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .cf-workbench-titlebar .cf-contract-strip { grid-column: 1 / -1; max-width: 100%; overflow: auto; }
   .cf-workbench-titlebar .cf-workbench-tags { grid-column: 1 / -1; min-width: 0; overflow: auto; }
-  .cf-workbench-header > div:last-child { width: 100%; display: grid !important; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px !important; }
-  .cf-workbench-header > div:last-child button { min-width: 0; padding-inline: 4px !important; }
+  .cf-workbench-actions { width: 100%; display: grid !important; grid-template-columns: minmax(0, .7fr) minmax(0, 1fr) minmax(0, 1.35fr); gap: 6px !important; }
+  .cf-workbench-actions > button,
+  .cf-workbench-actions > div { min-width: 0; width: 100%; margin: 0; }
+  .cf-workbench-actions > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cf-workbench-actions button { min-width: 0; padding-inline: 4px !important; }
   .cf-model-recipe-page { overflow: visible; padding: 8px 4px 32px; }
   .cf-model-summary { grid-template-columns: 1fr; gap: 13px; }
   .cf-model-summary-stats { justify-self: start; }
   .cf-model-summary-actions { grid-column: auto; justify-content: flex-start; }
   .cf-model-alert.privacy { display: grid; gap: 5px; }
   .cf-model-recipe-fields { grid-template-columns: repeat(2, minmax(130px, 1fr)); }
-  .cf-flow-card { grid-template-columns: 1fr; gap: 12px; }
-  .cf-flow-actions { width: 100%; }
-  .cf-flow-card { width: 100%; overflow: hidden; }
-  .cf-flow-card .cf-badge { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 }
 
 @media (max-width: 520px) {

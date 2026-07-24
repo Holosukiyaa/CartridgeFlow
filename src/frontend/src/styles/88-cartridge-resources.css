@@ -1,0 +1,58 @@
+.cf-cartridge-resources-view { height: 100%; min-height: 0; overflow-y: auto; background: var(--paper); }
+.cf-cartridge-resource-tabs {
+  min-height: 46px;
+  padding: 0 22px;
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  display: flex;
+  align-items: end;
+  gap: 22px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 253, 249, .96);
+}
+.cf-cartridge-resource-tabs button { min-height: 45px; padding: 0 2px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); font-size: 11px; font-weight: 750; }
+.cf-cartridge-resource-tabs button.active { border-bottom-color: var(--accent); color: var(--accent-dark); }
+.cf-cartridge-resource-tabs a { min-height: 45px; margin-left: auto; display: inline-flex; align-items: center; color: var(--accent-dark); font-size: 9px; font-weight: 750; text-decoration: none; }
+.cf-cartridge-resources-view .cf-model-recipe-page { height: auto; min-height: calc(100% - 46px); }
+.cf-cartridge-tools-page { min-height: calc(100% - 46px); padding: 20px 22px 34px; }
+.cf-cartridge-tool-summary { margin: 0; }
+.cf-cartridge-tool-summary a { color: var(--accent-dark); font-weight: 750; text-decoration: none; }
+.cf-model-alert.privacy a { color: var(--accent-dark); font-weight: 750; text-decoration: none; }
+.cf-cartridge-tool-role-list { display: grid; gap: 10px; }
+.cf-cartridge-tool-role { overflow: hidden; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); }
+.cf-cartridge-tool-role-head { min-height: 55px; padding: 8px 12px; display: grid; grid-template-columns: 34px minmax(0, 1fr) auto auto; gap: 10px; align-items: center; border-bottom: 1px solid var(--line); background: var(--paper-soft); }
+.cf-cartridge-tool-role-head > span { color: var(--accent); font: 750 12px var(--mono); }
+.cf-cartridge-tool-role-head > div { min-width: 0; display: grid; gap: 3px; }
+.cf-cartridge-tool-role-head strong,
+.cf-cartridge-tool-role-head small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cf-cartridge-tool-role-head strong { color: var(--text); font-size: 11px; }
+.cf-cartridge-tool-role-head small { color: var(--muted); font-size: calc(9px * var(--cf-user-font-scale)); }
+.cf-cartridge-tool-role-head > b { color: var(--muted); font-size: 9px; white-space: nowrap; }
+.cf-cartridge-tool-role-head > b.ready { color: var(--green); }
+.cf-cartridge-tool-role-head > button { min-height: 25px; padding: 0 7px; border: 0; background: transparent; color: #963e2d; font-size: 9px; }
+.cf-cartridge-tool-fields { padding: 12px; display: grid; grid-template-columns: repeat(4, minmax(130px, 1fr)); gap: 10px; }
+.cf-cartridge-tool-fields label { min-width: 0; display: grid; gap: 5px; color: var(--muted); font-size: 9px; font-weight: 650; }
+.cf-cartridge-tool-fields input,
+.cf-cartridge-tool-fields select { width: 100%; min-height: 32px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 5px; outline: none; background: #fff; color: var(--text); font: 9px var(--mono); }
+.cf-cartridge-tool-fields input:focus,
+.cf-cartridge-tool-fields select:focus { border-color: #d29162; box-shadow: 0 0 0 2px var(--accent-soft); }
+.cf-cartridge-tool-fields input:disabled,
+.cf-cartridge-tool-fields select:disabled { color: var(--faint); background: var(--paper-soft); }
+.cf-cartridge-tool-fields .cf-cartridge-tool-check { min-height: 32px; display: flex; align-items: center; gap: 7px; align-self: end; }
+.cf-cartridge-tool-check input { width: 14px; min-height: 14px; accent-color: var(--accent); }
+.cf-cartridge-tool-check span { color: var(--text); font-size: 9px; }
+
+@media (max-width: 1080px) {
+  .cf-cartridge-tool-fields { grid-template-columns: repeat(2, minmax(130px, 1fr)); }
+}
+
+@media (max-width: 700px) {
+  .cf-cartridge-resource-tabs { padding-inline: 14px; gap: 15px; overflow-x: auto; }
+  .cf-cartridge-resource-tabs button,
+  .cf-cartridge-resource-tabs a { flex: 0 0 auto; }
+  .cf-cartridge-tools-page { padding: 14px 14px 28px; }
+  .cf-cartridge-tool-fields { grid-template-columns: 1fr; }
+  .cf-cartridge-tool-role-head { grid-template-columns: 28px minmax(0, 1fr) auto; }
+  .cf-cartridge-tool-role-head > button { grid-column: 3; grid-row: 2; }
+}

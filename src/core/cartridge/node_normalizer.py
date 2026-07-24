@@ -41,6 +41,7 @@ CONTRACT_FIELDS = {
     "decision_contract",
     "decision_test_mode",
     "mock_decision_envelope",
+    "model_role",
     "display_name",
     "component_ref",
     "interaction_mode",

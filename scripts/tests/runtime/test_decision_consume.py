@@ -49,6 +49,25 @@ class DecisionConsumeTests(unittest.TestCase):
         self.assertEqual("llm_empty_response", result["decision_envelope"]["issues"][0]["code"])
         self.assertEqual("length", result["llm_response_meta"]["finish_reason"])
 
+    def test_live_decision_resolves_the_selected_role_for_the_current_node(self):
+        state_doc = {"context": {"store": {"context_pack": {"goal": "build short drama"}}}}
+        run = {"inputs": {}, "run_id": "run_test", "cartridge_id": "test.runtime.consume"}
+        state = decision_state({}, {"mode": "payload_path", "path": "payload.decision", "as": "decision_payload"})
+        state["model_role"] = "planner"
+        state.pop("decision_test_mode", None)
+        state.pop("mock_decision_envelope", None)
+        config = ModelConfig(provider_id="test", model="test-model", api_key="test-key")
+        response = {"content": '{"schema":"decision_envelope.v1","status":"resolved","summary":"Ready.","payload":{"decision":{"shot_count":4}}}'}
+        with patch("core.llm.config_manager.resolve_model", return_value=config) as resolver, patch("core.llm.chat", new=AsyncMock(return_value=response)):
+            result = LabNodeExecutor().execute("decide", state, state_doc, run, ".")
+
+        self.assertFalse(result.get("failed", False))
+        resolver.assert_called_once_with(
+            role="planner",
+            cartridge_id="test.runtime.consume",
+            node_id="decide",
+        )
+
     def test_resolved_decision_projects_explicit_consume_value(self):
         state_doc = {"context": {"store": {"context_pack": {"goal": "build short drama"}}}}
         run = {"inputs": {}, "run_id": "run_test", "cartridge_id": "test.runtime.consume"}

@@ -12,6 +12,7 @@ import {
   type RunDiagnosticBundle,
   type RunResult,
 } from '../api.ts'
+import PrimaryPageHeader from '../components/PrimaryPageHeader.tsx'
 
 const STATUS_LABELS: Record<string, string> = {
   completed: '已完成',
@@ -35,6 +36,7 @@ const STATUS_FILTERS = [
 ] as const
 
 type StatusFilter = (typeof STATUS_FILTERS)[number]['value']
+type ExpandedSection = '' | 'events' | 'checkpoints' | 'artifacts'
 
 function initialStatusFilter(value: string | null): StatusFilter {
   if (value === 'failed' || value === 'interrupted') return 'attention'
@@ -135,6 +137,7 @@ export default function RunDiagnosticsPage() {
   const [loading, setLoading] = useState(true)
   const [detailLoading, setDetailLoading] = useState(false)
   const [busy, setBusy] = useState('')
+  const [expandedSection, setExpandedSection] = useState<ExpandedSection>('')
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
   const dateFilter = searchParams.get('date') || ''
@@ -219,6 +222,26 @@ export default function RunDiagnosticsPage() {
     return () => { active = false }
   }, [selectedId])
 
+  useEffect(() => { setExpandedSection('') }, [selectedId])
+
+  useEffect(() => {
+    if (!notice) return
+    const timer = window.setTimeout(() => setNotice(''), 2000)
+    return () => window.clearTimeout(timer)
+  }, [notice])
+
+  useEffect(() => {
+    if (!expandedSection) return
+    const previousOverflow = document.body.style.overflow
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') setExpandedSection('') }
+    document.body.style.overflow = 'hidden'
+    window.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.body.style.overflow = previousOverflow
+      window.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [expandedSection])
+
   async function recover(action: 'retry_current_node' | 'resume_checkpoint' | 'restart_run') {
     if (!selectedId) return
     if (action === 'restart_run' && !window.confirm('将使用原始输入重新开始一轮运行，确定继续？')) return
@@ -297,26 +320,34 @@ export default function RunDiagnosticsPage() {
   }
 
   return (
-    <main className="cf-diagnostics-page">
-      <header className="cf-diagnostics-heading">
-        <div>
-          <span className="cf-resource-kicker">RUNTIME / DIAGNOSTICS</span>
-          <h1>运行诊断</h1>
-          <p>集中查看所有 Flow 的运行证据、失败原因和可安全执行的恢复动作。</p>
-        </div>
-        <div className="cf-diagnostics-heading-actions">
-          <button type="button" onClick={() => void loadRuns()} disabled={loading}>刷新记录</button>
-        </div>
-      </header>
+    <main className="cf-diagnostics-page cf-primary-page-surface">
+      <PrimaryPageHeader
+        eyebrow="Runtime / Diagnostics"
+        title="运行诊断"
+        description="集中查看所有 Flow 的运行证据、失败原因和可安全执行的恢复动作。"
+        className="cf-diagnostics-page-header"
+        actionsClassName="cf-diagnostics-heading-actions"
+        actions={(
+          <>
+            <div className="cf-diagnostics-metrics" aria-label="运行统计">
+              <div><span>全部运行</span><strong>{counts.total}</strong></div>
+              <div className={counts.failed ? 'warning' : ''}><span>失败</span><strong>{counts.failed}</strong></div>
+              <div className={counts.active ? 'active' : ''}><span>进行中</span><strong>{counts.active}</strong></div>
+              <div className="ok"><span>已完成</span><strong>{counts.completed}</strong></div>
+            </div>
+            <button type="button" onClick={() => void loadRuns()} disabled={loading}>刷新记录</button>
+          </>
+        )}
+      />
 
-      {error && <div className="cf-diagnostics-alert danger">{error}</div>}
-      {notice && <div className="cf-diagnostics-alert">{notice}</div>}
-
-      <div className="cf-diagnostics-metrics" aria-label="运行统计">
-        <div><span>全部运行</span><strong>{counts.total}</strong><small>跨所有 Flow</small></div>
-        <div className={counts.failed ? 'warning' : ''}><span>失败</span><strong>{counts.failed}</strong><small>需要定位或恢复</small></div>
-        <div className={counts.active ? 'active' : ''}><span>进行中</span><strong>{counts.active}</strong><small>正在执行或恢复</small></div>
-        <div className="ok"><span>已完成</span><strong>{counts.completed}</strong><small>有交付结果</small></div>
+      <div className="cf-diagnostics-alerts">
+        {error && <div className="cf-diagnostics-alert danger">{error}</div>}
+        {notice && (
+          <div className="cf-diagnostics-alert" role="status" aria-live="polite">
+            <span>{notice}</span>
+            <button type="button" className="cf-diagnostics-alert-close" onClick={() => setNotice('')} aria-label="关闭提示" title="关闭提示">×</button>
+          </div>
+        )}
       </div>
 
       <div className="cf-diagnostics-layout">
@@ -354,7 +385,7 @@ export default function RunDiagnosticsPage() {
               </div>
             </header>
 
-            <div className="cf-diagnostics-evidence-grid">
+            <div className="cf-diagnostics-evidence-grid cf-diagnostics-summary-panel">
               <section className={`cf-diagnostics-evidence ${errorEnvelope ? 'has-error' : 'clear'}`}>
                 <div className="cf-diagnostics-section-head"><div><span>ROOT CAUSE</span><h3>{errorEnvelope ? '发现结构化错误' : '没有失败错误'}</h3></div>{errorEnvelope?.code && <b>{errorEnvelope.code}</b>}</div>
                 {errorEnvelope ? <>
@@ -376,21 +407,23 @@ export default function RunDiagnosticsPage() {
             </div>
 
             <div className="cf-diagnostics-detail-grid">
-              <section className="cf-diagnostics-evidence">
-                <div className="cf-diagnostics-section-head"><div><span>EVENT TIMELINE</span><h3>事件时间线</h3></div><b>{diagnostic?.summary.event_count || 0}</b></div>
+              <section className={`cf-diagnostics-evidence cf-diagnostics-expandable ${expandedSection === 'events' ? 'is-expanded' : ''}`}>
+                <div className="cf-diagnostics-section-head"><div><span>EVENT TIMELINE</span><h3>事件时间线</h3></div><div className="cf-diagnostics-section-tools"><b>{diagnostic?.summary.event_count || 0}</b><button type="button" aria-expanded={expandedSection === 'events'} onClick={() => setExpandedSection((current) => current === 'events' ? '' : 'events')}>{expandedSection === 'events' ? '收起' : '展开'}</button></div></div>
                 <div className="cf-diagnostics-event-list">{detailLoading ? <div className="cf-diagnostics-empty">正在读取诊断证据...</div> : !(diagnostic?.events || []).length ? <div className="cf-diagnostics-empty">没有事件记录</div> : diagnostic?.events.map((event, index) => <div className="cf-diagnostics-event" key={`${event.created_at || event.timestamp || 'event'}-${index}`}><time>{formatLongTime(event.created_at || event.timestamp)}</time><i className={event.type?.includes('failed') ? 'danger' : event.type?.includes('completed') ? 'ok' : ''} /><span><b>{eventLabel(event)}</b><strong>{event.state || event.type || 'system'}</strong><p>{eventMessage(event)}</p></span></div>)}</div>
               </section>
 
-              <section className="cf-diagnostics-evidence">
-                <div className="cf-diagnostics-section-head"><div><span>CHECKPOINTS</span><h3>检查点</h3></div><b>{diagnostic?.summary.checkpoint_count || 0}</b></div>
+              <section className={`cf-diagnostics-evidence cf-diagnostics-expandable ${expandedSection === 'checkpoints' ? 'is-expanded' : ''}`}>
+                <div className="cf-diagnostics-section-head"><div><span>CHECKPOINTS</span><h3>检查点</h3></div><div className="cf-diagnostics-section-tools"><b>{diagnostic?.summary.checkpoint_count || 0}</b><button type="button" aria-expanded={expandedSection === 'checkpoints'} onClick={() => setExpandedSection((current) => current === 'checkpoints' ? '' : 'checkpoints')}>{expandedSection === 'checkpoints' ? '收起' : '展开'}</button></div></div>
                 <div className="cf-diagnostics-checkpoint-list">{(diagnostic?.checkpoints || []).slice().reverse().map((checkpoint: any) => <div className="cf-diagnostics-checkpoint" key={checkpoint.checkpoint_id}><i className={checkpoint.outcome === 'completed' ? 'ok' : 'warning'} /><span><strong>{checkpoint.node_id || '未知节点'}</strong><small>{checkpoint.phase} · {checkpoint.outcome}</small></span><time>{formatTime(checkpoint.created_at)}</time></div>)}{!detailLoading && !(diagnostic?.checkpoints || []).length && <div className="cf-diagnostics-empty">这个运行还没有持久化检查点</div>}</div>
               </section>
             </div>
 
-            <section className="cf-diagnostics-evidence cf-diagnostics-artifacts">
-              <div className="cf-diagnostics-section-head"><div><span>DELIVERY</span><h3>产物与交付</h3></div><b>{artifacts.length}</b></div>
-              {detailRun.delivery?.summary && <p className="cf-diagnostics-delivery-summary">{detailRun.delivery.summary}</p>}
-              {!artifacts.length ? <div className="cf-diagnostics-empty">这个运行还没有可预览的产物</div> : <div className="cf-diagnostics-artifact-list">{artifacts.map((item: any, index) => { const kind = artifactKind(item); return <article key={`${item.artifact_id || item.name}-${index}`}><div><strong>{item.name}</strong><small>{item.mime_type || item.type || kind}</small></div>{kind === 'html' && item.url ? <iframe title={item.name} src={item.url} /> : kind === 'image' && item.url ? <img src={item.url} alt={item.name} /> : kind === 'video' && item.url ? <video controls src={item.url} /> : <code>{item.display_path || item.path || '可下载文件'}</code>}</article> })}</div>}
+            <section className={`cf-diagnostics-evidence cf-diagnostics-artifacts cf-diagnostics-expandable ${expandedSection === 'artifacts' ? 'is-expanded' : ''}`}>
+              <div className="cf-diagnostics-section-head"><div><span>DELIVERY</span><h3>产物与交付</h3></div><div className="cf-diagnostics-section-tools"><b>{artifacts.length}</b><button type="button" aria-expanded={expandedSection === 'artifacts'} onClick={() => setExpandedSection((current) => current === 'artifacts' ? '' : 'artifacts')}>{expandedSection === 'artifacts' ? '收起' : '展开'}</button></div></div>
+              <div className="cf-diagnostics-artifact-body">
+                {detailRun.delivery?.summary && <p className="cf-diagnostics-delivery-summary">{detailRun.delivery.summary}</p>}
+                {!artifacts.length ? <div className="cf-diagnostics-empty">这个运行还没有可预览的产物</div> : <div className="cf-diagnostics-artifact-list">{artifacts.map((item: any, index) => { const kind = artifactKind(item); return <article key={`${item.artifact_id || item.name}-${index}`}><div><strong>{item.name}</strong><small>{item.mime_type || item.type || kind}</small></div>{kind === 'html' && item.url ? <iframe title={item.name} src={item.url} /> : kind === 'image' && item.url ? <img src={item.url} alt={item.name} /> : kind === 'video' && item.url ? <video controls src={item.url} /> : <code>{item.display_path || item.path || '可下载文件'}</code>}</article> })}</div>}
+              </div>
             </section>
           </>}
         </section>

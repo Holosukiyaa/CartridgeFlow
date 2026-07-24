@@ -15,9 +15,17 @@ order unless the cascade has been checked across every Studio page.
 - `80-overview-layout.css`: overview density and viewport adaptations.
 - `85-model-config.css`: global model routing console and viewport adaptations.
 - `87-cartridge-assets.css`: cartridge asset and interaction-component workbench.
+- `88-cartridge-resources.css`: cartridge-local model and tool requirement editing.
 - `90-environment-release.css`: environment, credentials, preflight, and release.
 - `95-config-and-appearance.css`: config dialogs, bounded layouts, and settings.
+- `96-release-page.css`: package/release workspace composition and scaling.
+- `97-resource-configuration.css`: resource overview and integrated configuration workspace.
+- `98-reference-theme.css`: final shared first-level page theme based on the img2-ui references.
 
 Add new rules to the owning page file. Shared tokens and shell rules belong in
 `00-foundation.css`; cross-page configuration primitives belong in
 `40-resource-config.css` or `95-config-and-appearance.css`.
+
+The parallel `/next/*` redesign is intentionally outside this legacy cascade.
+`../next/NextRedesignPage.tsx` imports `../next/next-redesign.css` directly, and
+every rule in that file must remain scoped to `.cf-next-*`.

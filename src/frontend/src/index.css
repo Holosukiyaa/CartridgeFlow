@@ -10,5 +10,9 @@
 @import './styles/80-overview-layout.css';
 @import './styles/85-model-config.css';
 @import './styles/87-cartridge-assets.css';
+@import './styles/88-cartridge-resources.css';
 @import './styles/90-environment-release.css';
 @import './styles/95-config-and-appearance.css';
+@import './styles/96-release-page.css';
+@import './styles/97-resource-configuration.css';
+@import './styles/98-reference-theme.css';

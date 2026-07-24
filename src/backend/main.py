@@ -1,6 +1,7 @@
 import os
 import json
 import re
+import subprocess
 import sys
 import threading
 import uuid
@@ -73,9 +74,20 @@ def _request_error_context(request: Request) -> dict:
     }
 
 
-def _http_error_code(status_code: int) -> str:
+def _http_error_code(status_code: int, path: str = "") -> str:
+    if path == "/api/llm/test" and status_code == 404:
+        return "PROVIDER_MODEL_UNAVAILABLE"
     if status_code == 404:
         return "RESOURCE_NOT_FOUND"
+    if path.startswith("/api/llm/"):
+        if status_code in {401, 403}:
+            return "PROVIDER_AUTH_FAILED"
+        if status_code == 429:
+            return "PROVIDER_RATE_LIMITED"
+        if status_code == 504:
+            return "PROVIDER_TIMEOUT"
+        if status_code in {500, 502, 503}:
+            return "PROVIDER_UNAVAILABLE"
     if status_code in {401, 403}:
         return "PERMISSION_DENIED"
     if status_code in {400, 409, 422}:
@@ -132,7 +144,7 @@ async def request_validation_error_handler(request: Request, exc: RequestValidat
 async def http_exception_handler(request: Request, exc: HTTPException):
     context = _request_error_context(request)
     envelope = build_runtime_error(
-        _http_error_code(exc.status_code),
+        _http_error_code(exc.status_code, request.url.path),
         run_id=context["run_id"],
         source=context["source"],
         cause_chain=[{"type": "HTTPException", "message": str(exc.detail)}],
@@ -333,6 +345,9 @@ class LLMProviderPayload(BaseModel):
     api_key: str = ""
     default_model: str = ""
     wire_api: str = "chat_completions"
+    capabilities: list[str] = Field(default_factory=list)
+    available_models: list[str] = Field(default_factory=list)
+    adapter_profile: str = "standard"
     enabled: bool = True
     timeout: int = 120
 
@@ -349,6 +364,13 @@ class LLMTestPayload(BaseModel):
     model: str = ""
     prompt: str = "OK"
     vision: bool = False
+
+
+class LLMDetectPayload(BaseModel):
+    provider_id: str = ""
+    base_url: str = ""
+    api_key: str = ""
+    preferred_model: str = ""
 
 
 class LLMImportTextPayload(BaseModel):
@@ -659,7 +681,10 @@ def list_llm_providers():
 @app.post("/api/llm/providers")
 def create_llm_provider(payload: LLMProviderPayload):
     from core.llm.config_manager import public_provider, upsert_provider
-    item = upsert_provider(payload.dict())
+    try:
+        item = upsert_provider(payload.dict())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"ok": True, "provider": public_provider(item)}
 
 
@@ -668,7 +693,10 @@ def update_llm_provider(provider_id: str, payload: LLMProviderPayload):
     from core.llm.config_manager import public_provider, upsert_provider
     data = payload.dict()
     data["id"] = provider_id
-    item = upsert_provider(data)
+    try:
+        item = upsert_provider(data)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"ok": True, "provider": public_provider(item)}
 
 
@@ -683,7 +711,10 @@ def delete_llm_provider(provider_id: str):
 @app.post("/api/llm/providers/{provider_id}/activate")
 def activate_llm_provider(provider_id: str):
     from core.llm.config_manager import activate_provider, public_provider
-    item = activate_provider(provider_id)
+    try:
+        item = activate_provider(provider_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not item:
         raise HTTPException(status_code=404, detail="Provider not found")
     return {"ok": True, "provider": public_provider(item)}
@@ -702,14 +733,42 @@ def set_llm_assignments(payload: LLMAssignmentsPayload):
     return {"ok": True, "assignments": get_assignments()}
 
 
+@app.post("/api/llm/detect")
+async def detect_llm_provider(payload: LLMDetectPayload):
+    from core.llm.config_manager import get_provider
+    from core.llm.detection import LLMDetectionError, detect_model_connection
+
+    stored = get_provider(payload.provider_id) if payload.provider_id else None
+    base_url = str(payload.base_url or (stored or {}).get("base_url") or "").strip()
+    api_key = str(payload.api_key or (stored or {}).get("api_key") or "").strip()
+    preferred_model = str(payload.preferred_model or (stored or {}).get("default_model") or "").strip()
+    try:
+        result = await detect_model_connection(
+            base_url=base_url,
+            api_key=api_key,
+            preferred_model=preferred_model,
+        )
+    except LLMDetectionError as exc:
+        message = str(exc)
+        if api_key:
+            message = message.replace(api_key, "***")
+        raise HTTPException(status_code=exc.status_code, detail=message) from exc
+    result["used_stored_key"] = bool(stored and not payload.api_key and api_key)
+    return result
+
+
 @app.post("/api/llm/test")
 async def test_llm_provider(payload: LLMTestPayload):
     from core.llm import ModelConfig, chat
-    from core.llm.config_manager import get_provider, mark_provider_tested
+    from core.llm.config_manager import get_provider, mark_provider_tested, provider_route_issue
     provider = get_provider(payload.provider_id)
     if not provider:
         raise HTTPException(status_code=404, detail="Provider not found")
     model = str(payload.model or provider.get("default_model") or "").strip()
+    route_issue = provider_route_issue(provider)
+    if route_issue:
+        mark_provider_tested(payload.provider_id, False)
+        raise HTTPException(status_code=400, detail=route_issue)
     missing = []
     if not str(provider.get("base_url") or "").strip():
         missing.append("URL")
@@ -729,6 +788,8 @@ async def test_llm_provider(payload: LLMTestPayload):
         base_url=provider.get("base_url") or None,
         max_tokens=64,
         timeout=int(provider.get("timeout", 120) or 120),
+        capabilities=list(provider.get("capabilities") or []),
+        adapter_profile=str(provider.get("adapter_profile") or "standard"),
     )
     try:
         if payload.vision:
@@ -751,8 +812,13 @@ async def test_llm_provider(payload: LLMTestPayload):
         mark_provider_tested(payload.provider_id, True)
         return {
             "ok": True,
+            "provider_id": payload.provider_id,
+            "model": model,
             "content": response.get("content", "")[:500],
             "capability": "vision" if payload.vision else "text",
+            "adapter_profile": provider.get("adapter_profile", "standard"),
+            "tested_scope": "vision_input" if payload.vision else "text_protocol",
+            "media_capability_tested": False,
             "meta": response.get("meta", {}),
         }
     except Exception as e:
@@ -768,18 +834,59 @@ async def test_llm_provider(payload: LLMTestPayload):
 
 
 @app.post("/api/llm/import/opencode")
-def llm_import_opencode(payload: LLMImportTextPayload):
+async def llm_import_opencode(payload: LLMImportTextPayload):
     from core.llm.importers import import_opencode, parse_json_text
     from core.llm.config_manager import public_provider, upsert_provider
-    providers = [upsert_provider(p) for p in import_opencode(parse_json_text(payload.content))]
-    return {"ok": True, "providers": [public_provider(p) for p in providers]}
+    from core.llm.detection import LLMDetectionError, detect_model_connection
+
+    try:
+        drafts = import_opencode(parse_json_text(payload.content))
+        if not drafts:
+            raise ValueError("OpenCode 配置中没有可导入的 provider")
+        prepared = []
+        detections = []
+        for draft in drafts:
+            api_key = str(draft.get("api_key") or "")
+            try:
+                detected = await detect_model_connection(
+                    base_url=str(draft.get("base_url") or ""),
+                    api_key=api_key,
+                    preferred_model=str(draft.get("default_model") or ""),
+                )
+            except LLMDetectionError as exc:
+                message = str(exc).replace(api_key, "***") if api_key else str(exc)
+                raise HTTPException(status_code=exc.status_code, detail=f"{draft.get('name') or 'OpenCode provider'}：{message}") from exc
+            detected_provider = detected["provider"]
+            prepared.append({
+                **draft,
+                **detected_provider,
+                "id": draft.get("id", ""),
+                "name": detected_provider.get("name") or draft.get("name", ""),
+                "api_key": api_key,
+                "available_models": list(dict.fromkeys([
+                    *(draft.get("available_models") or []),
+                    *(detected["detection"].get("models") or []),
+                ])),
+                "enabled": True,
+                "source": "opencode",
+            })
+            detections.append(detected["detection"])
+        providers = [upsert_provider(item) for item in prepared]
+    except HTTPException:
+        raise
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "providers": [public_provider(p) for p in providers], "detections": detections}
 
 
 @app.post("/api/llm/import/claude-code")
 def llm_import_claude_code(payload: LLMImportTextPayload):
     from core.llm.importers import import_claude_code, parse_json_text
     from core.llm.config_manager import public_provider, upsert_provider
-    providers = [upsert_provider(p) for p in import_claude_code(parse_json_text(payload.content))]
+    try:
+        providers = [upsert_provider(p) for p in import_claude_code(parse_json_text(payload.content))]
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"ok": True, "providers": [public_provider(p) for p in providers]}
 
 
@@ -787,7 +894,10 @@ def llm_import_claude_code(payload: LLMImportTextPayload):
 def llm_import_codex(payload: LLMCodexImportPayload):
     from core.llm.importers import import_codex
     from core.llm.config_manager import public_provider, upsert_provider
-    providers = [upsert_provider(p) for p in import_codex(payload.config_toml, payload.auth_json)]
+    try:
+        providers = [upsert_provider(p) for p in import_codex(payload.config_toml, payload.auth_json)]
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"ok": True, "providers": [public_provider(p) for p in providers]}
 
 
@@ -796,30 +906,44 @@ def llm_import_smart(payload: LLMImportTextPayload):
     from core.llm.importers import parse_json_text, smart_import
     from core.llm.config_manager import public_provider, save_assignments, upsert_provider
     providers = []
+    data = None
     try:
         data = parse_json_text(payload.content)
-        if "providers" in data and "assignments" in data:
+    except ValueError:
+        data = None
+    if isinstance(data, dict) and "providers" in data and "assignments" in data:
+        try:
             providers = [upsert_provider(p) for p in data.get("providers", [])]
-            save_assignments(data.get("assignments") or {})
-            return {"ok": True, "providers": [public_provider(p) for p in providers], "assignments_imported": True}
-    except Exception:
-        pass
-    providers = [upsert_provider(p) for p in smart_import(payload.content)]
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        save_assignments(data.get("assignments") or {})
+        return {"ok": True, "providers": [public_provider(p) for p in providers], "assignments_imported": True}
+    try:
+        providers = [upsert_provider(p) for p in smart_import(payload.content)]
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"ok": True, "providers": [public_provider(p) for p in providers], "assignments_imported": False}
 
 
 @app.get("/api/llm/config/export")
 def llm_export_config():
-    from core.llm.config_manager import get_assignments, list_providers
-    return {"version": 1, "providers": list_providers(), "assignments": get_assignments()}
+    from core.llm.config_manager import get_assignments, list_providers, public_provider
+    # Exports are safe to download or attach to a ticket; local secrets never leave this API.
+    return {"version": 1, "providers": [public_provider(item) for item in list_providers()], "assignments": get_assignments()}
 
 
 @app.post("/api/llm/config/import")
 def llm_import_config(payload: LLMImportTextPayload):
     from core.llm.importers import parse_json_text
     from core.llm.config_manager import public_provider, save_assignments, upsert_provider
-    data = parse_json_text(payload.content)
-    providers = [upsert_provider(p) for p in data.get("providers", [])]
+    try:
+        data = parse_json_text(payload.content)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="导入内容不是有效 JSON") from exc
+    try:
+        providers = [upsert_provider(p) for p in data.get("providers", [])]
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if data.get("assignments"):
         save_assignments(data["assignments"])
     return {"ok": True, "providers": [public_provider(p) for p in providers], "assignments_imported": bool(data.get("assignments"))}
@@ -864,18 +988,21 @@ def set_simple_provider(payload: LLMSimpleProviderPayload):
         api_key = f"sk-{api_key}"
     if not base_url:
         base_url = "https://api.anthropic.com" if is_claude else "https://api.deepseek.com"
-    item = upsert_provider({
-        "id": f"quick-{_slug(provider_name) or 'provider'}",
-        "name": provider_name or "Quick Provider",
-        "api_type": api_type,
-        "wire_api": wire_api,
-        "base_url": base_url,
-        "api_key": api_key,
-        "default_model": default_model,
-        "enabled": True,
-        "source": "quick",
-        "timeout": 120,
-    })
+    try:
+        item = upsert_provider({
+            "id": f"quick-{_slug(provider_name) or 'provider'}",
+            "name": provider_name or "Quick Provider",
+            "api_type": api_type,
+            "wire_api": wire_api,
+            "base_url": base_url,
+            "api_key": api_key,
+            "default_model": default_model,
+            "enabled": True,
+            "source": "quick",
+            "timeout": 120,
+        })
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     activate_provider(item["id"])
     return {"ok": True, "provider": public_provider(item)}
 
@@ -955,7 +1082,7 @@ def _certification_for_files(cartridge_id: str, incoming_files: dict | None = No
 def _release_preflight_for_cartridge(cartridge: dict) -> dict:
     from core.cartridge.dependencies import DependencyResolver
     from core.cartridge.environment import EnvironmentChecker
-    from core.llm.config_manager import get_assignments, list_providers
+    from core.llm.config_manager import build_model_binding_report
     from core.studio.environment import environment_snapshot
     from core.studio.hygiene import scan_package_hygiene
     from core.studio.portability import build_portability_report
@@ -985,40 +1112,8 @@ def _release_preflight_for_cartridge(cartridge: dict) -> dict:
         configured_keys=configured_keys,
     )
 
-    providers = {item.get("id"): item for item in list_providers()}
-    assignments = get_assignments()
-    recipe = manifest.get("llm_recipe") if isinstance(manifest.get("llm_recipe"), dict) else {}
-    roles = recipe.get("roles") if recipe.get("schema") == "cartridgeflow.llm_recipe.v1" else []
-    model_items = []
-    for role in roles if isinstance(roles, list) else []:
-        if not isinstance(role, dict):
-            continue
-        role_id = str(role.get("id") or "").strip()
-        if not role_id:
-            continue
-        binding = ((assignments.get("cartridges") or {}).get(cartridge.get("id") or "") or {}).get(role_id) or {}
-        provider = providers.get(binding.get("provider_id"))
-        status = "ok"
-        message = f"已连接 {provider.get('name')}" if provider else "未绑定本机模型连接"
-        if not provider:
-            status = "blocked" if role.get("required", True) else "warning"
-        elif not provider.get("base_url") or not provider.get("api_key"):
-            missing = [name for name, value in (("URL", provider.get("base_url")), ("Key", provider.get("api_key"))) if not value]
-            status = "blocked" if role.get("required", True) else "warning"
-            message = f"本机连接缺少 {' / '.join(missing)}"
-        elif role.get("api_type") and provider.get("api_type") != role.get("api_type"):
-            status = "blocked" if role.get("required", True) else "warning"
-            message = f"接口类型需要 {role.get('api_type')}"
-        model_items.append({
-            "id": role_id,
-            "label": role.get("label") or role_id,
-            "required": role.get("required", True),
-            "status": status,
-            "provider_id": binding.get("provider_id"),
-            "message": message,
-        })
-    model_statuses = {item.get("status") for item in model_items}
-    model_report = {"status": "blocked" if "blocked" in model_statuses else "warning" if "warning" in model_statuses else "ok", "items": model_items}
+    model_report = build_model_binding_report(manifest, cartridge.get("root_flow") or {})
+    model_items = model_report.get("items") or []
 
     issues = []
     for finding in compatibility.get("findings") or []:
@@ -1636,6 +1731,35 @@ def create_lab_flow(payload: DevFlowCreate):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return result
+
+
+def _open_directory(path: Path) -> None:
+    if os.name == "nt":
+        os.startfile(str(path))  # type: ignore[attr-defined]
+        return
+    command = ["open", str(path)] if sys.platform == "darwin" else ["xdg-open", str(path)]
+    subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+
+
+@app.post("/api/lab/flows/{cartridge_id}/open-directory")
+def open_lab_flow_directory(cartridge_id: str):
+    try:
+        cartridge = registry.get_cartridge(cartridge_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    raw_path = str(cartridge.get("package_path") or "").strip()
+    if not raw_path:
+        raise HTTPException(status_code=404, detail="Cartridge directory is not registered")
+    candidate = Path(raw_path)
+    path = (candidate if candidate.is_absolute() else ROOT / candidate).resolve()
+    root = ROOT.resolve()
+    if not path.is_dir() or (path != root and root not in path.parents):
+        raise HTTPException(status_code=403, detail="Cartridge directory is outside the Studio workspace")
+    try:
+        _open_directory(path)
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"Unable to open cartridge directory: {exc}")
+    return {"ok": True, "id": cartridge_id, "path": str(path.relative_to(root))}
 
 
 @app.delete("/api/lab/flows/{cartridge_id}")

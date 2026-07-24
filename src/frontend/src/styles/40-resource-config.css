@@ -13,10 +13,12 @@
 .cf-nav-entry { min-width: 0; }
 
 .cf-resource-page {
-  width: min(1460px, 100%);
+  width: 100%;
+  max-width: none;
   min-height: 100%;
   padding: 26px 30px 42px;
   background: var(--paper);
+  container: resource-page / inline-size;
 }
 
 .cf-resource-heading {
@@ -76,13 +78,15 @@
 
 .cf-resource-layout {
   display: grid;
-  grid-template-columns: minmax(330px, .82fr) minmax(440px, 1.28fr);
+  grid-template-columns: minmax(290px, .82fr) minmax(0, 1.28fr);
   gap: 26px;
   align-items: start;
   padding-top: 20px;
 }
 
 .cf-resource-panel { min-width: 0; }
+.cf-resource-inventory-panel { container: tool-inventory / inline-size; }
+.cf-resource-binding-panel { container: tool-bindings / inline-size; }
 
 .cf-resource-panel + .cf-resource-panel {
   padding-left: 26px;
@@ -161,7 +165,7 @@
 .cf-model-provider-copy small,
 .cf-resource-item-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font: 9px var(--mono); }
 .cf-model-provider-item i,
-.cf-resource-inventory-item i { color: var(--faint); font: normal 8px var(--mono); white-space: nowrap; }
+.cf-resource-inventory-item i { color: var(--faint); font: normal calc(9px * var(--cf-user-font-scale)) var(--mono); white-space: nowrap; }
 .cf-resource-type { color: var(--accent-dark); font-size: 9px; font-weight: 750; white-space: nowrap; }
 
 .cf-model-provider-form,
@@ -210,6 +214,35 @@
 .cf-resource-editor input:disabled { color: var(--faint); background: var(--paper-soft); }
 
 .cf-resource-form-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+
+.cf-provider-capability-note {
+  min-width: 0;
+  min-height: 34px;
+  display: grid;
+  align-content: center;
+  gap: 3px;
+  padding: 6px 9px;
+  border: 1px solid #eadfd6;
+  border-radius: 5px;
+  background: #fffaf5;
+}
+
+.cf-provider-capability-note span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cf-provider-capability-note code {
+  overflow: hidden;
+  color: var(--accent-dark);
+  font: 9px var(--mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .cf-model-form-actions { padding-top: 3px; display: flex; flex-wrap: wrap; gap: 6px; }
 .cf-model-form-actions button {
   min-height: 29px;
@@ -267,7 +300,7 @@
 .cf-role-drop-name code,
 .cf-role-drop-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cf-role-drop-name b { color: var(--text); font-size: 10px; }
-.cf-role-drop-name code { color: var(--faint); font-size: 8px; }
+.cf-role-drop-name code { color: var(--faint); font-size: calc(9px * var(--cf-user-font-scale)); }
 .cf-role-drop-value { color: var(--muted); font-size: 9px; }
 .cf-model-role-drop > button {
   min-height: 24px;
@@ -343,4 +376,15 @@
   .cf-model-role-drop { grid-template-columns: minmax(0, 1fr) auto; }
   .cf-role-drop-value { grid-column: 1 / -1; grid-row: 2; }
   .cf-model-role-drop > button { grid-column: 2; grid-row: 1; }
+}
+
+@container tool-inventory (max-width: 390px) {
+  .cf-selected-resource-summary dl { grid-template-columns: 1fr; }
+  .cf-selected-resource-summary dl > div { border-right: 0; }
+}
+
+@container tool-bindings (max-width: 620px) {
+  .cf-model-role-drop { grid-template-columns: minmax(100px, .72fr) minmax(0, 1.28fr); }
+  .cf-role-binding-select,
+  .cf-resource-bind-select { width: 100%; max-width: none; grid-column: 1 / -1; }
 }

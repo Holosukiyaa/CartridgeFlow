@@ -1,0 +1,768 @@
+/* The overview uses independent left and right content columns.
+   This prevents a compact summary card from inheriting a tall row
+   just because the neighboring chart needs more room. */
+.dashboard-frame:not([class*='page-']) {
+  grid-template-columns: minmax(0, 1.12fr) minmax(500px, 0.88fr);
+  grid-template-rows: 57px minmax(0, 1fr) 137px;
+  column-gap: 10px;
+  row-gap: 14px;
+}
+
+.dashboard-frame:not([class*='page-']) > .top-grid,
+.dashboard-frame:not([class*='page-']) > .middle-grid,
+.dashboard-frame:not([class*='page-']) .right-stack {
+  display: contents;
+}
+
+.dashboard-frame:not([class*='page-']) > .page-header {
+  grid-column: 1 / -1;
+  grid-row: 1;
+}
+
+.dashboard-frame:not([class*='page-']) .recent-work {
+  grid-column: 1;
+  grid-row: 2;
+  align-self: start;
+  height: 220px;
+  display: flex;
+  flex-direction: column;
+}
+
+.dashboard-frame:not([class*='page-']) .todo-card {
+  grid-column: 1;
+  grid-row: 2;
+  align-self: start;
+  height: calc(100% - 234px);
+  margin-top: 234px;
+}
+
+.dashboard-frame:not([class*='page-']) .activity-card {
+  grid-column: 2;
+  grid-row: 2;
+  align-self: start;
+  height: 260px;
+  display: flex;
+  flex-direction: column;
+}
+
+.dashboard-frame:not([class*='page-']) .activity-layout {
+  flex: 1;
+  height: auto;
+  min-height: 0;
+  margin-top: 12px;
+}
+
+.dashboard-frame:not([class*='page-']) .chart-block {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-height: 0;
+}
+
+.dashboard-frame:not([class*='page-']) .chart {
+  height: auto;
+  min-height: 0;
+}
+
+.dashboard-frame:not([class*='page-']) .chart-legend {
+  margin-top: 18px;
+}
+
+.dashboard-frame:not([class*='page-']) .activity-list {
+  display: grid;
+  grid-template-rows: repeat(3, 1fr);
+  min-height: 0;
+}
+
+.dashboard-frame:not([class*='page-']) .activity-list > div {
+  height: auto;
+}
+
+.dashboard-frame:not([class*='page-']) .capability-card {
+  grid-column: 2;
+  grid-row: 2;
+  align-self: start;
+  height: 194px;
+  margin-top: 274px;
+  padding: 14px 13px 8px;
+  display: flex;
+  flex-direction: column;
+}
+
+.dashboard-frame:not([class*='page-']) .capability-panel {
+  flex: 1;
+  height: auto;
+  min-height: 0;
+  margin-top: 6px;
+}
+
+.dashboard-frame:not([class*='page-']) .diagnostic-summary {
+  grid-column: 2;
+  grid-row: 2;
+  align-self: start;
+  height: calc(100% - 482px);
+  margin-top: 482px;
+  display: flex;
+  flex-direction: column;
+}
+
+.dashboard-frame:not([class*='page-']) .diagnostic-notices {
+  margin-top: auto;
+}
+
+.dashboard-frame:not([class*='page-']) .diagnostic-latest {
+  min-height: 34px;
+  margin: 8px 0;
+  padding: 0 10px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid #e4e8eb;
+  border-radius: 5px;
+  background: #fbfcfc;
+  font-size: 11px;
+}
+
+.dashboard-frame:not([class*='page-']) .diagnostic-latest span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #626d76;
+}
+
+.dashboard-frame:not([class*='page-']) .diagnostic-latest svg {
+  width: 14px;
+  height: 14px;
+  color: #e34632;
+}
+
+.dashboard-frame:not([class*='page-']) .diagnostic-latest b,
+.dashboard-frame:not([class*='page-']) .diagnostic-latest em {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-style: normal;
+  font-weight: 500;
+}
+
+.dashboard-frame:not([class*='page-']) .diagnostic-latest b {
+  color: #d94131;
+}
+
+.dashboard-frame:not([class*='page-']) .diagnostic-latest em {
+  color: #68737c;
+}
+
+.dashboard-frame:not([class*='page-']) .todo-list:has(.todo-row) {
+  display: grid;
+  grid-auto-rows: minmax(51px, 1fr);
+}
+
+.dashboard-frame:not([class*='page-']) .todo-list .todo-row {
+  height: auto;
+  min-height: 51px;
+}
+
+.dashboard-frame:not([class*='page-']) .todo-empty-state {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: #7b858e;
+  font-size: 13px;
+}
+
+.dashboard-frame:not([class*='page-']) > .resource-dock {
+  grid-column: 1 / -1;
+  grid-row: 3;
+}
+
+.dashboard-frame:not([class*='page-']) .diagnostic-head .outline-button {
+  min-width: 118px;
+}
+
+@container dashboard (max-height: 939px) and (min-height: 761px) {
+  .dashboard-frame:not([class*='page-']) {
+    grid-template-rows: 54px minmax(0, 1fr) 135px;
+    row-gap: 12px;
+  }
+
+  .dashboard-frame:not([class*='page-']) .recent-work {
+    height: 194px;
+  }
+
+  .dashboard-frame:not([class*='page-']) .todo-card {
+    height: calc(100% - 206px);
+    margin-top: 206px;
+  }
+
+  .dashboard-frame:not([class*='page-']) .activity-card {
+    height: 210px;
+  }
+
+  .dashboard-frame:not([class*='page-']) .capability-card {
+    height: 150px;
+    margin-top: 222px;
+  }
+
+  .dashboard-frame:not([class*='page-']) .diagnostic-summary {
+    height: calc(100% - 382px);
+    margin-top: 382px;
+  }
+
+  .dashboard-frame:not([class*='page-']) .diagnostic-latest {
+    min-height: 28px;
+    margin: 4px 0;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 7px;
+    font-size: 10px;
+  }
+
+  .dashboard-frame:not([class*='page-']) .diagnostic-latest em {
+    display: none;
+  }
+
+  .dashboard-frame:not([class*='page-']) .todo-head > .surface-title {
+    width: 250px;
+    flex-basis: 250px;
+  }
+
+  .dashboard-frame:not([class*='page-']) .todo-tools {
+    gap: 8px;
+  }
+
+  .dashboard-frame:not([class*='page-']) .todo-tools button {
+    font-size: 11px;
+  }
+}
+
+@container dashboard (max-height: 760px) {
+  .dashboard-frame:not([class*='page-']) {
+    grid-template-rows: 46px minmax(0, 1fr) 117px;
+    row-gap: 8px;
+  }
+
+  .dashboard-frame:not([class*='page-']) .recent-work {
+    height: 188px;
+  }
+
+  .dashboard-frame:not([class*='page-']) .todo-card {
+    height: calc(100% - 196px);
+    margin-top: 196px;
+  }
+
+  .dashboard-frame:not([class*='page-']) .activity-card {
+    height: 202px;
+  }
+
+  .dashboard-frame:not([class*='page-']) .capability-card {
+    height: 145px;
+    margin-top: 210px;
+  }
+
+  .dashboard-frame:not([class*='page-']) .diagnostic-summary {
+    height: calc(100% - 363px);
+    margin-top: 363px;
+  }
+
+  .dashboard-frame:not([class*='page-']) .diagnostic-latest {
+    display: none;
+  }
+}
+
+/* Readability pass: use the overview's available space for information,
+   not miniature type surrounded by empty card surfaces. */
+.dashboard-frame:not([class*='page-']) .page-header h1 {
+  font-size: 29px;
+  line-height: 33px;
+  font-weight: 650;
+}
+
+.dashboard-frame:not([class*='page-']) .page-header p {
+  font-size: 14px;
+}
+
+.dashboard-frame:not([class*='page-']) .run-stat span {
+  font-size: 14px;
+}
+
+.dashboard-frame:not([class*='page-']) .run-stat strong {
+  font-size: 29px;
+  line-height: 30px;
+}
+
+.dashboard-frame:not([class*='page-']) .surface-title {
+  font-size: 21px;
+  line-height: 25px;
+}
+
+.dashboard-frame:not([class*='page-']) .outline-button,
+.dashboard-frame:not([class*='page-']) .primary-button,
+.dashboard-frame:not([class*='page-']) .secondary-button {
+  font-size: 15px;
+}
+
+.dashboard-frame:not([class*='page-']) button svg {
+  width: 17px;
+  height: 17px;
+}
+
+.dashboard-frame:not([class*='page-']) .recent-name {
+  font-size: 17px;
+}
+
+.dashboard-frame:not([class*='page-']) .recent-name strong {
+  font-size: 23px;
+}
+
+.dashboard-frame:not([class*='page-']) .recent-name em {
+  font-size: 13px;
+}
+
+.dashboard-frame:not([class*='page-']) .recent-time {
+  font-size: 15px;
+}
+
+.dashboard-frame:not([class*='page-']) .recent-meta span {
+  font-size: 13px;
+}
+
+.dashboard-frame:not([class*='page-']) .recent-meta b {
+  font-size: 14px;
+}
+
+.dashboard-frame:not([class*='page-']) .flow-count span,
+.dashboard-frame:not([class*='page-']) .chart-title,
+.dashboard-frame:not([class*='page-']) .success-rate span {
+  font-size: 13px;
+}
+
+.dashboard-frame:not([class*='page-']) .flow-count strong {
+  font-size: 32px;
+}
+
+.dashboard-frame:not([class*='page-']) .y-labels,
+.dashboard-frame:not([class*='page-']) .bar b {
+  font-size: 11px;
+}
+
+.dashboard-frame:not([class*='page-']) .chart-legend {
+  font-size: 13px;
+}
+
+.dashboard-frame:not([class*='page-']) .legend-dot,
+.dashboard-frame:not([class*='page-']) .status-dot {
+  width: 9px;
+  height: 9px;
+}
+
+.dashboard-frame:not([class*='page-']) .success-rate strong,
+.dashboard-frame:not([class*='page-']) .success-rate b {
+  font-size: 29px;
+}
+
+.dashboard-frame:not([class*='page-']) .success-rate small,
+.dashboard-frame:not([class*='page-']) .activity-list > div {
+  font-size: 13px;
+}
+
+.dashboard-frame:not([class*='page-']) .activity-list b {
+  font-size: 18px;
+}
+
+.dashboard-frame:not([class*='page-']) .todo-tools button {
+  font-size: 13px;
+}
+
+.dashboard-frame:not([class*='page-']) .todo-tools svg {
+  width: 16px;
+  height: 16px;
+}
+
+.dashboard-frame:not([class*='page-']) .todo-table-head {
+  font-size: 13px;
+}
+
+.dashboard-frame:not([class*='page-']) .todo-row {
+  font-size: 14px;
+}
+
+.dashboard-frame:not([class*='page-']) .todo-check {
+  width: 19px;
+  height: 19px;
+}
+
+.dashboard-frame:not([class*='page-']) .todo-status,
+.dashboard-frame:not([class*='page-']) .todo-priority {
+  font-size: 12px;
+  padding: 5px 8px;
+}
+
+.dashboard-frame:not([class*='page-']) .capability-status strong,
+.dashboard-frame:not([class*='page-']) .capability-entry strong {
+  font-size: 14px;
+}
+
+.dashboard-frame:not([class*='page-']) .capability-status p,
+.dashboard-frame:not([class*='page-']) .capability-entry p {
+  font-size: 13px;
+}
+
+.dashboard-frame:not([class*='page-']) .capability-entry .secondary-button {
+  font-size: 13px;
+}
+
+.dashboard-frame:not([class*='page-']) .diagnostic-head .surface-title {
+  font-size: 19px;
+}
+
+.dashboard-frame:not([class*='page-']) .diagnostic-stats > div span,
+.dashboard-frame:not([class*='page-']) .notice {
+  font-size: 13px;
+}
+
+.dashboard-frame:not([class*='page-']) .diagnostic-stats > div b {
+  font-size: 21px;
+}
+
+.dashboard-frame:not([class*='page-']) .diagnostic-latest {
+  font-size: 12px;
+}
+
+.dashboard-frame:not([class*='page-']) .resource-icon {
+  width: 56px;
+  height: 56px;
+}
+
+.dashboard-frame:not([class*='page-']) .resource-icon svg {
+  width: 25px;
+  height: 25px;
+}
+
+.dashboard-frame:not([class*='page-']) .resource-item strong {
+  font-size: 15px;
+}
+
+.dashboard-frame:not([class*='page-']) .resource-item strong em,
+.dashboard-frame:not([class*='page-']) .resource-item small {
+  font-size: 13px;
+}
+
+.dashboard-frame:not([class*='page-']) .resource-item p {
+  font-size: 14px;
+}
+
+@container dashboard (min-height: 940px) {
+  .dashboard-frame:not([class*='page-']) .recent-work {
+    height: 240px;
+  }
+
+  .dashboard-frame:not([class*='page-']) .todo-card {
+    height: calc(100% - 254px);
+    margin-top: 254px;
+  }
+
+  .dashboard-frame:not([class*='page-']) .cube-icon {
+    width: 66px;
+    height: 66px;
+  }
+
+  .dashboard-frame:not([class*='page-']) .cube-icon svg {
+    width: 45px;
+    height: 45px;
+  }
+
+  .dashboard-frame:not([class*='page-']) .recent-actions .primary-button,
+  .dashboard-frame:not([class*='page-']) .recent-actions .secondary-button {
+    height: 48px;
+  }
+
+  .dashboard-frame:not([class*='page-']) .capability-card {
+    height: 206px;
+  }
+
+  .dashboard-frame:not([class*='page-']) .diagnostic-summary {
+    height: calc(100% - 494px);
+    margin-top: 494px;
+  }
+}
+
+@container dashboard (max-height: 939px) {
+  .dashboard-frame:not([class*='page-']) .bar-month {
+    display: none;
+  }
+  .dashboard-frame:not([class*='page-']) .page-header h1 {
+    font-size: 26px;
+    line-height: 30px;
+  }
+
+  .dashboard-frame:not([class*='page-']) .surface-title {
+    font-size: 19px;
+    line-height: 22px;
+  }
+
+  .dashboard-frame:not([class*='page-']) .run-stat span,
+  .dashboard-frame:not([class*='page-']) .flow-count span,
+  .dashboard-frame:not([class*='page-']) .chart-title,
+  .dashboard-frame:not([class*='page-']) .success-rate span {
+    font-size: 12px;
+  }
+
+  .dashboard-frame:not([class*='page-']) .run-stat strong {
+    font-size: 26px;
+  }
+
+  .dashboard-frame:not([class*='page-']) .recent-name {
+    font-size: 15px;
+  }
+
+  .dashboard-frame:not([class*='page-']) .recent-name strong {
+    font-size: 21px;
+  }
+
+  .dashboard-frame:not([class*='page-']) .recent-time,
+  .dashboard-frame:not([class*='page-']) .recent-meta b,
+  .dashboard-frame:not([class*='page-']) .resource-item p {
+    font-size: 13px;
+  }
+
+  .dashboard-frame:not([class*='page-']) .recent-meta span,
+  .dashboard-frame:not([class*='page-']) .resource-item small,
+  .dashboard-frame:not([class*='page-']) .resource-item strong em,
+  .dashboard-frame:not([class*='page-']) .todo-table-head,
+  .dashboard-frame:not([class*='page-']) .diagnostic-stats > div span,
+  .dashboard-frame:not([class*='page-']) .notice {
+    font-size: 12px;
+  }
+
+  .dashboard-frame:not([class*='page-']) .todo-row,
+  .dashboard-frame:not([class*='page-']) .resource-item strong {
+    font-size: 13px;
+  }
+
+  .dashboard-frame:not([class*='page-']) .capability-status p,
+  .dashboard-frame:not([class*='page-']) .capability-entry p,
+  .dashboard-frame:not([class*='page-']) .activity-list > div,
+  .dashboard-frame:not([class*='page-']) .success-rate small {
+    font-size: 12px;
+  }
+
+  .dashboard-frame:not([class*='page-']) .capability-status strong,
+  .dashboard-frame:not([class*='page-']) .capability-entry strong,
+  .dashboard-frame:not([class*='page-']) .capability-entry .secondary-button {
+    font-size: 13px;
+  }
+
+  .dashboard-frame:not([class*='page-']) .resource-icon {
+    width: 48px;
+    height: 48px;
+  }
+
+  .dashboard-frame:not([class*='page-']) .resource-icon svg {
+    width: 23px;
+    height: 23px;
+  }
+}
+
+/* Container geometry pass. */
+.dashboard-frame:not([class*='page-']) .recent-actions {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.dashboard-frame:not([class*='page-']) .recent-actions .primary-button,
+.dashboard-frame:not([class*='page-']) .recent-actions .secondary-button {
+  width: 100%;
+  padding-inline: 12px;
+}
+
+.dashboard-frame:not([class*='page-']) .recent-meta {
+  height: 58px;
+  flex: 0 0 58px;
+  margin-top: auto;
+  padding-top: 12px;
+}
+
+.dashboard-frame:not([class*='page-']) .chart {
+  display: grid;
+  grid-template-columns: 27px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) 22px;
+  padding: 0 8px 0 0;
+  overflow: hidden;
+}
+
+.dashboard-frame:not([class*='page-']) .bars {
+  grid-column: 2;
+  grid-row: 1;
+  height: 100%;
+  align-self: stretch;
+}
+
+.dashboard-frame:not([class*='page-']) .y-labels {
+  position: static;
+  grid-column: 1;
+  grid-row: 1;
+  width: auto;
+  padding-bottom: 0;
+}
+
+.dashboard-frame:not([class*='page-']) .chart-x-labels {
+  grid-column: 2;
+  grid-row: 2;
+  display: flex;
+  align-items: end;
+  justify-content: space-around;
+  color: #737c84;
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.dashboard-frame:not([class*='page-']) .chart-x-labels span {
+  width: 30px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.dashboard-frame:not([class*='page-']) .chart-x-labels i {
+  font-style: normal;
+}
+
+.dashboard-frame:not([class*='page-']) .chart-legend {
+  margin-top: 8px;
+}
+
+.dashboard-frame:not([class*='page-']) .activity-card {
+  padding-bottom: 8px;
+}
+
+.dashboard-frame:not([class*='page-']) .todo-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.dashboard-frame:not([class*='page-']) .todo-head,
+.dashboard-frame:not([class*='page-']) .todo-table-head {
+  flex: 0 0 auto;
+}
+
+.dashboard-frame:not([class*='page-']) .todo-head > .surface-title {
+  width: 315px;
+  flex-basis: 315px;
+}
+
+.dashboard-frame:not([class*='page-']) .todo-tools button {
+  height: 34px;
+  padding: 0 5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dashboard-frame:not([class*='page-']) .todo-list {
+  height: auto;
+  min-height: 0;
+  flex: 1;
+  margin-bottom: 12px;
+}
+
+.dashboard-frame:not([class*='page-']) .capability-entry {
+  display: flex;
+  flex-direction: column;
+}
+
+.dashboard-frame:not([class*='page-']) .capability-entry .secondary-button {
+  height: 40px;
+  width: 100%;
+  margin-top: auto;
+  align-self: stretch;
+}
+
+.dashboard-frame:not([class*='page-']) .diagnostic-stats {
+  height: 47px;
+}
+
+.dashboard-frame:not([class*='page-']) .diagnostic-stats > div {
+  gap: 0;
+}
+
+.dashboard-frame:not([class*='page-']) .diagnostic-stats > div span {
+  line-height: 15px;
+}
+
+.dashboard-frame:not([class*='page-']) .diagnostic-stats > div b {
+  line-height: 24px;
+}
+
+.dashboard-frame:not([class*='page-']) > .resource-dock {
+  padding-top: 8px;
+  display: flex;
+  flex-direction: column;
+}
+
+.dashboard-frame:not([class*='page-']) .resource-head {
+  height: 36px;
+  flex: 0 0 36px;
+}
+
+.dashboard-frame:not([class*='page-']) .resource-head .secondary-button {
+  height: 36px;
+}
+
+.dashboard-frame:not([class*='page-']) .resource-items {
+  height: auto;
+  min-height: 0;
+  flex: 1;
+}
+
+@container dashboard (max-height: 939px) {
+  .dashboard-frame:not([class*='page-']) .chart-x-labels span {
+    width: 22px;
+  }
+  .dashboard-frame:not([class*='page-']) .recent-actions .primary-button,
+  .dashboard-frame:not([class*='page-']) .recent-actions .secondary-button {
+    height: 36px;
+  }
+
+  .dashboard-frame:not([class*='page-']) .recent-meta {
+    height: 50px;
+    flex-basis: 50px;
+    padding-top: 8px;
+  }
+
+  .dashboard-frame:not([class*='page-']) .todo-head > .surface-title {
+    width: 232px;
+    flex-basis: 232px;
+  }
+
+  .dashboard-frame:not([class*='page-']) .todo-tools button {
+    height: 32px;
+    padding: 0 3px;
+  }
+
+  .dashboard-frame:not([class*='page-']) .todo-list {
+    margin-bottom: 10px;
+  }
+
+  .dashboard-frame:not([class*='page-']) .capability-entry .secondary-button {
+    height: 34px;
+  }
+
+  .dashboard-frame:not([class*='page-']) .diagnostic-stats {
+    height: 36px;
+  }
+
+  .dashboard-frame:not([class*='page-']) .diagnostic-head .outline-button {
+    height: 36px;
+  }
+
+  .dashboard-frame:not([class*='page-']) .diagnostic-stats > div span {
+    line-height: 13px;
+  }
+
+  .dashboard-frame:not([class*='page-']) .diagnostic-stats > div b {
+    font-size: 19px;
+    line-height: 21px;
+  }
+}

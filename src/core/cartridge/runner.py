@@ -12,6 +12,7 @@ from core.runtime.errors import RuntimeFailure, build_runtime_error, error_from_
 from core.runtime.checkpoints import CheckpointManager
 from core.runtime.state_machine import assert_transition, transition
 from core.extensions import cancel_worker_calls_for_run
+from core.llm.config_manager import build_model_binding_report
 from core.workspace.host import WorkspaceHostManager
 from core.lab.node_executor import LabNodeExecutor
 from core.protocol import CompatibilityBlockedError, build_compatibility_report, load_base_implementation
@@ -115,6 +116,20 @@ class CartridgeRunner:
                 source="runtime.local_resources",
                 cause_chain=[{"type": "LocalResourceBinding", "message": value} for value in blockers],
             ))
+        model_binding_report = build_model_binding_report(manifest, source_root_flow)
+        if model_binding_report.get("status") == "blocked":
+            blockers = [
+                f"{item.get('id')}: {item.get('message')}"
+                for item in model_binding_report.get("items") or []
+                if item.get("status") == "blocked"
+            ]
+            raise RuntimeFailure(build_runtime_error(
+                "PROVIDER_CONFIGURATION_MISSING",
+                run_id=run_id,
+                source="runtime.model_bindings",
+                cause_chain=[{"type": "ModelRoleBinding", "message": value} for value in blockers],
+                context={"model_bindings": model_binding_report},
+            ))
         normalized_probe_range = self._normalize_probe_range(source_root_flow, probe_range)
         root_flow = self._build_probe_root_flow(source_root_flow, normalized_probe_range) if normalized_probe_range else source_root_flow
         run_dir = self.runs_dir / run_id
@@ -146,6 +161,8 @@ class CartridgeRunner:
             },
             "workspace": manifest.get("workspace", {}),
             "mcp_tools": manifest.get("mcp_tools", []),
+            "llm_recipe": manifest.get("llm_recipe"),
+            "model_bindings": model_binding_report,
             "resource_requirements": manifest.get("resource_requirements", []),
             "local_resources": local_resource_report.get("descriptor", {}),
             "protocol_extensions": manifest.get("protocol_extensions", []),
@@ -183,6 +200,14 @@ class CartridgeRunner:
             "created",
             "本机资源角色已解析",
             local_resource_report,
+        )
+        self._append_event(
+            run_id,
+            cartridge_id,
+            "model_bindings_resolved",
+            "created",
+            "模型角色已解析",
+            model_binding_report,
         )
         self._append_event(run_id, cartridge_id, "run_created", "created", "CartridgeRun 已创建", {"inputs": inputs, "test_mode": normalized_test_mode})
         self._set_run_status(run, "running", "root_flow_started")

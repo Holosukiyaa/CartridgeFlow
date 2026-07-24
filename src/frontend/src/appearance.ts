@@ -1,18 +1,21 @@
 export type FontFamilyMode = 'system' | 'classic' | 'developer'
+export type FontWeightMode = 'regular' | 'strong'
 export type DensityMode = 'comfortable' | 'compact'
 export type ScrollbarMode = 'subtle' | 'always'
 
 export type AppearanceSettings = {
   fontScale: number
   fontFamily: FontFamilyMode
+  fontWeight: FontWeightMode
   density: DensityMode
   reducedMotion: boolean
   scrollbarMode: ScrollbarMode
 }
 
 export const DEFAULT_APPEARANCE: AppearanceSettings = {
-  fontScale: 100,
-  fontFamily: 'system',
+  fontScale: 110,
+  fontFamily: 'developer',
+  fontWeight: 'strong',
   density: 'comfortable',
   reducedMotion: false,
   scrollbarMode: 'subtle',
@@ -40,16 +43,20 @@ export function saveAppearance(settings: AppearanceSettings) {
 export function applyAppearance(settings: AppearanceSettings) {
   const root = document.documentElement
   root.style.setProperty('--cf-user-font-scale', String(settings.fontScale / 100))
+  root.dataset.cfFontScale = String(settings.fontScale)
   root.dataset.cfFontFamily = settings.fontFamily
+  root.dataset.cfFontWeight = settings.fontWeight
   root.dataset.cfDensity = settings.density
   root.dataset.cfReducedMotion = settings.reducedMotion ? 'true' : 'false'
   root.dataset.cfScrollbarMode = settings.scrollbarMode
 }
 
 function normalizeAppearance(value: Partial<AppearanceSettings>): AppearanceSettings {
-  const fontScale = Math.min(115, Math.max(90, Math.round(Number(value.fontScale || 100) / 5) * 5))
-  const fontFamily: FontFamilyMode = ['system', 'classic', 'developer'].includes(String(value.fontFamily)) ? value.fontFamily as FontFamilyMode : 'system'
-  const density: DensityMode = value.density === 'compact' ? 'compact' : 'comfortable'
-  const scrollbarMode: ScrollbarMode = value.scrollbarMode === 'always' ? 'always' : 'subtle'
-  return { fontScale, fontFamily, density, reducedMotion: Boolean(value.reducedMotion), scrollbarMode }
+  const fontScaleValue = value.fontScale ?? DEFAULT_APPEARANCE.fontScale
+  const fontScale = Math.min(115, Math.max(90, Math.round(Number(fontScaleValue) / 5) * 5))
+  const fontFamily: FontFamilyMode = ['system', 'classic', 'developer'].includes(String(value.fontFamily)) ? value.fontFamily as FontFamilyMode : DEFAULT_APPEARANCE.fontFamily
+  const fontWeight: FontWeightMode = ['regular', 'strong'].includes(String(value.fontWeight)) ? value.fontWeight as FontWeightMode : DEFAULT_APPEARANCE.fontWeight
+  const density: DensityMode = ['comfortable', 'compact'].includes(String(value.density)) ? value.density as DensityMode : DEFAULT_APPEARANCE.density
+  const scrollbarMode: ScrollbarMode = ['subtle', 'always'].includes(String(value.scrollbarMode)) ? value.scrollbarMode as ScrollbarMode : DEFAULT_APPEARANCE.scrollbarMode
+  return { fontScale, fontFamily, fontWeight, density, reducedMotion: Boolean(value.reducedMotion), scrollbarMode }
 }

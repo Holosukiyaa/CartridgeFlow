@@ -1,5 +1,6 @@
 import os
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 
 from core.data_paths import LLM_ASSIGNMENTS_FILE, LLM_CONFIG_DIR, LLM_PROVIDERS_FILE, ensure_data_layout
@@ -14,6 +15,16 @@ PROVIDERS_PATH = ROOT / LLM_PROVIDERS_FILE
 ASSIGNMENTS_PATH = ROOT / LLM_ASSIGNMENTS_FILE
 RETRY_PATH = DEFAULTS_DIR / "llm_retry.json"
 
+DEFAULT_ASSIGNMENT_ROLES = ("steward", "runtime", "mentor", "worker")
+SUPPORTED_LLM_ROUTES = {
+    ("openai", "chat_completions"),
+    ("openai", "responses"),
+}
+PROVIDER_CONNECTION_FIELDS = ("api_type", "base_url", "api_key", "default_model", "wire_api", "timeout", "capabilities")
+PROVIDER_ADAPTER_PROFILES = {
+    "standard": {"label": "普通模型", "capabilities": ["text_reasoning"], "runtime_supported": True},
+}
+
 DEFAULT_DEEPSEEK_PROVIDER = {
     "id": "default-deepseek",
     "name": "Default DeepSeek",
@@ -22,6 +33,8 @@ DEFAULT_DEEPSEEK_PROVIDER = {
     "api_key": "",
     "default_model": "deepseek-chat",
     "wire_api": "chat_completions",
+    "capabilities": ["text_reasoning"],
+    "adapter_profile": "standard",
     "enabled": True,
     "tested_ok": False,
     "source": "default",
@@ -30,17 +43,24 @@ DEFAULT_DEEPSEEK_PROVIDER = {
 
 def ensure_llm_config():
     ensure_data_layout(ROOT)
+    env = _env_provider()
+    active = env if env.get("api_key") and not provider_route_issue(env) else DEFAULT_DEEPSEEK_PROVIDER
     if not PROVIDERS_PATH.exists():
-        write_local_json(PROVIDERS_PATH, {"version": 1, "providers": [DEFAULT_DEEPSEEK_PROVIDER, _env_provider()]})
+        write_local_json(PROVIDERS_PATH, {
+            "version": 1,
+            "providers": [
+                {**DEFAULT_DEEPSEEK_PROVIDER, "enabled": active["id"] == DEFAULT_DEEPSEEK_PROVIDER["id"]},
+                {**env, "enabled": active["id"] == env["id"]},
+            ],
+        })
     if not ASSIGNMENTS_PATH.exists():
-        env = _env_provider()
         write_local_json(ASSIGNMENTS_PATH, {
             "version": 1,
             "defaults": {
-                "steward": {"provider_id": env["id"], "model": env["default_model"]},
-                "runtime": {"provider_id": env["id"], "model": env["default_model"]},
-                "mentor": {"provider_id": env["id"], "model": env["default_model"]},
-                "worker": {"provider_id": env["id"], "model": env["default_model"]},
+                "steward": {"provider_id": active["id"], "model": active["default_model"]},
+                "runtime": {"provider_id": active["id"], "model": active["default_model"]},
+                "mentor": {"provider_id": active["id"], "model": active["default_model"]},
+                "worker": {"provider_id": active["id"], "model": active["default_model"]},
             },
             "cartridges": {},
             "nodes": {},
@@ -56,16 +76,21 @@ def list_providers(include_disabled: bool = True) -> list[dict]:
     )
     providers = [normalize_provider(_merge_env_provider(item)) for item in data.get("providers", [])]
     changed = providers != data.get("providers", [])
-    if not any(item.get("id") == DEFAULT_DEEPSEEK_PROVIDER["id"] for item in providers):
-        providers.insert(0, dict(DEFAULT_DEEPSEEK_PROVIDER))
-        changed = True
+    repaired_active = None
     enabled = [item for item in providers if item.get("enabled", True)]
-    if len(enabled) != 1:
-        active_id = next((item.get("id") for item in providers if item.get("api_key")), None) or (providers[0].get("id") if providers else "")
+    if providers and len(enabled) != 1:
+        active_id = (
+            next((item.get("id") for item in providers if item.get("api_key") and not provider_route_issue(item)), None)
+            or next((item.get("id") for item in providers if not provider_route_issue(item)), None)
+            or providers[0].get("id")
+        )
         providers = [{**item, "enabled": item.get("id") == active_id} for item in providers]
+        repaired_active = next((item for item in providers if item.get("enabled")), None)
         changed = True
     if changed:
         save_providers(providers)
+    if repaired_active:
+        _set_default_assignments(repaired_active)
     if include_disabled:
         return providers
     return [item for item in providers if item.get("enabled", True)]
@@ -82,6 +107,7 @@ def get_provider(provider_id: str) -> dict | None:
 def upsert_provider(provider: dict) -> dict:
     providers = list_providers()
     item = normalize_provider(provider)
+    validate_provider_route(item, configuration=True)
     if not item.get("id"):
         base = _slug(item.get("name") or item.get("api_type") or "provider")
         existing = {old.get("id") for old in providers}
@@ -91,33 +117,55 @@ def upsert_provider(provider: dict) -> dict:
         if old.get("id") == item.get("id"):
             if not item.get("api_key"):
                 item["api_key"] = old.get("api_key", "")
-            item["tested_ok"] = bool(item.get("tested_ok", old.get("tested_ok", False)))
+            connection_changed = any(item.get(field) != old.get(field) for field in PROVIDER_CONNECTION_FIELDS)
+            item["tested_ok"] = False if connection_changed else bool(old.get("tested_ok", False))
+            item["tested_at"] = "" if connection_changed else str(old.get("tested_at") or "")
             providers[index] = item
             replaced = True
             break
     if not replaced:
+        item["tested_ok"] = False
+        item["tested_at"] = ""
         providers.append(item)
     if item.get("enabled", True):
         providers = [{**old, "enabled": old.get("id") == item.get("id")} for old in providers]
     save_providers(providers)
+    if item.get("enabled", True):
+        _set_default_assignments(item)
     return item
 
 
 def activate_provider(provider_id: str) -> dict | None:
     providers = list_providers()
-    if not any(item.get("id") == provider_id for item in providers):
+    selected = next((item for item in providers if item.get("id") == provider_id), None)
+    if selected is None:
         return None
+    validate_provider_route(selected)
+    if "text_reasoning" not in set(selected.get("capabilities") or []):
+        raise ValueError("只有具备 text_reasoning 能力的模型连接可以设为底座默认")
     providers = [{**item, "enabled": item.get("id") == provider_id} for item in providers]
     save_providers(providers)
-    return next(item for item in providers if item.get("id") == provider_id)
+    selected = next(item for item in providers if item.get("id") == provider_id)
+    _set_default_assignments(selected)
+    return selected
 
 
 def delete_provider(provider_id: str) -> bool:
     providers = list_providers()
+    removed = next((item for item in providers if item.get("id") == provider_id), None)
     kept = [item for item in providers if item.get("id") != provider_id]
-    if len(kept) == len(providers):
+    if removed is None:
         return False
+    replacement = next((item for item in kept if item.get("enabled")), None)
+    if removed.get("enabled") and kept:
+        replacement = (
+            next((item for item in kept if item.get("api_key") and not provider_route_issue(item)), None)
+            or next((item for item in kept if not provider_route_issue(item)), None)
+            or kept[0]
+        )
+        kept = [{**item, "enabled": item.get("id") == replacement.get("id")} for item in kept]
     save_providers(kept)
+    _remove_provider_assignments(provider_id, replacement)
     return True
 
 
@@ -127,6 +175,7 @@ def mark_provider_tested(provider_id: str, ok: bool = True) -> dict | None:
     for item in providers:
         if item.get("id") == provider_id:
             item["tested_ok"] = bool(ok)
+            item["tested_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds") if ok else ""
             found = item
             break
     if found:
@@ -145,11 +194,7 @@ def get_assignments() -> dict:
 
 
 def save_assignments(data: dict):
-    data.setdefault("version", 1)
-    data.setdefault("defaults", {})
-    data.setdefault("cartridges", {})
-    data.setdefault("nodes", {})
-    write_local_json(ASSIGNMENTS_PATH, data)
+    write_local_json(ASSIGNMENTS_PATH, normalize_assignments(data))
 
 
 def resolve_model(role: str = "runtime", cartridge_id: str | None = None, node_id: str | None = None) -> ModelConfig:
@@ -162,7 +207,8 @@ def resolve_model(role: str = "runtime", cartridge_id: str | None = None, node_i
         provider = get_provider(assignment.get("provider_id"))
         assignment_provider_found = bool(provider)
     provider = provider or next((item for item in providers if item.get("api_key")), None) or next(iter(providers), None) or DEFAULT_DEEPSEEK_PROVIDER
-    model = ((assignment or {}).get("model") if assignment_provider_found else None) or provider.get("default_model") or "deepseek-chat"
+    validate_provider_route(provider)
+    model = ((assignment or {}).get("model") if assignment_provider_found else None) or provider.get("default_model") or ""
     base_url = provider.get("base_url") or ""
     if "deepseek" in base_url.lower() and not str(model).startswith("deepseek-"):
         model = provider.get("default_model") or "deepseek-chat"
@@ -174,6 +220,8 @@ def resolve_model(role: str = "runtime", cartridge_id: str | None = None, node_i
         api_key=provider.get("api_key", ""),
         base_url=provider.get("base_url") or None,
         timeout=int(provider.get("timeout", 120) or 120),
+        capabilities=list(provider.get("capabilities") or []),
+        adapter_profile="standard",
     )
 
 
@@ -182,31 +230,204 @@ def public_provider(provider: dict) -> dict:
     key = item.pop("api_key", "") or ""
     item["has_key"] = bool(key)
     item["key_preview"] = f"...{key[-4:]}" if len(key) > 4 else ("****" if key else "")
+    issue = provider_route_issue(item)
+    item["runtime_supported"] = not bool(issue)
+    item["runtime_issue"] = issue
+    item["adapter_supported"] = True
+    item["adapter_label"] = PROVIDER_ADAPTER_PROFILES["standard"]["label"]
     return item
 
 
 def config_paths() -> dict[str, str]:
     ensure_llm_config()
-    return {"llm_dir": str(LLM_DIR), "providers": str(PROVIDERS_PATH), "assignments": str(ASSIGNMENTS_PATH), "retry": str(RETRY_PATH)}
+    return {
+        "llm_dir": LLM_CONFIG_DIR.as_posix(),
+        "providers": LLM_PROVIDERS_FILE.as_posix(),
+        "assignments": LLM_ASSIGNMENTS_FILE.as_posix(),
+        "retry": "config/defaults/llm_retry.json",
+    }
 
 
 def normalize_provider(provider: dict) -> dict:
-    api_type = _clean(provider.get("api_type") or provider.get("provider") or "openai")
-    if api_type == "claude":
-        api_type = "anthropic"
-    wire_api = _clean(provider.get("wire_api") or ("messages" if api_type == "anthropic" else "chat_completions"))
+    api_type = normalize_api_type(provider.get("api_type") or provider.get("provider") or "openai")
+    wire_api = normalize_wire_api(provider.get("wire_api"), api_type)
+    # 图片/视频逆向适配器已撤下。旧配置统一迁移为普通文本连接，
+    # 避免历史配置在启动时重新进入不可控的媒体执行链路。
+    if wire_api == "images":
+        wire_api = "chat_completions"
     return {
         "id": _clean(provider.get("id", "")),
         "name": _clean(provider.get("name") or provider.get("id") or "Provider"),
         "api_type": api_type,
         "base_url": _clean(provider.get("base_url", "")),
         "api_key": _clean(provider.get("api_key", "")),
-        "default_model": _clean(provider.get("default_model") or provider.get("model") or ("claude-opus-4-5" if api_type == "anthropic" else "deepseek-chat")),
+        "default_model": _clean(provider.get("default_model") or provider.get("model") or ""),
         "wire_api": wire_api,
+        "capabilities": ["text_reasoning"],
+        "available_models": _normalize_model_list(provider.get("available_models")),
+        "adapter_profile": "standard",
         "enabled": bool(provider.get("enabled", True)),
         "tested_ok": bool(provider.get("tested_ok", False)),
+        "tested_at": _clean(provider.get("tested_at", "")),
         "source": _clean(provider.get("source", "manual")),
-        "timeout": int(provider.get("timeout", 120) or 120),
+        "timeout": _safe_timeout(provider.get("timeout", 120)),
+    }
+
+
+def _normalize_capabilities(value) -> list[str]:
+    if isinstance(value, str):
+        values = value.split(",")
+    elif isinstance(value, list):
+        values = value
+    else:
+        values = []
+    return list(dict.fromkeys(_normalize_capability_name(item) for item in values if _normalize_capability_name(item)))
+
+
+def _normalize_model_list(value) -> list[str]:
+    values = value if isinstance(value, list) else []
+    return list(dict.fromkeys(_clean(item) for item in values if _clean(item)))
+
+
+def _normalize_capability_name(value) -> str:
+    normalized = _clean(value).lower().replace("-", "_")
+    return {"text_generation": "text_reasoning", "image_generation_tool": "image_generation"}.get(normalized, normalized)
+
+
+def normalize_api_type(value) -> str:
+    normalized = _clean(value or "openai").lower().replace("-", "_")
+    if normalized in {"openai_compatible", "openai_api"}:
+        return "openai"
+    if normalized == "claude":
+        return "anthropic"
+    return normalized
+
+
+def normalize_wire_api(value, api_type: str = "openai") -> str:
+    default = "messages" if normalize_api_type(api_type) == "anthropic" else "chat_completions"
+    normalized = _clean(value or default).lower().replace("-", "_").replace(".", "_")
+    if normalized in {"chat_completion", "chatcompletions"}:
+        return "chat_completions"
+    if normalized in {"image", "image_generation", "images_api", "images_generations"}:
+        return "images"
+    return normalized
+
+
+def provider_route_issue(provider: dict, *, configuration: bool = False) -> str:
+    api_type = normalize_api_type(provider.get("api_type"))
+    wire_api = normalize_wire_api(provider.get("wire_api"), api_type)
+    if (api_type, wire_api) in SUPPORTED_LLM_ROUTES:
+        return ""
+    if api_type != "openai":
+        return f"当前底座尚未实现 {api_type or 'unknown'} 模型适配器"
+    return f"当前底座尚未实现 OpenAI {wire_api or 'unknown'} 调用协议"
+
+
+def validate_provider_route(provider: dict, *, configuration: bool = False) -> None:
+    issue = provider_route_issue(provider, configuration=configuration)
+    if issue:
+        raise ValueError(issue)
+
+
+def normalize_assignments(data: dict | None) -> dict:
+    source = data if isinstance(data, dict) else {}
+    return {
+        "version": int(source.get("version", 1) or 1),
+        "defaults": _normalize_role_bindings(source.get("defaults")),
+        "cartridges": _normalize_scoped_bindings(source.get("cartridges")),
+        "nodes": _normalize_scoped_bindings(source.get("nodes")),
+    }
+
+
+def build_model_binding_report(manifest: dict, root_flow: dict | None = None) -> dict:
+    recipe = manifest.get("llm_recipe") if isinstance(manifest.get("llm_recipe"), dict) else {}
+    roles = recipe.get("roles") if recipe.get("schema") == "cartridgeflow.llm_recipe.v1" else []
+    if not isinstance(roles, list) or not roles:
+        return {"status": "ok", "items": []}
+    providers = {item.get("id"): item for item in list_providers()}
+    assignments = get_assignments()
+    cartridge_id = str(manifest.get("id") or "")
+    cartridge_bindings = (assignments.get("cartridges") or {}).get(cartridge_id) or {}
+    items = []
+    for role in roles:
+        if not isinstance(role, dict):
+            continue
+        role_id = _clean(role.get("id"))
+        if not role_id:
+            continue
+        required = role.get("required", True) is not False
+        binding = cartridge_bindings.get(role_id) if isinstance(cartridge_bindings.get(role_id), dict) else {}
+        provider = providers.get(binding.get("provider_id"))
+        status = "ok"
+        issue = ""
+        if provider is None:
+            issue = "未绑定本机模型连接"
+        elif provider_route_issue(provider):
+            issue = provider_route_issue(provider)
+        elif not provider.get("base_url") or not provider.get("api_key"):
+            missing = [label for label, value in (("URL", provider.get("base_url")), ("Key", provider.get("api_key"))) if not value]
+            issue = f"本机连接缺少 {' / '.join(missing)}"
+        elif normalize_api_type(role.get("api_type")) != normalize_api_type(provider.get("api_type")):
+            issue = f"接口类型需要 {role.get('api_type')}"
+        elif normalize_wire_api(role.get("wire_api"), role.get("api_type")) != normalize_wire_api(provider.get("wire_api"), provider.get("api_type")):
+            issue = f"调用协议需要 {role.get('wire_api')}"
+        elif _normalize_capability_name(role.get("capability")) and provider.get("capabilities") and _normalize_capability_name(role.get("capability")) not in set(provider.get("capabilities") or []):
+            issue = f"能力需要 {role.get('capability')}"
+        else:
+            role_model = _clean(role.get("model"))
+            binding_model = _clean(binding.get("model"))
+            effective_model = binding_model or (role_model if role_model != "configured-locally" else "") or _clean(provider.get("default_model"))
+            if role_model and role_model != "configured-locally" and binding_model and binding_model != role_model:
+                issue = f"模型需要 {role_model}"
+            elif not effective_model:
+                issue = "没有可用的模型标识"
+        if issue:
+            status = "blocked" if required else "warning"
+        items.append({
+            "id": role_id,
+            "label": _clean(role.get("label")) or role_id,
+            "required": required,
+            "status": status,
+            "provider_id": _clean(binding.get("provider_id")),
+            "provider_name": _clean(provider.get("name")) if provider else "",
+            "model": _clean(binding.get("model")),
+            "message": issue or f"已连接 {provider.get('name')}",
+        })
+    role_items = {item.get("id"): item for item in items}
+    states = root_flow.get("states") if isinstance(root_flow, dict) else {}
+    for node_id, state in (states.items() if isinstance(states, dict) else []):
+        if not isinstance(state, dict):
+            continue
+        params = state.get("params") if isinstance(state.get("params"), dict) else {}
+        kind = _clean(state.get("kind") or params.get("kind"))
+        executor = _clean(state.get("executor") or params.get("executor"))
+        action = _clean(state.get("action"))
+        if not ((kind == "decision" and executor == "llm") or action == "llm_prompt"):
+            continue
+        model_role = _clean(state.get("model_role") or params.get("model_role"))
+        issue = ""
+        if not model_role:
+            issue = "AI 决策节点未选择模型角色"
+        elif model_role not in role_items:
+            issue = f"模型角色未在卡带配方中声明：{model_role}"
+        elif role_items[model_role].get("status") != "ok":
+            issue = f"模型角色 {model_role} 尚未就绪：{role_items[model_role].get('message')}"
+        items.append({
+            "id": f"node:{node_id}",
+            "label": _clean(state.get("display_name") or state.get("title")) or node_id,
+            "node_id": node_id,
+            "model_role": model_role,
+            "required": True,
+            "status": "blocked" if issue else "ok",
+            "provider_id": _clean(role_items.get(model_role, {}).get("provider_id")),
+            "provider_name": _clean(role_items.get(model_role, {}).get("provider_name")),
+            "model": _clean(role_items.get(model_role, {}).get("model")),
+            "message": issue or f"使用模型角色 {model_role}",
+        })
+    statuses = {item.get("status") for item in items}
+    return {
+        "status": "blocked" if "blocked" in statuses else "warning" if "warning" in statuses else "ok",
+        "items": items,
     }
 
 
@@ -221,6 +442,84 @@ def _assignment_for(role: str, cartridge_id: str | None = None, node_id: str | N
         if item:
             return item
     return data.get("defaults", {}).get(role)
+
+
+def _set_default_assignments(provider: dict) -> None:
+    data = get_assignments()
+    defaults = data.setdefault("defaults", {})
+    role_ids = set(DEFAULT_ASSIGNMENT_ROLES) | set(defaults)
+    for role_id in role_ids:
+        defaults[role_id] = {
+            "provider_id": provider.get("id", ""),
+            "model": provider.get("default_model", ""),
+        }
+    save_assignments(data)
+
+
+def _remove_provider_assignments(provider_id: str, replacement: dict | None) -> None:
+    data = get_assignments()
+    defaults = data.setdefault("defaults", {})
+    for role_id, binding in list(defaults.items()):
+        if not isinstance(binding, dict) or binding.get("provider_id") != provider_id:
+            continue
+        if replacement:
+            defaults[role_id] = {
+                "provider_id": replacement.get("id", ""),
+                "model": replacement.get("default_model", ""),
+            }
+        else:
+            defaults.pop(role_id, None)
+
+    for scope_name in ("cartridges", "nodes"):
+        scope = data.setdefault(scope_name, {})
+        for owner_id, bindings in list(scope.items()):
+            if not isinstance(bindings, dict):
+                scope.pop(owner_id, None)
+                continue
+            filtered = {
+                role_id: binding
+                for role_id, binding in bindings.items()
+                if not isinstance(binding, dict) or binding.get("provider_id") != provider_id
+            }
+            if filtered:
+                scope[owner_id] = filtered
+            else:
+                scope.pop(owner_id, None)
+    save_assignments(data)
+
+
+def _normalize_role_bindings(value) -> dict[str, dict[str, str]]:
+    if not isinstance(value, dict):
+        return {}
+    result: dict[str, dict[str, str]] = {}
+    for role_id, raw_binding in value.items():
+        normalized_role = _clean(role_id)
+        binding = _normalize_assignment(raw_binding)
+        if normalized_role and binding:
+            result[normalized_role] = binding
+    return result
+
+
+def _normalize_scoped_bindings(value) -> dict[str, dict[str, dict[str, str]]]:
+    if not isinstance(value, dict):
+        return {}
+    result: dict[str, dict[str, dict[str, str]]] = {}
+    for owner_id, raw_bindings in value.items():
+        normalized_owner = _clean(owner_id)
+        bindings = _normalize_role_bindings(raw_bindings)
+        if normalized_owner and bindings:
+            result[normalized_owner] = bindings
+    return result
+
+
+def _normalize_assignment(value) -> dict[str, str]:
+    if not isinstance(value, dict):
+        return {}
+    provider_id = _clean(value.get("provider_id", ""))
+    model = _clean(value.get("model", ""))
+    if not provider_id:
+        return {}
+    return {"provider_id": provider_id, "model": model}
 
 
 def _env_provider() -> dict:
@@ -274,6 +573,14 @@ def _next_id(base: str, existing: set[str]) -> str:
     while f"{base}-{index}" in existing:
         index += 1
     return f"{base}-{index}"
+
+
+def _safe_timeout(value) -> int:
+    try:
+        timeout = int(value or 120)
+    except (TypeError, ValueError):
+        timeout = 120
+    return min(900, max(1, timeout))
 
 
 def _clean(value) -> str:

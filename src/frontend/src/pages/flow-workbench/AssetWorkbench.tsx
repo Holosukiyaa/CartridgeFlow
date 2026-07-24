@@ -29,6 +29,12 @@ const KIND_LABELS: Record<string, string> = {
   fixture: '测试样本',
 }
 
+const MODE_LABELS: Record<InteractionComponent['supported_modes'][number], string> = {
+  display: '展示',
+  collect: '收集',
+  review: '审核',
+}
+
 type AssetDraft = Pick<CartridgeAsset, 'id' | 'kind' | 'path' | 'media_type'> & { content: string; encoding: string }
 
 function draftFromAsset(asset: CartridgeAsset): AssetDraft {
@@ -85,7 +91,7 @@ export function AssetWorkbench({ flowId, editable, available = true, onFilesChan
 }) {
   const [assets, setAssets] = useState<CartridgeAsset[]>([])
   const [components, setComponents] = useState<InteractionComponent[]>([])
-  const [tab, setTab] = useState<'assets' | 'components'>('assets')
+  const [tab, setTab] = useState<'assets' | 'components'>('components')
   const [selectedAssetId, setSelectedAssetId] = useState('')
   const [assetDraft, setAssetDraft] = useState<AssetDraft | null>(null)
   const [selectedComponentId, setSelectedComponentId] = useState('')
@@ -123,13 +129,29 @@ export function AssetWorkbench({ flowId, editable, available = true, onFilesChan
     () => assets.find((item) => item.id === selectedAssetId),
     [assets, selectedAssetId],
   )
+  const componentDraft = useMemo(() => {
+    try {
+      return JSON.parse(componentText) as InteractionComponent
+    } catch {
+      return null
+    }
+  }, [componentText])
+  const componentEntryAsset = useMemo(() => {
+    const ref = componentDraft?.entry?.ref || ''
+    return assets.find((item) => `asset:${item.id}` === ref)
+  }, [assets, componentDraft])
+
+  const updateComponent = (patch: Partial<InteractionComponent>) => {
+    if (!componentDraft || !editable) return
+    setComponentText(JSON.stringify({ ...componentDraft, ...patch }, null, 2))
+  }
 
   if (!available) {
     return (
       <section className="cf-assets-workbench cf-assets-unavailable">
         <div className="cf-assets-unavailable-copy">
-          <span className="cf-kicker">Cartridge Assets</span>
-          <h2>这个 Flow 还没有 v0.7 资产区</h2>
+          <span className="cf-kicker">Interaction Nodes</span>
+          <h2>这个 Flow 还没有交互节点能力</h2>
           <p>旧协议继续保留原有运行方式。要使用交互组件、稳定资产 ID 和 Host 动作控制，请先把 Flow 迁移到 CF-FARP@0.7。</p>
           <code>当前工作区只读 · 不会自动改写旧协议</code>
         </div>
@@ -227,27 +249,27 @@ export function AssetWorkbench({ flowId, editable, available = true, onFilesChan
     <section className="cf-assets-workbench">
       <header className="cf-assets-summary">
         <div>
-          <span className="cf-kicker">Cartridge Assets</span>
-          <h2>卡带资产</h2>
-          <p>Flow 通过稳定 ID 使用提示词、配方、动效、媒体和交互界面；这些内容跟随卡带一起迁移。</p>
+          <span className="cf-kicker">Interaction Nodes</span>
+          <h2>交互节点</h2>
+          <p>配置卡带里的交互组件，以及组件依赖的界面、提示词和媒体素材。它们会随卡带一起迁移。</p>
         </div>
         <div className="cf-assets-counters">
-          <span><b>{assets.length}</b> 份资产</span>
           <span><b>{components.length}</b> 个组件</span>
-          <span className="safe">被动 HTML 已启用</span>
+          <span><b>{assets.length}</b> 份节点素材</span>
+          <span className="safe">被动运行</span>
         </div>
       </header>
 
       <div className="cf-assets-tabs" role="tablist">
-        <button className={tab === 'assets' ? 'active' : ''} onClick={() => setTab('assets')}>资产库</button>
         <button className={tab === 'components' ? 'active' : ''} onClick={() => setTab('components')}>交互组件</button>
+        <button className={tab === 'assets' ? 'active' : ''} onClick={() => setTab('assets')}>节点素材</button>
       </div>
 
       {tab === 'assets' ? (
         <div className="cf-assets-layout">
           <aside className="cf-assets-list">
             <div className="cf-assets-list-head">
-              <strong>卡带内容</strong>
+              <strong>节点素材</strong>
               {editable && <button onClick={() => { const draft = newAssetDraft(); setSelectedAssetId(''); setAssetDraft(draft) }}>新建</button>}
             </div>
             <div className="cf-assets-scroll">
@@ -304,23 +326,114 @@ export function AssetWorkbench({ flowId, editable, available = true, onFilesChan
               ))}
             </div>
           </aside>
-          <div className="cf-component-editor">
-            <div className="cf-component-note"><strong>Host 控制动作</strong><p>组件描述界面与动作，但最终按钮、Schema 校验和 Flow 路由都由底座执行。</p></div>
-            <textarea spellCheck={false} value={componentText} onChange={(event) => setComponentText(event.target.value)} />
-            <div className="cf-asset-actions">
-              <span>当前底座只接受 runtime=passive</span>
-              {selectedComponentId && editable && <button className="danger" onClick={removeComponent}>删除</button>}
-              {editable && <button className="primary" disabled={saving} onClick={saveComponent}>{saving ? '保存中...' : '保存组件'}</button>}
+          {componentDraft ? (
+            <div className="cf-component-editor">
+              <div className="cf-component-form-scroll">
+                <div className="cf-component-note">
+                  <div><strong>组件由底座托管</strong><p>界面只负责展示和发出命名动作，数据校验与 Flow 路由仍由底座执行。</p></div>
+                  <span>runtime · passive</span>
+                </div>
+
+                <section className="cf-component-section">
+                  <div className="cf-component-section-head"><span>基础信息</span><small>用于节点引用的稳定身份</small></div>
+                  <div className="cf-component-fields">
+                    <label><span>组件 ID</span><input disabled={Boolean(selectedComponentId) || !editable} value={componentDraft.id || ''} onChange={(event) => updateComponent({ id: event.target.value })} /></label>
+                    <label><span>版本</span><input disabled={!editable} value={componentDraft.version || ''} onChange={(event) => updateComponent({ version: event.target.value })} /></label>
+                    <label className="wide"><span>入口界面</span><select disabled={!editable} value={componentDraft.entry?.ref || ''} onChange={(event) => updateComponent({ entry: { type: 'asset', ref: event.target.value } })}>
+                      <option value="">请选择交互界面素材</option>
+                      {assets.map((asset) => <option key={asset.id} value={`asset:${asset.id}`}>{asset.id} · {KIND_LABELS[asset.kind] || asset.kind}</option>)}
+                    </select></label>
+                  </div>
+                </section>
+
+                <section className="cf-component-section">
+                  <div className="cf-component-section-head"><span>交互模式</span><small>决定节点可以怎样使用这个组件</small></div>
+                  <div className="cf-component-mode-grid">
+                    {(Object.keys(MODE_LABELS) as Array<InteractionComponent['supported_modes'][number]>).map((mode) => {
+                      const checked = componentDraft.supported_modes?.includes(mode)
+                      return <label key={mode} className={checked ? 'active' : ''}>
+                        <input
+                          type="checkbox"
+                          disabled={!editable}
+                          checked={Boolean(checked)}
+                          onChange={() => updateComponent({
+                            supported_modes: checked
+                              ? componentDraft.supported_modes.filter((item) => item !== mode)
+                              : [...(componentDraft.supported_modes || []), mode],
+                          })}
+                        />
+                        <b>{MODE_LABELS[mode]}</b>
+                        <span>{mode === 'display' ? '只展示内容' : mode === 'collect' ? '接收用户输入' : '提交审核结论'}</span>
+                      </label>
+                    })}
+                  </div>
+                </section>
+
+                <section className="cf-component-section">
+                  <div className="cf-component-section-head">
+                    <span>命名动作</span>
+                    {editable && <button type="button" onClick={() => updateComponent({ actions: [...(componentDraft.actions || []), { id: `action_${(componentDraft.actions || []).length + 1}`, label: '新动作' }] })}>添加动作</button>}
+                  </div>
+                  <div className="cf-component-actions-list">
+                    {(componentDraft.actions || []).map((action, index) => (
+                      <div key={`${action.id}-${index}`}>
+                        <input aria-label="动作 ID" disabled={!editable} value={action.id} placeholder="action_id" onChange={(event) => updateComponent({ actions: componentDraft.actions.map((item, itemIndex) => itemIndex === index ? { ...item, id: event.target.value } : item) })} />
+                        <input aria-label="动作名称" disabled={!editable} value={action.label || ''} placeholder="按钮名称" onChange={(event) => updateComponent({ actions: componentDraft.actions.map((item, itemIndex) => itemIndex === index ? { ...item, label: event.target.value } : item) })} />
+                        {editable && <button type="button" aria-label="删除动作" title="删除动作" onClick={() => updateComponent({ actions: componentDraft.actions.filter((_, itemIndex) => itemIndex !== index) })}>×</button>}
+                      </div>
+                    ))}
+                    {!componentDraft.actions?.length && <p>展示型组件可以不配置动作；需要继续 Flow 时再添加。</p>}
+                  </div>
+                </section>
+
+                <details className="cf-component-advanced">
+                  <summary><span>高级配置</span><small>输入 Schema、Host 能力与原始 JSON</small></summary>
+                  <div className="cf-component-advanced-body">
+                    <label><span>输入 Schema JSON</span><textarea
+                      key={`${componentDraft.id}-${selectedComponentId}-schema`}
+                      spellCheck={false}
+                      defaultValue={JSON.stringify(componentDraft.input_schema || { type: 'object' }, null, 2)}
+                      onBlur={(event) => {
+                        try {
+                          updateComponent({ input_schema: JSON.parse(event.target.value) })
+                        } catch (error: any) {
+                          showToast({ title: '输入 Schema 无法解析', description: error.message, type: 'error' })
+                        }
+                      }}
+                    /></label>
+                    <label><span>Host 能力（逗号分隔）</span><input disabled={!editable} value={(componentDraft.host_capabilities || []).join(', ')} onChange={(event) => updateComponent({ host_capabilities: event.target.value.split(',').map((item) => item.trim()).filter(Boolean) })} /></label>
+                    <label><span>完整组件 JSON</span><textarea className="raw" spellCheck={false} disabled={!editable} value={componentText} onChange={(event) => setComponentText(event.target.value)} /></label>
+                  </div>
+                </details>
+              </div>
+              <div className="cf-asset-actions">
+                <span>{selectedComponentId ? `已登记 · ${componentDraft.id}` : '尚未写入卡带'}</span>
+                {selectedComponentId && editable && <button className="danger" onClick={removeComponent}>删除组件</button>}
+                {editable && <button className="primary" disabled={saving} onClick={saveComponent}>{saving ? '保存中...' : '保存组件'}</button>}
+              </div>
             </div>
-          </div>
-          <aside className="cf-component-map">
-            <strong>组件怎样进入 Flow</strong>
-            <ol>
-              <li>界面文件登记为交互界面资产</li>
-              <li>组件引用资产稳定 ID</li>
-              <li>交互节点引用组件 ID</li>
-              <li>底座按命名动作恢复 Flow</li>
-            </ol>
+          ) : <div className="cf-component-invalid-editor">
+            <div><strong>组件 JSON 无法解析</strong><span>修正下面的内容后，表单会自动恢复。</span></div>
+            <textarea spellCheck={false} value={componentText} onChange={(event) => setComponentText(event.target.value)} />
+            <div className="cf-asset-actions"><span>当前内容尚未保存</span><button onClick={() => selectedComponentId ? chooseComponent(components.find((item) => item.id === selectedComponentId)!) : setComponentText(JSON.stringify(newComponent(), null, 2))}>还原</button></div>
+          </div>}
+          <aside className="cf-component-inspector">
+            <div className="cf-asset-preview-head"><strong>组件预览</strong><span>脚本禁用</span></div>
+            <div className="cf-component-preview-stage">
+              {componentEntryAsset?.media_type === 'text/html' ? (
+                <iframe title="component preview" sandbox="" srcDoc={passiveHtmlDocument(materializeAssetRefs(componentEntryAsset.content || '', assets))} />
+              ) : componentEntryAsset?.media_type.startsWith('image/') && componentEntryAsset.encoding === 'base64' ? (
+                <img src={`data:${componentEntryAsset.media_type};base64,${componentEntryAsset.content}`} alt={componentEntryAsset.id} />
+              ) : (
+                <div className="cf-component-preview-empty"><b>{componentEntryAsset ? '当前素材不支持画面预览' : '还没有绑定入口界面'}</b><span>{componentEntryAsset?.id || '请在中间选择一份节点素材'}</span></div>
+              )}
+            </div>
+            <div className="cf-component-health">
+              <span>依赖状态</span>
+              <div className={componentEntryAsset ? 'ok' : 'warn'}><b>{componentEntryAsset ? '入口素材可用' : '缺少入口素材'}</b><small>{componentEntryAsset?.path || componentDraft?.entry?.ref || '未绑定'}</small></div>
+              <div className="ok"><b>被动运行</b><small>脚本不会直接控制 Flow</small></div>
+              <div><b>{componentDraft?.supported_modes?.length || 0} 种模式 · {componentDraft?.actions?.length || 0} 个动作</b><small>由节点选择具体运行方式</small></div>
+            </div>
           </aside>
         </div>
       )}

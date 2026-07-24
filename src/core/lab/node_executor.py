@@ -94,6 +94,7 @@ class LabNodeExecutor:
         if state.get("tools") and not params.get("tools"):
             params["tools"] = state.get("tools")
         params = self._prepare_protocol_runtime(state, params, store, run)
+        params["_node_id"] = state_name
         action = state.get("action") or ""
         preset_config = params.get("preset_config") or {}
 
@@ -949,7 +950,11 @@ class LabNodeExecutor:
         try:
             from core.llm import chat
             from core.llm.config_manager import resolve_model
-            cfg = resolve_model(role=model_role, cartridge_id=run.get("cartridge_id"))
+            cfg = resolve_model(
+                role=model_role,
+                cartridge_id=run.get("cartridge_id"),
+                node_id=params.get("_node_id"),
+            )
             provider_id = cfg.provider_id
             model = cfg.model
             if output_contract == "decision_envelope.v1" and str(decision_test_mode).strip() in {"mock", "mock_resolved", "mock_interaction", "mock_blocked"}:

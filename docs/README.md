@@ -10,6 +10,7 @@
 | AI 接手或准备开发 | 根目录 `AGENT.md` -> [任务清单](planning/TODO.md) -> 与需求直接相关的源码；产品边界和里程碑再查 [路线图](planning/ROADMAP.md) |
 | 修改 Base、Flow 或运行时 | [当前 Base 0.2 契约](protocol/CARTRIDGEFLOW_BASE_CONTRACT_v0.2.md) -> [最新 CF-FARP 0.7 协议](protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.7.md) -> [机器 registry](../protocol/README.md) -> `src/core/protocol/` -> 对应 conformance 测试；修复现有运行时还要核对 v0.6 快照 |
 | 修改 Portable DLC | [Portable DLC 架构](architecture/PORTABLE_DLC_ARCHITECTURE.md) -> [协议治理](protocol/GOVERNANCE.md) |
+| 修改 Flow 节点主卡或详情信息 | [节点信息架构报告](architecture/FLOW_NODE_INFORMATION_ARCHITECTURE.md) -> [最新 CF-FARP 0.7 协议](protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.7.md) -> 对应节点视图代码 |
 | 开发和运行自动测试 | [开发与维护](development/README.md) -> `scripts/` |
 | 重做一级页面视觉 | [Img2 UI 重设计提示词包](design/IMG2_UI_REDESIGN_PROMPTS.md) -> [前端图标、素材与动效规范](design/FRONTEND_ASSET_SYSTEM.md) -> 逐页评审与迁移 |
 | 查找某个文件 | [逐文件清单](development/FILE_INVENTORY.md) |
@@ -36,6 +37,7 @@ docs/
 - [CF-FARP 0.7](protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.7.md)：最新 Flow 协议正文，定义卡带资产、交互节点和脚本安全边界。
 - [CF-FARP 0.6](protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.6.md)：当前参考底座仍在运行的上一版协议快照。
 - [Portable DLC 架构](architecture/PORTABLE_DLC_ARCHITECTURE.md)：基座与卡带私有能力的激活、隔离和所有权约束。
+- [Flow 节点信息架构](architecture/FLOW_NODE_INFORMATION_ARCHITECTURE.md)：逐类规定开始、结束和全部业务节点的主卡、运行态、详情子卡与禁止展示信息。
 - [Img2 UI 重设计提示词包](design/IMG2_UI_REDESIGN_PROMPTS.md)：锁定现有侧栏，先生成运行诊断视觉母版，再为各一级页面生成统一视觉稿。
 - [前端图标、素材与动效规范](design/FRONTEND_ASSET_SYSTEM.md)：规定 Lucide、Simple Icons、Motion 与项目自有品牌资产的使用边界。
 - [协议治理](protocol/GOVERNANCE.md)：修改协议、实现 Flow 和发布快照时必须遵守的规则。

@@ -10,15 +10,16 @@ RUN_TRANSITIONS = {
     "paused_waiting_user": {"running", "cancelled"},
     "failed": {"retrying", "recovering", "rolling_back", "cancelled"},
     "interrupted": {"recovering", "rolling_back", "cancelled", "failed"},
-    "retrying": {"running", "paused_waiting_user", "completed", "failed", "cancelled", "interrupted"},
-    "recovering": {"running", "paused_waiting_user", "completed", "failed", "cancelled", "interrupted"},
-    "rolling_back": {"running", "paused_waiting_user", "completed", "failed", "cancelled", "interrupted"},
+    "retrying": {"running", "paused", "paused_waiting_user", "completed", "failed", "cancelled", "interrupted"},
+    "recovering": {"running", "paused", "paused_waiting_user", "completed", "failed", "cancelled", "interrupted"},
+    "rolling_back": {"running", "paused", "paused_waiting_user", "completed", "failed", "cancelled", "interrupted"},
     "completed": {"rolling_back"},
     "cancelled": set(),
 }
 
 NODE_TRANSITIONS = {
-    "entered": {"completed", "failed", "paused_waiting_user", "cancelled"},
+    "entered": {"completed", "failed", "paused", "paused_waiting_user", "cancelled"},
+    "paused": {"entered", "completed", "failed", "cancelled"},
     "paused_waiting_user": {"entered", "completed", "failed"},
     "failed": {"entered"},
     "completed": set(),

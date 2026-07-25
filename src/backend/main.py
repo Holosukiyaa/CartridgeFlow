@@ -41,7 +41,7 @@ from core.cartridge.assets import (
     write_asset,
     write_component,
 )
-from core.lab import DevFlowManager, FlowGraphBuilder, FlowSteward
+from core.lab import DevFlowManager, FlowGraphBuilder
 from core.lab.todo import parse_todo_markdown
 from core.llm.config_manager import ensure_llm_config
 from core.runtime.errors import RuntimeFailure, build_runtime_error, write_diagnostic
@@ -56,7 +56,7 @@ from core.protocol import (
 )
 
 ensure_data_layout(ROOT)
-PRODUCT_VERSION = (ROOT / "VERSION").read_text(encoding="utf-8").strip().removeprefix("CartridgeFlow-")
+PRODUCT_VERSION = (ROOT / "VERSION").read_text(encoding="utf-8").strip().removeprefix("CartridgeFlowLite-").removeprefix("CartridgeFlow-")
 
 
 class UTF8JSONResponse(JSONResponse):
@@ -192,7 +192,6 @@ runner = CartridgeRunner(ROOT, registry)
 artifact_manager = ArtifactManager(ROOT)
 flow_graph_builder = FlowGraphBuilder()
 dev_flow_manager = DevFlowManager(ROOT)
-flow_steward = FlowSteward()
 ensure_llm_config()
 ensure_local_credentials()
 
@@ -316,25 +315,6 @@ class CartridgeAssetPayload(BaseModel):
 
 class InteractionComponentPayload(BaseModel):
     component: dict = Field(default_factory=dict)
-
-
-class FlowStewardSuggestPayload(BaseModel):
-    intent: str
-    files: dict = Field(default_factory=dict)
-    selected_node: dict | None = None
-    use_llm: bool = False
-
-
-class FlowStewardApplyPayload(BaseModel):
-    files: dict = Field(default_factory=dict)
-    patches: list[dict] = Field(default_factory=list)
-    selected_node: dict | None = None
-
-
-class FlowAssistantPayload(BaseModel):
-    message: str
-    graph: dict = Field(default_factory=dict)
-    files: dict = Field(default_factory=dict)
 
 
 class LLMProviderPayload(BaseModel):
@@ -1797,12 +1777,6 @@ def get_lab_flow(cartridge_id: str):
         "runs": runs[:5],
         "latest_run_events": runner.get_events(latest_run["run_id"]) if latest_run else [],
         "compatibility": compatibility,
-        "steward": {
-            "status": "skeleton",
-            "role": "Flow 管家",
-            "message": "第一版只读取当前 Flow 上下文，后续接入 AI 后可根据开发者意图修改链路图。",
-            "context_keys": ["manifest", "root_flow", "graph", "selected_node", "runs", "events", "permissions", "environment", "dependencies"],
-        },
     }
 
 
@@ -2094,92 +2068,6 @@ def preview_lab_flow_graph(cartridge_id: str, payload: DevFlowFilesPayload):
             raise HTTPException(status_code=403, detail="Only dev flows are editable")
         preview_cartridge = dev_flow_manager.preview_graph(cartridge_id, payload.files)
         return {"graph": flow_graph_builder.build(preview_cartridge)}
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-
-@app.post("/api/lab/flows/{cartridge_id}/steward/suggest")
-async def suggest_lab_flow_changes(cartridge_id: str, payload: FlowStewardSuggestPayload):
-    try:
-        cartridge = registry.get_cartridge(cartridge_id)
-        if not cartridge.get("editable"):
-            raise HTTPException(status_code=403, detail="Only dev flows are editable")
-        files = dev_flow_manager.read_files(cartridge_id)
-        files.update(payload.files)
-        if payload.use_llm:
-            return await flow_steward.suggest_with_llm(payload.intent, files, payload.selected_node)
-        return flow_steward.suggest(payload.intent, files, payload.selected_node)
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-
-
-@app.post("/api/lab/flows/{cartridge_id}/steward/suggest-llm")
-async def suggest_lab_flow_changes_llm(cartridge_id: str, payload: FlowStewardSuggestPayload):
-    """显式的 LLM 建议端点，等价于 use_llm=True。"""
-    try:
-        cartridge = registry.get_cartridge(cartridge_id)
-        if not cartridge.get("editable"):
-            raise HTTPException(status_code=403, detail="Only dev flows are editable")
-        files = dev_flow_manager.read_files(cartridge_id)
-        files.update(payload.files)
-        return await flow_steward.suggest_with_llm(payload.intent, files, payload.selected_node)
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-
-
-@app.post("/api/lab/flows/{cartridge_id}/assistant")
-@app.post("/api/lab/flows/{cartridge_id}/assistant/")
-async def flow_assistant_chat(cartridge_id: str, payload: FlowAssistantPayload):
-    try:
-        cartridge = registry.get_cartridge(cartridge_id)
-        if not cartridge.get("editable"):
-            raise HTTPException(status_code=403, detail="Only dev flows are editable")
-        files = dev_flow_manager.read_files(cartridge_id)
-        files.update(payload.files)
-        graph = payload.graph or flow_graph_builder.build(dev_flow_manager.preview_graph(cartridge_id, files))
-        from core.lab.flow_assistant_llm import build_intent_fallback, build_messages, parse_response
-        fallback = build_intent_fallback(payload.message, graph, files)
-        if fallback:
-            return {"ok": True, "message": fallback, "meta": {"source": "intent_fallback"}}
-
-        from core.llm import chat
-        from core.llm.config_manager import resolve_model
-        cfg = resolve_model("steward", cartridge_id=cartridge_id)
-
-        response = await chat(
-            cfg,
-            build_messages(payload.message, graph, files),
-            agent_name="flow_assistant",
-            phase="flow_design",
-        )
-        message = parse_response(response.get("content", ""))
-        if message.get("type") == "clarify":
-            fallback = build_intent_fallback(payload.message, graph, files)
-            if fallback:
-                message = fallback
-        return {"ok": True, "message": message, "meta": response.get("meta", {})}
-    except HTTPException:
-        raise
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/api/lab/flows/{cartridge_id}/steward/apply")
-def apply_lab_flow_steward_patches(cartridge_id: str, payload: FlowStewardApplyPayload):
-    try:
-        cartridge = registry.get_cartridge(cartridge_id)
-        if not cartridge.get("editable"):
-            raise HTTPException(status_code=403, detail="Only dev flows are editable")
-        files = dev_flow_manager.read_files(cartridge_id)
-        files.update(payload.files)
-        result = flow_steward.apply(files, payload.patches, payload.selected_node)
-        validation = dev_flow_manager.validate_files(cartridge_id, result.get("files", {}))
-        graph = flow_graph_builder.build(dev_flow_manager.preview_graph(cartridge_id, result.get("files", {})))
-        return {**result, "validation": validation, "graph": graph}
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except ValueError as e:
@@ -2588,7 +2476,6 @@ def get_lab_flow_runs(cartridge_id: str):
 class LabTestRunCreate(BaseModel):
     inputs: dict[str, str] | None = None
     probe_range: dict | None = None
-    test_mode: dict | None = None
 
 
 @app.post("/api/lab/flows/{cartridge_id}/test-run")
@@ -2598,12 +2485,7 @@ def create_lab_flow_test_run(cartridge_id: str, payload: LabTestRunCreate | None
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     probe_range = payload.probe_range if payload else None
-    test_mode = payload.test_mode if payload else None
-    if test_mode:
-        try:
-            runner._normalize_test_mode(test_mode)
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
+    test_mode = {"decision": "live_collaboration"}
     if probe_range:
         try:
             runner.validate_probe_range(cartridge.get("root_flow") or {}, probe_range)
@@ -2643,12 +2525,12 @@ def create_lab_flow_test_run(cartridge_id: str, payload: LabTestRunCreate | None
             runner.create_run(cartridge_id, inputs, probe_range=probe_range, run_id=run_id, test_mode=test_mode)
         except CompatibilityBlockedError as exc:
             try:
-                runner._append_event(run_id, cartridge_id, "run_blocked", "created", "测试运行被兼容性检查阻断", {"report": exc.report})
+                runner._append_event(run_id, cartridge_id, "run_blocked", "created", "运行被兼容性检查阻断", {"report": exc.report})
             except Exception:
                 pass
         except Exception as exc:
             try:
-                runner._append_event(run_id, cartridge_id, "run_failed", "created", f"测试运行失败：{exc}", {"error": str(exc)})
+                runner._append_event(run_id, cartridge_id, "run_failed", "created", f"运行失败：{exc}", {"error": str(exc)})
             except Exception:
                 pass
 

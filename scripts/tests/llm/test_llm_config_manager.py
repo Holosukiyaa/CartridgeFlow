@@ -60,7 +60,6 @@ class LlmConfigManagerTests(unittest.TestCase):
                 self.assertEqual("two", selected["id"])
                 self.assertEqual("two", current["defaults"]["runtime"]["provider_id"])
                 self.assertEqual("model-two", current["defaults"]["runtime"]["model"])
-                self.assertEqual("two", current["defaults"]["steward"]["provider_id"])
                 self.assertEqual("two", manager.get_provider("two")["id"])
 
     def test_connection_change_invalidates_previous_test(self):
@@ -154,7 +153,7 @@ class LlmConfigManagerTests(unittest.TestCase):
         self.assertEqual(["text_reasoning"], img2["capabilities"])
         self.assertEqual("standard", img2["adapter_profile"])
 
-    def test_required_recipe_role_needs_explicit_compatible_binding(self):
+    def test_required_recipe_role_uses_global_provider_without_cartridge_binding(self):
         providers = [{
             "id": "local", "name": "Local", "api_type": "openai", "wire_api": "responses",
             "base_url": "https://models.test/v1", "api_key": "local-key", "default_model": "model-one",
@@ -173,8 +172,10 @@ class LlmConfigManagerTests(unittest.TestCase):
             root = Path(temp_dir)
             self._write_config(root, providers, assignments)
             with self._context(root):
-                blocked = manager.build_model_binding_report(manifest)
-                self.assertEqual("blocked", blocked["status"])
+                ready = manager.build_model_binding_report(manifest)
+                self.assertEqual("ok", ready["status"])
+                self.assertEqual("local", ready["items"][0]["provider_id"])
+                self.assertEqual("model-one", ready["items"][0]["model"])
                 current = manager.get_assignments()
                 current["cartridges"] = {"flow.demo": {"writer": {"provider_id": "local", "model": "model-one"}}}
                 manager.save_assignments(current)

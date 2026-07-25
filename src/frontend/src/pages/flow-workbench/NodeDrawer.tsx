@@ -1,10 +1,52 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Badge, Button, Field, Heading, Input, NativeSelect, Text, Textarea, VStack } from '../../ui.tsx'
-import { updateFlowNode, type FlowEdge, type FlowFiles, type FlowNode } from '../../api.ts'
+import { Activity, ArrowLeftRight, Box, ClipboardCopy, Download, FileText, GitBranch, GripHorizontal, Pin, PinOff, Trash2, Wrench, X } from 'lucide-react'
+import { updateFlowNode, type FlowEdge, type FlowEvent, type FlowFiles, type FlowNode } from '../../api.ts'
 import { normalizeRecipeRoles } from '../../llmRecipe.ts'
 import { showToast } from '../../toast.tsx'
 import type { GraphResult, NodeCategoryId, NodeDraft } from './types.ts'
 import { CATEGORY_BY_ID, NODE_CATEGORIES, buildProtocolNodePayload, getNodeCategory, getProcessDisplayLabel, getPreset, getPresets, getProtocolDefaults, makeNodeDraft } from './nodeModel.ts'
+import type { NodeRunState } from './TestBenchView.tsx'
+
+const RUN_STATE_LABELS: Record<NodeRunState['status'], string> = {
+  idle: '尚未执行',
+  running: '正在执行',
+  completed: '执行完成',
+  failed: '执行失败',
+  paused: '等待继续',
+}
+
+function detailValue(value: unknown, fallback = '未配置') {
+  if (value === undefined || value === null || value === '') return fallback
+  if (Array.isArray(value)) return value.length ? value.join(', ') : fallback
+  if (typeof value === 'object') return JSON.stringify(value)
+  return String(value)
+}
+
+async function copyText(value: string) {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(value)
+      return
+    } catch {
+      // Use the local-page fallback below.
+    }
+  }
+  const field = document.createElement('textarea')
+  field.value = value
+  field.style.position = 'fixed'
+  field.style.opacity = '0'
+  document.body.appendChild(field)
+  field.select()
+  const copied = document.execCommand('copy')
+  field.remove()
+  if (!copied) throw new Error('Clipboard access is unavailable')
+}
+
+function DetailFact({ label, value, mono = false }: { label: string; value: unknown; mono?: boolean }) {
+  const text = detailValue(value)
+  return <div><dt>{label}</dt><dd className={mono ? 'mono' : ''} title={text}>{text}</dd></div>
+}
 
 function readInteractionComponents(files: FlowFiles) {
   try {
@@ -37,18 +79,25 @@ function DrawerSection({ title, summary, children, defaultOpen = false }: { titl
   )
 }
 
-export function NodeDrawer({ node, graphEdges, flowId, files, editable, open, onClose, onSaved }: {
+export function NodeDrawer({ node, graphEdges, flowId, files, editable, open, pinned, showSummary = true, runState, runEvents = [], onTogglePin, onClose, onDelete, onSaved }: {
   node: FlowNode | null
   graphEdges: FlowEdge[]
   flowId: string
   files: FlowFiles
   editable: boolean
   open: boolean
+  pinned: boolean
+  showSummary?: boolean
+  runState?: NodeRunState
+  runEvents?: FlowEvent[]
+  onTogglePin: () => void
   onClose: () => void
+  onDelete?: () => Promise<void> | void
   onSaved: (result: GraphResult) => void
 }) {
   const [draft, setDraft] = useState<NodeDraft | null>(node ? makeNodeDraft(node) : null)
   const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const category = draft ? CATEGORY_BY_ID.get(draft.category) || getNodeCategory(node) : null
   const presets = category && draft ? getPresets(draft.category) : []
   const activePreset = category && draft ? getPreset(draft.category, draft.preset) : null
@@ -62,7 +111,7 @@ export function NodeDrawer({ node, graphEdges, flowId, files, editable, open, on
 
   useEffect(() => {
     setDraft(node ? makeNodeDraft(node) : null)
-  }, [node])
+  }, [node?.id])
 
   if (!open || !node || !draft || !category) return null
 
@@ -114,7 +163,6 @@ export function NodeDrawer({ node, graphEdges, flowId, files, editable, open, on
       if (draft.tools.trim()) toolsParsed = JSON.parse(draft.tools)
       if (draft.params.trim()) paramsParsed = JSON.parse(draft.params)
       if (draft.decisionContract.trim()) JSON.parse(draft.decisionContract)
-      if (draft.mockDecisionEnvelope.trim()) JSON.parse(draft.mockDecisionEnvelope)
       if (draft.inputBinding.trim()) JSON.parse(draft.inputBinding)
       if (draft.actionRoutes.trim()) JSON.parse(draft.actionRoutes)
     } catch (e: any) {
@@ -146,6 +194,8 @@ export function NodeDrawer({ node, graphEdges, flowId, files, editable, open, on
         },
       })
       onSaved(result)
+      const savedNode = result.graph.nodes.find((item) => item.id === node.id)
+      if (savedNode) setDraft(makeNodeDraft(savedNode))
     } catch (e: any) {
       showToast({ title: '保存失败', description: e.message, type: 'error' })
     } finally {
@@ -153,25 +203,133 @@ export function NodeDrawer({ node, graphEdges, flowId, files, editable, open, on
     }
   }
 
+  const copyNodeId = async () => {
+    try {
+      await copyText(node.id)
+      showToast({ title: '节点 ID 已复制', type: 'success' })
+    } catch (error: any) {
+      showToast({ title: '复制失败', description: error?.message, type: 'error' })
+    }
+  }
+
+  const copyNodeConfig = async () => {
+    try {
+      await copyText(JSON.stringify(node, null, 2))
+      showToast({ title: '节点配置已复制', type: 'success' })
+    } catch (error: any) {
+      showToast({ title: '复制失败', description: error?.message, type: 'error' })
+    }
+  }
+
+  const exportNodeConfig = () => {
+    const blob = new Blob([JSON.stringify(node, null, 2)], { type: 'application/json;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `${node.id}.node.json`
+    anchor.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const deleteCurrentNode = async () => {
+    if (!onDelete || !window.confirm(`确认删除节点“${draft.title || node.id}”？`)) return
+    setDeleting(true)
+    try {
+      await onDelete()
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   const dirty = JSON.stringify(draft) !== JSON.stringify(makeNodeDraft(node))
   const displayLabel = getProcessDisplayLabel({ ...node, ...buildProtocolNodePayload(draft, category) } as FlowNode) || category.label
   const selectedComponent = interactionComponents.find((item: any) => item.id === draft.componentRef)
+  const latestRunEvent = runEvents[runEvents.length - 1] || runState?.events?.[runState.events.length - 1]
 
   return (
-    <aside className={`cf-node-drawer ${readOnly ? 'readonly' : ''}`}>
+    <aside className={`cf-node-drawer cf-node-drawer-floating cf-node-config-window ${readOnly ? 'readonly' : ''}`}>
       <div className="cf-node-drawer-header" style={{ borderColor: readOnly ? '#b8b2aa' : category.color }}>
         <div className="cf-node-drawer-heading">
-          <div className="cf-node-drawer-eyebrow"><span>{readOnly ? 'SYSTEM NODE' : 'NODE SETTINGS'}</span><code>{node.id}</code></div>
+          <div className="cf-node-drawer-eyebrow"><span>{readOnly ? '系统节点' : '完整配置'}</span><code>{node.id}</code></div>
           <div className="cf-node-drawer-titleline">
             <Heading size="md">{draft.title || node.id}</Heading>
             <Badge className="cf-badge" style={{ color: category.color } as any}>{displayLabel}</Badge>
           </div>
           <Text>{readOnly ? '系统根节点用于标记链路边界，不能直接修改。' : category.description}</Text>
         </div>
-        <Button className="cf-node-drawer-close" aria-label="关闭节点设置" onClick={onClose}>×</Button>
+        <div className="cf-node-drawer-window-actions">
+          <span className="cf-node-drawer-drag-hint" title="拖动节点详情"><GripHorizontal aria-hidden="true" /></span>
+          <button
+            type="button"
+            className={`cf-node-drawer-pin ${pinned ? 'active' : ''}`}
+            aria-label={pinned ? '取消钉住节点详情' : '钉住节点详情'}
+            aria-pressed={pinned}
+            title={pinned ? '已钉住：打开其他节点时保留' : '未钉住：打开其他节点时替换'}
+            onClick={onTogglePin}
+          >
+            {pinned ? <Pin aria-hidden="true" /> : <PinOff aria-hidden="true" />}
+          </button>
+          <button type="button" className="cf-node-drawer-close" aria-label="关闭节点设置" title="关闭节点详情" onClick={onClose}><X aria-hidden="true" /></button>
+        </div>
       </div>
 
       <div className="cf-node-drawer-body">
+        {showSummary && <section className="cf-node-detail-dashboard" aria-label="节点详情摘要">
+          <article className="cf-node-detail-card basic" data-detail-section="basic">
+            <header><FileText aria-hidden="true" /><strong>基础信息</strong></header>
+            <dl>
+              <DetailFact label="节点名称" value={draft.title} />
+              <DetailFact label="节点描述" value={draft.description} />
+              <DetailFact label="节点 ID" value={node.id} mono />
+            </dl>
+          </article>
+          <article className="cf-node-detail-card" data-detail-section="type">
+            <header><Box aria-hidden="true" /><strong>节点类型</strong></header>
+            <dl>
+              <DetailFact label="类型" value={`${category.label} · ${draft.kind || node.type}`} />
+              <DetailFact label="执行器" value={draft.executor} />
+              <DetailFact label="作用域" value={node.scope || 'root'} />
+              <DetailFact label="副作用" value={draft.effect} />
+            </dl>
+          </article>
+          <article className="cf-node-detail-card" data-detail-section="trigger">
+            <header><GitBranch aria-hidden="true" /><strong>触发条件</strong></header>
+            <dl>
+              <DetailFact label="触发动作" value={draft.action} mono />
+              <DetailFact label="条件表达式" value={draft.condition || '上游流转后执行'} mono />
+              <DetailFact label="上游连接" value={incomingEdges.length ? incomingEdges.map((edge) => edge.from) : '无'} mono />
+            </dl>
+          </article>
+          <article className="cf-node-detail-card" data-detail-section="io">
+            <header><ArrowLeftRight aria-hidden="true" /><strong>输入输出</strong></header>
+            <dl>
+              <DetailFact label="输入变量" value={draft.input} mono />
+              <DetailFact label="输出变量" value={draft.output || node.primary_output} mono />
+              <DetailFact label="输出契约" value={draft.outputContract} mono />
+              <DetailFact label="后续节点" value={draft.next || outgoingEdges.map((edge) => edge.to)} mono />
+            </dl>
+          </article>
+          <article className="cf-node-detail-card runtime" data-detail-section="runtime">
+            <header><Activity aria-hidden="true" /><strong>运行数据</strong></header>
+            <dl>
+              <DetailFact label="当前状态" value={runState ? RUN_STATE_LABELS[runState.status] : '当前没有运行记录'} />
+              <DetailFact label="关联事件" value={`${runEvents.length || runState?.events.length || 0} 条`} />
+              <DetailFact label="输入键" value={runState?.inputKey} mono />
+              <DetailFact label="输出键" value={runState?.outputKey} mono />
+              {latestRunEvent && <DetailFact label="最新事件" value={latestRunEvent.message || latestRunEvent.type} />}
+              {runState?.errorMsg && <DetailFact label="错误信息" value={runState.errorMsg} />}
+            </dl>
+          </article>
+          <article className="cf-node-detail-card quick-actions" data-detail-section="actions">
+            <header><Wrench aria-hidden="true" /><strong>快捷操作</strong></header>
+            <div>
+              <button type="button" onClick={() => void copyNodeId()}><ClipboardCopy aria-hidden="true" />复制节点 ID</button>
+              <button type="button" onClick={() => void copyNodeConfig()}><ClipboardCopy aria-hidden="true" />复制配置</button>
+              <button type="button" onClick={exportNodeConfig}><Download aria-hidden="true" />导出配置</button>
+              <button type="button" className="danger" disabled={!onDelete || readOnly || deleting} onClick={() => void deleteCurrentNode()}><Trash2 aria-hidden="true" />{deleting ? '删除中' : '删除节点'}</button>
+            </div>
+          </article>
+        </section>}
         {readOnly ? (
           <section className="cf-system-node-card">
             <div className="cf-system-node-mark">ROOT</div>
@@ -182,12 +340,6 @@ export function NodeDrawer({ node, graphEdges, flowId, files, editable, open, on
           </section>
         ) : (
           <>
-            <section className="cf-node-overview-strip" style={{ '--node-color': category.color, '--node-bg': category.bg } as any}>
-              <span>{category.shortLabel}</span>
-              <div><b>{displayLabel}</b><small>{incomingEdges.length} 个上游 · {outgoingEdges.length} 个下游</small></div>
-              <i>{draft.executor || 'deterministic'}</i>
-            </section>
-
             <DrawerSection title="核心配置" summary="名称与职责" defaultOpen>
               <VStack align="stretch" gap={3}>
                 <Field.Root>
@@ -404,18 +556,6 @@ export function NodeDrawer({ node, graphEdges, flowId, files, editable, open, on
                   <Field.Root>
                     <Field.Label>Decision Contract JSON</Field.Label>
                     <Textarea value={draft.decisionContract} onChange={(e) => updateDraft({ decisionContract: e.target.value })} rows={7} />
-                  </Field.Root>
-                  <Field.Root>
-                    <Field.Label>Decision Test Mode</Field.Label>
-                    <NativeSelect.Field value={draft.decisionTestMode} onChange={(e) => updateDraft({ decisionTestMode: e.target.value })}>
-                      <option value="">live / default</option>
-                      <option value="mock">mock</option>
-                      <option value="offline_fallback">offline_fallback</option>
-                    </NativeSelect.Field>
-                  </Field.Root>
-                  <Field.Root>
-                    <Field.Label>Mock Decision Envelope JSON</Field.Label>
-                    <Textarea value={draft.mockDecisionEnvelope} onChange={(e) => updateDraft({ mockDecisionEnvelope: e.target.value })} rows={7} />
                   </Field.Root>
                 </VStack>
               )}

@@ -89,7 +89,9 @@ class CartridgeRunner:
     ) -> dict:
         run_id = run_id or f"run_{uuid.uuid4().hex[:12]}"
         cartridge = self.registry.get_cartridge(cartridge_id)
-        manifest = cartridge["manifest"]
+        manifest = deepcopy(cartridge["manifest"])
+        from core.studio.resources import merge_flow_tools
+        manifest["mcp_tools"] = merge_flow_tools(cartridge_id, manifest.get("mcp_tools") or [])
         inputs = self._normalize_run_inputs(manifest, inputs)
         missing_required_inputs = self._missing_required_inputs(manifest, inputs)
         if missing_required_inputs:
@@ -474,11 +476,14 @@ class CartridgeRunner:
         paused = (state_doc.get("context") or {}).get("_pause_flow")
         cancelled = (state_doc.get("context") or {}).get("_cancel_flow") or self._run_cancelled_on_disk(run_id)
         aborted = (state_doc.get("context") or {}).get("_abort_flow")
-        if paused:
+        pause_status = str((paused or {}).get("status") or "paused_waiting_user") if paused else ""
+        if paused and pause_status == "paused_waiting_user":
             run["pending_interaction"] = paused.get("pending_interaction") or run.get("pending_interaction") or {}
+        else:
+            run.pop("pending_interaction", None)
         target_status = (
             "cancelled" if cancelled
-            else "paused_waiting_user" if paused
+            else pause_status if paused
             else "failed" if lab_failed or aborted
             else "completed" if normalized_probe_range or state_doc["current_state"] == "complete"
             else "completed"
@@ -491,7 +496,7 @@ class CartridgeRunner:
         data_chain = self._summarize_data_chain(run_id, state_doc, normalized_probe_range)
         run["data_chain"] = data_chain
         run_event_type = "run_cancelled" if cancelled else "run_paused" if paused else "run_failed" if lab_failed or aborted else "run_completed"
-        run_event_message = "Root Flow 执行已取消" if cancelled else "Root Flow 暂停等待用户输入" if paused else "Root Flow 执行失败" if lab_failed or aborted else "Root Flow 执行完成"
+        run_event_message = "Root Flow 执行已取消" if cancelled else "Root Flow 已在节点边界暂停" if pause_status == "paused" else "Root Flow 暂停等待用户输入" if paused else "Root Flow 执行失败" if lab_failed or aborted else "Root Flow 执行完成"
         self._append_event(
             run_id, cartridge_id, run_event_type, run["current_state"],
             run_event_message, {"status": run["status"], "data_chain": data_chain, "error_envelope": run.get("error")},
@@ -978,7 +983,7 @@ class CartridgeRunner:
         if not normalized_id or Path(normalized_id).name != normalized_id:
             raise ValueError("Invalid run id")
         run = self.get_run(normalized_id)
-        if run.get("status") in {"created", "running", "retrying", "recovering", "rolling_back", "paused_waiting_user"}:
+        if run.get("status") in {"created", "running", "retrying", "recovering", "rolling_back", "paused", "paused_waiting_user"}:
             raise ValueError("Active runs cannot be deleted")
         runs_root = self.runs_dir.resolve()
         run_dir = (self.runs_dir / normalized_id).resolve()
@@ -1437,13 +1442,14 @@ class CartridgeRunner:
         paused = (state_doc.get("context") or {}).get("_pause_flow")
         cancelled = (state_doc.get("context") or {}).get("_cancel_flow") or self._run_cancelled_on_disk(run_id)
         aborted = (state_doc.get("context") or {}).get("_abort_flow")
-        if paused:
+        pause_status = str((paused or {}).get("status") or "paused_waiting_user") if paused else ""
+        if paused and pause_status == "paused_waiting_user":
             run["pending_interaction"] = paused.get("pending_interaction") or run.get("pending_interaction") or {}
         else:
             run.pop("pending_interaction", None)
         target_status = (
             "cancelled" if cancelled
-            else "paused_waiting_user" if paused
+            else pause_status if paused
             else "failed" if lab_failed or aborted
             else "completed" if normalized_probe_range or state_doc["current_state"] == "complete"
             else "completed"
@@ -1454,7 +1460,7 @@ class CartridgeRunner:
         data_chain = self._summarize_data_chain(run_id, state_doc, normalized_probe_range)
         run["data_chain"] = data_chain
         run_event_type = "run_cancelled" if cancelled else "run_paused" if paused else "run_failed" if lab_failed or aborted else "run_completed"
-        run_event_message = "Root Flow execution cancelled" if cancelled else "Root Flow paused waiting for user input" if paused else "Root Flow execution failed" if lab_failed or aborted else "Root Flow execution completed"
+        run_event_message = "Root Flow execution cancelled" if cancelled else "Root Flow paused at a node boundary" if pause_status == "paused" else "Root Flow paused waiting for user input" if paused else "Root Flow execution failed" if lab_failed or aborted else "Root Flow execution completed"
         self._append_event(
             run_id,
             cartridge_id,
@@ -1746,6 +1752,13 @@ class CartridgeRunner:
                         result,
                     )
                 context = doc.get("context") or {}
+                if self._run_paused_on_disk(run.get("run_id") or ""):
+                    context["_pause_flow"] = {
+                        "state": _node_id,
+                        "status": "paused",
+                        "reason": "user_paused",
+                    }
+                    self._set_run_status(run, "paused", "pause_requested")
                 if self._run_cancelled_on_disk(run.get("run_id") or ""):
                     context["_cancel_flow"] = {"state": _node_id, "reason": "user_cancelled"}
                     if run.get("status") != "cancelled":
@@ -1754,7 +1767,7 @@ class CartridgeRunner:
                 if context.get("_cancel_flow") and str((context.get("_cancel_flow") or {}).get("state") or "") == _node_id:
                     outcome = "cancelled"
                 elif context.get("_pause_flow") and str((context.get("_pause_flow") or {}).get("state") or "") == _node_id:
-                    outcome = "paused_waiting_user"
+                    outcome = "completed" if (context.get("_pause_flow") or {}).get("status") == "paused" else "paused_waiting_user"
                 elif (context.get("_abort_flow") and str((context.get("_abort_flow") or {}).get("state") or "") == _node_id) or error.get("node_id") == _node_id:
                     outcome = "failed"
                 else:
@@ -1822,6 +1835,15 @@ class CartridgeRunner:
             return False
         try:
             return self._read_json(path).get("status") == "cancelled"
+        except (OSError, ValueError, json.JSONDecodeError):
+            return False
+
+    def _run_paused_on_disk(self, run_id: str) -> bool:
+        path = self.runs_dir / str(run_id or "") / "run.json"
+        if not path.is_file():
+            return False
+        try:
+            return self._read_json(path).get("status") == "paused"
         except (OSError, ValueError, json.JSONDecodeError):
             return False
 

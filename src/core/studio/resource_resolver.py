@@ -58,15 +58,20 @@ def resolve_cartridge_resources(
         accepted_kinds = {_normalize_kind(item) for item in _string_list(raw_requirement.get("kinds"))}
         required_capabilities = set(_string_list(raw_requirement.get("capabilities")))
         constraints = raw_requirement.get("constraints") if isinstance(raw_requirement.get("constraints"), dict) else {}
-        resource_id = str(role_bindings.get(role) or "").strip()
+        explicit_resource_id = str(role_bindings.get(role) or "").strip()
+        resource_id = _select_global_resource_id(
+            raw_requirement,
+            resource_index,
+            preferred_id=explicit_resource_id,
+        )
         resource = resource_index.get(resource_id)
         state = "ready"
-        message = "本机资源已绑定"
+        message = "全局资源可用"
         credential_state = "not_required"
         ready = True
 
         if not resource_id:
-            state, message, ready = "missing_binding", "没有绑定本机资源", False
+            state, message, ready = "missing_resource", "没有可用的全局资源", False
         elif resource is None or resource.get("enabled") is False:
             state, message, ready = "missing_resource", "绑定的本机资源不存在或已停用", False
         elif accepted_kinds and _normalize_kind(resource.get("kind")) not in accepted_kinds:
@@ -105,6 +110,7 @@ def resolve_cartridge_resources(
             "ready": ready,
             "state": state,
             "credential_state": credential_state,
+            "source": "legacy_binding" if explicit_resource_id and resource_id == explicit_resource_id else "global_auto",
         }
         role_summaries[role] = summary
         items.append({
@@ -142,6 +148,26 @@ def resolve_runtime_tool_binding(
     )
     if not manifest_tool:
         raise LocalResourceBindingError(f"Manifest tool does not exist: {tool_id}")
+    local_resource_id = str(manifest_tool.get("local_resource_id") or "").strip()
+    if local_resource_id:
+        resources = resources if isinstance(resources, dict) else load_resources()
+        selected = set((resources.get("bindings", {}).get("tools", {}) or {}).get(str(run.get("cartridge_id") or ""), []))
+        if local_resource_id not in selected:
+            raise LocalResourceBindingError(f"Local tool is no longer enabled for this Flow: {local_resource_id}")
+        resource = _resource_index(resources).get(local_resource_id)
+        if resource is None or resource.get("enabled") is False:
+            raise LocalResourceBindingError(f"Local tool is unavailable: {local_resource_id}")
+        connection = {"id": local_resource_id, "kind": _normalize_kind(resource.get("kind"))}
+        for field in PRIVATE_CONNECTION_FIELDS:
+            value = resource.get(field)
+            if value not in (None, "", []):
+                connection[field] = deepcopy(value)
+        return {
+            "role": "",
+            "resource_id": local_resource_id,
+            "resource": resource,
+            "connection": connection,
+        }
     role = str(manifest_tool.get("resource_role") or "").strip()
     if not role:
         return None
@@ -185,6 +211,35 @@ def _resource_index(resources: dict) -> dict[str, dict]:
         if isinstance(item, dict) and item.get("id"):
             result[str(item["id"])] = item
     return result
+
+
+def _select_global_resource_id(requirement: dict, resources: dict[str, dict], preferred_id: str = "") -> str:
+    accepted_kinds = {_normalize_kind(item) for item in _string_list(requirement.get("kinds"))}
+    required_capabilities = set(_string_list(requirement.get("capabilities")))
+    constraints = requirement.get("constraints") if isinstance(requirement.get("constraints"), dict) else {}
+
+    def compatible(resource: dict | None) -> bool:
+        if not resource or resource.get("enabled") is False:
+            return False
+        if accepted_kinds and _normalize_kind(resource.get("kind")) not in accepted_kinds:
+            return False
+        capabilities = set(_string_list(resource.get("capabilities")))
+        if required_capabilities and not required_capabilities.issubset(capabilities):
+            return False
+        if constraints.get("read_only") is True and resource.get("read_only") is not True:
+            return False
+        return True
+
+    if preferred_id and compatible(resources.get(preferred_id)):
+        return preferred_id
+    role = str(requirement.get("role") or "").strip()
+    if role and compatible(resources.get(role)):
+        return role
+    candidates = sorted(
+        (resource_id for resource_id, resource in resources.items() if compatible(resource)),
+        key=str.casefold,
+    )
+    return candidates[0] if candidates else ""
 
 
 def _configured_keys(explicit: set[str] | None) -> set[str]:

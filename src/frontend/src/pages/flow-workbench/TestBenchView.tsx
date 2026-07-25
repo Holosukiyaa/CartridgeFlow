@@ -27,16 +27,7 @@ export type NodeRunState = {
 }
 
 type RunScope = 'full' | 'probe'
-type DecisionTestMode = 'live_collaboration' | 'mock_resolved'
-type ProbeKind = 'start' | 'end'
 type RecoveryAction = 'retry_current_node' | 'resume_checkpoint' | 'rollback_to_node' | 'restart_run'
-
-const TEST_PROBE_MIME = 'application/x-cf-test-probe'
-
-const DECISION_OPTIONS: Array<{ value: DecisionTestMode; label: string; hint: string }> = [
-  { value: 'live_collaboration', label: '真实协作', hint: '真实调用 LLM，协作节点先暂停等待确认。' },
-  { value: 'mock_resolved', label: 'Mock', hint: 'AI 决策节点直接 resolved，用于快速跑通流程。' },
-]
 
 function pretty(value: any) {
   if (value === undefined || value === null || value === '') return ''
@@ -236,18 +227,25 @@ function DeliveryArtifactsPanel({
   )
 }
 
-function buildNodeRunStates(graph: FlowGraph, events: FlowEvent[]) {
+export function buildNodeRunStates(graph: FlowGraph, events: FlowEvent[]) {
   const map = new Map<string, NodeRunState>()
   graph.nodes.forEach((node) => {
     map.set(node.id, { status: 'idle', events: [] })
   })
 
   events.forEach((event) => {
+    const eventData = (event.data || {}) as any
+    if (event.type === 'flow_edge_traversed') {
+      const sourceId = String(eventData.from || '')
+      const sourceState = map.get(sourceId)
+      if (sourceState && sourceState.status !== 'failed') sourceState.status = 'completed'
+      return
+    }
     const nodeId = event.state
     if (!nodeId || !map.has(nodeId)) return
     const state = map.get(nodeId)!
     state.events.push(event)
-    const data = (event.data || {}) as any
+    const data = eventData
     if (event.type === 'state_entered') {
       state.status = 'running'
       state.pendingInteraction = undefined
@@ -255,14 +253,17 @@ function buildNodeRunStates(graph: FlowGraph, events: FlowEvent[]) {
       state.action = data.action || state.action
       return
     }
-    if (event.type === 'lab_node_executed' || event.type === 'lab_node_skipped') {
+    if (event.type === 'lab_node_executed'
+      || event.type === 'lab_node_skipped'
+      || event.type === 'run_completed'
+      || (String(event.type || '').startsWith('state_') && event.type !== 'state_entered')) {
       state.status = 'completed'
       state.pendingInteraction = undefined
     } else if (event.type === 'pending_interaction_answered') {
       state.status = 'completed'
       state.pendingInteraction = undefined
       state.errorMsg = undefined
-    } else if (event.type === 'lab_node_failed') {
+    } else if (event.type === 'lab_node_failed' || event.type === 'run_failed') {
       state.status = 'failed'
       state.errorMsg = data.error_envelope?.message || data.error || data.reason || 'Node failed.'
       state.pendingInteraction = undefined
@@ -328,7 +329,7 @@ function getProbePayload(graph: FlowGraph, startId: string, endId: string): Test
   }
 }
 
-function InputForm({
+export function RunInputDialog({
   inputs,
   disabled,
   onSubmit,
@@ -384,7 +385,7 @@ function InputForm({
           <button type="button" className="cf-input-modal-close" onClick={onCancel}>x</button>
         </div>
         <div className="cf-input-form">
-          <p className="cf-input-form-hint">这些字段会作为本次测试的真实输入传入流程。</p>
+          <p className="cf-input-form-hint">这些字段会作为本次真实运行的输入传入流程。</p>
           <div className="cf-input-fields">
             <input
               ref={filePickerRef}
@@ -829,32 +830,6 @@ function LogTimeline({ events, expanded = false }: { events: FlowEvent[]; expand
   )
 }
 
-function ProbeChip({ kind, node, disabled }: {
-  kind: ProbeKind
-  node?: FlowNode
-  disabled?: boolean
-}) {
-  const label = kind === 'start' ? '开始' : '结束'
-  return (
-    <button
-      type="button"
-      className="cf-probe-chip"
-      draggable={!disabled}
-      disabled={disabled}
-      onDragStart={(event) => {
-        if (disabled) return
-        event.dataTransfer.setData(TEST_PROBE_MIME, kind)
-        event.dataTransfer.effectAllowed = 'move'
-      }}
-      title={`拖动${label}探针到流程节点`}
-    >
-      <b>{kind === 'start' ? 'S' : 'E'}</b>
-      <span>{label}</span>
-      <em>{node?.title || node?.id || '未放置'}</em>
-    </button>
-  )
-}
-
 function LogPreviewModal({ events, diagnostics, tab, graph, onSelectNode, onClose }: {
   events: FlowEvent[]
   diagnostics: ReturnType<typeof buildDiagnostics>
@@ -890,22 +865,22 @@ export function TestBenchView({
   detail,
   runs,
   events,
-  onTestRun,
+  onRun,
+  onSelectRun,
   onAnswerPendingInteraction,
   onRefresh,
 }: {
   detail: FlowLabDetail
   runs: RunResult[]
   events: FlowEvent[]
-  onTestRun: (inputs: Record<string, string>, probeRange?: TestProbeRange, mode?: 'full' | 'probe', testMode?: Record<string, any>) => Promise<void> | void
+  onRun: (inputs: Record<string, string>, probeRange?: TestProbeRange, mode?: 'full' | 'probe') => Promise<void> | void
+  onSelectRun?: (runId: string) => Promise<void> | void
   onAnswerPendingInteraction?: (runId: string, values: Record<string, any>, options?: Record<string, any>) => Promise<void> | void
   onRefresh: () => void
-  onManageMcp?: () => void
 }) {
   const latestRun = runs[0]
   const [selectedNode, setSelectedNode] = useState<FlowNode | null>(null)
-  const [runScope, setRunScope] = useState<RunScope>('full')
-  const [decisionMode, setDecisionMode] = useState<DecisionTestMode>('live_collaboration')
+  const [runScope] = useState<RunScope>('full')
   const [showInputForm, setShowInputForm] = useState(false)
   const [pendingModalOpen, setPendingModalOpen] = useState(false)
   const [isRunning, setIsRunning] = useState(false)
@@ -964,11 +939,7 @@ export function TestBenchView({
     : pendingArtifactNodeId && runArtifacts.some((artifact) => artifact?.source?.node_id === pendingArtifactNodeId)
       ? getNodeTitle(pendingNode)
       : '本次运行'
-  const startNode = nodeById.get(startNodeId)
-  const endNode = nodeById.get(endNodeId)
   const probePayload = useMemo(() => getProbePayload(detail.graph, startNodeId, endNodeId), [detail.graph, startNodeId, endNodeId])
-  const selectedProbeNodeIds = probePayload?.node_ids || []
-  const canRun = !isRunning && (runScope === 'full' || !!probePayload)
   const runCompleted = latestRun?.status === 'completed' && !isRunning
   const runFailed = ['failed', 'interrupted'].includes(latestRun?.status || '') && !isRunning
   const recoveryHints = latestRun?.error?.recovery_actions || []
@@ -1126,12 +1097,11 @@ export function TestBenchView({
     setLogsOpen(true)
     setLogTab('log')
     setIsRunning(true)
-    const testMode = { decision: decisionMode }
     try {
       if (runScope === 'probe') {
-        await onTestRun(inputs, probePayload || undefined, 'probe', testMode)
+        await onRun(inputs, probePayload || undefined, 'probe')
       } else {
-        await onTestRun(inputs, undefined, 'full', testMode)
+        await onRun(inputs, undefined, 'full')
       }
     } finally {
       setIsRunning(false)
@@ -1212,70 +1182,29 @@ export function TestBenchView({
   return (
     <div className="cf-tb">
       <div className="cf-tb-top">
-        <aside className="cf-tb-op">
-          {latestRun && (
-            <div className={`cf-op-laststatus ${latestRun.status}`}>
-              <span>最近</span>
-              <b>{latestRun.status}</b>
-              <em>{latestRun.run_mode || 'full_flow'}</em>
-              <em>{latestRun.test_mode?.decision || 'live_collaboration'}</em>
-            </div>
-          )}
-
-          <section className="cf-op-section">
-            <strong>决策模式</strong>
-            <div className="cf-segment">
-              {DECISION_OPTIONS.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  className={decisionMode === option.value ? 'active' : ''}
-                  disabled={isRunning}
-                  onClick={() => setDecisionMode(option.value)}
-                  title={option.hint}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-            <p>{DECISION_OPTIONS.find((option) => option.value === decisionMode)?.hint}</p>
-          </section>
-
-          <section className="cf-probe-panel" ref={probePanelRef}>
-            <div className="cf-probe-head">运行范围</div>
-            {runScope === 'full' ? (
-              <div className="cf-full-run-mode">
-                <span><b>全流程</b><small>从入口节点运行到流程结束</small></span>
-                <button type="button" disabled={isRunning} onClick={() => setRunScope('probe')}>进入探针范围</button>
-              </div>
-            ) : (
-              <div className="cf-range-choices">
-                <button type="button" className="cf-range-choice" disabled={isRunning} onClick={() => setRunScope('full')}>
-                  <b>全流程</b>
-                  <span>退出探针并运行完整流程</span>
-                </button>
-                <button type="button" className="cf-range-choice active" disabled={isRunning}>
-                  <b>探针范围</b>
-                  <span>拖动 S/E 到节点后只运行选中区间</span>
-                </button>
-              </div>
-            )}
-            <div className="cf-probe-actions">
-              <button type="button" className="cf-btn-accent" disabled={!canRun} onClick={() => cartridgeInputs.length ? setShowInputForm(true) : runWithInputs({})}>
-                {isRunning ? '运行中...' : runScope === 'full' ? '运行全流程' : '运行探针范围'}
+        <aside className="cf-tb-op cf-run-history-panel">
+          <div className="cf-run-history-head">
+            <div><strong>运行历史</strong><span>{runs.length} 条记录</span></div>
+            <button type="button" onClick={onRefresh}>刷新</button>
+          </div>
+          <div className="cf-run-history-list">
+            {runs.length ? runs.map((run) => (
+              <button
+                type="button"
+                key={run.run_id}
+                className={run.run_id === latestRun?.run_id ? 'active' : ''}
+                onClick={() => void onSelectRun?.(run.run_id)}
+              >
+                <span className="cf-run-history-summary">
+                  <i className={run.status} aria-hidden="true" />
+                  <b>{({ completed: '已完成', failed: '失败', running: '运行中', paused: '已暂停', paused_waiting_user: '等待交互', cancelled: '已停止', interrupted: '已中断' } as Record<string, string>)[run.status] || run.status}</b>
+                  <time>{String(run.updated_at || run.created_at || '').replace('T', ' ').slice(5, 16) || '时间未知'}</time>
+                </span>
+                <code>{run.run_id}</code>
+                <small>{run.current_state || '尚未进入节点'}</small>
               </button>
-              <button type="button" className="cf-btn-outline" disabled={isRunning} onClick={onRefresh}>刷新</button>
-            </div>
-            {runScope === 'probe' && (
-              <>
-                <div className="cf-probe-chips">
-                  <ProbeChip kind="start" node={startNode} disabled={isRunning} />
-                  <ProbeChip kind="end" node={endNode} disabled={isRunning} />
-                </div>
-                <p className="cf-probe-hint">拖动 S/E 探针或节点上的 S/E 标记来调整范围。</p>
-              </>
-            )}
-          </section>
+            )) : <div className="cf-run-history-empty">还没有运行记录。</div>}
+          </div>
         </aside>
 
         <div className={`cf-tb-graph ${showStatusBanner ? 'has-status-banner' : ''}`}>
@@ -1353,16 +1282,6 @@ export function TestBenchView({
             readOnlyGraph
             nodeRunStates={nodeRunStates}
             runEvents={events}
-            testProbeState={runScope === 'probe' ? {
-              startNodeId,
-              endNodeId,
-              selectedNodeIds: selectedProbeNodeIds,
-              onDropProbe: (kind, nodeId) => {
-                setRunScope('probe')
-                if (kind === 'start') setStartNodeId(nodeId)
-                else setEndNodeId(nodeId)
-              },
-            } : undefined}
           />
           {selectedNode && selectedState && (
             <NodeInspector node={selectedNode} state={selectedState} artifacts={selectedArtifacts} nodeById={nodeById} onClose={() => setSelectedNode(null)} />
@@ -1501,7 +1420,7 @@ export function TestBenchView({
       )}
 
       {showInputForm && (
-        <InputForm
+        <RunInputDialog
           inputs={cartridgeInputs as any[]}
           disabled={isRunning}
           onSubmit={runWithInputs}

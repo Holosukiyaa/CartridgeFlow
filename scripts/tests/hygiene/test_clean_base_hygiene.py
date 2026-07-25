@@ -112,7 +112,8 @@ class CleanBaseHygieneTests(unittest.TestCase):
         unexpected = [
             path.relative_to(ROOT).as_posix()
             for path in scripts_root.rglob("*")
-            if path.is_file() and path.suffix.lower() not in {".py", ".ps1"}
+            if path.is_file() and path.suffix.lower() not in {".py", ".ps1", ".mjs"}
+            and "__pycache__" not in path.parts
         ]
         self.assertEqual([], unexpected)
         self.assertEqual([], [path for path in scripts_root.rglob("__pycache__") if path.is_dir()])

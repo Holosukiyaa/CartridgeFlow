@@ -99,9 +99,28 @@ class StudioEnvironmentTests(unittest.TestCase):
         self.assertEqual("search-a", resolved["resource_id"])
         self.assertEqual("https://example.test/search", resolved["connection"]["endpoint"])
 
-        changed = {**resources, "bindings": {"roles": {"demo": {"document_lookup": "search-b"}}, "tools": {}}}
+        changed = {**resources, "tools": [{"id": "search-b", "kind": "remote_api", "endpoint": "https://example.test/search-b", "enabled": True}], "bindings": {"roles": {}, "tools": {}}}
         with self.assertRaises(LocalResourceBindingError):
             resolve_runtime_tool_binding(run, "lookup", changed, set())
+
+    def test_unbound_requirement_uses_compatible_global_resource(self):
+        manifest = {
+            "id": "demo",
+            "resource_requirements": [{"role": "document_lookup", "kinds": ["remote_api"], "required": True}],
+        }
+        resources = {
+            "tools": [
+                {"id": "local-files", "kind": "plugin", "command": "files", "enabled": True},
+                {"id": "shared-search", "kind": "remote_api", "endpoint": "https://example.test/search", "enabled": True},
+            ],
+            "bindings": {"roles": {}, "tools": {}},
+        }
+
+        report = resolve_cartridge_resources(manifest, resources, set())
+
+        self.assertEqual("warning", report["status"])
+        self.assertEqual("shared-search", report["items"][0]["resource_id"])
+        self.assertEqual("global_auto", report["descriptor"]["roles"]["document_lookup"]["source"])
 
 
 if __name__ == "__main__":

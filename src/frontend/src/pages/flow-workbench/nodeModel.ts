@@ -2,6 +2,28 @@ import dagre from '@dagrejs/dagre'
 import type { FlowEdge, FlowGraph, FlowNode } from '../../api.ts'
 import type { NodeCategory, NodeDraft, NodePreset, NodeCategoryId } from './types.ts'
 
+export type FlowNodeViewMode = 'detailed' | 'compact'
+
+export const FLOW_NODE_DIMENSIONS: Record<FlowNodeViewMode, { width: number; height: number }> = {
+  detailed: { width: 440, height: 394 },
+  compact: { width: 280, height: 146 },
+}
+
+type FlowLayoutOptions = {
+  viewMode?: FlowNodeViewMode
+}
+
+function getFlowLayoutMetrics(options: FlowLayoutOptions = {}) {
+  const viewMode = options.viewMode || 'detailed'
+  const dimensions = FLOW_NODE_DIMENSIONS[viewMode]
+  return {
+    viewMode,
+    ...dimensions,
+    nodesep: viewMode === 'detailed' ? 140 : 72,
+    ranksep: viewMode === 'detailed' ? 120 : 112,
+  }
+}
+
 export const FILE_TABS = [
   { key: 'manifest', label: 'manifest.json' },
   { key: 'root_flow', label: 'root.flow.json' },
@@ -539,7 +561,6 @@ export function buildProtocolNodePayload(draft: NodeDraft, category: NodeCategor
   const allowedTools = parseAllowedTools(draft.allowedTools)
   const mcpBinding = parseJsonOrEmpty(draft.mcpBinding, {})
   const decisionContract = parseJsonOrEmpty(draft.decisionContract, defaults.decisionContract || null)
-  const mockDecisionEnvelope = parseJsonOrEmpty(draft.mockDecisionEnvelope, null)
   const inputBinding = parseJsonOrEmpty(draft.inputBinding, {})
   const actionRoutes = parseJsonOrEmpty(draft.actionRoutes, {})
   return {
@@ -565,10 +586,8 @@ export function buildProtocolNodePayload(draft: NodeDraft, category: NodeCategor
     decision_contract: kind === 'decision' && (draft.executor || defaults.executor) === 'llm'
       ? decisionContract || defaults.decisionContract || null
       : null,
-    decision_test_mode: draft.decisionTestMode || '',
-    mock_decision_envelope: kind === 'decision' && (draft.executor || defaults.executor) === 'llm'
-      ? (mockDecisionEnvelope && typeof mockDecisionEnvelope === 'object' ? mockDecisionEnvelope : {})
-      : null,
+    decision_test_mode: '',
+    mock_decision_envelope: null,
     primary_output: draft.primaryOutput || draft.output || draft.presetConfig.output_name || null,
     tool_binding: draft.toolBinding || defaults.toolBinding || null,
     allowed_tools: allowedTools.length ? allowedTools : null,
@@ -645,15 +664,20 @@ function getExecutionOrder(graph: FlowGraph): FlowNode[] {
   return ordered
 }
 
-export function buildBalancedLayout(graph: FlowGraph): Record<string, { x: number; y: number }> {
+export function buildBalancedLayout(graph: FlowGraph, options: FlowLayoutOptions = {}): Record<string, { x: number; y: number }> {
+  const metrics = getFlowLayoutMetrics(options)
+  const automatic = buildAutoAlignLayout(graph, options)
   const layout: Record<string, { x: number; y: number }> = {}
-  graph.nodes.forEach((node, index) => {
+  graph.nodes.forEach((node) => {
     const saved = node.data?.layout || node.params?.layout
     layout[node.id] = saved && typeof saved.x === 'number' && typeof saved.y === 'number'
       ? { x: saved.x, y: saved.y }
-      : { x: 60 + index * 260, y: 120 }
+      : automatic[node.id] || { x: node.x, y: node.y }
   })
-  return resolveLayoutCollisions(layout)
+  return resolveLayoutCollisions(layout, {
+    rowGap: metrics.height + (metrics.viewMode === 'detailed' ? 84 : 34),
+    xTolerance: metrics.width + 16,
+  })
 }
 
 export function buildZigzagLayout(graph: FlowGraph, options: { columns?: number } = {}): Record<string, { x: number; y: number }> {
@@ -789,21 +813,24 @@ export function buildFactoryLayout(graph: FlowGraph): Record<string, { x: number
   return resolveLayoutCollisions(layout, { rowGap: 180, xTolerance: 210 })
 }
 
-export function buildAutoAlignLayout(graph: FlowGraph): Record<string, { x: number; y: number }> {
+export function buildAutoAlignLayout(graph: FlowGraph, options: FlowLayoutOptions = {}): Record<string, { x: number; y: number }> {
+  const metrics = getFlowLayoutMetrics(options)
   const layoutGraph = new dagre.graphlib.Graph()
   layoutGraph.setDefaultEdgeLabel(() => ({}))
   layoutGraph.setGraph({
     rankdir: 'LR',
     align: 'UL',
-    nodesep: 80,
-    ranksep: 86,
-    edgesep: 36,
+    acyclicer: 'greedy',
+    ranker: 'network-simplex',
+    nodesep: metrics.nodesep,
+    ranksep: metrics.ranksep,
+    edgesep: 42,
     marginx: 60,
     marginy: 120,
   })
 
-  const nodeWidth = 220
-  const nodeHeight = 104
+  const nodeWidth = metrics.width
+  const nodeHeight = metrics.height
   const nodes = graph.nodes || []
   const nodeIds = new Set(nodes.map((node) => node.id))
 
@@ -811,10 +838,14 @@ export function buildAutoAlignLayout(graph: FlowGraph): Record<string, { x: numb
     layoutGraph.setNode(node.id, { width: nodeWidth, height: nodeHeight })
   })
 
-  ;(graph.edges || []).filter(isStructuralEdge).forEach((edge) => {
+  ;(graph.edges || []).forEach((edge) => {
     if (!edge.from || !edge.to || edge.from === edge.to) return
     if (!nodeIds.has(edge.from) || !nodeIds.has(edge.to)) return
-    layoutGraph.setEdge(edge.from, edge.to)
+    const branch = !isStructuralEdge(edge)
+    layoutGraph.setEdge(edge.from, edge.to, {
+      minlen: 1,
+      weight: branch ? 1 : 4,
+    })
   })
 
   dagre.layout(layoutGraph)
@@ -827,5 +858,8 @@ export function buildAutoAlignLayout(graph: FlowGraph): Record<string, { x: numb
       : { x: node.x, y: node.y }
   })
 
-  return resolveLayoutCollisions(layout, { rowGap: 180, xTolerance: 210 })
+  return resolveLayoutCollisions(layout, {
+    rowGap: nodeHeight + (metrics.viewMode === 'detailed' ? 84 : 60),
+    xTolerance: nodeWidth - 30,
+  })
 }

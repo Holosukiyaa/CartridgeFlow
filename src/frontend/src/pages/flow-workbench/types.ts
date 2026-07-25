@@ -1,6 +1,6 @@
 import type { FlowFiles, FlowGraph, FlowLabDetail, FlowNode, ValidationResponse } from '../../api.ts'
 
-export type WorkbenchMode = 'design' | 'assets' | 'run' | 'resources'
+export type WorkbenchMode = 'design' | 'run'
 export type NodeCategoryId = 'input' | 'interaction' | 'process' | 'tool' | 'remote' | 'transfer' | 'store' | 'control' | 'custom'
 
 export type NodePreset = {
@@ -73,10 +73,17 @@ export type GraphResult = {
   node_id?: string
 }
 
+export type CreateNodeOptions = {
+  presetId?: string
+  presetConfig?: Record<string, string>
+  position?: { x: number; y: number }
+}
+
 export type CreateNodeHandler = (
   sourceNode: FlowNode | null,
   categoryId: NodeCategoryId,
   insertMode: 'insert' | 'branch',
+  options?: CreateNodeOptions,
 ) => Promise<void>
 
 export type WorkbenchDetailProps = {

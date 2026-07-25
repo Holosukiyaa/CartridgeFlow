@@ -59,6 +59,63 @@ def save_resources(data: dict, path: str | Path | None = None) -> dict:
     return normalized
 
 
+def resolve_flow_tools(cartridge_id: str, resources: dict | None = None) -> list[dict]:
+    """Return base-owned runtime descriptors for tools enabled for one Flow.
+
+    Local connection details and credentials never enter the run document. An
+    external resource is represented by its stable local resource ID and is
+    resolved again immediately before execution.
+    """
+    source = normalize_resources(resources) if isinstance(resources, dict) else load_resources()
+    selected_ids = source.get("bindings", {}).get("tools", {}).get(str(cartridge_id or ""), [])
+    local_tools = {item["id"]: item for item in source.get("tools") or [] if isinstance(item, dict) and item.get("id")}
+    result = []
+    for resource_id in selected_ids:
+        if resource_id.startswith("builtin:"):
+            target = resource_id.removeprefix("builtin:")
+            server, separator, tool = target.partition("/")
+            if separator and server and tool:
+                result.append({
+                    "id": resource_id,
+                    "name": f"{server} / {tool}",
+                    "type": "builtin",
+                    "server": server,
+                    "tool": tool,
+                    "required": False,
+                    "enabled": True,
+                })
+            continue
+        resource = local_tools.get(resource_id)
+        if not resource or resource.get("enabled") is False:
+            continue
+        result.append({
+            "id": resource_id,
+            "name": resource.get("name") or resource_id,
+            # The local bridge is a base capability. The private adapter kind
+            # is resolved from local_resource_id and is not packaged in a Flow.
+            "type": "builtin",
+            "server": resource.get("server") or resource_id,
+            "tool": resource.get("tool") or resource_id,
+            "description": resource.get("description") or "",
+            "required": False,
+            "enabled": True,
+            "local_resource_id": resource_id,
+            "local_kind": resource.get("kind") or "mcp",
+        })
+    return result
+
+
+def merge_flow_tools(cartridge_id: str, manifest_tools, resources: dict | None = None) -> list[dict]:
+    source_tools = manifest_tools if isinstance(manifest_tools, list) else []
+    merged = {
+        str(item.get("id")): dict(item)
+        for item in source_tools if isinstance(item, dict) and item.get("id")
+    }
+    for item in resolve_flow_tools(cartridge_id, resources):
+        merged[item["id"]] = item
+    return list(merged.values())
+
+
 def normalize_resources(data: dict | None) -> dict:
     source = data if isinstance(data, dict) else {}
     tools = _unique_items(source.get("tools"), _normalize_tool)
@@ -96,6 +153,8 @@ def _normalize_tool(raw: dict) -> dict | None:
         "name": _clean(raw.get("name")) or item_id,
         "kind": kind,
         "description": _clean(raw.get("description")),
+        "server": _clean(raw.get("server")) or item_id,
+        "tool": _clean(raw.get("tool")) or item_id,
         "endpoint": _clean(raw.get("endpoint")),
         "command": _clean(raw.get("command")),
         "args": _clean(raw.get("args")),

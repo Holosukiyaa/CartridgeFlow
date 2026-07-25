@@ -950,11 +950,20 @@ class LabNodeExecutor:
         try:
             from core.llm import chat
             from core.llm.config_manager import resolve_model
-            cfg = resolve_model(
+            role_binding = next(
+                (item for item in run.get("model_bindings", {}).get("items", []) if item.get("id") == model_role),
+                {},
+            )
+            resolve_options = dict(
                 role=model_role,
                 cartridge_id=run.get("cartridge_id"),
                 node_id=params.get("_node_id"),
             )
+            if role_binding.get("provider_id"):
+                resolve_options["provider_id"] = role_binding["provider_id"]
+            if role_binding.get("model"):
+                resolve_options["model"] = role_binding["model"]
+            cfg = resolve_model(**resolve_options)
             provider_id = cfg.provider_id
             model = cfg.model
             if output_contract == "decision_envelope.v1" and str(decision_test_mode).strip() in {"mock", "mock_resolved", "mock_interaction", "mock_blocked"}:

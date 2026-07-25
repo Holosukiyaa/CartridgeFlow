@@ -39,7 +39,7 @@ class PortabilityReportTests(unittest.TestCase):
             report = build_portability_report(package, manifest, created["root_flow"], resources={"tools": [], "bindings": {"roles": {}, "tools": {}}})
 
             self.assertEqual("blocked", report["status"])
-            self.assertEqual("missing_binding", report["missing_blockers"][0]["check"])
+            self.assertEqual("missing_resource", report["missing_blockers"][0]["check"])
             self.assertTrue(any(item.get("path") == ".env" for item in report["forbidden"]))
 
     def test_sensitive_connection_fields_and_absolute_paths_are_forbidden(self):

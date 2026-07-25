@@ -60,7 +60,7 @@ backend = subprocess.Popen(
         sys.executable,
         "-m",
         "uvicorn",
-        "backend.main:app",
+        "backend.lite_main:app",
         "--host",
         "0.0.0.0",
         "--port",

@@ -15,7 +15,7 @@ PROVIDERS_PATH = ROOT / LLM_PROVIDERS_FILE
 ASSIGNMENTS_PATH = ROOT / LLM_ASSIGNMENTS_FILE
 RETRY_PATH = DEFAULTS_DIR / "llm_retry.json"
 
-DEFAULT_ASSIGNMENT_ROLES = ("steward", "runtime", "mentor", "worker")
+DEFAULT_ASSIGNMENT_ROLES = ("runtime", "mentor", "worker")
 SUPPORTED_LLM_ROUTES = {
     ("openai", "chat_completions"),
     ("openai", "responses"),
@@ -57,7 +57,6 @@ def ensure_llm_config():
         write_local_json(ASSIGNMENTS_PATH, {
             "version": 1,
             "defaults": {
-                "steward": {"provider_id": active["id"], "model": active["default_model"]},
                 "runtime": {"provider_id": active["id"], "model": active["default_model"]},
                 "mentor": {"provider_id": active["id"], "model": active["default_model"]},
                 "worker": {"provider_id": active["id"], "model": active["default_model"]},
@@ -197,26 +196,34 @@ def save_assignments(data: dict):
     write_local_json(ASSIGNMENTS_PATH, normalize_assignments(data))
 
 
-def resolve_model(role: str = "runtime", cartridge_id: str | None = None, node_id: str | None = None) -> ModelConfig:
+def resolve_model(
+    role: str = "runtime",
+    cartridge_id: str | None = None,
+    node_id: str | None = None,
+    *,
+    provider_id: str | None = None,
+    model: str | None = None,
+) -> ModelConfig:
     ensure_llm_config()
     assignment = _assignment_for(role, cartridge_id, node_id)
     providers = list_providers(False)
     provider = None
     assignment_provider_found = False
-    if assignment and assignment.get("provider_id"):
-        provider = get_provider(assignment.get("provider_id"))
+    selected_provider_id = _clean(provider_id) or _clean((assignment or {}).get("provider_id"))
+    if selected_provider_id:
+        provider = get_provider(selected_provider_id)
         assignment_provider_found = bool(provider)
     provider = provider or next((item for item in providers if item.get("api_key")), None) or next(iter(providers), None) or DEFAULT_DEEPSEEK_PROVIDER
     validate_provider_route(provider)
-    model = ((assignment or {}).get("model") if assignment_provider_found else None) or provider.get("default_model") or ""
+    resolved_model = _clean(model) or (((assignment or {}).get("model") if assignment_provider_found else None) or provider.get("default_model") or "")
     base_url = provider.get("base_url") or ""
-    if "deepseek" in base_url.lower() and not str(model).startswith("deepseek-"):
-        model = provider.get("default_model") or "deepseek-chat"
+    if "deepseek" in base_url.lower() and not str(resolved_model).startswith("deepseek-"):
+        resolved_model = provider.get("default_model") or "deepseek-chat"
     return ModelConfig(
         provider_id=provider.get("id", "env-openai"),
         api_type=provider.get("api_type", "openai"),
         wire_api=provider.get("wire_api", "chat_completions"),
-        model=model,
+        model=resolved_model,
         api_key=provider.get("api_key", ""),
         base_url=provider.get("base_url") or None,
         timeout=int(provider.get("timeout", 120) or 120),
@@ -347,7 +354,6 @@ def build_model_binding_report(manifest: dict, root_flow: dict | None = None) ->
     providers = {item.get("id"): item for item in list_providers()}
     assignments = get_assignments()
     cartridge_id = str(manifest.get("id") or "")
-    cartridge_bindings = (assignments.get("cartridges") or {}).get(cartridge_id) or {}
     items = []
     for role in roles:
         if not isinstance(role, dict):
@@ -356,8 +362,9 @@ def build_model_binding_report(manifest: dict, root_flow: dict | None = None) ->
         if not role_id:
             continue
         required = role.get("required", True) is not False
-        binding = cartridge_bindings.get(role_id) if isinstance(cartridge_bindings.get(role_id), dict) else {}
+        binding = _assignment_for(role_id, cartridge_id) or {}
         provider = providers.get(binding.get("provider_id"))
+        provider = provider or next((item for item in providers.values() if item.get("api_key")), None) or next(iter(providers.values()), None)
         status = "ok"
         issue = ""
         if provider is None:
@@ -376,7 +383,7 @@ def build_model_binding_report(manifest: dict, root_flow: dict | None = None) ->
         else:
             role_model = _clean(role.get("model"))
             binding_model = _clean(binding.get("model"))
-            effective_model = binding_model or (role_model if role_model != "configured-locally" else "") or _clean(provider.get("default_model"))
+            effective_model = (role_model if role_model != "configured-locally" else "") or binding_model or _clean(provider.get("default_model"))
             if role_model and role_model != "configured-locally" and binding_model and binding_model != role_model:
                 issue = f"模型需要 {role_model}"
             elif not effective_model:
@@ -388,9 +395,9 @@ def build_model_binding_report(manifest: dict, root_flow: dict | None = None) ->
             "label": _clean(role.get("label")) or role_id,
             "required": required,
             "status": status,
-            "provider_id": _clean(binding.get("provider_id")),
+            "provider_id": _clean(provider.get("id")) if provider else "",
             "provider_name": _clean(provider.get("name")) if provider else "",
-            "model": _clean(binding.get("model")),
+            "model": effective_model if provider and not issue else "",
             "message": issue or f"已连接 {provider.get('name')}",
         })
     role_items = {item.get("id"): item for item in items}

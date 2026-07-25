@@ -1,5 +1,6 @@
 import json
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -111,6 +112,44 @@ class RuntimeRecoveryTests(unittest.TestCase):
             transfer_before = next(item for item in checkpoints if item["node_id"] == "transfer" and item["phase"] == "before")
             committed = runner.checkpoint_manager.load(Path(temp_dir) / ".data" / "runtime" / "runs" / run["run_id"], transfer_before["checkpoint_id"])
             self.assertEqual(["collect"], [item["node_id"] for item in committed["upstream_revisions"]])
+
+    def test_manual_pause_stops_at_node_boundary_and_resume_uses_checkpoint(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runner = _runner(Path(temp_dir), self._safe_flow(), self._safe_manifest())
+            entered = threading.Event()
+            release = threading.Event()
+            executed: list[str] = []
+            original_execute = runner.lab_node_executor.execute
+
+            def delayed_execute(node_id, *args, **kwargs):
+                executed.append(node_id)
+                if node_id == "collect":
+                    entered.set()
+                    self.assertTrue(release.wait(timeout=3))
+                return original_execute(node_id, *args, **kwargs)
+
+            runner.lab_node_executor.execute = delayed_execute
+            result: dict[str, dict] = {}
+            thread = threading.Thread(
+                target=lambda: result.setdefault("run", runner.create_run("test.recovery", {"source": "input"}, run_id="run_pause")),
+                daemon=True,
+            )
+            thread.start()
+            self.assertTrue(entered.wait(timeout=3))
+
+            requested = runner.control_with_options("run_pause", "pause")
+            self.assertEqual("paused", requested["status"])
+            release.set()
+            thread.join(timeout=5)
+
+            self.assertFalse(thread.is_alive())
+            self.assertEqual("paused", result["run"]["status"])
+            self.assertEqual(["collect"], executed)
+
+            resumed = runner.control_with_options("run_pause", "resume")
+            self.assertEqual("completed", resumed["status"])
+            self.assertEqual(1, executed.count("collect"))
+            self.assertIn("transfer", executed)
 
     def test_resume_checkpoint_rollback_and_restart_are_distinct_actions(self):
         with tempfile.TemporaryDirectory() as temp_dir:

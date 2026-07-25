@@ -135,9 +135,11 @@ class RootFlowEngine:
             handler = handlers.get(state_name)
             if handler:
                 handler(state_doc)
-            if (state_doc.get("context") or {}).get("_pause_flow"):
-                self.complete(state_doc, state_name, "paused_waiting_user")
-                state_doc["status"] = "paused_waiting_user"
+            pause = (state_doc.get("context") or {}).get("_pause_flow")
+            if pause:
+                pause_status = str((pause or {}).get("status") or "paused_waiting_user")
+                self.complete(state_doc, state_name, pause_status)
+                state_doc["status"] = pause_status
                 state_doc["current_state"] = state_name
                 state_doc["updated_at"] = now_iso()
                 break

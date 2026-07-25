@@ -34,7 +34,7 @@ config/
 | `templates/studio/credentials.json` | 安全模板 | 本机凭据文件的空白结构。 |
 | `templates/studio/resources.json` | 安全模板 | 全局工具与卡带角色绑定的空白结构。 |
 | `.data/user/config/llm/providers.json` | 本机状态 | Provider 地址、模型和密钥入口；密钥值不能进入卡带或版本库。 |
-| `.data/user/config/llm/assignments.json` | 本机状态 | steward、runtime、mentor、worker 以及卡带节点的模型绑定。 |
+| `.data/user/config/llm/assignments.json` | 本机状态 | runtime、mentor、worker 以及卡带节点的模型绑定。 |
 | `.data/user/config/studio/credentials.json` | 本机状态 | 环境变量凭据，界面只显示脱敏信息。 |
 | `.data/user/config/studio/resources.json` | 本机状态 | 全局 MCP、远程 API、基座插件，以及 `bindings.roles` 中卡带工具角色到本机实例的映射。旧 `sources` 会在读取时迁移为工具。 |
 

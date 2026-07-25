@@ -243,12 +243,6 @@ export interface FlowLabDetail {
   runs: RunResult[]
   latest_run_events: FlowEvent[]
   compatibility?: CompatibilityReport
-  steward: {
-    status?: string
-    role?: string
-    message?: string
-    context_keys?: string[]
-  }
 }
 
 export interface FlowEvent {
@@ -410,13 +404,6 @@ export interface ValidationResponse {
   summary?: string
 }
 
-export interface StewardSuggestion {
-  status: string
-  summary?: string
-  steps: string[]
-  patches: any[]
-}
-
 export interface NodeUpdateResult {
   status: string
   node_id: string
@@ -432,65 +419,6 @@ export interface NodeCreatePayload {
   title?: string
   after_node_id?: string
   insert_mode?: 'insert' | 'branch'
-}
-
-export interface FlowAssistantDraftNode {
-  id: string
-  title: string
-  category: string
-  preset: string
-  type?: string
-  action?: string
-  kind?: string
-  executor?: string
-  effect?: string
-  display?: any
-  output_contract?: string
-  decision_contract?: any
-  decision_test_mode?: string
-  mock_decision_envelope?: any
-  tool_binding?: string
-  allowed_tools?: string[]
-  mcp_binding?: any
-  failure_policy?: string
-  permission?: string
-  audit_log?: boolean
-  tools?: any[]
-  params?: Record<string, any>
-  description?: string
-  preset_config?: Record<string, string>
-}
-
-export interface FlowAssistantDraftEdge {
-  from: string
-  to: string
-  label?: string
-}
-
-export type FlowAssistantMessage =
-  | { type: 'clarify' | 'node_guidance'; message: string; thinking_steps?: string[] }
-  | {
-    type: 'graph_ops'
-    summary: string
-    understanding: string
-    thinking_steps?: string[]
-    operations: Array<{ op: string; node_ids?: string[]; target?: string }>
-  }
-  | {
-    type: 'flow_draft'
-    summary: string
-    understanding: string
-    thinking_steps?: string[]
-    validation?: { ok: boolean; issues: string[]; repairs: string[]; metrics?: { max_edge_length?: number; edge_count?: number; node_count?: number } }
-    mermaid: string
-    nodes: FlowAssistantDraftNode[]
-    edges: FlowAssistantDraftEdge[]
-  }
-
-export interface FlowAssistantResponse {
-  ok: boolean
-  message: FlowAssistantMessage
-  meta?: any
 }
 
 // ── LLM Provider 相关类型 ──────────────────────────────────────────────
@@ -936,18 +864,6 @@ export const previewLabFlowGraph = (id: string, files: FlowFiles) =>
     body: JSON.stringify({ files }),
   })
 
-export const suggestFlowChanges = (id: string, intent: string, files: FlowFiles, selectedNode: any, useLlm: boolean) =>
-  api<StewardSuggestion>(`/api/lab/flows/${id}/steward/suggest`, {
-    method: 'POST',
-    body: JSON.stringify({ intent, files, selected_node: selectedNode, use_llm: useLlm }),
-  })
-
-export const applyStewardPatches = (id: string, files: FlowFiles, patches: any[], selectedNode: any) =>
-  api<any>(`/api/lab/flows/${id}/steward/apply`, {
-    method: 'POST',
-    body: JSON.stringify({ files, patches, selected_node: selectedNode }),
-  })
-
 export const updateFlowNode = (id: string, nodeId: string, payload: any) =>
   api<NodeUpdateResult>(`/api/lab/flows/${id}/nodes/${nodeId}`, {
     method: 'PUT',
@@ -978,19 +894,17 @@ export const saveFlowEdges = (id: string, files: FlowFiles, edges: FlowEdge[]) =
     body: JSON.stringify({ files, edges }),
   })
 
-export const askFlowAssistant = (id: string, message: string, graph: FlowGraph, files: FlowFiles) =>
-  api<FlowAssistantResponse>(`/api/lab/flows/${id}/assistant`, {
-    method: 'POST',
-    body: JSON.stringify({ message, graph, files }),
-  })
-
 export const fetchLabFlowRuns = (id: string) =>
   api<{ cartridge_id: string; items: RunResult[]; latest_run_events: FlowEvent[] }>(`/api/lab/flows/${id}/runs`)
 
-export const testRunFlow = (id: string, inputs?: Record<string, string>, probeRange?: TestProbeRange, testMode?: Record<string, any>) =>
+export const runFlow = (id: string, inputs?: Record<string, string>, probeRange?: TestProbeRange) =>
   api<{ run: RunResult; events: FlowEvent[] }>(`/api/lab/flows/${id}/test-run`, {
     method: 'POST',
-    body: JSON.stringify({ inputs: inputs || {}, ...(probeRange ? { probe_range: probeRange } : {}), ...(testMode ? { test_mode: testMode } : {}) }),
+    body: JSON.stringify({
+      inputs: inputs || {},
+      ...(probeRange ? { probe_range: probeRange } : {}),
+      test_mode: { decision: 'live_collaboration' },
+    }),
   })
 
 // ── LLM Provider API ──────────────────────────────────────────────

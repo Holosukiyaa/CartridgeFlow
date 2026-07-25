@@ -1,0 +1,168 @@
+import type { DragEvent, ReactNode } from 'react'
+import { ArrowDownToLine, ArrowLeftRight, Bot, Braces, CheckCircle2, Cloud, CornerUpRight, Database, FileCheck2, Flag, GitBranch, PackageCheck, PanelTop, Play, Route, Search, ShieldCheck, Shuffle, UserCheck, Wrench } from 'lucide-react'
+import type { FlowNode } from '../../api.ts'
+import type { FlowNodeViewMode } from './nodeModel.ts'
+import { FlowNodePorts, type PortCounts } from './FlowNodePorts.tsx'
+import { buildFlowNodeCardView } from './flowNodeView.ts'
+import type { NodeRunState } from './TestBenchView.tsx'
+
+export type TestProbeKind = 'start' | 'end'
+export type FlowNodeProbeState = {
+  startNodeId: string
+  endNodeId: string
+  selectedNodeIds: string[]
+  onDropProbe: (kind: TestProbeKind, nodeId: string) => void
+}
+
+export const TEST_PROBE_MIME = 'application/x-cf-test-probe'
+
+type FlowNodeCardProps = {
+  node: FlowNode
+  viewMode: FlowNodeViewMode
+  order: number
+  selected: boolean
+  detailOwner: boolean
+  compactStatic: boolean
+  counts: PortCounts
+  incomingNodes: FlowNode[]
+  outgoingNodes: FlowNode[]
+  runState?: NodeRunState
+  probeState?: FlowNodeProbeState
+  probeSelected: boolean
+  onSelect: (node: FlowNode) => void
+}
+
+function ProbeBadges({ hasStart, hasEnd, onDragStart }: { hasStart: boolean; hasEnd: boolean; onDragStart: (kind: TestProbeKind) => (event: DragEvent<HTMLButtonElement>) => void }) {
+  if (!hasStart && !hasEnd) return null
+  return (
+    <div className="cf-node-probe-stack">
+      {hasStart && <button type="button" draggable onDragStart={onDragStart('start')} onClick={(event) => event.stopPropagation()} className="cf-node-probe-badge start" title="拖动开始探针">S</button>}
+      {hasEnd && <button type="button" draggable onDragStart={onDragStart('end')} onClick={(event) => event.stopPropagation()} className="cf-node-probe-badge end" title="拖动结束探针">E</button>}
+    </div>
+  )
+}
+
+function NodeKindIcon({ iconKey }: { iconKey: string }) {
+  if (iconKey === 'start') return <Play aria-hidden="true" />
+  if (iconKey === 'terminal') return <Flag aria-hidden="true" />
+  if (iconKey === 'checkpoint') return <FileCheck2 aria-hidden="true" />
+  if (iconKey === 'input') return <Database aria-hidden="true" />
+  if (iconKey === 'interaction') return <PanelTop aria-hidden="true" />
+  if (iconKey === 'decision') return <Bot aria-hidden="true" />
+  if (iconKey === 'retrieval') return <Search aria-hidden="true" />
+  if (iconKey === 'mcp_read') return <ArrowDownToLine aria-hidden="true" />
+  if (iconKey === 'mcp_execute') return <Wrench aria-hidden="true" />
+  if (iconKey === 'remote') return <Cloud aria-hidden="true" />
+  if (iconKey === 'transfer') return <ArrowLeftRight aria-hidden="true" />
+  if (iconKey === 'transform') return <Shuffle aria-hidden="true" />
+  if (iconKey === 'validation') return <CheckCircle2 aria-hidden="true" />
+  if (iconKey === 'routing') return <Route aria-hidden="true" />
+  if (iconKey === 'gate') return <ShieldCheck aria-hidden="true" />
+  if (iconKey === 'human_gate') return <UserCheck aria-hidden="true" />
+  if (iconKey === 'delivery') return <PackageCheck aria-hidden="true" />
+  return <Braces aria-hidden="true" />
+}
+
+function DetailedNodeContent({ node, order, incomingNodes, outgoingNodes, runState }: Pick<FlowNodeCardProps, 'node' | 'order' | 'incomingNodes' | 'outgoingNodes' | 'runState'>) {
+  const view = buildFlowNodeCardView(node, runState, { incomingNodes, outgoingNodes })
+  return (
+    <div className="flow-node-detailed-content">
+      <header className="flow-node-detailed-head">
+        <div className="flow-node-title">
+          <strong style={{ background: node.locked ? undefined : view.category.bg, color: node.locked ? undefined : view.category.color }}>{String(order).padStart(2, '0')}</strong>
+          <i className="flow-node-category-icon"><NodeKindIcon iconKey={view.iconKey} /></i>
+          <span className="flow-node-title-copy">
+            <b className="flow-node-title-text" title={node.display_name || node.title}>{node.display_name || node.title}</b>
+            <small title={`${view.protocolLabel || view.category.shortLabel} · ${node.action || 'none'}`}>{view.protocolLabel || view.category.shortLabel} · {node.action || 'none'}</small>
+          </span>
+        </div>
+        <span className={`flow-node-status status-${runState?.status || view.configHealth}`}>{view.runStatusLabel}</span>
+      </header>
+      <section className="flow-node-detail-band summary">
+        <h4><GitBranch />{view.purposeTitle}</h4>
+        <p title={view.description || view.category.description || '当前节点尚未补充摘要说明。'}>{view.description || view.category.description || '当前节点尚未补充摘要说明。'}</p>
+        {view.primaryIssue && <small className={`flow-node-issue ${view.primaryIssue.severity}`} title={view.primaryIssue.message}>{view.primaryIssue.severity === 'blocker' ? '阻断' : '提醒'} · {view.primaryIssue.message}</small>}
+      </section>
+      <section className="flow-node-detail-band fields">
+        <h4><FileCheck2 />{view.infoSection.title}</h4>
+        <dl>
+          {view.infoSection.fields.map((item) => <div key={item.label} data-tone={item.tone || 'default'}><dt>{item.label}</dt><dd className={item.mono ? 'mono' : ''} title={item.value}>{item.value}</dd></div>)}
+        </dl>
+      </section>
+      <section className="flow-node-detail-band connections">
+        <h4><CornerUpRight />{view.flowSection.title}</h4>
+        {view.flowSection.fields.map((item) => <div className="flow-node-io-row" key={item.label} data-tone={item.tone || 'default'}><span>{item.label}</span><b className={item.mono ? 'mono' : ''} title={item.value}>{item.value}</b></div>)}
+      </section>
+    </div>
+  )
+}
+
+function CompactNodeContent({ node, order, runState }: Pick<FlowNodeCardProps, 'node' | 'order' | 'runState'>) {
+  const view = buildFlowNodeCardView(node, runState)
+  return (
+    <>
+      <div className="flow-node-title">
+        <strong style={{ background: node.locked ? undefined : view.category.bg, color: node.locked ? undefined : view.category.color }}>{String(order).padStart(2, '0')}</strong>
+        {view.isImportantNode && <span className="flow-node-milestone">{view.milestoneLabel || '重点'}</span>}
+        {view.remoteServiceLabel && <span className="flow-node-remote">{view.remoteServiceLabel}</span>}
+        {node.display_name || node.title}
+        {runState?.status === 'running' && <span className="node-run-pulse" aria-hidden="true" />}
+        {runState?.status === 'completed' && <span className="node-run-check">✓</span>}
+        {runState?.status === 'paused' && <span className="node-run-pause">?</span>}
+        {runState?.status === 'failed' && <span className="node-run-fail">✗</span>}
+      </div>
+      <div className="flow-node-meta">{view.protocolLabel || view.category.shortLabel} · {node.action || 'none'}</div>
+      {view.description && <p className="flow-node-description">{view.description}</p>}
+      {view.hasRunData ? (
+        <div className="flow-node-run-io">
+          {runState?.inputValue && <span title={`输入: ${runState.inputValue}`}>in: <b>{runState.inputValue.length > 16 ? `${runState.inputValue.slice(0, 16)}...` : runState.inputValue}</b></span>}
+          {runState?.outputValue && <span title={`输出: ${runState.outputValue}`}>out: <b>{runState.outputValue.length > 16 ? `${runState.outputValue.slice(0, 16)}...` : runState.outputValue}</b></span>}
+        </div>
+      ) : <div className="flow-node-scope">{node.scope === 'root' ? '根节点 · 锁定' : `${view.protocolLabel || view.category.label} · 可配置`}</div>}
+      {view.caps.length > 0 && <div className="flow-node-cap">{view.caps.join(' · ')}</div>}
+    </>
+  )
+}
+
+export function FlowNodeCard(props: FlowNodeCardProps): ReactNode {
+  const { node, viewMode, order, selected, detailOwner, compactStatic, counts, incomingNodes, outgoingNodes, runState, probeState, probeSelected, onSelect } = props
+  const view = buildFlowNodeCardView(node, runState, { incomingNodes, outgoingNodes })
+  const hasStartProbe = probeState?.startNodeId === node.id
+  const hasEndProbe = probeState?.endNodeId === node.id
+  const startProbeDrag = (kind: TestProbeKind) => (event: DragEvent<HTMLButtonElement>) => {
+    event.stopPropagation()
+    event.dataTransfer.setData(TEST_PROBE_MIME, kind)
+    event.dataTransfer.effectAllowed = 'move'
+  }
+  const handleProbeDragOver = (event: DragEvent<HTMLDivElement>) => {
+    if (!probeState || !Array.from(event.dataTransfer.types || []).includes(TEST_PROBE_MIME)) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'move'
+  }
+  const handleProbeDrop = (event: DragEvent<HTMLDivElement>) => {
+    if (!probeState) return
+    const kind = event.dataTransfer.getData(TEST_PROBE_MIME) as TestProbeKind
+    if (kind !== 'start' && kind !== 'end') return
+    event.preventDefault()
+    event.stopPropagation()
+    probeState.onDropProbe(kind, node.id)
+  }
+  return (
+    <div
+      className={`flow-node-card ${viewMode === 'detailed' ? 'detailed-node' : 'compact-node'} ${detailOwner ? 'detail-owner-node' : ''} ${selected ? 'selected' : ''} ${node.locked ? 'locked' : 'unlocked'} ${view.isImportantNode ? 'important-node' : ''} ${view.remoteServiceLabel ? 'remote-service-node' : ''} ${compactStatic && selected ? 'compact-focus' : ''} ${probeSelected ? 'probe-selected' : ''} ${hasStartProbe ? 'probe-start' : ''} ${hasEndProbe ? 'probe-end' : ''} ${view.runClass}`}
+      data-node-id={node.id}
+      data-node-kind={view.semanticKind}
+      data-config-health={view.configHealth}
+      style={{ '--node-accent': view.category.color, '--node-tint': view.category.bg, ...(!node.locked && !runState ? { borderColor: view.category.color, background: view.category.bg } : {}) } as React.CSSProperties}
+      onClick={() => onSelect(node)}
+      onDragOver={handleProbeDragOver}
+      onDrop={handleProbeDrop}
+    >
+      <FlowNodePorts node={node} counts={counts} />
+      {probeState && <ProbeBadges hasStart={Boolean(hasStartProbe)} hasEnd={Boolean(hasEndProbe)} onDragStart={startProbeDrag} />}
+      {viewMode === 'detailed'
+        ? <DetailedNodeContent node={node} order={order} incomingNodes={incomingNodes} outgoingNodes={outgoingNodes} runState={runState} />
+        : <CompactNodeContent node={node} order={order} runState={runState} />}
+    </div>
+  )
+}

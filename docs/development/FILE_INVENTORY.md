@@ -243,17 +243,22 @@
 | `src/frontend/src/pages/RunDiagnosticsPage.tsx` | 跨 Flow 运行检索、错误证据、检查点、产物、诊断导出和恢复页面。 |
 | `src/frontend/src/pages/SettingsPage.tsx` | 与业务资产无关的外观、字体、密度和动效设置页面。 |
 
-### Flow 工作台组件（10）
+### Flow 工作台组件（16）
 
 | 文件 | 作用 |
 |---|---|
-| `src/frontend/src/pages/flow-workbench/FlowAssistantPanel.tsx` | 对话式 Flow 助手、草稿预览和操作应用。 |
-| `src/frontend/src/pages/flow-workbench/FlowGraphView.tsx` | React Flow 画布、节点、边、执行高亮和探针拖拽。 |
+| `src/frontend/src/pages/flow-workbench/CartridgeWorkspaceControl.tsx` | 顶部当前卡带入口及卡带切换、维护操作。 |
+| `src/frontend/src/pages/flow-workbench/FlowGraphView.tsx` | React Flow 画布、节点和详情编排、边、上下文菜单、运行投影与画布交互。 |
+| `src/frontend/src/pages/flow-workbench/FlowNodeCard.tsx` | 消费统一展示模型，渲染协议驱动的主节点信息卡。 |
+| `src/frontend/src/pages/flow-workbench/FlowNodePorts.tsx` | 主流程端口和详情归属端口。 |
+| `src/frontend/src/pages/flow-workbench/flowNodeView.ts` | 按生命周期与协议 kind 生成节点语义、主卡事实、配置健康、运行态和详情数据。 |
 | `src/frontend/src/pages/flow-workbench/McpLibraryPanel.tsx` | Flow 内 MCP 工具库选择和编辑面板。 |
-| `src/frontend/src/pages/flow-workbench/ModelRecipeView.tsx` | 卡带模型角色配方和本机连接绑定视图。 |
-| `src/frontend/src/pages/flow-workbench/CartridgeResourcesView.tsx` | Flow 内以卡带为目标管理模型、工具需求及本机资源绑定。 |
+| `src/frontend/src/pages/flow-workbench/NodeDetailCard.tsx` | 可拖动、可钉住并随画布缩放的能力详情卡。 |
+| `src/frontend/src/pages/flow-workbench/nodeDetails.ts` | 按节点能力生成详情菜单，并迁移旧详情分区标识。 |
 | `src/frontend/src/pages/flow-workbench/NodeDrawer.tsx` | 新建节点抽屉和预设选择。 |
 | `src/frontend/src/pages/flow-workbench/nodeModel.ts` | 节点分类、预设、默认值和协议显示模型。 |
+| `src/frontend/src/pages/flow-workbench/passiveHtml.ts` | 交互节点 HTML 的只读展示与安全处理。 |
+| `src/frontend/src/pages/flow-workbench/ResourceManagementPanels.tsx` | 画布内模型连接与工具启用管理。 |
 | `src/frontend/src/pages/flow-workbench/TestBench.css` | 测试台、日志、交互、恢复和产物预览的独立样式。 |
 | `src/frontend/src/pages/flow-workbench/TestBenchView.tsx` | 测试运行、探针、日志、交互、恢复和诊断包 UI。 |
 | `src/frontend/src/pages/flow-workbench/types.ts` | 工作台局部 TypeScript 类型。 |
@@ -345,6 +350,14 @@
 |---|---|
 | `scripts/tests/fixtures/portable_dlc.py` | 为当前协议和运行时测试提供共享的 v0.6 Portable DLC 临时包。 |
 
+### 开发维护源码：Lite 与工作台 UI 回归（3）
+
+| 文件 | 作用 |
+|---|---|
+| `scripts/tests/lite/test_lite_api_surface.py` | 验证 Lite 后端只暴露工作台闭环所需 API。 |
+| `scripts/tests/ui/capture_workbench.mjs` | 通过浏览器调试端口截取工作台，并导出节点、详情和页面溢出指标。 |
+| `scripts/tests/ui/assert_node_information_architecture.mjs` | 验证真实 Flow 的语义类型、配置健康、主卡分区、能力详情菜单及 100%/125% 布局。 |
+
 ### 开发维护源码：自动化脚本（2）
 
 | 文件 | 作用 |
@@ -397,11 +410,12 @@
 | `src/frontend-new/package-lock.json` | 锁定独立前端使用的 Lucide、Simple Icons、Web Awesome 与 Motion 依赖版本。 |
 | `src/frontend-new/README.md` | 独立前端边界、启动方式和后端 API 地址说明。 |
 
-### 项目文档（21）
+### 项目文档（22）
 
 | 文件 | 作用 |
 |---|---|
 | `docs/README.md` | 文档总入口，区分当前文档、历史快照、开发规则和运行产物。 |
+| `docs/architecture/FLOW_NODE_INFORMATION_ARCHITECTURE.md` | 规定各类 Flow 节点的主卡常驻信息、运行态投影、按需详情子卡和禁止展示内容，指导 Lite 工作台节点重构。 |
 | `docs/architecture/PORTABLE_DLC_ARCHITECTURE.md` | Portable DLC 的激活、隔离、资源所有权和不可破坏边界。 |
 | `docs/design/IMG2_UI_REDESIGN_PROMPTS.md` | 锁定现有侧栏并为一级页面生成统一 Img2 视觉稿的母提示词、逐页提示词、负面提示词和评审门槛。 |
 | `docs/design/FRONTEND_ASSET_SYSTEM.md` | 规定独立前端的品牌资产、功能图标、技术标识、状态图形与交互动效边界。 |

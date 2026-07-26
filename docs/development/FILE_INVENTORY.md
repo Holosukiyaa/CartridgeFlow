@@ -89,6 +89,7 @@
 | `src/frontend/src/pages/FlowWorkbench.tsx` | Lite 主界面、状态编排和面板入口。 |
 | `flow-workbench/CartridgeWorkspaceControl.tsx` | 当前卡带信息、切换、创建、导入和维护。 |
 | `flow-workbench/FlowGraphView.tsx` | React Flow 画布、视口、连线和工具模式。 |
+| `flow-workbench/clusterLayout.ts` | 主节点与卫星卡片的节点簇整理、拓扑排布和自适应折行。 |
 | `flow-workbench/FlowNodeCard.tsx` | 协议驱动的主节点卡片。 |
 | `flow-workbench/FlowNodePorts.tsx` | 节点连接端口。 |
 | `flow-workbench/NodeDetailCard.tsx` | 可拖动、可钉住、可恢复的详情卫星卡。 |

@@ -683,12 +683,16 @@ export function buildBalancedLayout(graph: FlowGraph, options: FlowLayoutOptions
   const metrics = getFlowLayoutMetrics(options)
   const automatic = buildAutoAlignLayout(graph, options)
   const layout: Record<string, { x: number; y: number }> = {}
+  let hasCompleteSavedLayout = graph.nodes.length > 0
   graph.nodes.forEach((node) => {
     const saved = node.data?.layout || node.params?.layout
-    layout[node.id] = saved && typeof saved.x === 'number' && typeof saved.y === 'number'
-      ? { x: saved.x, y: saved.y }
+    const hasSavedPosition = Boolean(saved && typeof saved.x === 'number' && typeof saved.y === 'number')
+    if (!hasSavedPosition) hasCompleteSavedLayout = false
+    layout[node.id] = hasSavedPosition
+      ? { x: saved!.x, y: saved!.y }
       : automatic[node.id] || { x: node.x, y: node.y }
   })
+  if (hasCompleteSavedLayout) return layout
   return resolveLayoutCollisions(layout, {
     rowGap: metrics.height + (metrics.viewMode === 'detailed' ? 84 : 34),
     xTolerance: metrics.width + 16,

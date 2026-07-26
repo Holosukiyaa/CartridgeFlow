@@ -11,6 +11,7 @@ import {
   addEdge,
   applyEdgeChanges,
   applyNodeChanges,
+  getViewportForBounds,
   type Connection,
   type Edge,
   type EdgeChange,
@@ -24,12 +25,13 @@ import type { FlowAnnotation, FlowEdge, FlowEvent, FlowGraph, FlowNode } from '.
 import { DEFAULT_WORKSPACE_THEME, loadWorkspaceTheme, saveWorkspaceTheme, WORKSPACE_THEME_PRESETS, type WorkspaceTheme } from '../../appearance.ts'
 import { showToast } from '../../toast.tsx'
 import type { CreateNodeHandler, NodeCategoryId } from './types.ts'
-import { FLOW_NODE_DIMENSIONS, NODE_CATEGORIES, buildAutoAlignLayout, buildBalancedLayout, getNodeCategory, getNodePalette, getPreset, getPresets, isStartNode, type FlowNodeViewMode } from './nodeModel.ts'
+import { FLOW_NODE_DIMENSIONS, NODE_CATEGORIES, buildBalancedLayout, getNodeCategory, getNodePalette, getPreset, getPresets, isStartNode, type FlowNodeViewMode } from './nodeModel.ts'
 import { getAvailableNodeDetailSections, type NodeDetailSection } from './nodeDetails.ts'
 import type { NodeRunState } from './runState.ts'
 import { FlowNodeCard, type FlowNodeProbeState } from './FlowNodeCard.tsx'
 import { createPortCounts, getPortHandleId, type EdgePortAssignment, type PortCounts, type PortSide } from './FlowNodePorts.tsx'
 import { CanvasAnnotationCard } from './CanvasAnnotationCard.tsx'
+import { buildClusterAwareLayout } from './clusterLayout.ts'
 
 type FlowGraphNode = Node<Record<string, unknown>>
 type FlowGraphEdge = Edge<Record<string, unknown>>
@@ -616,28 +618,25 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
     return ''
   }, [nodeById])
 
-  const focusGraph = useCallback((duration = 260) => {
-    if (!flowInstance || initialNodes.length === 0) return
-    const runFit = () => {
-      flowInstance.fitView({ padding: 0.22, duration, maxZoom: compactStatic ? 0.82 : 1.05 })
-      const firstNode = flowInstance.getNode(initialFocusId || initialNodes[0]?.id) || initialNodes[0]
-      const wrapper = wrapperRef.current
-      if (!firstNode || !wrapper) return
-      window.setTimeout(() => {
-        const zoom = compactStatic ? 0.72 : nodeViewMode === 'detailed' ? 0.9 : 0.98
-        const { width, height } = getGraphNodeSize(firstNode as FlowGraphNode)
-        flowInstance.setViewport({
-          x: wrapper.clientWidth / 2 - (firstNode.position.x + width / 2) * zoom,
-          y: wrapper.clientHeight / 2 - (firstNode.position.y + height / 2) * zoom,
-          zoom,
-        }, { duration })
-      }, 120)
-    }
-    window.requestAnimationFrame(() => {
-      runFit()
-      window.requestAnimationFrame(runFit)
-    })
-  }, [compactStatic, flowInstance, initialFocusId, initialNodes, nodeViewMode])
+  const fitBoundsIntoCanvas = useCallback((bounds: { x: number; y: number; width: number; height: number }, duration = 240) => {
+    const wrapper = wrapperRef.current
+    if (!flowInstance || !wrapper) return
+    const viewport = getViewportForBounds(bounds, wrapper.clientWidth, wrapper.clientHeight, 0.18, compactStatic ? 0.82 : 0.92, 0.08)
+    void flowInstance.setViewport(viewport, { duration })
+  }, [compactStatic, flowInstance])
+
+  const fitCanvasContents = useCallback((duration = 240) => {
+    if (nodes.length === 0) return
+    const rectangles = [
+      ...nodes.map((node) => ({ ...node.position, ...getGraphNodeSize(node) })),
+      ...nodeEditorPlacements.map((editor) => ({ x: editor.x, y: editor.y, width: editor.width, height: editor.height })),
+    ]
+    const minX = Math.min(...rectangles.map((rect) => rect.x))
+    const minY = Math.min(...rectangles.map((rect) => rect.y))
+    const maxX = Math.max(...rectangles.map((rect) => rect.x + rect.width))
+    const maxY = Math.max(...rectangles.map((rect) => rect.y + rect.height))
+    fitBoundsIntoCanvas({ x: minX, y: minY, width: maxX - minX, height: maxY - minY }, duration)
+  }, [fitBoundsIntoCanvas, nodeEditorPlacements, nodes])
 
   const handleFlowInit = useCallback((instance: ReactFlowInstance) => {
     setFlowInstance(instance)
@@ -907,12 +906,33 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
   const handleAutoAlign = useCallback(async () => {
     if (!onLayoutSave) return
     const currentNodes = (flowInstance?.getNodes() as FlowGraphNode[] | undefined) || nodes
-    const alignedLayout = buildAutoAlignLayout(renderGraph, { viewMode: layoutViewMode })
-    const aligned = currentNodes.map((node) => ({ ...node, position: alignedLayout[node.id] || node.position }))
+    const wrapperWidth = wrapperRef.current?.clientWidth || 1600
+    const wrapperHeight = wrapperRef.current?.clientHeight || 800
+    const result = buildClusterAwareLayout({
+      nodes: currentNodes.map((node) => ({ id: node.id, ...node.position, ...getGraphNodeSize(node) })),
+      satellites: nodeEditorPlacements.map((editor) => ({
+        editorId: editor.editorId,
+        nodeId: editor.nodeId,
+        x: editor.x,
+        y: editor.y,
+        width: editor.width,
+        height: editor.height,
+      })),
+      edges: renderGraph.edges || [],
+      targetAspect: wrapperWidth / wrapperHeight,
+    })
+    const aligned = currentNodes.map((node) => ({ ...node, position: result.nodeLayout[node.id] || node.position }))
     setNodes(aligned)
+    setNodeEditorPositions((current) => ({ ...current, ...result.satelliteLayout }))
+    Object.entries(result.satelliteLayout).forEach(([editorId, position]) => {
+      onNodeEditorPositionChange?.(editorId, position)
+    })
     await onLayoutSave(buildLayoutFromNodes(aligned))
-    window.requestAnimationFrame(() => focusGraph(240))
-  }, [buildLayoutFromNodes, flowInstance, focusGraph, layoutViewMode, renderGraph, nodes, onLayoutSave])
+    setCanvasPanel(null)
+    window.requestAnimationFrame(() => {
+      fitBoundsIntoCanvas(result.bounds, 260)
+    })
+  }, [buildLayoutFromNodes, fitBoundsIntoCanvas, flowInstance, nodeEditorPlacements, nodes, onLayoutSave, onNodeEditorPositionChange, renderGraph.edges])
 
   const toggleCanvasPanel = useCallback((panel: Exclude<CanvasPanel, null>) => {
     setCanvasPanel((current) => {
@@ -1357,7 +1377,7 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
             <div className="cf-canvas-zoom-tools">
               <button type="button" onClick={() => flowInstance?.zoomIn({ duration: 180 })} title="放大"><ZoomIn /></button>
               <button type="button" onClick={() => flowInstance?.zoomOut({ duration: 180 })} title="缩小"><ZoomOut /></button>
-              <button type="button" onClick={() => flowInstance?.fitView({ padding: 0.18, duration: 240 })} title="适应画布"><Maximize2 /></button>
+              <button type="button" onClick={() => fitCanvasContents()} title="适应画布"><Maximize2 /></button>
               <button type="button" onClick={() => setFullscreen((value) => !value)} title={fullscreen ? '退出全屏' : '全屏查看'}><Maximize /></button>
               <button type="button" className={canvasLocked ? 'active' : ''} onClick={() => setCanvasLocked((value) => !value)} title={canvasLocked ? '解锁画布' : '锁定画布'}>{canvasLocked ? <Lock /> : <Unlock />}</button>
             </div>
@@ -1439,7 +1459,7 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
                   <button type="button" className="cf-canvas-theme-reset" onClick={() => updateWorkspaceTheme(DEFAULT_WORKSPACE_THEME)}>恢复默认青绿</button>
                 </section>
                 <div><span>主节点视图</span><b>完整信息卡</b></div>
-                {onLayoutSave && <button type="button" onClick={handleAutoAlign}><AlignHorizontalSpaceAround />按当前节点尺寸自动整理</button>}
+                {onLayoutSave && <button type="button" onClick={handleAutoAlign}><AlignHorizontalSpaceAround />按节点簇自动整理</button>}
               </div>
             )}
             {canvasPanel === 'models' && <div className="cf-canvas-resource-content">{modelPanel}</div>}

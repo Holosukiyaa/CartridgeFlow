@@ -27,7 +27,7 @@ import { applyWorkspaceTheme, loadWorkspaceTheme, saveWorkspaceTheme, WORKSPACE_
 import type { CreateNodeHandler, NodeCategoryId } from './types.ts'
 import { FLOW_NODE_DIMENSIONS, NODE_CATEGORIES, buildAutoAlignLayout, buildBalancedLayout, getNodeCategory, getPreset, getPresets, isStartNode, type FlowNodeViewMode } from './nodeModel.ts'
 import { getAvailableNodeDetailSections, type NodeDetailSection } from './nodeDetails.ts'
-import type { NodeRunState } from './TestBenchView.tsx'
+import type { NodeRunState } from './runState.ts'
 import { FlowNodeCard, type FlowNodeProbeState } from './FlowNodeCard.tsx'
 import { createPortCounts, getPortHandleId, type EdgePortAssignment, type PortCounts, type PortSide } from './FlowNodePorts.tsx'
 

@@ -72,7 +72,8 @@
 | `src/frontend/vite.config.ts` | Vite 开发与生产构建配置。 |
 | `src/frontend/src/main.tsx` | React 挂载和外观初始化。 |
 | `src/frontend/src/App.tsx` | 单一工作台路由入口。 |
-| `src/frontend/src/api.ts` | Lite 前端使用的后端类型与请求。 |
+| `src/frontend/src/api.ts` | Lite 前端使用的后端请求封装。 |
+| `src/frontend/src/api.types.ts` | 前端共享的 API 数据契约。 |
 | `src/frontend/src/appearance.ts` | 字体、密度和动效偏好。 |
 | `src/frontend/src/ui.tsx` | 共享图标与小型 UI 原语。 |
 | `src/frontend/src/toast.tsx` | 全局操作提示。 |
@@ -93,11 +94,14 @@
 | `flow-workbench/NodeDetailCard.tsx` | 可拖动、可钉住、可恢复的详情卫星卡。 |
 | `flow-workbench/NodeDrawer.tsx` | 节点库及拖入画布交互。 |
 | `flow-workbench/ResourceManagementPanels.tsx` | 模型连接、角色和 Flow 工具配置。 |
+| `flow-workbench/RunInputDialog.tsx` | 主工作台运行输入与本地文件上传弹窗。 |
 | `flow-workbench/TestBenchView.tsx`、`TestBench.css` | 真实运行、历史、失败日志、恢复和产物。 |
 | `flow-workbench/flowNodeView.ts` | 主节点展示模型与状态映射。 |
+| `flow-workbench/nodeBuilder.ts` | 节点预设、MCP 绑定和协议字段组装。 |
 | `flow-workbench/nodeDetails.ts` | 按节点能力生成详情分区。 |
 | `flow-workbench/nodeModel.ts` | 节点类型、默认值和转换。 |
 | `flow-workbench/passiveHtml.ts` | 被动 HTML 资产安全处理。 |
+| `flow-workbench/runState.ts` | 运行事件到节点状态及探针范围的纯计算。 |
 | `flow-workbench/types.ts` | 工作台本地类型。 |
 | `flow-workbench/views.tsx` | 工作台共享视图组件。 |
 

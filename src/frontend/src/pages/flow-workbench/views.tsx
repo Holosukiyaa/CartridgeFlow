@@ -7,7 +7,7 @@ import { FlowGraphView } from './FlowGraphView.tsx'
 import { NodeDetailCard } from './NodeDetailCard.tsx'
 import { NodeDrawer } from './NodeDrawer.tsx'
 import { NODE_DETAIL_SECTION_BY_ID, nodeDetailId, type NodeDetailSection, type OpenNodeDetail } from './nodeDetails.ts'
-import type { NodeRunState } from './TestBenchView.tsx'
+import type { NodeRunState } from './runState.ts'
 
 export function WorkbenchHeader({
   detail,

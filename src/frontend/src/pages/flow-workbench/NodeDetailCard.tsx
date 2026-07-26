@@ -4,7 +4,7 @@ import type { FlowEdge, FlowEvent, FlowNode } from '../../api.ts'
 import { buildNodeDetailFacts, resolveNodeSemanticKind } from './flowNodeView.ts'
 import { getNodeCategory, getProcessDisplayLabel } from './nodeModel.ts'
 import { NODE_DETAIL_SECTION_BY_ID, type NodeDetailSection } from './nodeDetails.ts'
-import type { NodeRunState } from './TestBenchView.tsx'
+import type { NodeRunState } from './runState.ts'
 
 function SectionIcon({ section }: { section: Exclude<NodeDetailSection, 'config'> }) {
   if (section === 'inputs') return <ArrowDownToLine aria-hidden="true" />

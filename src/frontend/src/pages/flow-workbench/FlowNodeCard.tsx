@@ -4,7 +4,7 @@ import type { FlowNode } from '../../api.ts'
 import type { FlowNodeViewMode } from './nodeModel.ts'
 import { FlowNodePorts, type PortCounts } from './FlowNodePorts.tsx'
 import { buildFlowNodeCardView } from './flowNodeView.ts'
-import type { NodeRunState } from './TestBenchView.tsx'
+import type { NodeRunState } from './runState.ts'
 
 export type TestProbeKind = 'start' | 'end'
 export type FlowNodeProbeState = {

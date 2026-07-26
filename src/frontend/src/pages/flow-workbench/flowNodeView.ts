@@ -1,6 +1,6 @@
 import type { FlowEdge, FlowNode } from '../../api.ts'
 import { getNodeCategory, getProcessDisplayLabel, getProtocolEffect, getProtocolExecutor, getProtocolKind, isStartNode } from './nodeModel.ts'
-import type { NodeRunState } from './TestBenchView.tsx'
+import type { NodeRunState } from './runState.ts'
 
 type AnyRecord = Record<string, any>
 

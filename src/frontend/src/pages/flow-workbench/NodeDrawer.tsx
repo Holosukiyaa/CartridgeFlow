@@ -6,7 +6,7 @@ import { normalizeRecipeRoles } from '../../llmRecipe.ts'
 import { showToast } from '../../toast.tsx'
 import type { GraphResult, NodeCategoryId, NodeDraft } from './types.ts'
 import { CATEGORY_BY_ID, NODE_CATEGORIES, buildProtocolNodePayload, getNodeCategory, getProcessDisplayLabel, getPreset, getPresets, getProtocolDefaults, makeNodeDraft } from './nodeModel.ts'
-import type { NodeRunState } from './TestBenchView.tsx'
+import type { NodeRunState } from './runState.ts'
 
 const RUN_STATE_LABELS: Record<NodeRunState['status'], string> = {
   idle: '尚未执行',

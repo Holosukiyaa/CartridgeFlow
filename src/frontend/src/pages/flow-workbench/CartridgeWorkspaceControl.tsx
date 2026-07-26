@@ -13,6 +13,7 @@ import {
 } from '../../api.ts'
 import ConfigModal from '../../components/ConfigModal.tsx'
 import { showToast } from '../../toast.tsx'
+import { BrandMark } from './BrandMark.tsx'
 
 type CartridgeSummary = {
   id: string
@@ -23,7 +24,13 @@ type CartridgeSummary = {
   source?: string
 }
 
-type Panel = 'empty' | 'current' | 'manage' | 'create' | 'info'
+type Panel = 'current' | 'manage' | 'create' | 'info'
+
+const DEFAULT_DEMO_FLOW = {
+  id: 'demo',
+  name: 'Demo 卡带',
+  description: '用于快速开始设计的 Demo 卡带。',
+}
 
 export default function CartridgeWorkspaceControl({ current, empty = false, onSwitchFlow, onUpdated }: {
   current?: CartridgeSummary | null
@@ -34,8 +41,8 @@ export default function CartridgeWorkspaceControl({ current, empty = false, onSw
   const [flows, setFlows] = useState<FlowLabItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [modalOpen, setModalOpen] = useState(empty)
-  const [panel, setPanel] = useState<Panel>(empty ? 'empty' : 'current')
+  const [modalOpen, setModalOpen] = useState(false)
+  const [panel, setPanel] = useState<Panel>('current')
   const [busy, setBusy] = useState(false)
   const [flowId, setFlowId] = useState('')
   const [name, setName] = useState('')
@@ -64,9 +71,9 @@ export default function CartridgeWorkspaceControl({ current, empty = false, onSw
     setPanel(nextPanel)
     setModalOpen(true)
     if (nextPanel === 'create') {
-      setFlowId('')
-      setName('')
-      setDescription('')
+      setFlowId(DEFAULT_DEMO_FLOW.id)
+      setName(DEFAULT_DEMO_FLOW.name)
+      setDescription(DEFAULT_DEMO_FLOW.description)
     }
     void loadFlows()
   }
@@ -94,10 +101,12 @@ export default function CartridgeWorkspaceControl({ current, empty = false, onSw
   }
 
   const createFlow = async () => {
-    if (!flowId.trim() || !name.trim()) return
+    const nextFlowId = flowId.trim() || DEFAULT_DEMO_FLOW.id
+    const nextName = name.trim() || DEFAULT_DEMO_FLOW.name
+    const nextDescription = description.trim() || DEFAULT_DEMO_FLOW.description
     setBusy(true)
     try {
-      const result = await createDevFlow(flowId.trim(), name.trim(), description.trim())
+      const result = await createDevFlow(nextFlowId, nextName, nextDescription)
       showToast({ title: '卡带已创建', description: result.id, type: 'success' })
       setModalOpen(false)
       await loadFlows()
@@ -182,36 +191,31 @@ export default function CartridgeWorkspaceControl({ current, empty = false, onSw
     <input ref={importPickerRef} type="file" hidden accept=".cartridge.zip,.zip" onChange={importFlow} />
   )
 
+  const managerContent = (
+    <div className="cf-cartridge-manager">
+      <div className="cf-cartridge-manager-actions"><Button className="cf-accent-btn" onClick={() => openPanel('create')}><FilePlus2 />新建卡带</Button><Button className="cf-outline-btn" onClick={() => importPickerRef.current?.click()} loading={busy} loadingText="导入中..."><Upload />导入卡带</Button></div>
+      {loading ? <div className="cf-cartridge-workspace-loading"><Spinner /></div> : error ? <Text color="fg.error">{error}</Text> : (
+        <div className="cf-cartridge-manager-list">
+          {flows.map((flow) => <article key={flow.id} className={flow.id === current?.id ? 'current' : ''}><div><strong>{flow.name}</strong><p title={flow.description || '暂无简介'}>{flow.description || '暂无简介'}</p><span>{flow.id} · v{flow.version} · {flow.editable ? '可编辑' : '只读'}</span></div><Button className="cf-outline-btn" disabled={flow.id === current?.id} onClick={() => { setModalOpen(false); onSwitchFlow(flow.id) }}>{flow.id === current?.id ? '当前卡带' : '打开'}</Button></article>)}
+        </div>
+      )}
+    </div>
+  )
+
   const modal = (
     <ConfigModal
-      open={modalOpen && panel !== 'current'}
-      title={panel === 'empty' ? '当前没有任何流程' : panel === 'manage' ? '打开其他卡带' : panel === 'create' ? '新建开发卡带' : '卡带信息'}
-      kicker={panel === 'empty' ? 'EMPTY WORKSPACE' : panel === 'manage' ? 'CARTRIDGE LIBRARY' : panel === 'create' ? 'NEW CARTRIDGE' : 'CARTRIDGE PROFILE'}
+      open={modalOpen && panel !== 'current' && panel !== 'manage'}
+      title={panel === 'create' ? '新建开发卡带' : '卡带信息'}
+      kicker={panel === 'create' ? 'NEW CARTRIDGE' : 'CARTRIDGE PROFILE'}
       className="cf-cartridge-workspace-modal"
       onClose={() => { if (!busy) setModalOpen(false) }}
     >
-      {panel === 'empty' && (
-        <div className="cf-empty-workbench-notice">
-          <div><strong>当前没有任何流程</strong><p>工作台需要至少一张卡带才能开始设计。你可以新建开发卡带，或者导入已有卡带文件。</p></div>
-          <div><Button className="cf-accent-btn" onClick={() => openPanel('create')}>新建流程</Button><Button className="cf-outline-btn" onClick={() => importPickerRef.current?.click()} loading={busy} loadingText="导入中...">导入卡带</Button></div>
-        </div>
-      )}
-      {panel === 'manage' && (
-        <div className="cf-cartridge-manager">
-          <div className="cf-cartridge-manager-actions"><Button className="cf-accent-btn" onClick={() => openPanel('create')}><FilePlus2 />新建卡带</Button><Button className="cf-outline-btn" onClick={() => importPickerRef.current?.click()} loading={busy} loadingText="导入中..."><Upload />导入卡带</Button></div>
-          {loading ? <div className="cf-cartridge-workspace-loading"><Spinner /></div> : error ? <Text color="fg.error">{error}</Text> : (
-            <div className="cf-cartridge-manager-list">
-              {flows.map((flow) => <article key={flow.id} className={flow.id === current?.id ? 'current' : ''}><div><strong>{flow.name}</strong><p title={flow.description || '暂无简介'}>{flow.description || '暂无简介'}</p><span>{flow.id} · v{flow.version} · {flow.editable ? '可编辑' : '只读'}</span></div><Button className="cf-outline-btn" disabled={flow.id === current?.id} onClick={() => { setModalOpen(false); onSwitchFlow(flow.id) }}>{flow.id === current?.id ? '当前卡带' : '打开'}</Button></article>)}
-            </div>
-          )}
-        </div>
-      )}
       {panel === 'create' && (
         <div className="cf-cartridge-workspace-form">
           <Field.Root><Field.Label>卡带 ID</Field.Label><Input value={flowId} onChange={(event) => setFlowId(event.target.value)} placeholder="例如：video-intro（自动添加 dev. 前缀）" /></Field.Root>
           <Field.Root><Field.Label>名称</Field.Label><Input value={name} onChange={(event) => setName(event.target.value)} placeholder="卡带名称" /></Field.Root>
           <Field.Root><Field.Label>描述</Field.Label><Textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={3} placeholder="这个卡带解决什么问题" /></Field.Root>
-          <div className="cf-cartridge-workspace-form-actions"><Button className="cf-outline-btn" onClick={() => setPanel('manage')} disabled={busy}>返回</Button><Button className="cf-accent-btn" onClick={() => void createFlow()} disabled={!flowId.trim() || !name.trim()} loading={busy} loadingText="创建中...">创建并进入</Button></div>
+          <div className="cf-cartridge-workspace-form-actions"><Button className="cf-outline-btn" onClick={() => { if (empty) setModalOpen(false); else setPanel('manage') }} disabled={busy}>返回</Button><Button className="cf-accent-btn" onClick={() => void createFlow()} loading={busy} loadingText="创建中...">创建并进入</Button></div>
         </div>
       )}
       {panel === 'info' && (
@@ -241,12 +245,19 @@ export default function CartridgeWorkspaceControl({ current, empty = false, onSw
     </aside>
   ) : null
 
+  const managerPanel = modalOpen && panel === 'manage' && current ? (
+    <aside className="cf-cartridge-floating-panel cf-cartridge-manager-panel" aria-label="打开其他卡带">
+      <header><div><span>CARTRIDGE LIBRARY</span><strong>打开其他卡带</strong></div><button type="button" onClick={() => setModalOpen(false)} aria-label="关闭卡带库"><X /></button></header>
+      {managerContent}
+    </aside>
+  ) : null
+
   if (empty) {
     return (
       <div className="cf-page cf-workbench-page cf-empty-workbench-page">
         {hiddenPicker}
         <main className="cf-empty-workbench-canvas">
-          <div className="cf-empty-workbench-brand"><b>CF</b><span>CARTRIDGEFLOW</span></div>
+          <div className="cf-empty-workbench-brand"><BrandMark className="cf-empty-workbench-brand-mark" /><span>CARTRIDGEFLOW</span></div>
           <div className="cf-empty-workbench-visual" aria-hidden="true">
             <i className="cf-empty-dots" />
             <i className="cf-empty-wire wire-top" /><i className="cf-empty-wire wire-bottom" />
@@ -256,7 +267,7 @@ export default function CartridgeWorkspaceControl({ current, empty = false, onSw
               <em /><small />
             </div>
           </div>
-          <div className="cf-empty-workbench-copy"><span>从一张卡带开始设计</span><h2>从一张卡带<br />开始设计</h2><i /><p>创建新的开发卡带，或者导入已有卡带文件。进入后所有设计、资源和真实运行能力都在同一个工作台完成。</p><div><Button className="cf-accent-btn" onClick={() => openPanel('create')}>新建开发卡带</Button><Button className="cf-outline-btn" onClick={() => importPickerRef.current?.click()} loading={busy} loadingText="导入中...">导入已有卡带</Button></div></div>
+          <div className="cf-empty-workbench-copy"><span>DESIGN TO RUNTIME</span><h2>从一张卡带<br />开始设计</h2><i /><p>创建新的开发卡带，或者导入已有卡带文件。进入后所有设计、资源和真实运行能力都在同一个工作台完成。</p><div><Button className="cf-accent-btn" onClick={() => openPanel('create')}>新建开发卡带</Button><Button className="cf-outline-btn" onClick={() => importPickerRef.current?.click()} loading={busy} loadingText="导入中...">导入已有卡带</Button></div></div>
         </main>
         {modal}
       </div>
@@ -270,6 +281,7 @@ export default function CartridgeWorkspaceControl({ current, empty = false, onSw
         <span className="cf-workbench-live-dot" /><b>{current?.id}</b><span>· v{current?.version} · {current?.source || 'dev'} · {current?.editable ? 'editable' : 'readonly'}</span><ChevronDown aria-hidden="true" />
       </button>
       {floatingPanel}
+      {managerPanel}
       {modal}
     </div>
   )

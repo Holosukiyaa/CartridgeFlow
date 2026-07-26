@@ -2,7 +2,7 @@ export type FontFamilyMode = 'system' | 'classic' | 'developer'
 export type FontWeightMode = 'regular' | 'strong'
 export type DensityMode = 'comfortable' | 'compact'
 export type ScrollbarMode = 'subtle' | 'always'
-export type WorkspaceThemeId = 'orange' | 'blue' | 'teal' | 'plum' | 'custom'
+export type WorkspaceThemeId = 'orange' | 'gray' | 'teal' | 'plum' | 'custom'
 
 export type WorkspaceTheme = {
   id: WorkspaceThemeId
@@ -30,12 +30,18 @@ export const DEFAULT_APPEARANCE: AppearanceSettings = {
 const STORAGE_KEY = 'cf.studio.appearance'
 const WORKSPACE_THEME_STORAGE_KEY = 'cf.lite.workspace-theme'
 
+// Workspace theme palette and default are maintained together in this block.
 export const WORKSPACE_THEME_PRESETS: Array<{ id: Exclude<WorkspaceThemeId, 'custom'>; label: string; color: string }> = [
   { id: 'orange', label: '橙色', color: '#e26f35' },
-  { id: 'blue', label: '蓝色', color: '#3974c5' },
+  { id: 'gray', label: '灰色', color: '#919191' },
   { id: 'teal', label: '青绿', color: '#16836e' },
-  { id: 'plum', label: '紫红', color: '#8560a8' },
+  { id: 'plum', label: '紫红', color: '#a33d73' },
 ]
+
+export const DEFAULT_WORKSPACE_THEME: WorkspaceTheme = {
+  id: 'teal',
+  color: WORKSPACE_THEME_PRESETS.find((theme) => theme.id === 'teal')!.color,
+}
 
 export function loadAppearance(): AppearanceSettings {
   try {
@@ -68,17 +74,15 @@ export function applyAppearance(settings: AppearanceSettings) {
 export function loadWorkspaceTheme(): WorkspaceTheme {
   try {
     const value = JSON.parse(localStorage.getItem(WORKSPACE_THEME_STORAGE_KEY) || '{}')
-    if (!value?.id) return { id: 'orange', color: WORKSPACE_THEME_PRESETS[0].color }
-    const color = normalizeHexColor(value?.color)
-    const preset = WORKSPACE_THEME_PRESETS.find((item) => item.id === value?.id && item.color.toLowerCase() === color.toLowerCase())
-    return { id: preset?.id || 'custom', color }
+    if (!value?.id) return { ...DEFAULT_WORKSPACE_THEME }
+    return normalizeWorkspaceTheme(value)
   } catch {
-    return { id: 'orange', color: WORKSPACE_THEME_PRESETS[0].color }
+    return { ...DEFAULT_WORKSPACE_THEME }
   }
 }
 
 export function saveWorkspaceTheme(theme: WorkspaceTheme) {
-  const normalized = { id: theme.id, color: normalizeHexColor(theme.color) }
+  const normalized = normalizeWorkspaceTheme(theme)
   localStorage.setItem(WORKSPACE_THEME_STORAGE_KEY, JSON.stringify(normalized))
   applyWorkspaceTheme(normalized)
   window.dispatchEvent(new CustomEvent('cf:workspace-theme', { detail: normalized }))
@@ -86,20 +90,26 @@ export function saveWorkspaceTheme(theme: WorkspaceTheme) {
 }
 
 export function applyWorkspaceTheme(theme: WorkspaceTheme) {
-  const color = normalizeHexColor(theme.color)
-  const rgb = hexToRgb(color)
+  const normalized = normalizeWorkspaceTheme(theme)
+  const rgb = hexToRgb(normalized.color)
   const root = document.documentElement
-  root.style.setProperty('--accent', color)
+  root.style.setProperty('--accent', normalized.color)
   root.style.setProperty('--accent-dark', mixRgb(rgb, [28, 34, 42], .28))
   root.style.setProperty('--accent-soft', mixRgb(rgb, [255, 255, 255], .9))
   root.style.setProperty('--cf-accent-rgb', rgb.join(' '))
-  root.dataset.cfWorkspaceTheme = theme.id
+  root.dataset.cfWorkspaceTheme = normalized.id
+}
+
+function normalizeWorkspaceTheme(value: Partial<WorkspaceTheme>): WorkspaceTheme {
+  const color = normalizeHexColor(value.color)
+  const preset = WORKSPACE_THEME_PRESETS.find((item) => item.id === value.id && item.color.toLowerCase() === color)
+  return { id: preset?.id || 'custom', color }
 }
 
 function normalizeHexColor(value: unknown) {
   const candidate = String(value || '').trim()
   if (/^#[0-9a-fA-F]{6}$/.test(candidate)) return candidate.toLowerCase()
-  return WORKSPACE_THEME_PRESETS[0].color
+  return DEFAULT_WORKSPACE_THEME.color
 }
 
 function hexToRgb(color: string): [number, number, number] {

@@ -11,7 +11,6 @@ import {
   addEdge,
   applyEdgeChanges,
   applyNodeChanges,
-  getViewportForBounds,
   type Connection,
   type Edge,
   type EdgeChange,
@@ -20,16 +19,17 @@ import {
   type ReactFlowInstance,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { AlignHorizontalSpaceAround, Box, Braces, BrainCircuit, GitBranch, GripVertical, Lock, Maximize, Maximize2, MessageSquare, MousePointer2, Settings, Unlock, Wrench, ZoomIn, ZoomOut } from 'lucide-react'
-import type { FlowEdge, FlowEvent, FlowGraph, FlowNode } from '../../api.ts'
+import { AlignHorizontalSpaceAround, Box, Braces, BrainCircuit, CheckCircle2, GitBranch, GripVertical, Lock, Maximize, Maximize2, MessageSquare, MessageSquarePlus, MousePointer2, Plus, Settings, Trash2, Unlock, Wrench, X, ZoomIn, ZoomOut } from 'lucide-react'
+import type { FlowAnnotation, FlowEdge, FlowEvent, FlowGraph, FlowNode } from '../../api.ts'
+import { DEFAULT_WORKSPACE_THEME, loadWorkspaceTheme, saveWorkspaceTheme, WORKSPACE_THEME_PRESETS, type WorkspaceTheme } from '../../appearance.ts'
 import { showToast } from '../../toast.tsx'
-import { applyWorkspaceTheme, loadWorkspaceTheme, saveWorkspaceTheme, WORKSPACE_THEME_PRESETS, type WorkspaceTheme } from '../../appearance.ts'
 import type { CreateNodeHandler, NodeCategoryId } from './types.ts'
-import { FLOW_NODE_DIMENSIONS, NODE_CATEGORIES, buildAutoAlignLayout, buildBalancedLayout, getNodeCategory, getPreset, getPresets, isStartNode, type FlowNodeViewMode } from './nodeModel.ts'
+import { FLOW_NODE_DIMENSIONS, NODE_CATEGORIES, buildAutoAlignLayout, buildBalancedLayout, getNodeCategory, getNodePalette, getPreset, getPresets, isStartNode, type FlowNodeViewMode } from './nodeModel.ts'
 import { getAvailableNodeDetailSections, type NodeDetailSection } from './nodeDetails.ts'
 import type { NodeRunState } from './runState.ts'
 import { FlowNodeCard, type FlowNodeProbeState } from './FlowNodeCard.tsx'
 import { createPortCounts, getPortHandleId, type EdgePortAssignment, type PortCounts, type PortSide } from './FlowNodePorts.tsx'
+import { CanvasAnnotationCard } from './CanvasAnnotationCard.tsx'
 
 type FlowGraphNode = Node<Record<string, unknown>>
 type FlowGraphEdge = Edge<Record<string, unknown>>
@@ -62,6 +62,25 @@ type DetailConnector = {
   source: { x: number; y: number }
   target: { x: number; y: number }
 }
+type ConnectorPlacement = NodeEditorPosition & {
+  width: number
+  height: number
+  side: NodeEditorSide
+  connectorFraction: number
+}
+type AnnotationPointerState = {
+  kind: 'move' | 'resize'
+  annotationId: string
+  pointerId: number
+  clientX: number
+  clientY: number
+  x: number
+  y: number
+  width: number
+  height: number
+  zoom: number
+  captureElement: HTMLElement
+}
 
 const PORT_LIMIT = 5
 const EMPTY_FLOW_EVENTS: FlowEvent[] = []
@@ -91,7 +110,7 @@ function resolveEditorSide(node: FlowGraphNode, position: NodeEditorPosition, wi
   return dy >= 0 ? 'bottom' : 'top'
 }
 
-function buildDetailConnector(node: FlowGraphNode, editor: NodeEditorPlacement): DetailConnector {
+function buildDetailConnector(node: FlowGraphNode, editor: ConnectorPlacement): DetailConnector {
   const { width: nodeWidth, height: nodeHeight } = getGraphNodeSize(node)
   const horizontal = editor.side === 'left' || editor.side === 'right'
 
@@ -208,20 +227,10 @@ function buildRunEdgeStates(graphEdges: FlowEdge[], runEvents: FlowEvent[] = EMP
     return edgeStates
   }
 
-  const latestNodeFailed = latestEntered && runEvents.slice(latestEntered.index + 1).some((event) => {
-    return event.state === latestEntered.state && event.type === 'lab_node_failed'
-  })
-  if (latestEntered && !latestNodeFailed) {
-    const outgoing = graphEdges.filter((edge) => edge.from === latestEntered.state)
-    const mainOutgoing = outgoing.filter((edge) => edge.scope !== 'branch')
-    ;(mainOutgoing.length ? mainOutgoing : outgoing).forEach((edge) => {
-      edgeStates.set(`${edge.from}->${edge.to}`, 'active')
-    })
-  }
   return edgeStates
 }
 
-export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, onOpenNodeEditor, onNodeEditorPositionChange, onLayoutSave, onEdgesSave, onCreateNode, onDeleteNode, modelPanel, toolPanel, nodeEditors = [], activeNodeEditorId, onCloseNodeEditor, compactStatic = false, readOnlyGraph = false, nodeRunStates, runEvents, testProbeState }: {
+export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, onOpenNodeEditor, onNodeEditorPositionChange, onLayoutSave, onEdgesSave, onAnnotationsSave, onCreateNode, onDeleteNode, modelPanel, toolPanel, nodeEditors = [], activeNodeEditorId, onCloseNodeEditor, compactStatic = false, readOnlyGraph = false, runStatus, nodeRunStates, runEvents, runCompletionVisible = false, onDismissRunCompletion, testProbeState }: {
   graph: FlowGraph
   selectedNode: FlowNode | null
   focusNodeId: string | null
@@ -230,6 +239,7 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
   onNodeEditorPositionChange?: (editorId: string, position: NodeEditorPosition) => void
   onLayoutSave?: (layout: Record<string, { x: number; y: number }>) => Promise<void>
   onEdgesSave?: (edges: FlowEdge[]) => Promise<void>
+  onAnnotationsSave?: (annotations: FlowAnnotation[]) => Promise<void>
   onCreateNode?: CreateNodeHandler
   onDeleteNode?: (node: FlowNode) => Promise<void>
   modelPanel?: ReactNode
@@ -239,8 +249,11 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
   onCloseNodeEditor?: () => void
   compactStatic?: boolean
   readOnlyGraph?: boolean
+  runStatus?: string
   nodeRunStates?: Map<string, NodeRunState>
   runEvents?: FlowEvent[]
+  runCompletionVisible?: boolean
+  onDismissRunCompletion?: () => void
   testProbeState?: FlowNodeProbeState
 }) {
   const [fullscreen, setFullscreen] = useState(false)
@@ -250,15 +263,17 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
   const [selectedLibraryPresetId, setSelectedLibraryPresetId] = useState('')
   const [libraryPresetConfig, setLibraryPresetConfig] = useState<Record<string, string>>({})
   const [canvasLocked, setCanvasLocked] = useState(false)
-  const gridSize = 10
-  const [gridSnap, setGridSnap] = useState(true)
+  const canvasGridGap = 40
   const [workspaceTheme, setWorkspaceTheme] = useState<WorkspaceTheme>(() => loadWorkspaceTheme())
+  const [annotations, setAnnotations] = useState<FlowAnnotation[]>(() => graph.annotations || [])
+  const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(null)
   const [contextMenu, setContextMenu] = useState<{
     x: number
     y: number
     node: FlowNode | null
     edge?: FlowGraphEdge | null
     side?: 'left' | 'right'
+    verticalSide?: 'up' | 'down'
   } | null>(null)
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance | null>(null)
   const [nodeEditorPositions, setNodeEditorPositions] = useState<Record<string, NodeEditorPosition>>({})
@@ -266,14 +281,17 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
   const wrapperRef = useRef<HTMLDivElement | null>(null)
   const deletingNodeRef = useRef(false)
   const lastFittedGraphIdRef = useRef('')
-  const openEditorIdsRef = useRef<Set<string>>(new Set())
   const nodeEditorDragRef = useRef<NodeEditorDragState | null>(null)
+  const annotationPointerRef = useRef<AnnotationPointerState | null>(null)
+  const annotationsRef = useRef<FlowAnnotation[]>(graph.annotations || [])
   const rightGestureRef = useRef<{ x: number; y: number; moved: boolean } | null>(null)
   const suppressContextMenuUntilRef = useRef(0)
   const updateWorkspaceTheme = useCallback((nextTheme: WorkspaceTheme) => {
-    const saved = saveWorkspaceTheme(nextTheme)
-    setWorkspaceTheme(saved)
+    setWorkspaceTheme(saveWorkspaceTheme(nextTheme))
   }, [])
+  const runInProgress = ['created', 'running', 'retrying', 'recovering', 'rolling_back'].includes(runStatus || '')
+  const runPaused = ['paused', 'paused_waiting_user'].includes(runStatus || '')
+  const runActive = runInProgress || runPaused
   const nodeOrder = useMemo(() => new Map(graph.nodes.map((node, index) => [node.id, index + 1])), [graph.nodes])
   const nodeById = useMemo(() => new Map(graph.nodes.map((node) => [node.id, node])), [graph.nodes])
   const probeSelectedNodeIds = useMemo(() => new Set(testProbeState?.selectedNodeIds || []), [testProbeState?.selectedNodeIds])
@@ -306,10 +324,6 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
     })
     return [...variables.values()]
   }, [graph.nodes])
-  const canvasNotes = useMemo(() => graph.nodes.flatMap((node) => {
-    const note = String(node.params?.description || node.data?.params?.description || '').trim()
-    return note ? [{ node, note }] : []
-  }), [graph.nodes])
   const nodeViewMode: FlowNodeViewMode = compactStatic ? 'compact' : 'detailed'
   const expandedMainNodeIds = useMemo(() => new Set(nodeEditors.map((editor) => editor.nodeId)), [nodeEditors])
   const layoutViewMode = nodeViewMode
@@ -403,7 +417,9 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
       const isRunActive = runEdgeStatus === 'active'
       const isRunVisited = runEdgeStatus === 'visited'
       const sourceNode = nodeById.get(edge.from)
-      const sourceAccent = sourceNode ? getNodeCategory(sourceNode).color : '#ba6440'
+      const sourceAccent = isStartNode(sourceNode, edge.from)
+        ? '#7d8791'
+        : sourceNode ? getNodeCategory(sourceNode).color : 'var(--accent)'
       const normalStroke = branch ? '#5e8bd8' : sourceAccent
       const lane = branch ? (branchLaneBySource.get(edge.from) || 0) : 0
       if (branch) branchLaneBySource.set(edge.from, lane + 1)
@@ -417,21 +433,24 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
         target: edge.to,
         sourceHandle: getPortHandleId('source', ports.sourceSide, ports.sourceIndex),
         targetHandle: getPortHandleId('target', ports.targetSide, ports.targetIndex),
+        className: runActive
+          ? isRunActive ? 'cf-run-edge-active' : isRunVisited ? 'cf-run-edge-visited' : 'cf-run-edge-pending'
+          : '',
         animated: false,
         type: 'default',
         label: branch ? edge.label || '分支' : undefined,
         data: { scope: edge.scope || 'root', label: edge.label || '', lane, loopY, runEdgeStatus: runEdgeStatus || '' },
         zIndex: isRunActive ? 3 : isRunVisited ? 2 : 0,
         style: {
-          stroke: isRunActive ? '#d05b2f' : isRunVisited ? '#2f9e63' : normalStroke,
+          stroke: isRunActive ? '#d05b2f' : normalStroke,
           strokeWidth: isRunActive ? 5 : isRunVisited ? 3.4 : branch ? 2.4 : 2.8,
           strokeDasharray: isRunActive ? 'none' : branch ? '6 5' : undefined,
           filter: isRunActive ? 'drop-shadow(0 0 4px rgba(208, 91, 47, .72))' : undefined,
         },
-        markerEnd: { type: MarkerType.ArrowClosed, color: isRunActive ? '#d05b2f' : isRunVisited ? '#2f9e63' : normalStroke },
+        markerEnd: { type: MarkerType.ArrowClosed, color: isRunActive ? '#d05b2f' : normalStroke },
       }
     })
-  }, [edgePortPlan, graphEdges, layout, nodeById, runEdgeStates])
+  }, [edgePortPlan, graphEdges, layout, nodeById, runActive, runEdgeStates])
 
   const [nodes, setNodes] = useState<FlowGraphNode[]>(initialNodes)
   const [edges, setEdges] = useState<FlowGraphEdge[]>(initialEdges)
@@ -460,14 +479,7 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
       const graphNode = nodes.find((node) => node.id === editor.nodeId)
       if (!graphNode) return result
       const savedPosition = nodeEditorPositions[editor.editorId] || editor.position
-      const nodeSize = getGraphNodeSize(graphNode)
-      const savedOverlapsExpandedMain = savedPosition && expandedMainNodeIds.has(editor.nodeId) && !(
-        savedPosition.x + editor.width + 20 <= graphNode.position.x
-        || graphNode.position.x + nodeSize.width + 20 <= savedPosition.x
-        || savedPosition.y + editor.height + 20 <= graphNode.position.y
-        || graphNode.position.y + nodeSize.height + 20 <= savedPosition.y
-      )
-      if (savedPosition && !savedOverlapsExpandedMain) {
+      if (savedPosition) {
         const placement = { ...editor, ...savedPosition, side: resolveEditorSide(graphNode, savedPosition, editor.width, editor.height) }
         occupied.push({ ...savedPosition, width: editor.width, height: editor.height })
         result.push(placement)
@@ -520,8 +532,7 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
       result.push({ ...editor, ...chosen })
       return result
     }, [])
-  }, [expandedMainNodeIds, nodeEditorPositions, nodeEditors, nodes])
-  const nodeEditorPlacementSignature = nodeEditorPlacements.map((editor) => `${editor.editorId}:${editor.x}:${editor.y}:${editor.side}:${editor.width}:${editor.height}`).join('|')
+  }, [nodeEditorPositions, nodeEditors, nodes])
   const hasNodeEditors = nodeEditorPlacements.length > 0
 
   useEffect(() => {
@@ -534,7 +545,13 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
 
   useEffect(() => setNodes(initialNodes), [initialNodes])
   useEffect(() => setEdges(initialEdges), [initialEdges])
-  useEffect(() => { applyWorkspaceTheme(workspaceTheme) }, [workspaceTheme])
+  useEffect(() => {
+    const next = graph.annotations || []
+    annotationsRef.current = next
+    setAnnotations(next)
+    setActiveAnnotationId(null)
+    annotationPointerRef.current = null
+  }, [graph.id])
   useEffect(() => {
     setNodeEditorPositions({})
     setDraggingEditorId(null)
@@ -563,12 +580,12 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
     const nextLayout: Record<string, { x: number; y: number }> = {}
     items.forEach((node) => {
       nextLayout[node.id] = {
-        x: Math.round(node.position.x / gridSize) * gridSize,
-        y: Math.round(node.position.y / gridSize) * gridSize,
+        x: Math.round(node.position.x),
+        y: Math.round(node.position.y),
       }
     })
     return nextLayout
-  }, [gridSize])
+  }, [])
 
   const buildFlowEdges = useCallback((items: FlowGraphEdge[]): FlowEdge[] => {
     const seen = new Set<string>()
@@ -673,6 +690,220 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
     event.stopPropagation()
   }, [onNodeEditorPositionChange])
 
+  const replaceAnnotations = useCallback((next: FlowAnnotation[]) => {
+    annotationsRef.current = next
+    setAnnotations(next)
+  }, [])
+
+  const patchAnnotation = useCallback((annotationId: string, patch: Partial<FlowAnnotation>) => {
+    replaceAnnotations(annotationsRef.current.map((annotation) => (
+      annotation.id === annotationId ? { ...annotation, ...patch } : annotation
+    )))
+  }, [replaceAnnotations])
+
+  const commitAnnotations = useCallback(async (next = annotationsRef.current) => {
+    if (!onAnnotationsSave) return
+    try {
+      await onAnnotationsSave(next)
+    } catch (error: any) {
+      showToast({ title: '注释保存失败', description: error?.message || String(error), type: 'error' })
+    }
+  }, [onAnnotationsSave])
+
+  const createAnnotation = useCallback((anchorNode: FlowNode | null = null) => {
+    if (!onAnnotationsSave || !flowInstance) return
+    const width = 320
+    const height = 180
+    const graphNode = anchorNode ? flowInstance.getNode(anchorNode.id) as FlowGraphNode | undefined : undefined
+    const occupied = [
+      ...(flowInstance.getNodes() as FlowGraphNode[]).map((node) => ({ ...node.position, ...getGraphNodeSize(node) })),
+      ...annotationsRef.current.map((annotation) => ({ x: annotation.x, y: annotation.y, width: annotation.width, height: annotation.collapsed ? 54 : annotation.height })),
+    ]
+    const isAvailable = (candidate: { x: number; y: number }) => occupied.every((item) => (
+      candidate.x + width + 28 <= item.x
+      || item.x + item.width + 28 <= candidate.x
+      || candidate.y + height + 28 <= item.y
+      || item.y + item.height + 28 <= candidate.y
+    ))
+    const wrapper = wrapperRef.current
+    const wrapperBounds = wrapper?.getBoundingClientRect()
+    const visibleTopLeft = flowInstance.screenToFlowPosition({ x: wrapperBounds?.left || 0, y: wrapperBounds?.top || 0 })
+    const visibleBottomRight = flowInstance.screenToFlowPosition({
+      x: wrapperBounds?.right || window.innerWidth,
+      y: wrapperBounds?.bottom || window.innerHeight,
+    })
+    const isVisible = (candidate: { x: number; y: number }) => (
+      candidate.x >= visibleTopLeft.x + 18
+      && candidate.y >= visibleTopLeft.y + 18
+      && candidate.x + width <= visibleBottomRight.x - 18
+      && candidate.y + height <= visibleBottomRight.y - 18
+    )
+    const isUiClear = (candidate: { x: number; y: number }) => {
+      if (!wrapper) return true
+      const topLeft = flowInstance.flowToScreenPosition(candidate)
+      const bottomRight = flowInstance.flowToScreenPosition({ x: candidate.x + width, y: candidate.y + height })
+      const candidateRect = {
+        left: Math.min(topLeft.x, bottomRight.x) - 14,
+        right: Math.max(topLeft.x, bottomRight.x) + 14,
+        top: Math.min(topLeft.y, bottomRight.y) - 14,
+        bottom: Math.max(topLeft.y, bottomRight.y) + 14,
+      }
+      const overlays = wrapper.querySelectorAll<HTMLElement>(
+        '.react-flow__minimap, .cf-canvas-status, .cf-canvas-tool-panel, .cf-canvas-tool-rail',
+      )
+      return [...overlays].every((overlay) => {
+        const rect = overlay.getBoundingClientRect()
+        return candidateRect.right <= rect.left
+          || rect.right <= candidateRect.left
+          || candidateRect.bottom <= rect.top
+          || rect.bottom <= candidateRect.top
+      })
+    }
+    let candidates: Array<{ x: number; y: number }> = []
+    if (graphNode) {
+      const nodeSize = getGraphNodeSize(graphNode)
+      const centerX = graphNode.position.x + nodeSize.width / 2
+      const centerY = graphNode.position.y + nodeSize.height / 2
+      const belowY = graphNode.position.y + nodeSize.height + 72
+      const aboveY = graphNode.position.y - height - 72
+      candidates = [
+        { x: graphNode.position.x + nodeSize.width + 72, y: centerY - height / 2 },
+        { x: centerX - width / 2, y: belowY },
+        { x: centerX - width - 80, y: belowY },
+        { x: centerX + 80, y: belowY },
+        { x: graphNode.position.x - width - 72, y: centerY - height / 2 },
+        { x: centerX - width / 2, y: aboveY },
+        { x: centerX - width - 80, y: aboveY },
+        { x: centerX + 80, y: aboveY },
+      ]
+    } else {
+      const center = flowInstance.screenToFlowPosition({
+        x: (wrapper?.getBoundingClientRect().left || 0) + (wrapper?.clientWidth || window.innerWidth) / 2,
+        y: (wrapper?.getBoundingClientRect().top || 0) + (wrapper?.clientHeight || window.innerHeight) / 2,
+      })
+      const base = { x: center.x - width / 2, y: center.y - height / 2 }
+      candidates = [
+        base,
+        { x: base.x, y: base.y - height - 56 },
+        { x: base.x, y: base.y + height + 56 },
+        { x: base.x - width - 56, y: base.y },
+        { x: base.x + width + 56, y: base.y },
+        { x: base.x - width - 56, y: base.y - height - 56 },
+        { x: base.x + width + 56, y: base.y - height - 56 },
+      ]
+    }
+    const position = candidates.find((candidate) => isAvailable(candidate) && isVisible(candidate) && isUiClear(candidate))
+      || candidates.find((candidate) => isAvailable(candidate) && isUiClear(candidate))
+      || candidates.find((candidate) => isVisible(candidate) && isUiClear(candidate))
+      || candidates.find((candidate) => isAvailable(candidate) && isVisible(candidate))
+      || candidates.find(isAvailable)
+      || candidates.find(isVisible)
+      || candidates[0]
+      || { x: 0, y: 0 }
+    const annotation: FlowAnnotation = {
+      id: `annotation_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`,
+      title: anchorNode ? `${anchorNode.display_name || anchorNode.title} 注释` : '新注释',
+      body: '',
+      x: Math.round(position.x),
+      y: Math.round(position.y),
+      width,
+      height,
+      tone: 'neutral',
+      ...(anchorNode ? { anchor: { type: 'node' as const, id: anchorNode.id } } : {}),
+    }
+    const next = [...annotationsRef.current, annotation]
+    replaceAnnotations(next)
+    setActiveAnnotationId(annotation.id)
+    setCanvasPanel('notes')
+    setContextMenu(null)
+    void commitAnnotations(next)
+  }, [commitAnnotations, flowInstance, onAnnotationsSave, replaceAnnotations])
+
+  const deleteAnnotation = useCallback((annotationId: string) => {
+    const annotation = annotationsRef.current.find((item) => item.id === annotationId)
+    if (!annotation || !window.confirm(`删除注释“${annotation.title || '未命名注释'}”？`)) return
+    const next = annotationsRef.current.filter((item) => item.id !== annotationId)
+    replaceAnnotations(next)
+    setActiveAnnotationId((current) => current === annotationId ? null : current)
+    void commitAnnotations(next)
+  }, [commitAnnotations, replaceAnnotations])
+
+  const focusAnnotation = useCallback((annotation: FlowAnnotation) => {
+    setActiveAnnotationId(annotation.id)
+    if (!flowInstance) return
+    const viewport = flowInstance.getViewport()
+    const height = annotation.collapsed ? 54 : annotation.height
+    flowInstance.setCenter(annotation.x + annotation.width / 2, annotation.y + height / 2, { zoom: viewport.zoom, duration: 180 })
+  }, [flowInstance])
+
+  const beginAnnotationMove = useCallback((event: React.PointerEvent<HTMLDivElement>, annotation: FlowAnnotation) => {
+    const target = event.target as HTMLElement
+    if (!onAnnotationsSave || !target.closest('.cf-canvas-annotation-head')) return
+    if (target.closest('button, input, textarea, select, a, [contenteditable="true"]')) return
+    const zoom = flowInstance?.getViewport().zoom || 1
+    annotationPointerRef.current = {
+      kind: 'move',
+      annotationId: annotation.id,
+      pointerId: event.pointerId,
+      clientX: event.clientX,
+      clientY: event.clientY,
+      x: annotation.x,
+      y: annotation.y,
+      width: annotation.width,
+      height: annotation.height,
+      zoom,
+      captureElement: event.currentTarget,
+    }
+    setActiveAnnotationId(annotation.id)
+    event.currentTarget.setPointerCapture(event.pointerId)
+    event.preventDefault()
+    event.stopPropagation()
+  }, [flowInstance, onAnnotationsSave])
+
+  const beginAnnotationResize = useCallback((event: React.PointerEvent<HTMLButtonElement>, annotation: FlowAnnotation) => {
+    if (!onAnnotationsSave) return
+    const zoom = flowInstance?.getViewport().zoom || 1
+    annotationPointerRef.current = {
+      kind: 'resize',
+      annotationId: annotation.id,
+      pointerId: event.pointerId,
+      clientX: event.clientX,
+      clientY: event.clientY,
+      x: annotation.x,
+      y: annotation.y,
+      width: annotation.width,
+      height: annotation.height,
+      zoom,
+      captureElement: event.currentTarget,
+    }
+    setActiveAnnotationId(annotation.id)
+    event.currentTarget.setPointerCapture(event.pointerId)
+    event.preventDefault()
+    event.stopPropagation()
+  }, [flowInstance, onAnnotationsSave])
+
+  const moveAnnotationPointer = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    const pointer = annotationPointerRef.current
+    if (!pointer || pointer.pointerId !== event.pointerId) return
+    const dx = (event.clientX - pointer.clientX) / pointer.zoom
+    const dy = (event.clientY - pointer.clientY) / pointer.zoom
+    patchAnnotation(pointer.annotationId, pointer.kind === 'move'
+      ? { x: Math.round(pointer.x + dx), y: Math.round(pointer.y + dy) }
+      : { width: Math.max(240, Math.min(640, Math.round(pointer.width + dx))), height: Math.max(120, Math.min(520, Math.round(pointer.height + dy))) })
+    event.preventDefault()
+    event.stopPropagation()
+  }, [patchAnnotation])
+
+  const endAnnotationPointer = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    const pointer = annotationPointerRef.current
+    if (!pointer || pointer.pointerId !== event.pointerId) return
+    annotationPointerRef.current = null
+    if (pointer.captureElement.hasPointerCapture(event.pointerId)) pointer.captureElement.releasePointerCapture(event.pointerId)
+    void commitAnnotations()
+    event.preventDefault()
+    event.stopPropagation()
+  }, [commitAnnotations])
+
   const handleAutoAlign = useCallback(async () => {
     if (!onLayoutSave) return
     const currentNodes = (flowInstance?.getNodes() as FlowGraphNode[] | undefined) || nodes
@@ -725,7 +956,7 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
     event.preventDefault()
     try {
       const template = JSON.parse(raw) as { categoryId: NodeCategoryId; presetId?: string; presetConfig?: Record<string, string> }
-      const position = flowInstance.screenToFlowPosition({ x: event.clientX, y: event.clientY }, { snapToGrid: gridSnap })
+      const position = flowInstance.screenToFlowPosition({ x: event.clientX, y: event.clientY })
       await onCreateNode(selectedNode, template.categoryId, 'insert', {
         presetId: template.presetId,
         presetConfig: template.presetConfig || {},
@@ -735,57 +966,13 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
     } catch (error: any) {
       showToast({ title: '节点拖放失败', description: error?.message || '节点模板数据无效', type: 'error' })
     }
-  }, [flowInstance, gridSnap, onCreateNode, selectedNode])
+  }, [flowInstance, onCreateNode, selectedNode])
 
   useEffect(() => {
     if (!hasNodeEditors || compactStatic) return
     setCanvasPanel(null)
     setSelectedLibraryCategoryId(null)
   }, [compactStatic, hasNodeEditors])
-
-  useEffect(() => {
-    const currentIds = new Set(nodeEditorPlacements.map((editor) => editor.editorId))
-    const addedIds = [...currentIds].filter((editorId) => !openEditorIdsRef.current.has(editorId))
-    if (!flowInstance) return
-    openEditorIdsRef.current = currentIds
-    if (!addedIds.length || !hasNodeEditors || compactStatic) return
-    const focusOpenEditors = () => {
-      const bounds = nodeEditorPlacements.flatMap((editor) => {
-        const graphNode = flowInstance.getNode(editor.nodeId)
-        const nodeBounds = graphNode ? [{
-          x: graphNode.position.x,
-          y: graphNode.position.y,
-          width: getGraphNodeSize(graphNode as FlowGraphNode).width,
-          height: getGraphNodeSize(graphNode as FlowGraphNode).height,
-        }] : []
-        return [
-          { x: editor.x, y: editor.y, width: editor.width, height: editor.height },
-          ...nodeBounds,
-        ]
-      })
-      if (!bounds.length) return
-      const minX = Math.min(...bounds.map((item) => item.x))
-      const minY = Math.min(...bounds.map((item) => item.y))
-      const maxX = Math.max(...bounds.map((item) => item.x + item.width))
-      const maxY = Math.max(...bounds.map((item) => item.y + item.height))
-      const wrapper = wrapperRef.current
-      if (!wrapper) return
-      const currentZoom = Math.max(.18, Math.min(flowInstance.getViewport().zoom, 1.6))
-      const viewport = getViewportForBounds(
-        { x: minX, y: minY, width: maxX - minX, height: maxY - minY },
-        wrapper.clientWidth,
-        wrapper.clientHeight,
-        currentZoom,
-        currentZoom,
-        nodeEditorPlacements.length > 1 ? .04 : .08,
-      )
-      flowInstance.setViewport(viewport, { duration: 280 })
-    }
-    const frame = window.requestAnimationFrame(focusOpenEditors)
-    return () => {
-      window.cancelAnimationFrame(frame)
-    }
-  }, [compactStatic, flowInstance, hasNodeEditors, nodeEditorPlacementSignature, nodeViewMode])
 
   const deleteEdges = useCallback(async (deletedEdges: FlowGraphEdge[]) => {
     if (compactStatic || readOnlyGraph || !onEdgesSave || deletedEdges.length === 0) return
@@ -841,6 +1028,20 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
     rightGestureRef.current = null
   }, [])
 
+  const getContextMenuPlacement = useCallback((clientX: number, clientY: number) => {
+    const bounds = wrapperRef.current?.getBoundingClientRect()
+    const width = bounds?.width || window.innerWidth
+    const height = bounds?.height || window.innerHeight
+    const localX = clientX - (bounds?.left || 0)
+    const localY = clientY - (bounds?.top || 0)
+    return {
+      x: Math.min(Math.max(localX + 12, 12), Math.max(12, width - 276)),
+      y: Math.min(Math.max(localY + 12, 12), Math.max(12, height - 340)),
+      side: localX > width - 540 ? 'left' as const : 'right' as const,
+      verticalSide: localY > height / 2 ? 'up' as const : 'down' as const,
+    }
+  }, [])
+
   useEffect(() => {
     if (compactStatic || readOnlyGraph || !onDeleteNode) return
     const handleKeyDown = async (event: KeyboardEvent) => {
@@ -892,11 +1093,28 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
   return (
     <div
       ref={wrapperRef}
-      className={`cf-flow-graph-shell canvas-tool-${activeCanvasTool} ${fullscreen ? 'fullscreen' : ''}`}
+      className={`cf-flow-graph-shell canvas-tool-${activeCanvasTool} ${fullscreen ? 'fullscreen' : ''} ${runActive ? 'run-active' : ''} ${runInProgress ? 'run-in-progress' : ''} ${runPaused ? 'run-paused' : ''}`}
       onPointerDownCapture={trackRightPointerDown}
       onPointerMoveCapture={trackRightPointerMove}
       onPointerUpCapture={trackRightPointerUp}
     >
+      {runActive && (
+        <svg className="cf-canvas-run-frame" aria-hidden="true">
+          <rect />
+        </svg>
+      )}
+      {runCompletionVisible && (
+        <section className="cf-canvas-run-completion" role="status" aria-live="polite">
+          <CheckCircle2 aria-hidden="true" />
+          <div>
+            <strong>运行完成</strong>
+            <span>本次流程已完成，正在返回设计画布。</span>
+          </div>
+          <button type="button" onClick={onDismissRunCompletion} title="关闭完成提示" aria-label="关闭完成提示">
+            <X aria-hidden="true" />
+          </button>
+        </section>
+      )}
       <ReactFlow<FlowGraphNode, FlowGraphEdge>
         nodes={nodes}
         edges={edges}
@@ -916,10 +1134,9 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
         zoomOnDoubleClick={false}
         zoomActivationKeyCode={null}
         preventScrolling={!compactStatic}
-        snapToGrid={!compactStatic && gridSnap}
-        snapGrid={[gridSize, gridSize]}
         onDragOver={handleNodeTemplateDragOver}
         onDrop={handleNodeTemplateDrop}
+        onMoveStart={() => setContextMenu(null)}
         onNodesChange={(changes: NodeChange[]) => {
           setNodes((current) => applyNodeChanges(changes, current) as FlowGraphNode[])
         }}
@@ -943,14 +1160,12 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
           if (Date.now() < suppressContextMenuUntilRef.current) return
           const node = graphNode.data as unknown as FlowNode
           onSelectNode(node)
-          focusCanvasNode(node.id)
-          const pointer = flowInstance?.screenToFlowPosition({ x: event.clientX, y: event.clientY })
           setContextMenu({
-            x: (pointer?.x ?? graphNode.position.x) + 12,
-            y: (pointer?.y ?? graphNode.position.y) + 12,
+            ...getContextMenuPlacement(event.clientX, event.clientY),
             node,
           })
         }}
+        onNodeDragStart={() => setContextMenu(null)}
         onNodeDragStop={async () => {
           if (compactStatic || readOnlyGraph || !onLayoutSave) return
           await onLayoutSave(buildLayoutFromNodes((flowInstance?.getNodes() as FlowGraphNode[] | undefined) || nodes))
@@ -971,6 +1186,10 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
             return
           }
           if (edges.some((edge) => edge.source === connection.source && edge.target === connection.target)) return
+          const sourceNode = nodeById.get(connection.source)
+          const sourceAccent = isStartNode(sourceNode, connection.source)
+            ? '#7d8791'
+            : sourceNode ? getNodeCategory(sourceNode).color : 'var(--accent)'
           const nextEdges = addEdge({
             ...connection,
             id: `edge-${Date.now()}-${connection.source}-${connection.target}`,
@@ -980,8 +1199,8 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
             type: 'default',
             data: { scope: 'root' },
             zIndex: 0,
-            style: { stroke: '#ba6440', strokeWidth: 2.8 },
-            markerEnd: { type: MarkerType.ArrowClosed, color: '#ba6440' },
+            style: { stroke: sourceAccent, strokeWidth: 2.8 },
+            markerEnd: { type: MarkerType.ArrowClosed, color: sourceAccent },
           }, edges)
           setEdges(nextEdges)
           await saveEdgesQuietly(nextEdges)
@@ -992,12 +1211,11 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
           event.preventDefault()
           event.stopPropagation()
           if (Date.now() < suppressContextMenuUntilRef.current) return
-          const pointer = flowInstance?.screenToFlowPosition({ x: event.clientX, y: event.clientY })
-          setContextMenu({ x: pointer?.x ?? event.clientX, y: pointer?.y ?? event.clientY, node: null, edge })
+          setContextMenu({ ...getContextMenuPlacement(event.clientX, event.clientY), node: null, edge })
         }}
         deleteKeyCode={['Delete', 'Backspace']}
         connectionLineType={ConnectionLineType.Bezier}
-        connectionLineStyle={{ stroke: '#ba6440', strokeWidth: 2.8 }}
+        connectionLineStyle={{ stroke: 'var(--accent)', strokeWidth: 2.8 }}
         onPaneClick={() => setContextMenu(null)}
         onPaneContextMenu={(event) => {
           if (compactStatic || readOnlyGraph) return
@@ -1007,18 +1225,92 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
         }}
         proOptions={{ hideAttribution: true }}
       >
-        <Background id="canvas-grid" variant={BackgroundVariant.Lines} color="#e1e5e9" gap={gridSize * 4} lineWidth={1} />
+        <Background id="canvas-grid" variant={BackgroundVariant.Lines} color="#e1e5e9" gap={canvasGridGap} lineWidth={1} />
+        {!compactStatic && annotations.map((annotation, index) => {
+          const graphNode = annotation.anchor?.type === 'node'
+            ? nodes.find((node) => node.id === annotation.anchor?.id)
+            : undefined
+          const renderedHeight = annotation.collapsed ? 54 : annotation.height
+          const side = graphNode ? resolveEditorSide(graphNode, annotation, annotation.width, renderedHeight) : 'right'
+          const connector = graphNode ? buildDetailConnector(graphNode, {
+            x: annotation.x,
+            y: annotation.y,
+            width: annotation.width,
+            height: renderedHeight,
+            side,
+            connectorFraction: .5,
+          }) : null
+          const markerId = `cf-annotation-arrow-${annotation.id.replace(/[^a-zA-Z0-9_-]/g, '-')}`
+          const active = annotation.id === activeAnnotationId
+          const anchorNode = annotation.anchor ? nodeById.get(annotation.anchor.id) : undefined
+          return (
+            <ViewportPortal key={annotation.id}>
+              <>
+                {connector && (
+                  <svg className={`cf-node-detail-connectors cf-canvas-annotation-connectors tone-${annotation.tone}`} style={{ zIndex: active ? 984 : 964 + index }} aria-hidden="true">
+                    <defs>
+                      <marker id={markerId} viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                        <path d="M 0 0 L 10 5 L 0 10 z" />
+                      </marker>
+                    </defs>
+                    <path className="cf-node-detail-connector-path" d={connector.path} markerEnd={`url(#${markerId})`} />
+                    <circle className="cf-node-detail-connector-port source" cx={connector.source.x} cy={connector.source.y} r="4.5" />
+                    <circle className="cf-node-detail-connector-port target" cx={connector.target.x} cy={connector.target.y} r="4" />
+                  </svg>
+                )}
+                <div style={{ position: 'absolute', left: annotation.x, top: annotation.y, width: annotation.width, height: renderedHeight, zIndex: active ? 990 : 970 + index }}>
+                  <CanvasAnnotationCard
+                    annotation={annotation}
+                    active={active}
+                    editable={Boolean(onAnnotationsSave)}
+                    anchorLabel={anchorNode?.display_name || anchorNode?.title}
+                    onSelect={() => setActiveAnnotationId(annotation.id)}
+                    onPatch={(patch) => patchAnnotation(annotation.id, patch)}
+                    onCommit={() => { void commitAnnotations() }}
+                    onDelete={() => deleteAnnotation(annotation.id)}
+                    onToggleCollapsed={() => {
+                      patchAnnotation(annotation.id, { collapsed: !annotation.collapsed })
+                      window.setTimeout(() => { void commitAnnotations() }, 0)
+                    }}
+                    onPointerDown={(event) => beginAnnotationMove(event, annotation)}
+                    onPointerMove={moveAnnotationPointer}
+                    onPointerUp={endAnnotationPointer}
+                    onResizePointerDown={(event) => beginAnnotationResize(event, annotation)}
+                  />
+                </div>
+              </>
+            </ViewportPortal>
+          )
+        })}
         {!compactStatic && nodeEditorPlacements.map((editor, index) => {
           const active = editor.nodeId === activeNodeEditorId
           const dragging = draggingEditorId === editor.editorId
           const graphNode = nodes.find((node) => node.id === editor.nodeId)
           const connector = graphNode ? buildDetailConnector(graphNode, editor) : null
+          const editorNode = graphNode?.data as unknown as FlowNode | undefined
+          const editorRunStatus = nodeRunStates?.get(editor.nodeId)?.status || 'idle'
+          const editorRunClass = runActive ? `run-node-${editorRunStatus}` : ''
+          const palette = graphNode ? getNodePalette(editorNode) : null
+          const satelliteStyle = {
+            '--satellite-accent': palette?.color ?? 'var(--accent)',
+            '--satellite-tint': palette?.bg ?? 'var(--accent-soft)',
+          } as CSSProperties
           const markerId = `cf-detail-arrow-${editor.editorId.replace(/[^a-zA-Z0-9_-]/g, '-')}`
           return (
             <ViewportPortal key={editor.editorId}>
               <>
                 {connector && (
-                  <svg className="cf-node-detail-connectors" data-editor-id={editor.editorId} data-node-id={editor.nodeId} data-connector-count="1" style={{ zIndex: active ? 1018 : 998 + index }} aria-hidden="true">
+                  <svg
+                    className={`cf-node-detail-connectors ${editorRunClass}`}
+                    data-editor-id={editor.editorId}
+                    data-node-id={editor.nodeId}
+                    data-connector-count="1"
+                    style={{
+                      zIndex: active ? 1018 : 998 + index,
+                      ...satelliteStyle,
+                    } as CSSProperties}
+                    aria-hidden="true"
+                  >
                     <defs>
                       <marker id={markerId} viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
                         <path d="M 0 0 L 10 5 L 0 10 z" />
@@ -1030,11 +1322,11 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
                   </svg>
                 )}
                 <div
-                  className={`cf-node-editor-viewport detail-section-${editor.section} placement-${editor.side} nodrag nopan nowheel ${active ? 'active' : ''} ${dragging ? 'dragging' : ''}`}
+                  className={`cf-node-editor-viewport detail-section-${editor.section} placement-${editor.side} nodrag nopan nowheel ${active ? 'active' : ''} ${dragging ? 'dragging' : ''} ${editorRunClass}`}
                   data-editor-id={editor.editorId}
                   data-node-id={editor.nodeId}
                   data-section={editor.section}
-                  style={{ left: editor.x, top: editor.y, width: editor.width, height: editor.height, zIndex: active ? 1020 : 1000 + index }}
+                  style={{ left: editor.x, top: editor.y, width: editor.width, height: editor.height, zIndex: active ? 1020 : 1000 + index, ...satelliteStyle }}
                   onPointerDown={(event) => {
                     if (beginNodeEditorDrag(event, editor)) return
                     const node = nodeById.get(editor.nodeId)
@@ -1056,7 +1348,7 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
               <button type="button" className={activeCanvasTool === 'select' && !canvasPanel ? 'active' : ''} onClick={() => { setActiveCanvasTool('select'); setCanvasPanel(null); onCloseNodeEditor?.() }} title="选择与移动"><MousePointer2 /><span>选择</span></button>
               <button type="button" className={activeCanvasTool === 'connect' && !canvasPanel ? 'active' : ''} onClick={activateConnectMode} title="连接节点"><GitBranch /><span>连线</span></button>
               <button type="button" className={canvasPanel === 'nodes' ? 'active' : ''} onClick={() => toggleCanvasPanel('nodes')} title="节点库"><Box /><span>节点</span></button>
-              <button type="button" className={canvasPanel === 'notes' ? 'active' : ''} onClick={() => { onCloseNodeEditor?.(); toggleCanvasPanel('notes') }} title="节点说明"><MessageSquare /><span>注释</span></button>
+              <button type="button" className={canvasPanel === 'notes' ? 'active' : ''} onClick={() => { onCloseNodeEditor?.(); toggleCanvasPanel('notes') }} title="画布注释"><MessageSquare /><span>注释</span></button>
               {modelPanel && <button type="button" className={canvasPanel === 'models' ? 'active' : ''} onClick={() => { onCloseNodeEditor?.(); toggleCanvasPanel('models') }} title="模型管理"><BrainCircuit /><span>模型</span></button>}
               <button type="button" className={canvasPanel === 'variables' ? 'active' : ''} onClick={() => { onCloseNodeEditor?.(); toggleCanvasPanel('variables') }} title="流程变量"><Braces /><span>变量</span></button>
               <button type="button" className={canvasPanel === 'settings' ? 'active' : ''} onClick={() => { onCloseNodeEditor?.(); toggleCanvasPanel('settings') }} title="画布配置"><Settings /><span>配置</span></button>
@@ -1073,7 +1365,7 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
         )}
         {!compactStatic && canvasPanel && (
           <Panel position="top-left" className={`cf-canvas-tool-panel ${canvasPanel === 'tools' || canvasPanel === 'models' ? 'resource-panel' : ''}`}>
-            <header><strong>{canvasPanel === 'nodes' ? '节点库' : canvasPanel === 'notes' ? '节点注释' : canvasPanel === 'models' ? '模型管理' : canvasPanel === 'variables' ? '流程变量' : canvasPanel === 'tools' ? '工具管理' : '画布配置'}</strong><button type="button" onClick={() => { setCanvasPanel(null); setSelectedLibraryCategoryId(null) }}>×</button></header>
+            <header><strong>{canvasPanel === 'nodes' ? '节点库' : canvasPanel === 'notes' ? '画布注释' : canvasPanel === 'models' ? '模型管理' : canvasPanel === 'variables' ? '流程变量' : canvasPanel === 'tools' ? '工具管理' : '画布配置'}</strong><button type="button" onClick={() => { setCanvasPanel(null); setSelectedLibraryCategoryId(null) }}>×</button></header>
             {canvasPanel === 'nodes' && (
               <div className="cf-canvas-node-library">
                 <p>拖到画布创建节点；右键打开新节点预配置。</p>
@@ -1096,12 +1388,30 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
                 ))}
               </div>
             )}
-            {canvasPanel === 'notes' && <div className="cf-canvas-data-list">{canvasNotes.length ? canvasNotes.map(({ node, note }) => <button type="button" key={node.id} onClick={() => onSelectNode(node)}><b>{node.display_name || node.title}</b><span>{note}</span></button>) : <p>当前节点还没有说明文字。</p>}</div>}
+            {canvasPanel === 'notes' && (
+              <div className="cf-canvas-notes-panel">
+                <button type="button" className="cf-canvas-notes-create" onClick={() => createAnnotation()} disabled={!onAnnotationsSave}><Plus />新建注释</button>
+                <div className="cf-canvas-notes-list">
+                  {annotations.length ? annotations.map((annotation) => {
+                    const anchor = annotation.anchor ? nodeById.get(annotation.anchor.id) : undefined
+                    return (
+                      <article key={annotation.id} className={annotation.id === activeAnnotationId ? 'active' : ''}>
+                        <button type="button" onClick={() => focusAnnotation(annotation)}>
+                          <b>{annotation.title || '未命名注释'}</b>
+                          <span>{annotation.body || (anchor ? `关联：${anchor.display_name || anchor.title}` : '空注释')}</span>
+                        </button>
+                        {onAnnotationsSave && <button type="button" className="danger" onClick={() => deleteAnnotation(annotation.id)} title="删除注释"><Trash2 /></button>}
+                      </article>
+                    )
+                  }) : <div className="cf-canvas-notes-empty"><MessageSquare /><b>还没有画布注释</b><span>记录设计原因、约束或待处理事项。</span></div>}
+                </div>
+              </div>
+            )}
             {canvasPanel === 'variables' && <div className="cf-canvas-data-list variables">{canvasVariables.length ? canvasVariables.map((item) => <div key={`${item.kind}-${item.name}`}><b>{item.name}</b><span>{item.kind} · {item.source}</span></div>) : <p>当前流程还没有声明输入或输出变量。</p>}</div>}
             {canvasPanel === 'settings' && (
               <div className="cf-canvas-settings">
-                <section className="cf-canvas-theme-settings">
-                  <div className="cf-canvas-theme-heading"><span>工作台主题</span><small>仅调整品牌强调色</small></div>
+                <section className="cf-canvas-theme-settings" aria-label="工作台主题">
+                  <div className="cf-canvas-theme-heading"><span>工作台主题</span><small>仅调整界面强调色</small></div>
                   <div className="cf-canvas-theme-presets" role="group" aria-label="选择工作台主题色">
                     {WORKSPACE_THEME_PRESETS.map((theme) => (
                       <button
@@ -1126,11 +1436,9 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
                     />
                     <code>{workspaceTheme.color.toUpperCase()}</code>
                   </label>
-                  <button type="button" className="cf-canvas-theme-reset" onClick={() => updateWorkspaceTheme({ id: 'orange', color: WORKSPACE_THEME_PRESETS[0].color })}>恢复默认橙色</button>
+                  <button type="button" className="cf-canvas-theme-reset" onClick={() => updateWorkspaceTheme(DEFAULT_WORKSPACE_THEME)}>恢复默认青绿</button>
                 </section>
-                <label><span>10px 网格对齐</span><input type="checkbox" checked={gridSnap} onChange={(event) => setGridSnap(event.target.checked)} /></label>
                 <div><span>主节点视图</span><b>完整信息卡</b></div>
-                <div><span>网格尺寸</span><b>固定 10px</b></div>
                 {onLayoutSave && <button type="button" onClick={handleAutoAlign}><AlignHorizontalSpaceAround />按当前节点尺寸自动整理</button>}
               </div>
             )}
@@ -1190,13 +1498,17 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
             <footer><GripVertical aria-hidden="true" /><span>配置会随节点条目一起拖入画布，松开后创建</span></footer>
           </Panel>
         )}
-        {!compactStatic && <Panel position="bottom-left" className="cf-canvas-status"><span className={gridSnap ? 'active' : ''}><i />{gridSnap ? '网格对齐' : '自由移动'}</span><b>{gridSize}px</b><span className={activeCanvasTool === 'connect' ? 'active' : ''}><i />{activeCanvasTool === 'connect' ? '连线模式' : '选择模式'}</span></Panel>}
-        {!compactStatic && <MiniMap pannable zoomable nodeColor={(node) => (node.data as unknown as FlowNode).locked ? '#b7bbb4' : getNodeCategory(node.data as unknown as FlowNode).bg} nodeStrokeColor={(node) => (node.data as unknown as FlowNode).locked ? '#898f87' : getNodeCategory(node.data as unknown as FlowNode).color} nodeBorderRadius={3} maskColor="rgba(90, 68, 55, 0.12)" />}
+        {!compactStatic && <Panel position="bottom-left" className="cf-canvas-status"><span className={activeCanvasTool === 'connect' ? 'active' : ''}><i />{activeCanvasTool === 'connect' ? '连线模式' : '选择模式'}</span></Panel>}
+        {!compactStatic && <MiniMap pannable zoomable nodeColor={(node) => (node.data as unknown as FlowNode).locked ? '#b7bbb4' : getNodeCategory(node.data as unknown as FlowNode).bg} nodeStrokeColor={(node) => (node.data as unknown as FlowNode).locked ? '#898f87' : getNodeCategory(node.data as unknown as FlowNode).color} nodeBorderRadius={3} maskColor="rgb(var(--cf-accent-rgb) / .12)" />}
         {contextMenu && !compactStatic && !readOnlyGraph && (
-          <ViewportPortal>
             <div
-              className="cf-graph-context-menu"
+              className={`cf-graph-context-menu submenu-${contextMenu.side || 'right'} submenu-${contextMenu.verticalSide || 'down'} nodrag nopan nowheel`}
               style={{ left: contextMenu.x, top: contextMenu.y } as CSSProperties}
+              onPointerDown={(event) => event.stopPropagation()}
+              onPointerUp={(event) => event.stopPropagation()}
+              onClick={(event) => event.stopPropagation()}
+              onWheel={(event) => event.stopPropagation()}
+              onContextMenu={(event) => { event.preventDefault(); event.stopPropagation() }}
             >
             <strong>{contextMenu.edge ? `${contextMenu.edge.source} → ${contextMenu.edge.target}` : contextMenu.node ? contextMenu.node.title : '画布操作'}</strong>
             {contextMenu.edge ? (
@@ -1224,7 +1536,6 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
                           data-section={section.id}
                           onClick={() => {
                             onOpenNodeEditor?.(contextMenu.node!, section.id)
-                            setContextMenu(null)
                           }}
                         >
                           <span><b>{section.label}</b><small>{section.description}</small></span>
@@ -1232,6 +1543,7 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
                       ))}
                     </div>
                   </div>}
+                  {contextMenu.node && onAnnotationsSave && <button type="button" onClick={() => createAnnotation(contextMenu.node)}><span>添加关联注释</span><MessageSquarePlus aria-hidden="true" /></button>}
                   <div className="cf-graph-submenu-item">
                     <button disabled={!contextMenu.node || !onCreateNode}>新增 Flow <span aria-hidden="true">›</span></button>
                     <div className="cf-graph-submenu">
@@ -1269,7 +1581,6 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
               </>
             )}
             </div>
-          </ViewportPortal>
         )}
       </ReactFlow>
     </div>

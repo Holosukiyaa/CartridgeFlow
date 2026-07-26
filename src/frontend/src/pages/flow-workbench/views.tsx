@@ -1,11 +1,12 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { Box, Button } from '../../ui.tsx'
 import { AlertTriangle, ChevronDown, ChevronUp, ClipboardCopy, Copy, Download, FileOutput, History, Pause, PlayCircle, RefreshCw, Square, SquarePen, X } from 'lucide-react'
-import type { FlowEdge, FlowEvent, FlowFiles, FlowGraph, FlowLabDetail, FlowNode, RunResult } from '../../api.ts'
+import type { FlowAnnotation, FlowEdge, FlowEvent, FlowFiles, FlowGraph, FlowLabDetail, FlowNode, RunResult } from '../../api.ts'
 import type { CreateNodeHandler, GraphResult } from './types.ts'
 import { FlowGraphView } from './FlowGraphView.tsx'
 import { NodeDetailCard } from './NodeDetailCard.tsx'
 import { NodeDrawer } from './NodeDrawer.tsx'
+import { BrandMark } from './BrandMark.tsx'
 import { NODE_DETAIL_SECTION_BY_ID, nodeDetailId, type NodeDetailSection, type OpenNodeDetail } from './nodeDetails.ts'
 import type { NodeRunState } from './runState.ts'
 
@@ -40,7 +41,7 @@ export function WorkbenchHeader({
   return (
     <header className="cf-workbench-header">
       <div className="cf-workbench-brand">
-        <span className="cf-workbench-brand-mark" aria-hidden="true">C</span>
+        <BrandMark className="cf-workbench-brand-mark" />
         <strong>CARTRIDGE WORKSPACE <i>/</i> 卡带工作区</strong>
       </div>
       <div className="cf-workbench-header-spacer" />
@@ -75,8 +76,8 @@ export function WorkbenchHeader({
 
 export function DesignView({
   graph, editable, files, flowId, selectedNode, focusNodeId, openNodeEditors,
-  onSelectNode, onOpenNodeEditor, onCloseNodeEditor, onToggleNodeEditorPin, onNodeEditorPositionChange, onCloseUnpinnedNodeEditors, onLayoutSave, onEdgesSave, onCreateNode, onDeleteNode, onSaved,
-  modelPanel, toolPanel, nodeRunStates, runEvents,
+  onSelectNode, onOpenNodeEditor, onCloseNodeEditor, onToggleNodeEditorPin, onNodeEditorPositionChange, onCloseUnpinnedNodeEditors, onLayoutSave, onEdgesSave, onAnnotationsSave, onCreateNode, onDeleteNode, onSaved,
+  modelPanel, toolPanel, runStatus, nodeRunStates, runEvents, runCompletionVisible, onDismissRunCompletion,
 }: {
   graph: FlowGraph
   editable: boolean
@@ -93,13 +94,17 @@ export function DesignView({
   onCloseUnpinnedNodeEditors: () => void
   onLayoutSave: (layout: Record<string, { x: number; y: number }>) => Promise<void>
   onEdgesSave: (edges: FlowEdge[]) => Promise<void>
+  onAnnotationsSave: (annotations: FlowAnnotation[]) => Promise<void>
   onCreateNode: CreateNodeHandler
   onDeleteNode: (node: FlowNode) => Promise<void>
   onSaved: (result: GraphResult) => void
   modelPanel?: ReactNode
   toolPanel?: ReactNode
+  runStatus?: string
   nodeRunStates?: Map<string, NodeRunState>
   runEvents?: FlowEvent[]
+  runCompletionVisible?: boolean
+  onDismissRunCompletion?: () => void
 }) {
   const nodeEditors = openNodeEditors.flatMap((editor) => {
     const node = graph.nodes.find((item) => item.id === editor.nodeId)
@@ -159,6 +164,7 @@ export function DesignView({
           onNodeEditorPositionChange={onNodeEditorPositionChange}
           onLayoutSave={editable ? onLayoutSave : undefined}
           onEdgesSave={editable ? onEdgesSave : undefined}
+          onAnnotationsSave={editable ? onAnnotationsSave : undefined}
           onCreateNode={editable ? onCreateNode : undefined}
           onDeleteNode={editable ? onDeleteNode : undefined}
           modelPanel={editable ? modelPanel : undefined}
@@ -166,8 +172,11 @@ export function DesignView({
           nodeEditors={nodeEditors}
           activeNodeEditorId={selectedNode?.id || null}
           onCloseNodeEditor={onCloseUnpinnedNodeEditors}
+          runStatus={runStatus}
           nodeRunStates={nodeRunStates}
           runEvents={runEvents}
+          runCompletionVisible={runCompletionVisible}
+          onDismissRunCompletion={onDismissRunCompletion}
         />
       </Box>
     </div>

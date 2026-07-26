@@ -12,10 +12,12 @@ import {
   fetchCartridgeRun,
   fetchCartridgeRunEvents,
   saveFlowEdges,
+  saveFlowAnnotations,
   saveFlowLayout,
   runFlow,
   updateFlowNode,
   type FlowEvent,
+  type FlowAnnotation,
   type FlowFiles,
   type FlowLabDetail,
   type FlowNode,
@@ -37,6 +39,7 @@ import './flow-workbench/TestBench.css'
 
 const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms))
 const pinnedNodeDetailsStorageKey = (flowId: string) => `cartridgeflow.lite.pinned-node-details.v1:${flowId}`
+const RUN_COMPLETION_NOTICE_MS = 2600
 
 export default function FlowWorkbench({ flowId, onSwitchFlow }: {
   flowId: string
@@ -60,11 +63,13 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
   const [historyOpen, setHistoryOpen] = useState(false)
   const [selectedHistoryRunId, setSelectedHistoryRunId] = useState('')
   const [runLog, setRunLog] = useState<{ run: RunResult; events: FlowEvent[] } | null>(null)
+  const [runCompletionNotice, setRunCompletionNotice] = useState<{ runId: string; shownAt: number } | null>(null)
   const activeRuntimeRun = runs.find((run) => ['created', 'running', 'retrying', 'recovering', 'rolling_back', 'paused', 'paused_waiting_user'].includes(run.status))
+  const visualRuntimeRun = activeRuntimeRun || (runCompletionNotice ? runs.find((run) => run.run_id === runCompletionNotice.runId) : undefined)
   const selectedRunId = selectedHistoryRunId || runs[0]?.run_id || ''
   const designNodeRunStates = useMemo(
-    () => detail && activeRuntimeRun && events.length ? buildNodeRunStates(detail.graph, events) : undefined,
-    [activeRuntimeRun, detail, events],
+    () => detail && visualRuntimeRun ? buildNodeRunStates(detail.graph, events) : undefined,
+    [detail, events, visualRuntimeRun],
   )
   const availableMcpTools = useMemo(() => {
     const merged = new Map<string, McpTool>()
@@ -76,6 +81,7 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
   const load = useCallback(async () => {
     setLoading(true)
     setError('')
+    setRunCompletionNotice(null)
     try {
       const data = await fetchLabFlow(flowId)
       setDetail(data)
@@ -106,6 +112,14 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
   }, [flowId])
 
   useEffect(() => { load() }, [load])
+  useEffect(() => {
+    if (!runCompletionNotice) return
+    const remaining = Math.max(0, RUN_COMPLETION_NOTICE_MS - (Date.now() - runCompletionNotice.shownAt))
+    const timer = window.setTimeout(() => {
+      setRunCompletionNotice((current) => current?.runId === runCompletionNotice.runId ? null : current)
+    }, remaining)
+    return () => window.clearTimeout(timer)
+  }, [runCompletionNotice])
   useEffect(() => {
     setRestoredNodeDetailsFlowId('')
     try {
@@ -167,6 +181,11 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
       latest = runData
       setRuns((current) => [runData, ...current.filter((item) => item.run_id !== runData.run_id)])
       setEvents(eventData.items || [])
+      if (runData.status === 'completed') {
+        setRunCompletionNotice((current) => current?.runId === runData.run_id
+          ? current
+          : { runId: runData.run_id, shownAt: Date.now() })
+      }
       if (['completed', 'failed', 'cancelled', 'interrupted', 'paused', 'paused_waiting_user'].includes(runData.status)) break
     }
     return latest
@@ -174,6 +193,7 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
 
   const startFlowRun = useCallback(async (inputs: Record<string, string>, probeRange?: TestProbeRange) => {
     setRunInputOpen(false)
+    setRunCompletionNotice(null)
     setEvents([])
     setRunControlBusy(true)
     try {
@@ -183,20 +203,24 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
       setEvents(result.events || [])
       setRunControlBusy(false)
       const latest = await pollRunUntilStable(result.run.run_id) || result.run
-      showToast({
-        title: latest.status === 'paused_waiting_user'
-          ? '运行已暂停，等待用户补充信息'
-          : latest.status === 'paused'
-            ? '运行已在节点边界暂停'
-            : latest.status === 'interrupted'
-              ? '运行被底座中断，可从检查点恢复'
-              : latest.status === 'failed'
-                ? '运行发现失败节点'
-                : latest.status === 'cancelled'
-                  ? '运行已停止'
-                  : '运行完成',
-        type: ['failed', 'interrupted'].includes(latest.status) ? 'error' : 'success',
-      })
+      if (latest.status === 'completed') {
+        setRunCompletionNotice((current) => current?.runId === latest.run_id
+          ? current
+          : { runId: latest.run_id, shownAt: Date.now() })
+      } else {
+        showToast({
+          title: latest.status === 'paused_waiting_user'
+            ? '运行已暂停，等待用户补充信息'
+            : latest.status === 'paused'
+              ? '运行已在节点边界暂停'
+              : latest.status === 'interrupted'
+                ? '运行被底座中断，可从检查点恢复'
+                : latest.status === 'failed'
+                  ? '运行发现失败节点'
+                  : '运行已停止',
+          type: ['failed', 'interrupted'].includes(latest.status) ? 'error' : 'success',
+        })
+      }
     } catch (e: any) {
       showToast({ title: '运行失败', description: e.message, type: 'error' })
     } finally {
@@ -415,9 +439,16 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
               const result = await saveFlowEdges(flowId, files, edges)
               updateGraphResult(result)
             }}
+            onAnnotationsSave={async (annotations: FlowAnnotation[]) => {
+              const result = await saveFlowAnnotations(flowId, annotations)
+              updateGraphResult(result)
+            }}
             onCreateNode={createCategoryNode}
+            runStatus={visualRuntimeRun?.status}
             nodeRunStates={designNodeRunStates}
             runEvents={events}
+            runCompletionVisible={Boolean(runCompletionNotice)}
+            onDismissRunCompletion={() => setRunCompletionNotice(null)}
             modelPanel={<ModelManagementPanel flowId={flowId} cartridge={detail.cartridge} />}
             toolPanel={<ToolManagementPanel flowId={flowId} onFlowToolsChange={setFlowResourceTools} />}
             onDeleteNode={async (node) => {

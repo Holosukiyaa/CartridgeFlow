@@ -4,10 +4,11 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import App from './App.tsx'
 import { ToastProvider } from './toast.tsx'
-import { applyAppearance, loadAppearance } from './appearance.ts'
+import { applyAppearance, applyWorkspaceTheme, loadAppearance, loadWorkspaceTheme } from './appearance.ts'
 import './index.css'
 
 applyAppearance(loadAppearance())
+applyWorkspaceTheme(loadWorkspaceTheme())
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

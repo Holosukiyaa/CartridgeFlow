@@ -128,7 +128,21 @@ export interface FlowGraph {
   cartridge_id?: string
   nodes: FlowNode[]
   edges: FlowEdge[]
+  annotations?: FlowAnnotation[]
   sub_flows?: any[]
+}
+
+export interface FlowAnnotation {
+  id: string
+  title: string
+  body: string
+  x: number
+  y: number
+  width: number
+  height: number
+  tone: 'neutral' | 'warning'
+  collapsed?: boolean
+  anchor?: { type: 'node'; id: string }
 }
 
 export interface FlowNode {
@@ -559,4 +573,3 @@ export interface StudioReleasePreflight {
 }
 
 // ── 卡带 API ──────────────────────────────────────────────
-

@@ -32,7 +32,12 @@ export default function ConfigModal({ open, title, kicker, onClose, children, cl
     window.addEventListener('keydown', closeOnEscape)
     const focusTimer = window.setTimeout(() => {
       if (initialFocus === 'dialog') dialogRef.current?.focus({ preventScroll: true })
-      else dialogRef.current?.querySelector<HTMLElement>('input:not([disabled]):not([type="hidden"]):not([hidden]), select:not([disabled]), textarea:not([disabled]), button:not([disabled])')?.focus({ preventScroll: true })
+      else {
+        const bodyControl = dialogRef.current?.querySelector<HTMLElement>('.cf-config-modal-body input:not([disabled]):not([type="hidden"]):not([hidden]), .cf-config-modal-body select:not([disabled]), .cf-config-modal-body textarea:not([disabled]), .cf-config-modal-body button:not([disabled])')
+        const fallbackControl = dialogRef.current?.querySelector<HTMLElement>('input:not([disabled]):not([type="hidden"]):not([hidden]), select:not([disabled]), textarea:not([disabled]), button:not([disabled])')
+        const initialControl = bodyControl || fallbackControl
+        initialControl?.focus({ preventScroll: true })
+      }
     })
     return () => {
       const stackIndex = openModalStack.lastIndexOf(modalToken)

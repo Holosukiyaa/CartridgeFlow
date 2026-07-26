@@ -15,9 +15,11 @@
   --text:        #1f2328;
   --muted:       #59636e;
   --faint:       #7d8791;
-  --accent:      #bc4c00;
-  --accent-dark: #9f3f00;
-  --accent-soft: #fff1e5;
+  /* Default theme fallback. Runtime presets and custom colors are defined in appearance.ts. */
+  --accent:      #16836e;
+  --accent-dark: #18685b;
+  --accent-soft: #e8f3f1;
+  --cf-accent-rgb: 22 131 110;
   --green:       #1f883d;
   --green-soft:  #dafbe1;
   --mono:        ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;

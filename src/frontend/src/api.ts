@@ -1,7 +1,7 @@
 // API 工具：封装所有对后端的 fetch 调用，统一走 /api 前缀
 
 // 基础请求方法：所有 API 调用共用
-import type { RuntimeErrorEnvelope, CartridgeSummary, CartridgeDetail, RunResult, FlowGraph, FlowEdge, FlowLabItem, FlowLabDetail, FlowEvent, TestProbeRange, FlowFiles, CartridgeAsset, InteractionComponent, CartridgeAssetsResponse, McpTool, BaseImplementationResponse, StudioConformanceResponse, StudioTodoResponse, CompatibilityReport, ProtocolCertificationReport, McpToolsResponse, ValidationResponse, NodeUpdateResult, NodeCreatePayload, LlmProvider, LlmAssignments, LlmConfigBundle, LlmDetectionResult, LlmTestResult, StudioResources, StudioCredential, StudioEnvironmentSnapshot, StudioPackageItem, PortabilityReport, StudioReleasePreflight } from './api.types.ts'
+import type { RuntimeErrorEnvelope, CartridgeSummary, CartridgeDetail, RunResult, FlowGraph, FlowEdge, FlowAnnotation, FlowLabItem, FlowLabDetail, FlowEvent, TestProbeRange, FlowFiles, CartridgeAsset, InteractionComponent, CartridgeAssetsResponse, McpTool, BaseImplementationResponse, StudioConformanceResponse, StudioTodoResponse, CompatibilityReport, ProtocolCertificationReport, McpToolsResponse, ValidationResponse, NodeUpdateResult, NodeCreatePayload, LlmProvider, LlmAssignments, LlmConfigBundle, LlmDetectionResult, LlmTestResult, StudioResources, StudioCredential, StudioEnvironmentSnapshot, StudioPackageItem, PortabilityReport, StudioReleasePreflight } from './api.types.ts'
 export type * from './api.types.ts'
 
 export class ApiError extends Error {
@@ -334,6 +334,12 @@ export const saveFlowEdges = (id: string, files: FlowFiles, edges: FlowEdge[]) =
   api<{ status: string; files: FlowFiles; graph: FlowGraph; validation: ValidationResponse }>(`/api/lab/flows/${id}/edges`, {
     method: 'PUT',
     body: JSON.stringify({ files, edges }),
+  })
+
+export const saveFlowAnnotations = (id: string, annotations: FlowAnnotation[]) =>
+  api<{ status: string; files: FlowFiles; graph: FlowGraph }>(`/api/lab/flows/${id}/annotations`, {
+    method: 'PUT',
+    body: JSON.stringify({ annotations }),
   })
 
 export const fetchLabFlowRuns = (id: string) =>

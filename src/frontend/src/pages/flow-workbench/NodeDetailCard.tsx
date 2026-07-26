@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { Activity, ArrowDownToLine, ArrowUpFromLine, Boxes, Bot, GripHorizontal, PackageCheck, Pin, PinOff, PlugZap, Route, ShieldCheck, SlidersHorizontal, X } from 'lucide-react'
 import type { FlowEdge, FlowEvent, FlowNode } from '../../api.ts'
 import { buildNodeDetailFacts, resolveNodeSemanticKind } from './flowNodeView.ts'
-import { getNodeCategory, getProcessDisplayLabel } from './nodeModel.ts'
+import { getNodeCategory, getNodePalette, getProcessDisplayLabel } from './nodeModel.ts'
 import { NODE_DETAIL_SECTION_BY_ID, type NodeDetailSection } from './nodeDetails.ts'
 import type { NodeRunState } from './runState.ts'
 
@@ -30,6 +30,7 @@ export function NodeDetailCard({ node, section, graphEdges, pinned, runState, ru
   onClose: () => void
 }) {
   const category = getNodeCategory(node)
+  const palette = getNodePalette(node)
   const semanticKind = resolveNodeSemanticKind(node)
   const meta = NODE_DETAIL_SECTION_BY_ID.get(section)!
   const details = useMemo(() => buildNodeDetailFacts(node, section, {
@@ -45,7 +46,7 @@ export function NodeDetailCard({ node, section, graphEdges, pinned, runState, ru
       data-node-id={node.id}
       data-node-kind={semanticKind}
       data-detail-section={section}
-      style={{ '--satellite-accent': category.color, '--satellite-tint': category.bg } as React.CSSProperties}
+      style={{ '--satellite-accent': palette.color, '--satellite-tint': palette.bg } as React.CSSProperties}
     >
       <header className="cf-node-satellite-head">
         <div className="cf-node-satellite-heading">

@@ -41,8 +41,8 @@ export const NODE_CATEGORIES: NodeCategory[] = [
     defaultTitle: '输入节点',
     description: '负责收集要用的信息，例如用户需求、项目文件、日志或网页内容。',
     examples: ['用户输入', '项目扫描', '文件读取', '日志导入'],
-    color: '#3f7f62',
-    bg: '#edf8ef',
+    color: '#c66837',
+    bg: '#fff7f1',
   },
   {
     id: 'interaction',
@@ -54,8 +54,8 @@ export const NODE_CATEGORIES: NodeCategory[] = [
     defaultTitle: '交互节点',
     description: '承载卡带自己的展示、填写和审核界面。界面来自卡带资产，提交动作由底座控制。',
     examples: ['欢迎面板', '结果展示', '信息填写', '人工审核'],
-    color: '#c66837',
-    bg: '#fff7f1',
+    color: '#3f7f62',
+    bg: '#edf8ef',
   },
   {
     id: 'process',
@@ -470,6 +470,21 @@ export function getNodeCategory(node?: FlowNode | null): NodeCategory {
   if (node?.action?.includes('save') || node?.action?.includes('artifact') || node?.action?.includes('cache')) return CATEGORY_BY_ID.get('store')!
   if (node?.action?.includes('pass') || node?.action?.includes('route') || node?.action?.includes('merge') || node?.action?.includes('split')) return CATEGORY_BY_ID.get('transfer')!
   return CATEGORY_BY_ID.get('process')!
+}
+
+export function isBoundaryNode(node?: FlowNode | null) {
+  return Boolean(node && (
+    node.id === 'start'
+    || node.id === 'complete'
+    || node.action === 'complete'
+    || node.action === 'end'
+  ))
+}
+
+export function getNodePalette(node?: FlowNode | null) {
+  if (isBoundaryNode(node)) return { color: '#74818c', bg: '#f2f5f7' }
+  const category = getNodeCategory(node)
+  return { color: category.color, bg: category.bg }
 }
 
 export function makeNodeDraft(node: FlowNode): NodeDraft {

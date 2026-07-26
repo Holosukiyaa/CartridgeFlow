@@ -195,8 +195,8 @@ textarea.cf-input {
 }
 
 .react-flow__edge-path {
-  stroke: #bf9b89 !important;
-  stroke-width: 2.6 !important;
+  stroke: var(--accent);
+  stroke-width: 2.6;
   opacity: .9;
 }
 
@@ -248,8 +248,8 @@ textarea.cf-input {
 .react-flow__minimap:hover { opacity: .96; }
 
 .react-flow__minimap-mask {
-  fill: rgba(90, 68, 55, .12) !important;
-  stroke: #c95535 !important;
+  fill: rgb(var(--cf-accent-rgb) / .12) !important;
+  stroke: var(--accent) !important;
   stroke-width: 6px !important;
 }
 
@@ -360,10 +360,11 @@ textarea.cf-input {
   display: grid;
   gap: 8px;
   padding: 10px;
-  border: 1px solid #ded4cb;
+  pointer-events: auto;
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, #dfe4e8);
   border-radius: 14px;
-  background: #fffdfa;
-  box-shadow: 0 14px 30px rgba(77, 59, 45, .12), 0 2px 6px rgba(77, 59, 45, .06);
+  background: #fff;
+  box-shadow: 0 14px 30px rgba(35, 55, 51, .12), 0 2px 6px rgba(35, 55, 51, .06);
 }
 
 .cf-graph-context-menu strong {
@@ -378,7 +379,7 @@ textarea.cf-input {
 
 .cf-graph-menu-label {
   padding: 2px 7px 4px;
-  color: #8a7568;
+  color: var(--accent-dark);
   font-size: 12px;
 }
 
@@ -399,11 +400,16 @@ textarea.cf-input {
   height: calc(100% + 16px);
 }
 
+.cf-graph-context-menu.submenu-left .cf-graph-submenu-item::after {
+  right: auto;
+  left: -12px;
+}
+
 .cf-graph-menu-group {
   display: grid;
   gap: 2px;
   padding-top: 7px;
-  border-top: 1px solid #eee6df;
+  border-top: 1px solid #e4e9e7;
 }
 
 .cf-graph-menu-group-primary {
@@ -423,11 +429,21 @@ textarea.cf-input {
   display: none;
   gap: 4px;
   padding: 8px;
-  border: 1px solid #e2d3c8;
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, #dfe4e8);
   border-radius: 12px;
-  background: #fffdfa;
-  box-shadow: 0 14px 30px rgba(77, 59, 45, .12), 0 2px 6px rgba(77, 59, 45, .06);
-  z-index: 2;
+  background: #fff;
+  box-shadow: 0 14px 30px rgba(35, 55, 51, .12), 0 2px 6px rgba(35, 55, 51, .06);
+  z-index: 4;
+}
+
+.cf-graph-context-menu.submenu-left .cf-graph-submenu {
+  right: 100%;
+  left: auto;
+}
+
+.cf-graph-context-menu.submenu-up .cf-graph-submenu {
+  top: auto;
+  bottom: -8px;
 }
 
 .cf-graph-submenu-item:hover .cf-graph-submenu {
@@ -439,6 +455,11 @@ textarea.cf-input {
   min-width: 248px;
   max-height: min(520px, calc(100vh - 120px));
   overflow-y: auto;
+}
+
+.cf-graph-context-menu.submenu-up .cf-node-detail-submenu {
+  top: auto;
+  bottom: -10px;
 }
 
 .cf-node-detail-submenu button > span {
@@ -454,7 +475,7 @@ textarea.cf-input {
 }
 
 .cf-node-detail-submenu button small {
-  color: #81766e;
+  color: #65736f;
   font-size: 12px;
   font-weight: 500;
   line-height: 1.35;
@@ -464,7 +485,7 @@ textarea.cf-input {
   border: 1px solid transparent;
   border-radius: 9px;
   background: transparent;
-  color: #594f47;
+  color: #3f4c49;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -477,16 +498,16 @@ textarea.cf-input {
 }
 
 .cf-graph-context-menu button:hover:not(:disabled) {
-  border-color: #ead7ca;
-  background: #fff4ee;
-  color: #a84427;
+  border-color: color-mix(in srgb, var(--accent) 48%, #dfe4e8);
+  background: var(--accent-soft);
+  color: var(--accent-dark);
 }
 
 .cf-graph-context-menu button.danger { color: #c33f36; }
 .cf-graph-context-menu button.danger:hover:not(:disabled) { border-color: #f0b2ad; background: #fff4f3; color: #a92d27; }
 
 .cf-graph-context-menu button:disabled {
-  color: #b7aba2;
+  color: #aab3b0;
   cursor: not-allowed;
 }
 
@@ -766,8 +787,8 @@ textarea.cf-input {
 }
 
 @keyframes node-pulse-glow {
-  0%, 100% { box-shadow: 0 0 0 2px rgba(201,85,53,.18), 0 0 0 0 rgba(201,85,53,.0); }
-  50% { box-shadow: 0 0 0 4px rgba(201,85,53,.22), 0 0 18px 4px rgba(201,85,53,.14); }
+  0%, 100% { box-shadow: 0 0 0 2px rgb(var(--cf-accent-rgb) / .16), 0 0 0 0 rgb(var(--cf-accent-rgb) / 0); }
+  50% { box-shadow: 0 0 0 4px rgb(var(--cf-accent-rgb) / .2), 0 0 18px 4px rgb(var(--cf-accent-rgb) / .13); }
 }
 
 @keyframes pulse-dot {
@@ -784,8 +805,8 @@ textarea.cf-input {
 }
 
 .flow-node-card.node-run-running {
-  border-color: #c95535;
-  background: rgba(255,246,240,.92);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent-soft) 72%, #fff 28%);
   animation: node-pulse-glow 1.4s ease-in-out infinite;
   opacity: 1;
 }
@@ -816,7 +837,7 @@ textarea.cf-input {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #c95535;
+  background: var(--accent);
   margin-left: auto;
   flex-shrink: 0;
   animation: pulse-dot .9s ease-in-out infinite;

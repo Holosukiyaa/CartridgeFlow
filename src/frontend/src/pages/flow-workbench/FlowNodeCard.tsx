@@ -1,7 +1,7 @@
 import type { DragEvent, ReactNode } from 'react'
 import { ArrowDownToLine, ArrowLeftRight, Bot, Braces, CheckCircle2, Cloud, CornerUpRight, Database, FileCheck2, Flag, GitBranch, PackageCheck, PanelTop, Play, Route, Search, ShieldCheck, Shuffle, UserCheck, Wrench } from 'lucide-react'
 import type { FlowNode } from '../../api.ts'
-import type { FlowNodeViewMode } from './nodeModel.ts'
+import { getNodePalette, type FlowNodeViewMode } from './nodeModel.ts'
 import { FlowNodePorts, type PortCounts } from './FlowNodePorts.tsx'
 import { buildFlowNodeCardView } from './flowNodeView.ts'
 import type { NodeRunState } from './runState.ts'
@@ -127,6 +127,7 @@ function CompactNodeContent({ node, order, runState }: Pick<FlowNodeCardProps, '
 export function FlowNodeCard(props: FlowNodeCardProps): ReactNode {
   const { node, viewMode, order, selected, detailOwner, compactStatic, counts, incomingNodes, outgoingNodes, runState, probeState, probeSelected, onSelect } = props
   const view = buildFlowNodeCardView(node, runState, { incomingNodes, outgoingNodes })
+  const palette = getNodePalette(node)
   const boundaryNode = node.id === 'start' || node.id === 'complete' || node.action === 'complete' || node.action === 'end'
   const hasStartProbe = probeState?.startNodeId === node.id
   const hasEndProbe = probeState?.endNodeId === node.id
@@ -154,7 +155,7 @@ export function FlowNodeCard(props: FlowNodeCardProps): ReactNode {
       data-node-id={node.id}
       data-node-kind={view.semanticKind}
       data-config-health={view.configHealth}
-      style={{ '--node-accent': view.category.color, '--node-tint': view.category.bg, ...(!node.locked && !runState ? { borderColor: view.category.color, background: view.category.bg } : {}) } as React.CSSProperties}
+      style={{ '--node-accent': palette.color, '--node-tint': palette.bg, ...(!node.locked && !runState ? { borderColor: palette.color, background: palette.bg } : {}) } as React.CSSProperties}
       onClick={() => onSelect(node)}
       onDragOver={handleProbeDragOver}
       onDrop={handleProbeDrop}

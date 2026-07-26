@@ -79,6 +79,11 @@ class FlowGraphBuilder:
             "cartridge_id": cartridge.get("id"),
             "nodes": nodes,
             "edges": edges,
+            "annotations": [
+                dict(annotation)
+                for annotation in (root_flow.get("annotations") or [])
+                if isinstance(annotation, dict) and annotation.get("id")
+            ],
             "sub_flows": [],
         }
 

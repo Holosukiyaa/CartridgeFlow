@@ -1,5 +1,6 @@
 import os
 import json
+import math
 import re
 import subprocess
 import sys
@@ -444,6 +445,10 @@ class LayoutSavePayload(BaseModel):
 class EdgeSavePayload(BaseModel):
     files: dict = Field(default_factory=dict)
     edges: list[dict] = Field(default_factory=list)  # [{"from": "a", "to": "b"}]
+
+
+class AnnotationSavePayload(BaseModel):
+    annotations: list[dict] = Field(default_factory=list)
 
 
 class McpToolPayload(BaseModel):
@@ -2267,6 +2272,13 @@ def delete_lab_flow_node(cartridge_id: str, node_id: str, payload: NodeDeletePay
                 source_state.pop("next", None)
     states.pop(node_id, None)
 
+    for annotation in root_flow.get("annotations") or []:
+        if not isinstance(annotation, dict):
+            continue
+        anchor = annotation.get("anchor")
+        if isinstance(anchor, dict) and anchor.get("type") == "node" and anchor.get("id") == node_id:
+            annotation.pop("anchor", None)
+
     cleaned_edges = []
     seen = set()
     for source_id, source_state in states.items():
@@ -2460,6 +2472,71 @@ def save_lab_flow_edges(cartridge_id: str, payload: EdgeSavePayload):
     validation = dev_flow_manager.validate_files(cartridge_id, files)
     graph = flow_graph_builder.build(dev_flow_manager.preview_graph(cartridge_id, files))
     return {"status": "edges_saved", "files": files, "validation": validation, "graph": graph}
+
+
+@app.put("/api/lab/flows/{cartridge_id}/annotations")
+def save_lab_flow_annotations(cartridge_id: str, payload: AnnotationSavePayload):
+    """Save design-only canvas annotations without changing runtime node semantics."""
+    try:
+        cartridge = registry.get_cartridge(cartridge_id)
+        if not cartridge.get("editable"):
+            raise HTTPException(status_code=403, detail="Only dev flows are editable")
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    if len(payload.annotations) > 200:
+        raise HTTPException(status_code=400, detail="A flow can contain at most 200 annotations")
+
+    files = dev_flow_manager.read_files(cartridge_id)
+    import json as _json
+    try:
+        root_flow = _json.loads(files.get("root_flow") or "{}")
+    except _json.JSONDecodeError as e:
+        raise HTTPException(status_code=400, detail=f"root.flow.json is not valid JSON: {e.msg}")
+
+    states = root_flow.get("states") or {}
+    normalized = []
+    seen_ids = set()
+    for index, item in enumerate(payload.annotations):
+        def annotation_number(key: str, default: float) -> float:
+            try:
+                value = float(item.get(key, default))
+            except (TypeError, ValueError):
+                raise HTTPException(status_code=400, detail=f"Invalid annotation {key} at index {index}")
+            if not math.isfinite(value):
+                raise HTTPException(status_code=400, detail=f"Invalid annotation {key} at index {index}")
+            return value
+
+        annotation_id = str(item.get("id") or "").strip()
+        if not annotation_id or len(annotation_id) > 96:
+            raise HTTPException(status_code=400, detail=f"Invalid annotation id at index {index}")
+        if annotation_id in seen_ids:
+            raise HTTPException(status_code=400, detail=f"Duplicate annotation id: {annotation_id}")
+        seen_ids.add(annotation_id)
+        tone = str(item.get("tone") or "neutral")
+        if tone not in {"neutral", "warning"}:
+            tone = "neutral"
+        annotation = {
+            "id": annotation_id,
+            "title": str(item.get("title") or "新注释")[:160],
+            "body": str(item.get("body") or "")[:10000],
+            "x": int(round(annotation_number("x", 0))),
+            "y": int(round(annotation_number("y", 0))),
+            "width": max(240, min(640, int(round(annotation_number("width", 320))))),
+            "height": max(120, min(520, int(round(annotation_number("height", 180))))),
+            "tone": tone,
+            "collapsed": bool(item.get("collapsed")),
+        }
+        anchor = item.get("anchor")
+        if isinstance(anchor, dict) and anchor.get("type") == "node" and anchor.get("id") in states:
+            annotation["anchor"] = {"type": "node", "id": anchor["id"]}
+        normalized.append(annotation)
+
+    root_flow["annotations"] = normalized
+    files["root_flow"] = _json.dumps(root_flow, ensure_ascii=False, indent=2)
+    dev_flow_manager.save_file(cartridge_id, "root_flow", files["root_flow"])
+    graph = flow_graph_builder.build(dev_flow_manager.preview_graph(cartridge_id, files))
+    return {"status": "annotations_saved", "files": files, "graph": graph}
 
 
 @app.get("/api/lab/flows/{cartridge_id}/runs")

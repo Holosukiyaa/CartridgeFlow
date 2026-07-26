@@ -1,6 +1,6 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { Box, Button } from '../../ui.tsx'
-import { AlertTriangle, ClipboardCopy, Copy, Download, History, Pause, PlayCircle, RefreshCw, Square, SquarePen, X } from 'lucide-react'
+import { AlertTriangle, ChevronDown, ChevronUp, ClipboardCopy, Copy, Download, FileOutput, History, Pause, PlayCircle, RefreshCw, Square, SquarePen, X } from 'lucide-react'
 import type { FlowEdge, FlowEvent, FlowFiles, FlowGraph, FlowLabDetail, FlowNode, RunResult } from '../../api.ts'
 import type { CreateNodeHandler, GraphResult } from './types.ts'
 import { FlowGraphView } from './FlowGraphView.tsx'
@@ -196,6 +196,7 @@ export function RunHistoryPanel({ runs, selectedRunId, busy = false, onSelect, o
   onRefresh: () => void
   onClose: () => void
 }) {
+  const [expandedRunId, setExpandedRunId] = useState(selectedRunId || runs[0]?.run_id || '')
   return (
     <aside className="cf-canvas-history-panel">
       <header>
@@ -210,15 +211,25 @@ export function RunHistoryPanel({ runs, selectedRunId, busy = false, onSelect, o
         {runs.length ? runs.map((run) => {
           const error = run.error?.message || run.errors?.[run.errors.length - 1]?.message || ''
           const hasFailureLog = ['failed', 'interrupted'].includes(run.status) || Boolean(error)
+          const expanded = expandedRunId === run.run_id
+          const inputCount = Object.keys(run.inputs || {}).length
+          const artifactCount = (run.delivery?.artifacts?.length || run.artifacts?.length || 0)
+          const summary = error || run.data_chain?.summary || (inputCount ? `已收集 ${inputCount} 项运行输入，流程已完整执行。` : '运行已完成，未发现需要处理的异常。')
           return (
-            <article key={run.run_id} className={run.run_id === selectedRunId ? 'active' : ''}>
-              <button type="button" className="cf-canvas-history-select" onClick={() => onSelect(run.run_id)}>
+            <article key={run.run_id} className={`${run.run_id === selectedRunId ? 'active' : ''}${expanded ? ' expanded' : ''}`}>
+              <button type="button" className="cf-canvas-history-select" onClick={() => { setExpandedRunId(run.run_id); onSelect(run.run_id) }}>
                 <span className="cf-canvas-history-status"><i className={run.status} />{RUN_STATUS_LABELS[run.status] || run.status}<time>{String(run.updated_at || run.created_at || '').replace('T', ' ').slice(5, 16) || '时间未知'}</time></span>
                 <strong>{run.current_state || '尚未进入节点'}</strong>
                 <code>{run.run_id}</code>
-                {error && <small>{error}</small>}
+                <span className="cf-canvas-history-chevron" aria-hidden="true">{expanded ? <ChevronUp /> : <ChevronDown />}</span>
               </button>
-              {hasFailureLog && <button type="button" className="cf-canvas-history-log" onClick={() => onOpenLog(run)}><AlertTriangle aria-hidden="true" />查看日志</button>}
+              {expanded && <div className="cf-canvas-history-expanded">
+                <div className="cf-canvas-history-summary"><span>摘要</span><p>{summary}</p></div>
+                <div className="cf-canvas-history-actions">
+                  <button type="button" className={hasFailureLog ? 'is-error' : ''} onClick={() => onOpenLog(run)}>{hasFailureLog ? <AlertTriangle aria-hidden="true" /> : <History aria-hidden="true" />}{hasFailureLog ? '查看错误日志' : '查看日志'}</button>
+                  <button type="button" disabled={!artifactCount} title={artifactCount ? `打开 ${artifactCount} 个运行产物` : '本次运行没有可打开的产物'}><FileOutput aria-hidden="true" />打开产物</button>
+                </div>
+              </div>}
             </article>
           )
         }) : <div className="cf-canvas-history-empty"><History aria-hidden="true" /><strong>还没有运行记录</strong><span>从顶部“运行”开始第一次真实测试。</span></div>}
@@ -229,6 +240,28 @@ export function RunHistoryPanel({ runs, selectedRunId, busy = false, onSelect, o
 
 function eventTimestamp(event: FlowEvent) {
   return String((event as any).created_at || '').replace('T', ' ').replace('Z', '') || '时间未知'
+}
+
+function eventTone(event: FlowEvent) {
+  const type = String(event.type || '')
+  if (type.includes('failed') || type.includes('blocked') || type.includes('cancelled')) return 'error'
+  if (type.includes('paused') || type.includes('recovery') || type.includes('retry')) return 'warning'
+  if (type.includes('completed') || type.includes('executed') || type.includes('delivery_ready')) return 'success'
+  if (type.includes('started') || type.includes('entered') || type.includes('traversed')) return 'active'
+  return 'info'
+}
+
+function eventLabel(event: FlowEvent) {
+  const type = String(event.type || '')
+  if (type.includes('failed')) return '错误'
+  if (type.includes('completed')) return '完成'
+  if (type.includes('executed')) return '已执行'
+  if (type.includes('started')) return '开始'
+  if (type.includes('entered')) return '进入节点'
+  if (type.includes('traversed')) return '流程转移'
+  if (type.includes('paused')) return '已暂停'
+  if (type.includes('delivery')) return '交付'
+  return '运行事件'
 }
 
 function buildFailureSummary(run: RunResult, events: FlowEvent[]) {
@@ -273,12 +306,15 @@ async function writeClipboardText(value: string) {
 export function RunLogDialog({ run, events, onClose }: { run: RunResult; events: FlowEvent[]; onClose: () => void }) {
   const [copied, setCopied] = useState(false)
   const logLines = useMemo(() => events.map((event, index) => {
-    const severity = event.type === 'lab_node_failed' || event.type === 'run_failed' ? 'ERROR' : 'INFO'
-    return `${String(index + 1).padStart(2, '0')}  [${eventTimestamp(event)}] [${severity}] ${event.message || event.type || 'runtime event'}`
+    const severity = eventTone(event).toUpperCase()
+    const detail = event.data && Object.keys(event.data).length ? `\n    ${JSON.stringify(event.data)}` : ''
+    return `${String(index + 1).padStart(2, '0')}  [${eventTimestamp(event)}] [${severity}] ${event.message || event.type || 'runtime event'}${detail}`
   }), [events])
   const failureSummary = useMemo(() => buildFailureSummary(run, events), [events, run])
-  const copyFailure = async () => {
-    await writeClipboardText(failureSummary)
+  const isFailure = ['failed', 'interrupted'].includes(run.status) || Boolean(run.error) || Boolean(run.errors?.length)
+  const copySummary = async () => {
+    const summary = isFailure ? failureSummary : [`Run: ${run.run_id}`, `Status: ${run.status}`, `Last node: ${run.current_state || 'completed'}`, `Events: ${events.length}`].join('\n')
+    await writeClipboardText(summary)
     setCopied(true)
     window.setTimeout(() => setCopied(false), 2000)
   }
@@ -293,13 +329,27 @@ export function RunLogDialog({ run, events, onClose }: { run: RunResult; events:
   }
   return (
     <div className="cf-run-log-backdrop" onClick={onClose}>
-      <section className="cf-run-log-dialog" role="dialog" aria-modal="true" aria-label="失败运行日志" onClick={(event) => event.stopPropagation()}>
-        <header><div><span>FAILED RUN</span><strong>运行日志</strong><small>{run.run_id}</small></div><button type="button" onClick={onClose} title="关闭日志"><X aria-hidden="true" /></button></header>
+      <section className="cf-run-log-dialog" role="dialog" aria-modal="true" aria-label="运行详细日志" onClick={(event) => event.stopPropagation()}>
+        <header><div><span>{isFailure ? 'FAILED RUN' : 'RUN DETAIL'}</span><strong>运行详细日志</strong><small>{run.run_id} · {RUN_STATUS_LABELS[run.status] || run.status}</small></div><button type="button" onClick={onClose} title="关闭日志"><X aria-hidden="true" /></button></header>
         <div className="cf-run-log-actions">
-          <button type="button" onClick={() => void copyFailure()}><ClipboardCopy aria-hidden="true" />{copied ? '已复制错误' : '复制错误信息'}</button>
+          <button type="button" onClick={() => void copySummary()}><ClipboardCopy aria-hidden="true" />{copied ? '已复制' : isFailure ? '复制错误信息' : '复制运行摘要'}</button>
           <button type="button" onClick={exportLog}><Download aria-hidden="true" />导出日志</button>
         </div>
-        <pre>{logLines.length ? logLines.join('\n') : '这次失败没有留下可读取的事件日志。'}</pre>
+        <div className="cf-run-log-events" role="log" aria-label="运行事件列表">
+          {events.length ? events.map((event, index) => {
+            const tone = eventTone(event)
+            const data = event.data && Object.keys(event.data).length ? event.data : null
+            return <article className={`cf-run-log-event ${tone}`} key={`${event.created_at || event.timestamp || ''}-${index}`}>
+              <div className="cf-run-log-event-rail"><i /><span>{String(index + 1).padStart(2, '0')}</span></div>
+              <div className="cf-run-log-event-main">
+                <header><span className="cf-run-log-event-label">{eventLabel(event)}</span><time>{eventTimestamp(event)}</time></header>
+                <strong>{event.message || event.type || '运行事件'}</strong>
+                <div className="cf-run-log-event-meta"><code>{event.state || 'runtime'}</code>{event.type && <span>{event.type}</span>}</div>
+                {data && <details><summary>查看事件数据</summary><pre>{JSON.stringify(data, null, 2)}</pre></details>}
+              </div>
+            </article>
+          }) : <div className="cf-run-log-empty">这次运行没有留下可读取的事件日志。</div>}
+        </div>
       </section>
     </div>
   )

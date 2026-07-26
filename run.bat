@@ -2,32 +2,40 @@
 setlocal
 chcp 65001 >nul
 set "ROOT=%~dp0"
-set "PYTHON_DIR=%ROOT%.tools\runtimes\python"
-set "PYTHON_EXE=%PYTHON_DIR%\python.exe"
-set "NODE_DIR=%ROOT%.tools\runtimes\node"
+set PYTHONIOENCODING=utf-8
+set PYTHONUTF8=1
 
-if not exist "%PYTHON_EXE%" goto bootstrap
-if not exist "%NODE_DIR%\node.exe" goto bootstrap
-if not exist "%PYTHON_DIR%\Lib\site-packages\uvicorn" goto bootstrap
+where python >nul 2>nul || goto missing_python
+where node >nul 2>nul || goto missing_node
+where npm >nul 2>nul || goto missing_node
+
+python -c "import uvicorn" >nul 2>nul || goto bootstrap
 if not exist "%ROOT%src\frontend\node_modules\.bin\vite.cmd" goto bootstrap
 
 :launch
-set "PATH=%NODE_DIR%;%PATH%"
-set PYTHONIOENCODING=utf-8
-set PYTHONUTF8=1
-"%PYTHON_EXE%" "%ROOT%scripts\launch.py"
+python "%ROOT%scripts\launch.py"
 set "EXIT_CODE=%ERRORLEVEL%"
-if not "%EXIT_CODE%"=="0" echo CartridgeFlow exited with code %EXIT_CODE%.
+if not "%EXIT_CODE%"=="0" echo CartridgeFlowLite exited with code %EXIT_CODE%.
 pause
 exit /b %EXIT_CODE%
 
 :bootstrap
-echo First run: installing the project-local Python and Node.js runtimes...
+echo Installing CartridgeFlowLite dependencies with the system Python and Node.js...
 powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%scripts\bootstrap.ps1"
 if errorlevel 1 goto setup_failed
 goto launch
 
+:missing_python
+echo Python is required but was not found in PATH.
+pause
+exit /b 1
+
+:missing_node
+echo Node.js and npm are required but were not found in PATH.
+pause
+exit /b 1
+
 :setup_failed
-echo Runtime setup failed. Review the error above and try again.
+echo Dependency setup failed. Review the error above and try again.
 pause
 exit /b 1

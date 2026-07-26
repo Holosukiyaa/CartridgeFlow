@@ -534,7 +534,7 @@ def get_studio_conformance():
         return {
             "available": False,
             "report_path": CONFORMANCE_REPORT.as_posix(),
-            "command": ".tools/runtimes/python/python.exe scripts/run_conformance.py",
+            "command": "python scripts/run_conformance.py",
         }
     return {"available": True, "report": report}
 

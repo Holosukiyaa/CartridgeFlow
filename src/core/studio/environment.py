@@ -135,8 +135,7 @@ def system_checks() -> list[dict]:
         "version": platform.python_version(),
         "path": sys.executable,
     }]
-    node = ROOT / ".tools" / "runtimes" / "node" / ("node.exe" if os.name == "nt" else "node")
-    checks.append(_command_check("node", "Node.js", str(node) if node.is_file() else shutil.which("node"), ["--version"]))
+    checks.append(_command_check("node", "Node.js", shutil.which("node"), ["--version"]))
     checks.append(_command_check("ffmpeg", "FFmpeg", shutil.which("ffmpeg"), ["-version"]))
     checks.append(_command_check("git", "Git", shutil.which("git"), ["--version"]))
     checks.append({

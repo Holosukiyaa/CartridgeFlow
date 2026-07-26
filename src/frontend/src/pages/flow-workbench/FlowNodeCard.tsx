@@ -127,6 +127,7 @@ function CompactNodeContent({ node, order, runState }: Pick<FlowNodeCardProps, '
 export function FlowNodeCard(props: FlowNodeCardProps): ReactNode {
   const { node, viewMode, order, selected, detailOwner, compactStatic, counts, incomingNodes, outgoingNodes, runState, probeState, probeSelected, onSelect } = props
   const view = buildFlowNodeCardView(node, runState, { incomingNodes, outgoingNodes })
+  const boundaryNode = node.id === 'start' || node.id === 'complete' || node.action === 'complete' || node.action === 'end'
   const hasStartProbe = probeState?.startNodeId === node.id
   const hasEndProbe = probeState?.endNodeId === node.id
   const startProbeDrag = (kind: TestProbeKind) => (event: DragEvent<HTMLButtonElement>) => {
@@ -149,7 +150,7 @@ export function FlowNodeCard(props: FlowNodeCardProps): ReactNode {
   }
   return (
     <div
-      className={`flow-node-card ${viewMode === 'detailed' ? 'detailed-node' : 'compact-node'} ${detailOwner ? 'detail-owner-node' : ''} ${selected ? 'selected' : ''} ${node.locked ? 'locked' : 'unlocked'} ${view.isImportantNode ? 'important-node' : ''} ${view.remoteServiceLabel ? 'remote-service-node' : ''} ${compactStatic && selected ? 'compact-focus' : ''} ${probeSelected ? 'probe-selected' : ''} ${hasStartProbe ? 'probe-start' : ''} ${hasEndProbe ? 'probe-end' : ''} ${view.runClass}`}
+      className={`flow-node-card ${viewMode === 'detailed' ? 'detailed-node' : 'compact-node'} ${detailOwner ? 'detail-owner-node' : ''} ${selected ? 'selected' : ''} ${node.locked ? 'locked' : 'unlocked'} ${boundaryNode ? 'boundary-node' : ''} ${view.isImportantNode ? 'important-node' : ''} ${view.remoteServiceLabel ? 'remote-service-node' : ''} ${compactStatic && selected ? 'compact-focus' : ''} ${probeSelected ? 'probe-selected' : ''} ${hasStartProbe ? 'probe-start' : ''} ${hasEndProbe ? 'probe-end' : ''} ${view.runClass}`}
       data-node-id={node.id}
       data-node-kind={view.semanticKind}
       data-config-health={view.configHealth}

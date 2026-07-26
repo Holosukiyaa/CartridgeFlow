@@ -245,10 +245,18 @@ export default function CartridgeWorkspaceControl({ current, empty = false, onSw
     return (
       <div className="cf-page cf-workbench-page cf-empty-workbench-page">
         {hiddenPicker}
-        <div className="cf-empty-workbench-header"><div><span>CARTRIDGEFLOW LITE</span><h1>卡带设计工作台</h1></div><Button className="cf-outline-btn" onClick={() => void loadFlows()}>刷新</Button></div>
         <main className="cf-empty-workbench-canvas">
-          <div className="cf-empty-workbench-mark" aria-hidden="true"><span>CF</span><i /><i /><i /></div>
-          <div className="cf-empty-workbench-copy"><span>NO CARTRIDGE OPEN</span><h2>从一张卡带开始设计</h2><p>创建新的开发卡带，或者导入已有卡带文件。进入后所有设计、资源和真实运行能力都在同一个工作台完成。</p><div><Button className="cf-accent-btn" onClick={() => openPanel('create')}>新建开发卡带</Button><Button className="cf-outline-btn" onClick={() => importPickerRef.current?.click()} loading={busy} loadingText="导入中...">导入已有卡带</Button></div></div>
+          <div className="cf-empty-workbench-brand"><b>CF</b><span>CARTRIDGEFLOW</span></div>
+          <div className="cf-empty-workbench-visual" aria-hidden="true">
+            <i className="cf-empty-dots" />
+            <i className="cf-empty-wire wire-top" /><i className="cf-empty-wire wire-bottom" />
+            <div className="cf-empty-card-shadow" />
+            <div className="cf-empty-card">
+              <b>CF</b><span /><span /><span />
+              <em /><small />
+            </div>
+          </div>
+          <div className="cf-empty-workbench-copy"><span>从一张卡带开始设计</span><h2>从一张卡带<br />开始设计</h2><i /><p>创建新的开发卡带，或者导入已有卡带文件。进入后所有设计、资源和真实运行能力都在同一个工作台完成。</p><div><Button className="cf-accent-btn" onClick={() => openPanel('create')}>新建开发卡带</Button><Button className="cf-outline-btn" onClick={() => importPickerRef.current?.click()} loading={busy} loadingText="导入中...">导入已有卡带</Button></div></div>
         </main>
         {modal}
       </div>

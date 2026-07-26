@@ -21,7 +21,7 @@
       "implementation": ["src/core/protocol/compatibility.py#build_compatibility_report"],
       "positive_tests": ["test_runtime_contract.RuntimeContractConformanceTest.test_protocol_manifest_is_compatible"],
       "failure_tests": ["test_compatibility_report.CompatibilityReportConformanceTest.test_missing_required_capability_blocks"],
-      "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/FlowWorkbench.tsx", "src/frontend/src/components/CapabilityEvidenceViewer.tsx"]}
+      "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/FlowWorkbench.tsx"]}
     },
     "root_runtime": {
       "verification": "verified",

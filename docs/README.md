@@ -12,7 +12,6 @@
 | 修改 Portable DLC | [Portable DLC 架构](architecture/PORTABLE_DLC_ARCHITECTURE.md) -> [协议治理](protocol/GOVERNANCE.md) |
 | 修改 Flow 节点主卡或详情信息 | [节点信息架构报告](architecture/FLOW_NODE_INFORMATION_ARCHITECTURE.md) -> [最新 CF-FARP 0.7 协议](protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.7.md) -> 对应节点视图代码 |
 | 开发和运行自动测试 | [开发与维护](development/README.md) -> `scripts/` |
-| 重做一级页面视觉 | [Img2 UI 重设计提示词包](design/IMG2_UI_REDESIGN_PROMPTS.md) -> [前端图标、素材与动效规范](design/FRONTEND_ASSET_SYSTEM.md) -> 逐页评审与迁移 |
 | 查找某个文件 | [逐文件清单](development/FILE_INVENTORY.md) |
 
 ## 文档分区
@@ -24,7 +23,6 @@ docs/
 ├─ development/          维护入口、文件清单、深层 AI 参考和可选 Skill
 ├─ planning/             路线图、当前任务和任务模板
 ├─ architecture/         专项架构决策与不可破坏的设计约束
-├─ design/               产品界面设计基线、生成提示词和视觉评审规则
 └─ protocol/             当前协议、已发布历史快照和治理规则
 ```
 
@@ -38,8 +36,6 @@ docs/
 - [CF-FARP 0.6](protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.6.md)：当前参考底座仍在运行的上一版协议快照。
 - [Portable DLC 架构](architecture/PORTABLE_DLC_ARCHITECTURE.md)：基座与卡带私有能力的激活、隔离和所有权约束。
 - [Flow 节点信息架构](architecture/FLOW_NODE_INFORMATION_ARCHITECTURE.md)：逐类规定开始、结束和全部业务节点的主卡、运行态、详情子卡与禁止展示信息。
-- [Img2 UI 重设计提示词包](design/IMG2_UI_REDESIGN_PROMPTS.md)：锁定现有侧栏，先生成运行诊断视觉母版，再为各一级页面生成统一视觉稿。
-- [前端图标、素材与动效规范](design/FRONTEND_ASSET_SYSTEM.md)：规定 Lucide、Simple Icons、Motion 与项目自有品牌资产的使用边界。
 - [协议治理](protocol/GOVERNANCE.md)：修改协议、实现 Flow 和发布快照时必须遵守的规则。
 
 当前基座支持矩阵以 `config/base/BASE_IMPLEMENTATION.json` 为准：
@@ -87,8 +83,7 @@ docs/
 | `.data/runtime/` | 运行记录、检查点和 Worker 生命周期状态。 |
 | `.data/reports/` | 服务日志、错误报告和 conformance 报告。 |
 | `.data/temp/` | 上传与导入缓存，可安全清理。 |
-| `.tools/runtimes/` | Bootstrap 准备的项目本地 Python 和 Node 开发运行时。 |
-| `.tools/downloads/` | 可重建的运行时安装包下载缓存。 |
+| 系统 Python / Node | Lite 直接使用 PATH 中的开发环境，不携带项目本地运行时。 |
 | `src/frontend/node_modules/` | npm 第三方依赖。 |
 | `src/frontend/dist/` | 前端生产构建产物，由 Vite 生成。 |
 | `__pycache__/`、`.pytest_cache/` | 可清理的解释器和测试缓存。 |

@@ -352,12 +352,55 @@
   font-size: 12px;
 }
 
-.cf-canvas-settings input { width: 16px; height: 16px; accent-color: #ff6b24; }
+.cf-canvas-settings input:not([type="color"]) { width: 16px; height: 16px; accent-color: var(--accent); }
 .cf-canvas-settings > div button { min-width: 52px; height: 32px; border: 1px solid #e0e4e8; border-radius: 6px; background: #fff; color: #55616f; font-size: 11px; }
-.cf-canvas-settings > div button.active { border-color: #ff8d54; background: #fff8f4; color: #e45e1d; }
+.cf-canvas-settings > div button.active { border-color: color-mix(in srgb, var(--accent) 52%, #fff); background: var(--accent-soft); color: var(--accent-dark); }
 .cf-canvas-settings > button { min-height: 38px; display: flex; align-items: center; justify-content: center; gap: 7px; border: 1px solid #e0e4e8; border-radius: 7px; background: #fff; color: #35414f; font-size: 12px; }
 .cf-canvas-settings > button svg { width: 16px; height: 16px; }
 .cf-canvas-settings > div > b { color: #33404d; font-size: 12px; font-weight: 680; }
+
+.cf-canvas-theme-settings {
+  padding: 10px;
+  display: grid;
+  gap: 9px;
+  border: 1px solid #e2e6e9;
+  border-radius: 8px;
+  background: #fbfcfd;
+}
+
+.cf-canvas-theme-heading { min-height: 18px !important; align-items: baseline !important; }
+.cf-canvas-theme-heading > span { color: #263442; font-size: 12px; font-weight: 720; }
+.cf-canvas-theme-heading > small { color: #7b8792; font-size: 11px; }
+
+.cf-canvas-theme-presets { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.cf-canvas-theme-presets button {
+  min-width: 0 !important;
+  height: 42px !important;
+  display: grid;
+  grid-template-columns: 13px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  padding: 0 7px;
+  border: 1px solid #dfe4e8;
+  border-radius: 6px;
+  background: #fff;
+  color: #536170;
+  cursor: pointer;
+}
+.cf-canvas-theme-presets button:hover { border-color: color-mix(in srgb, var(--accent) 48%, #dfe4e8); background: var(--accent-soft); }
+.cf-canvas-theme-presets button.active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-dark); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 24%, transparent); }
+.cf-canvas-theme-presets i { width: 13px; height: 13px; border: 1px solid rgba(31, 41, 51, .14); border-radius: 999px; }
+.cf-canvas-theme-presets span { overflow: hidden; font-size: 11px; font-weight: 680; text-overflow: ellipsis; white-space: nowrap; }
+
+.cf-canvas-theme-custom {
+  min-height: 34px !important;
+  padding-top: 8px;
+  border-top: 1px solid #e7ebee;
+}
+.cf-canvas-theme-custom > span { font-size: 12px; }
+.cf-canvas-theme-custom input[type="color"] { width: 30px; height: 26px; padding: 2px; border: 1px solid #d8dee4; border-radius: 5px; background: #fff; cursor: pointer; }
+.cf-canvas-theme-custom code { min-width: 59px; color: #586574; font: 11px var(--mono); text-align: right; }
+.cf-canvas-theme-reset { min-height: 32px !important; border-style: dashed !important; color: #687583 !important; }
 
 .cf-canvas-tool-panel.tool-panel {
   width: min(520px, calc(100% - 100px));
@@ -544,7 +587,7 @@
 }
 .cf-canvas-history-list > article:hover { border-color: #efae8d; }
 .cf-canvas-history-list > article.active { border-color: #ef8350; background: #fff8f4; box-shadow: 0 0 0 2px rgba(255, 107, 36, .08); }
-.cf-canvas-history-select { min-width: 0; min-height: 106px; padding: 11px 12px; display: grid; gap: 7px; border: 0; background: transparent; color: #2b3744; text-align: left; cursor: pointer; }
+.cf-canvas-history-select { position: relative; min-width: 0; min-height: 82px; padding: 12px 42px 12px 12px; display: grid; gap: 6px; border: 0; background: transparent; color: #2b3744; text-align: left; cursor: pointer; }
 .cf-canvas-history-status { display: flex; align-items: center; gap: 7px; color: #52606d; font-size: 12px; }
 .cf-canvas-history-status i { width: 8px; height: 8px; border-radius: 50%; background: #a2abb4; }
 .cf-canvas-history-status i.completed { background: #1e9a5a; }
@@ -558,10 +601,18 @@
 .cf-canvas-history-status time { margin-left: auto; color: #818b95; font-size: 12px; }
 .cf-canvas-history-select > strong { overflow: hidden; font-size: 13px; font-weight: 690; text-overflow: ellipsis; white-space: nowrap; }
 .cf-canvas-history-select > code { overflow: hidden; color: #7b8590; font: 12px/1.3 var(--mono); text-overflow: ellipsis; white-space: nowrap; }
-.cf-canvas-history-select > small { overflow: hidden; color: #c44435; font-size: 12px; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
-.cf-canvas-history-log { min-height: 38px; margin: 0 10px 10px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; border: 1px solid #ef9a8f; border-radius: 7px; background: #fff7f6; color: #bd3d34; font-size: 12px; cursor: pointer; }
-.cf-canvas-history-log:hover { border-color: #e6766a; background: #fff1ef; }
-.cf-canvas-history-log svg { width: 15px; height: 15px; }
+.cf-canvas-history-chevron { position: absolute; top: 15px; right: 12px; width: 22px; height: 22px; display: grid; place-items: center; color: #7c8791; }
+.cf-canvas-history-chevron svg { width: 16px; height: 16px; }
+.cf-canvas-history-expanded { padding: 0 12px 12px; display: grid; gap: 10px; }
+.cf-canvas-history-summary { padding-top: 10px; border-top: 1px solid #ece7e3; display: grid; gap: 5px; }
+.cf-canvas-history-summary > span { color: #8a7669; font-size: 11px; font-weight: 720; }
+.cf-canvas-history-summary p { margin: 0; color: #556270; font-size: 12px; line-height: 1.55; }
+.cf-canvas-history-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.cf-canvas-history-actions button { min-height: 37px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid #d9e0e5; border-radius: 7px; background: #fff; color: #405060; font-size: 12px; cursor: pointer; }
+.cf-canvas-history-actions button:hover:not(:disabled) { border-color: #ef9e76; background: #fffaf7; color: #d9571f; }
+.cf-canvas-history-actions button.is-error { border-color: #ef9a8f; background: #fff7f6; color: #bd3d34; }
+.cf-canvas-history-actions button:disabled { cursor: not-allowed; opacity: .48; }
+.cf-canvas-history-actions svg { width: 15px; height: 15px; }
 .cf-canvas-history-empty { min-height: 220px; display: grid; place-items: center; align-content: center; gap: 8px; color: #7b8590; text-align: center; }
 .cf-canvas-history-empty svg { width: 28px; height: 28px; color: #a7afb7; }
 .cf-canvas-history-empty strong { color: #465360; font-size: 14px; }
@@ -1036,10 +1087,10 @@
 .cf-flow-graph-shell.canvas-tool-connect .flow-node-card .cf-node-port-side-bottom { bottom: -10px; }
 
 .cf-run-log-backdrop { position: fixed; inset: 0; z-index: 1400; display: grid; place-items: center; padding: 24px; background: rgba(30, 37, 45, .24); }
-.cf-run-log-dialog { width: min(900px, 80vw); height: min(620px, 80vh); min-height: 0; display: grid; grid-template-rows: auto auto minmax(0, 1fr); overflow: hidden; border: 1px solid #dfe3e7; border-radius: 10px; background: #fff; box-shadow: 0 22px 58px rgba(24, 32, 41, .2); }
+.cf-run-log-dialog { width: min(1040px, 86vw); height: min(780px, 88vh); min-height: 0; display: grid; grid-template-rows: auto auto minmax(0, 1fr); overflow: hidden; border: 1px solid #dfe3e7; border-radius: 10px; background: #fff; box-shadow: 0 22px 58px rgba(24, 32, 41, .2); }
 .cf-run-log-dialog > header { min-height: 72px; padding: 12px 14px 12px 18px; display: flex; align-items: flex-start; justify-content: space-between; border-bottom: 1px solid #e5e8eb; }
 .cf-run-log-dialog > header > div { min-width: 0; display: grid; gap: 2px; }
-.cf-run-log-dialog > header span { color: #d9483e; font: 700 12px/1.2 var(--mono); }
+.cf-run-log-dialog > header span { color: #e66527; font: 700 12px/1.2 var(--mono); }
 .cf-run-log-dialog > header strong { color: #202b38; font-size: 18px; font-weight: 720; }
 .cf-run-log-dialog > header small { overflow: hidden; color: #77828d; font: 12px/1.3 var(--mono); text-overflow: ellipsis; white-space: nowrap; }
 .cf-run-log-dialog > header > button { width: 36px; height: 36px; display: grid; place-items: center; border: 0; border-radius: 7px; background: transparent; color: #6d7884; cursor: pointer; }
@@ -1047,10 +1098,28 @@
 .cf-run-log-dialog > header svg { width: 18px; height: 18px; }
 .cf-run-log-actions { min-height: 56px; padding: 9px 18px; display: flex; align-items: center; gap: 9px; border-bottom: 1px solid #e7eaed; background: #fbfcfc; }
 .cf-run-log-actions button { min-height: 38px; padding: 0 13px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; border: 1px solid #dfe3e7; border-radius: 7px; background: #fff; color: #3e4b58; font-size: 12px; cursor: pointer; }
-.cf-run-log-actions button:first-child { border-color: #ee9a91; color: #bd3d34; }
+.cf-run-log-actions button:first-child { border-color: #edb092; color: #c65725; }
 .cf-run-log-actions button:hover { background: #fff8f5; }
 .cf-run-log-actions svg { width: 16px; height: 16px; }
-.cf-run-log-dialog > pre { min-height: 0; margin: 12px 14px 14px; padding: 15px 16px; overflow: auto; border: 1px solid #e0e4e8; border-radius: 8px; background: #fbfcfd; color: #33404d; font: 12px/1.75 var(--mono); white-space: pre-wrap; }
+.cf-run-log-events { min-height: 0; margin: 12px 14px 14px; padding: 12px; display: grid; align-content: start; gap: 8px; overflow: auto; border: 1px solid #e0e4e8; border-radius: 8px; background: #fbfcfd; }
+.cf-run-log-event { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 10px; padding: 11px 12px 11px 0; border: 1px solid #e5e9ec; border-left: 3px solid #9ba6b0; border-radius: 7px; background: #fff; }
+.cf-run-log-event-rail { display: grid; align-content: start; justify-items: center; gap: 6px; color: #89939d; font: 700 10px/1 var(--mono); }
+.cf-run-log-event-rail i { width: 9px; height: 9px; margin-top: 3px; border-radius: 50%; background: currentColor; }
+.cf-run-log-event-main { min-width: 0; display: grid; gap: 5px; }
+.cf-run-log-event-main > header { min-height: 0; padding: 0; display: flex; align-items: center; justify-content: space-between; border: 0; }
+.cf-run-log-event-label { color: inherit; font-size: 11px; font-weight: 720; }
+.cf-run-log-event time { color: #87919b; font: 11px/1.2 var(--mono); }
+.cf-run-log-event strong { color: #283543; font-size: 13px; line-height: 1.45; font-weight: 650; }
+.cf-run-log-event-meta { display: flex; flex-wrap: wrap; gap: 7px; color: #84909b; font-size: 11px; }
+.cf-run-log-event-meta code { padding: 2px 5px; border-radius: 4px; background: #f2f5f6; color: #53616f; font: 11px/1.2 var(--mono); }
+.cf-run-log-event details { margin-top: 2px; }
+.cf-run-log-event summary { width: fit-content; color: #687684; font-size: 11px; cursor: pointer; }
+.cf-run-log-event details pre { min-height: 240px; max-height: min(480px, 48vh); margin: 8px 0 0; padding: 13px 14px; overflow: auto; border: 1px solid #e1e6e9; border-radius: 6px; background: #f8fafb; color: #41505e; font: 12px/1.65 var(--mono); white-space: pre-wrap; }
+.cf-run-log-event.success { border-left-color: #1a9b5c; color: #16864e; }
+.cf-run-log-event.active { border-left-color: #3679d8; color: #2d6fc9; }
+.cf-run-log-event.warning { border-left-color: #dd941b; color: #bd7708; }
+.cf-run-log-event.error { border-left-color: #d94b40; color: #c23b31; background: #fffafa; }
+.cf-run-log-empty { min-height: 180px; display: grid; place-items: center; color: #7d8892; font-size: 13px; }
 
 .cf-canvas-status {
   bottom: 18px !important;
@@ -1397,6 +1466,31 @@
 
 .cf-workbench-page .flow-node-card.detailed-node.node-run-idle {
   background: rgba(245, 246, 247, .9);
+}
+
+/* Start and terminal nodes are structural boundaries, not category-colored work nodes. */
+.cf-workbench-page .flow-node-card.detailed-node.locked.boundary-node {
+  --node-accent: #74818c !important;
+  --node-tint: #f2f5f7 !important;
+  border-color: #aeb7be !important;
+  background: #fbfcfd !important;
+  color: #3c4853;
+}
+
+.cf-workbench-page .flow-node-card.detailed-node.locked.boundary-node .flow-node-detail-band {
+  border-color: #d9e0e5;
+  background: rgba(255, 255, 255, .78);
+}
+
+.cf-workbench-page .flow-node-card.detailed-node.locked.boundary-node .flow-node-title strong {
+  border-color: #d8dfe4;
+  background: #f3f6f8 !important;
+  color: #63717d !important;
+}
+
+.cf-workbench-page .flow-node-card.detailed-node.locked.boundary-node.selected {
+  border-color: #77848f !important;
+  box-shadow: 0 0 0 3px rgba(108, 122, 134, .18), 0 6px 16px rgba(51, 62, 72, .12), 0 0 0 1px rgba(255,255,255,.82) inset;
 }
 
 .cf-workbench-page .flow-node-card.compact-node {
@@ -1855,4 +1949,103 @@
   .cf-tool-filter-fields { grid-template-columns: 1fr; }
   .cf-resource-flow-bindings > div { grid-template-columns: 1fr auto; padding-block: 8px; }
   .cf-resource-flow-bindings em { grid-column: 1 / -1; grid-row: 2; }
+}
+
+/* Final workspace theme mapping. Semantic node and run-status colors remain
+   independent; all brand and interaction accents follow the selected theme. */
+.cf-workbench-brand-mark {
+  background: var(--accent);
+  box-shadow: 0 5px 14px rgb(var(--cf-accent-rgb) / .2);
+}
+
+.cf-workbench-current-trigger:hover,
+.cf-workbench-page .cf-workbench-mode-switch button:hover,
+.cf-canvas-tool-rail button:hover,
+.cf-node-template-presets button:hover,
+.cf-canvas-history-tools button:hover:not(:disabled),
+.cf-canvas-history-list > article:hover {
+  border-color: color-mix(in srgb, var(--accent) 52%, #dfe4e8) !important;
+  background: var(--accent-soft) !important;
+  color: var(--accent-dark) !important;
+}
+
+.cf-workbench-page .cf-workbench-mode-switch button.active,
+.cf-canvas-tool-rail button.active,
+.cf-node-template-presets button.active,
+.cf-canvas-history-list > article.active,
+.cf-tool-filter-modes button.active {
+  border-color: var(--accent) !important;
+  background: var(--accent-soft) !important;
+  color: var(--accent-dark) !important;
+  box-shadow: 0 0 0 2px rgb(var(--cf-accent-rgb) / .08) !important;
+}
+
+.cf-workbench-page .cf-workbench-runtime-controls button:hover:not(:disabled),
+.cf-workbench-page .cf-workbench-runtime-controls button.active {
+  background: var(--accent-soft) !important;
+}
+
+.cf-workbench-page .cf-workbench-runtime-controls button.active {
+  box-shadow: inset 0 -2px 0 var(--accent) !important;
+}
+
+.cf-node-template-fields input:focus,
+.cf-node-template-fields textarea:focus,
+.cf-resource-form input:focus,
+.cf-resource-form select:focus,
+.cf-resource-form textarea:focus {
+  border-color: var(--accent) !important;
+  outline-color: rgb(var(--cf-accent-rgb) / .12) !important;
+  box-shadow: 0 0 0 2px rgb(var(--cf-accent-rgb) / .08) !important;
+}
+
+.cf-flow-graph-shell.canvas-tool-select .react-flow__selection {
+  border-color: var(--accent);
+  background: rgb(var(--cf-accent-rgb) / .08);
+}
+
+.cf-flow-graph-shell.canvas-tool-connect .flow-node-card .cf-node-port {
+  box-shadow: 0 0 0 5px rgb(var(--cf-accent-rgb) / .1), 0 2px 7px rgba(53, 62, 72, .22);
+}
+
+.cf-flow-graph-shell.canvas-tool-connect .flow-node-card .cf-node-port:hover {
+  box-shadow: 0 0 0 7px rgb(var(--cf-accent-rgb) / .14), 0 2px 8px rgba(53, 62, 72, .26);
+}
+
+.cf-canvas-history-panel > header span,
+.cf-run-log-dialog > header span,
+.cf-modal-kicker {
+  color: var(--accent);
+}
+
+.cf-canvas-status span i { background: var(--accent); }
+
+.cf-cartridge-floating-actions button.primary,
+.cf-resource-card-actions .primary {
+  border-color: var(--accent) !important;
+  background: var(--accent) !important;
+  color: #fff !important;
+}
+
+.cf-open-other-cartridge,
+.cf-resource-manager button.primary {
+  border-color: color-mix(in srgb, var(--accent) 66%, #fff) !important;
+  background: var(--accent-soft) !important;
+  color: var(--accent-dark) !important;
+}
+
+.cf-resource-card.expanded,
+.cf-cartridge-manager-list article.current {
+  border-color: color-mix(in srgb, var(--accent) 68%, #dfe4e8);
+  box-shadow: 0 3px 12px rgb(var(--cf-accent-rgb) / .07);
+}
+
+.cf-tool-select > i.checked {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.cf-resource-empty svg,
+.cf-node-template-config > footer svg {
+  color: var(--accent);
 }

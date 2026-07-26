@@ -155,7 +155,7 @@ Run at minimum:
 python -m json.tool protocol/CF-FARP-0.x.json
 python -m json.tool protocol/profiles.json
 python -m json.tool protocol/capabilities.json
-.\.tools\runtimes\python\python.exe scripts\run_conformance.py
+python scripts/run_conformance.py
 ```
 
 If implementation changed, also run targeted runtime/API/frontend tests.

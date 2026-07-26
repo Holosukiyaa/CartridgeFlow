@@ -1,11 +1,8 @@
 @import './styles/00-foundation.css';
 @import './styles/10-workbench-shell.css';
 @import './styles/15-cartridge-workspace.css';
-@import './styles/20-flow-management.css';
 @import './styles/30-workbench-runtime.css';
-@import './styles/40-resource-config.css';
 @import './styles/50-workbench-design.css';
-@import './styles/70-home-and-model.css';
 @import './styles/95-config-and-appearance.css';
 @import './styles/98-reference-theme.css';
 @import './styles/99-workbench-reference-shell.css';

@@ -120,17 +120,19 @@ class CleanBaseHygieneTests(unittest.TestCase):
         self.assertFalse((scripts_root / "skills").exists())
         self.assertTrue((ROOT / "docs" / "development" / "skills").is_dir())
 
-    def test_project_local_runtimes_are_grouped_under_tools_runtimes(self):
+    def test_lite_uses_host_runtimes(self):
         launcher = (ROOT / "run.bat").read_text(encoding="utf-8")
         bootstrap = (ROOT / "scripts" / "bootstrap.ps1").read_text(encoding="utf-8")
 
-        self.assertIn(r".tools\runtimes\python", launcher)
-        self.assertIn(r".tools\runtimes\node", launcher)
-        self.assertIn('$RuntimesDir = Join-Path $ToolsDir "runtimes"', bootstrap)
-        self.assertIn('$LegacyPythonDir = Join-Path $ToolsDir "python"', bootstrap)
-        self.assertIn('$LegacyNodeDir = Join-Path $ToolsDir "node"', bootstrap)
+        self.assertIn("where python", launcher)
+        self.assertIn("where node", launcher)
+        self.assertIn('Resolve-RequiredCommand "python"', bootstrap)
+        self.assertIn('Resolve-RequiredCommand "node"', bootstrap)
+        self.assertNotIn(".tools", launcher)
+        self.assertNotIn(".tools", bootstrap)
         environment = (ROOT / "src" / "core" / "studio" / "environment.py").read_text(encoding="utf-8")
-        self.assertIn('ROOT / ".tools" / "runtimes" / "node"', environment)
+        self.assertIn('shutil.which("node")', environment)
+        self.assertNotIn('ROOT / ".tools" / "runtimes"', environment)
 
     def test_legacy_release_shelves_are_not_runtime_cartridges(self):
         with tempfile.TemporaryDirectory() as temp_dir:

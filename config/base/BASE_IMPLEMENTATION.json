@@ -120,7 +120,7 @@
     "status": "partial",
     "report_schema": "cartridgeflow.conformance_report.v1",
     "report_path": ".data/reports/conformance/latest.json",
-    "report_command": ".tools/runtimes/python/python.exe scripts/run_conformance.py",
+    "report_command": "python scripts/run_conformance.py",
     "evidence_manifest": "config/base/capability_evidence.json"
   }
 }

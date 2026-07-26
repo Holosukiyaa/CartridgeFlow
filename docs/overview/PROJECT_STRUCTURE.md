@@ -194,7 +194,7 @@ CartridgeFlow-main/
 │  ├─ architecture/      专项架构决策和设计约束
 │  └─ protocol/          当前协议、历史快照和治理规则
 ├─ scripts/               不随产品交付的可执行维护区
-│  ├─ bootstrap.ps1       安装项目本地开发环境
+│  ├─ bootstrap.ps1       使用系统环境安装项目依赖
 │  ├─ launch.py           启动前后端开发服务
 │  ├─ run_conformance.py  运行完整自动验证
 │  └─ tests/              当前协议、运行、Studio、LLM、卫生和历史测试

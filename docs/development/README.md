@@ -14,7 +14,7 @@ docs/development/
 
 ```text
 scripts/
-├─ bootstrap.ps1         安装项目本地 Python 和 Node
+├─ bootstrap.ps1         使用系统 Python 和 Node 安装项目依赖
 ├─ launch.py             启动前后端开发服务
 ├─ run_conformance.py    运行测试并生成一致性报告
 └─ tests/
@@ -33,8 +33,8 @@ scripts/
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/bootstrap.ps1
-.\.tools\runtimes\python\python.exe scripts/launch.py
-.\.tools\runtimes\python\python.exe scripts/run_conformance.py
+python scripts/launch.py
+python scripts/run_conformance.py
 ```
 
 修改产品行为时先看 `src/`。修改验证规则、开发环境或维护流程时再进入 `scripts/`。当前能力证据只能引用当前或领域中立测试，不能由 `scripts/tests/history/` 中的旧协议测试代替。

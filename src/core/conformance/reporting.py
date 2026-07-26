@@ -129,7 +129,7 @@ def build_conformance_report(
             "started_at": started_at or finished,
             "finished_at": finished,
             "duration_ms": round(duration_ms, 3),
-            "command": ".tools/runtimes/python/python.exe scripts/run_conformance.py",
+            "command": "python scripts/run_conformance.py",
         },
         "tests": {
             "status": "failed" if failed_count else "passed",

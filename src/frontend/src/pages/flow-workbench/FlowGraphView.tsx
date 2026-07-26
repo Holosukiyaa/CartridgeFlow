@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import {
   ReactFlow,
   Background,
@@ -23,6 +23,7 @@ import '@xyflow/react/dist/style.css'
 import { AlignHorizontalSpaceAround, Box, Braces, BrainCircuit, GitBranch, GripVertical, Lock, Maximize, Maximize2, MessageSquare, MousePointer2, Settings, Unlock, Wrench, ZoomIn, ZoomOut } from 'lucide-react'
 import type { FlowEdge, FlowEvent, FlowGraph, FlowNode } from '../../api.ts'
 import { showToast } from '../../toast.tsx'
+import { applyWorkspaceTheme, loadWorkspaceTheme, saveWorkspaceTheme, WORKSPACE_THEME_PRESETS, type WorkspaceTheme } from '../../appearance.ts'
 import type { CreateNodeHandler, NodeCategoryId } from './types.ts'
 import { FLOW_NODE_DIMENSIONS, NODE_CATEGORIES, buildAutoAlignLayout, buildBalancedLayout, getNodeCategory, getPreset, getPresets, isStartNode, type FlowNodeViewMode } from './nodeModel.ts'
 import { getAvailableNodeDetailSections, type NodeDetailSection } from './nodeDetails.ts'
@@ -251,7 +252,14 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
   const [canvasLocked, setCanvasLocked] = useState(false)
   const gridSize = 10
   const [gridSnap, setGridSnap] = useState(true)
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; node: FlowNode | null; edge?: FlowGraphEdge | null } | null>(null)
+  const [workspaceTheme, setWorkspaceTheme] = useState<WorkspaceTheme>(() => loadWorkspaceTheme())
+  const [contextMenu, setContextMenu] = useState<{
+    x: number
+    y: number
+    node: FlowNode | null
+    edge?: FlowGraphEdge | null
+    side?: 'left' | 'right'
+  } | null>(null)
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance | null>(null)
   const [nodeEditorPositions, setNodeEditorPositions] = useState<Record<string, NodeEditorPosition>>({})
   const [draggingEditorId, setDraggingEditorId] = useState<string | null>(null)
@@ -262,6 +270,10 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
   const nodeEditorDragRef = useRef<NodeEditorDragState | null>(null)
   const rightGestureRef = useRef<{ x: number; y: number; moved: boolean } | null>(null)
   const suppressContextMenuUntilRef = useRef(0)
+  const updateWorkspaceTheme = useCallback((nextTheme: WorkspaceTheme) => {
+    const saved = saveWorkspaceTheme(nextTheme)
+    setWorkspaceTheme(saved)
+  }, [])
   const nodeOrder = useMemo(() => new Map(graph.nodes.map((node, index) => [node.id, index + 1])), [graph.nodes])
   const nodeById = useMemo(() => new Map(graph.nodes.map((node) => [node.id, node])), [graph.nodes])
   const probeSelectedNodeIds = useMemo(() => new Set(testProbeState?.selectedNodeIds || []), [testProbeState?.selectedNodeIds])
@@ -522,6 +534,7 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
 
   useEffect(() => setNodes(initialNodes), [initialNodes])
   useEffect(() => setEdges(initialEdges), [initialEdges])
+  useEffect(() => { applyWorkspaceTheme(workspaceTheme) }, [workspaceTheme])
   useEffect(() => {
     setNodeEditorPositions({})
     setDraggingEditorId(null)
@@ -931,10 +944,10 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
           const node = graphNode.data as unknown as FlowNode
           onSelectNode(node)
           focusCanvasNode(node.id)
-          const canvas = wrapperRef.current?.getBoundingClientRect()
+          const pointer = flowInstance?.screenToFlowPosition({ x: event.clientX, y: event.clientY })
           setContextMenu({
-            x: canvas ? Math.min(canvas.right - 188, canvas.left + canvas.width / 2 + 158) : event.clientX,
-            y: canvas ? Math.max(canvas.top + 12, canvas.top + canvas.height / 2 - 72) : event.clientY,
+            x: (pointer?.x ?? graphNode.position.x) + 12,
+            y: (pointer?.y ?? graphNode.position.y) + 12,
             node,
           })
         }}
@@ -979,7 +992,8 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
           event.preventDefault()
           event.stopPropagation()
           if (Date.now() < suppressContextMenuUntilRef.current) return
-          setContextMenu({ x: event.clientX, y: event.clientY, node: null, edge })
+          const pointer = flowInstance?.screenToFlowPosition({ x: event.clientX, y: event.clientY })
+          setContextMenu({ x: pointer?.x ?? event.clientX, y: pointer?.y ?? event.clientY, node: null, edge })
         }}
         deleteKeyCode={['Delete', 'Backspace']}
         connectionLineType={ConnectionLineType.Bezier}
@@ -1086,6 +1100,34 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
             {canvasPanel === 'variables' && <div className="cf-canvas-data-list variables">{canvasVariables.length ? canvasVariables.map((item) => <div key={`${item.kind}-${item.name}`}><b>{item.name}</b><span>{item.kind} · {item.source}</span></div>) : <p>当前流程还没有声明输入或输出变量。</p>}</div>}
             {canvasPanel === 'settings' && (
               <div className="cf-canvas-settings">
+                <section className="cf-canvas-theme-settings">
+                  <div className="cf-canvas-theme-heading"><span>工作台主题</span><small>仅调整品牌强调色</small></div>
+                  <div className="cf-canvas-theme-presets" role="group" aria-label="选择工作台主题色">
+                    {WORKSPACE_THEME_PRESETS.map((theme) => (
+                      <button
+                        key={theme.id}
+                        type="button"
+                        className={workspaceTheme.id === theme.id ? 'active' : ''}
+                        onClick={() => updateWorkspaceTheme({ id: theme.id, color: theme.color })}
+                        title={`使用${theme.label}主题`}
+                      >
+                        <i style={{ background: theme.color }} aria-hidden="true" />
+                        <span>{theme.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <label className="cf-canvas-theme-custom">
+                    <span>自定义颜色</span>
+                    <input
+                      type="color"
+                      value={workspaceTheme.color}
+                      onChange={(event) => updateWorkspaceTheme({ id: 'custom', color: event.target.value })}
+                      aria-label="自定义工作台主题色"
+                    />
+                    <code>{workspaceTheme.color.toUpperCase()}</code>
+                  </label>
+                  <button type="button" className="cf-canvas-theme-reset" onClick={() => updateWorkspaceTheme({ id: 'orange', color: WORKSPACE_THEME_PRESETS[0].color })}>恢复默认橙色</button>
+                </section>
                 <label><span>10px 网格对齐</span><input type="checkbox" checked={gridSnap} onChange={(event) => setGridSnap(event.target.checked)} /></label>
                 <div><span>主节点视图</span><b>完整信息卡</b></div>
                 <div><span>网格尺寸</span><b>固定 10px</b></div>
@@ -1151,7 +1193,11 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
         {!compactStatic && <Panel position="bottom-left" className="cf-canvas-status"><span className={gridSnap ? 'active' : ''}><i />{gridSnap ? '网格对齐' : '自由移动'}</span><b>{gridSize}px</b><span className={activeCanvasTool === 'connect' ? 'active' : ''}><i />{activeCanvasTool === 'connect' ? '连线模式' : '选择模式'}</span></Panel>}
         {!compactStatic && <MiniMap pannable zoomable nodeColor={(node) => (node.data as unknown as FlowNode).locked ? '#b7bbb4' : getNodeCategory(node.data as unknown as FlowNode).bg} nodeStrokeColor={(node) => (node.data as unknown as FlowNode).locked ? '#898f87' : getNodeCategory(node.data as unknown as FlowNode).color} nodeBorderRadius={3} maskColor="rgba(90, 68, 55, 0.12)" />}
         {contextMenu && !compactStatic && !readOnlyGraph && (
-          <div className="cf-graph-context-menu" style={{ left: contextMenu.x, top: contextMenu.y }}>
+          <ViewportPortal>
+            <div
+              className="cf-graph-context-menu"
+              style={{ left: contextMenu.x, top: contextMenu.y } as CSSProperties}
+            >
             <strong>{contextMenu.edge ? `${contextMenu.edge.source} → ${contextMenu.edge.target}` : contextMenu.node ? contextMenu.node.title : '画布操作'}</strong>
             {contextMenu.edge ? (
               <>
@@ -1163,60 +1209,67 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
               </>
             ) : (
               <>
-                {contextMenu.node && <div className="cf-graph-submenu-item">
-                  <button type="button">打开节点详情 ›</button>
-                  <div className="cf-graph-submenu cf-node-detail-submenu">
-                    {getAvailableNodeDetailSections(contextMenu.node, {
-                      edges: graphEdges,
-                      hasRunData: Boolean(nodeRunStates?.has(contextMenu.node.id) || stableRunEvents.some((event) => event.state === contextMenu.node!.id)),
-                      editable: !readOnlyGraph,
-                    }).map((section) => (
-                      <button
-                        key={section.id}
-                        type="button"
-                        data-section={section.id}
-                        onClick={() => {
-                          onOpenNodeEditor?.(contextMenu.node!, section.id)
-                          setContextMenu(null)
-                        }}
-                      >
-                        <span><b>{section.label}</b><small>{section.description}</small></span>
-                      </button>
-                    ))}
+                <div className="cf-graph-menu-group cf-graph-menu-group-primary">
+                  {contextMenu.node && <div className="cf-graph-submenu-item">
+                    <button type="button">打开节点详情 <span aria-hidden="true">›</span></button>
+                    <div className="cf-graph-submenu cf-node-detail-submenu">
+                      {getAvailableNodeDetailSections(contextMenu.node, {
+                        edges: graphEdges,
+                        hasRunData: Boolean(nodeRunStates?.has(contextMenu.node.id) || stableRunEvents.some((event) => event.state === contextMenu.node!.id)),
+                        editable: !readOnlyGraph,
+                      }).map((section) => (
+                        <button
+                          key={section.id}
+                          type="button"
+                          data-section={section.id}
+                          onClick={() => {
+                            onOpenNodeEditor?.(contextMenu.node!, section.id)
+                            setContextMenu(null)
+                          }}
+                        >
+                          <span><b>{section.label}</b><small>{section.description}</small></span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>}
+                  <div className="cf-graph-submenu-item">
+                    <button disabled={!contextMenu.node || !onCreateNode}>新增 Flow <span aria-hidden="true">›</span></button>
+                    <div className="cf-graph-submenu">
+                      {NODE_CATEGORIES.map((category) => (
+                        <button key={`flow-${category.id}`} onClick={() => contextMenu.node && onCreateNode?.(contextMenu.node, category.id, 'insert')} disabled={!contextMenu.node || !onCreateNode}>
+                          {category.shortLabel} Flow
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>}
-                <div className="cf-graph-submenu-item">
-                  <button disabled={!contextMenu.node || !onCreateNode}>新增 Flow ›</button>
-                  <div className="cf-graph-submenu">
-                    {NODE_CATEGORIES.map((category) => (
-                      <button key={`flow-${category.id}`} onClick={() => contextMenu.node && onCreateNode?.(contextMenu.node, category.id, 'insert')} disabled={!contextMenu.node || !onCreateNode}>
-                        {category.shortLabel} Flow
-                      </button>
-                    ))}
+                  <div className="cf-graph-submenu-item">
+                    <button disabled={!contextMenu.node || !onCreateNode}>新增分支 <span aria-hidden="true">›</span></button>
+                    <div className="cf-graph-submenu">
+                      {NODE_CATEGORIES.map((category) => (
+                        <button key={`branch-${category.id}`} onClick={() => contextMenu.node && onCreateNode?.(contextMenu.node, category.id, 'branch')} disabled={!contextMenu.node || !onCreateNode}>
+                          {category.shortLabel}分支
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
-                <div className="cf-graph-submenu-item">
-                  <button disabled={!contextMenu.node || !onCreateNode}>新增分支 ›</button>
-                  <div className="cf-graph-submenu">
-                    {NODE_CATEGORIES.map((category) => (
-                      <button key={`branch-${category.id}`} onClick={() => contextMenu.node && onCreateNode?.(contextMenu.node, category.id, 'branch')} disabled={!contextMenu.node || !onCreateNode}>
-                        {category.shortLabel}分支
-                      </button>
-                    ))}
-                  </div>
+                <div className="cf-graph-menu-group">
+                  <button onClick={() => {
+                    if (contextMenu.node) void copyNodeText(contextMenu.node, 'id')
+                    setContextMenu(null)
+                  }} disabled={!contextMenu.node}>复制节点 ID</button>
+                  <button onClick={() => {
+                    if (contextMenu.node) void copyNodeText(contextMenu.node, 'config')
+                    setContextMenu(null)
+                  }} disabled={!contextMenu.node}>复制节点配置</button>
                 </div>
-                <button onClick={() => {
-                  if (contextMenu.node) void copyNodeText(contextMenu.node, 'id')
-                  setContextMenu(null)
-                }} disabled={!contextMenu.node}>复制节点 ID</button>
-                <button onClick={() => {
-                  if (contextMenu.node) void copyNodeText(contextMenu.node, 'config')
-                  setContextMenu(null)
-                }} disabled={!contextMenu.node}>复制节点配置</button>
-                <button className="danger" onClick={() => contextMenu.node && onDeleteNode?.(contextMenu.node)} disabled={!contextMenu.node || contextMenu.node.locked || !onDeleteNode}>删除节点</button>
+                <div className="cf-graph-menu-group cf-graph-menu-group-danger">
+                  <button className="danger" onClick={() => contextMenu.node && onDeleteNode?.(contextMenu.node)} disabled={!contextMenu.node || contextMenu.node.locked || !onDeleteNode}>删除节点</button>
+                </div>
               </>
             )}
-          </div>
+            </div>
+          </ViewportPortal>
         )}
       </ReactFlow>
     </div>

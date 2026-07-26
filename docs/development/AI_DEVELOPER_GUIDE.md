@@ -366,15 +366,13 @@ Get-FileHash -Algorithm SHA256 .data/user/dev_cartridges/<id>/dlc/backend/entry.
 Python：
 
 ```powershell
-.\.tools\runtimes\python\python.exe scripts\run_conformance.py
+python scripts/run_conformance.py
 ```
 
 前端：
 
 ```powershell
-$env:Path = (Resolve-Path .tools/runtimes/node).Path + ";" + $env:Path
-Set-Location src/frontend
-npm.cmd run build
+npm --prefix src/frontend run build
 ```
 
 发布前最低验收：

@@ -25,7 +25,7 @@ node_modules/
 /config/studio/credentials.json*
 /config/studio/resources.json*
 
-# Project-local runtimes, state, and generated output
+# Local state and generated output
 /.data/
 /.tools/
 /test_output/

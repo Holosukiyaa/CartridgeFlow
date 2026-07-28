@@ -14,10 +14,12 @@ _LITE_API_RULES = (
     re.compile(r"^/api/lab/flows(?:/.*)?$"),
     re.compile(r"^/api/llm/(?:providers(?:/.*)?|assignments|detect|test|import/opencode|config/export)$"),
     re.compile(r"^/api/studio/resources$"),
+    re.compile(r"^/api/studio/packages$"),
+    re.compile(r"^/api/studio/release/[^/]+/preflight$"),
     re.compile(r"^/api/studio/environment(?:/.*)?$"),
     re.compile(r"^/api/cartridge-runs/[^/]+(?:/.*)?$"),
     re.compile(r"^/api/cartridges/import$"),
-    re.compile(r"^/api/cartridges/[^/]+/(?:clone-to-dev|dlc/frontend|dlc/assets/.*)$"),
+    re.compile(r"^/api/cartridges/[^/]+/(?:clone-to-dev|package|dlc/frontend|dlc/assets/.*)$"),
 )
 
 _REMOVED_WORKBENCH_PATHS = (

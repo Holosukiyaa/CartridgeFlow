@@ -11,6 +11,10 @@
 | 修改 Base、Flow 或运行时 | [当前 Base 0.2 契约](protocol/CARTRIDGEFLOW_BASE_CONTRACT_v0.2.md) -> [最新 CF-FARP 0.7 协议](protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.7.md) -> [机器 registry](../protocol/README.md) -> `src/core/protocol/` -> 对应 conformance 测试；修复现有运行时还要核对 v0.6 快照 |
 | 修改 Portable DLC | [Portable DLC 架构](architecture/PORTABLE_DLC_ARCHITECTURE.md) -> [协议治理](protocol/GOVERNANCE.md) |
 | 修改 Flow 节点主卡或详情信息 | [节点信息架构报告](architecture/FLOW_NODE_INFORMATION_ARCHITECTURE.md) -> [最新 CF-FARP 0.7 协议](protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.7.md) -> 对应节点视图代码 |
+| 修改 AI 管家交互 | [AI 管家交互模式](architecture/AI_STEWARD_INTERACTION_MODES.md) -> 工作台视图与结构化变更边界 |
+| 讨论企业版布局与旧系统接口接入 | [企业版管理器/运行器说明](architecture/ENTERPRISE_MANAGER_RUNNER_PLAIN_GUIDE.md) -> [官方接口接入验证卡带](architecture/OFFICIAL_INTERFACE_ONBOARDING_CARTRIDGE_ACTION_GUIDE.md) |
+| 设计 AI 视频日报参考流程 | [AI 视频日报卡带](architecture/AI_VIDEO_DAILY_CARTRIDGE.md) -> 当前卡带工作台能力边界 |
+| 优化大型 Flow 画布性能 | [大型 Flow 画布性能优化方案](development/FLOW_GRAPH_PERFORMANCE_OPTIMIZATION.md) -> `FlowGraphView.tsx`、工程节点与布局代码 |
 | 开发和运行自动测试 | [开发与维护](development/README.md) -> `scripts/` |
 | 查找某个文件 | [逐文件清单](development/FILE_INVENTORY.md) |
 
@@ -36,6 +40,11 @@ docs/
 - [CF-FARP 0.6](protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.6.md)：当前参考底座仍在运行的上一版协议快照。
 - [Portable DLC 架构](architecture/PORTABLE_DLC_ARCHITECTURE.md)：基座与卡带私有能力的激活、隔离和所有权约束。
 - [Flow 节点信息架构](architecture/FLOW_NODE_INFORMATION_ARCHITECTURE.md)：逐类规定开始、结束和全部业务节点的主卡、运行态、详情子卡与禁止展示信息。
+- [AI 管家交互模式](architecture/AI_STEWARD_INTERACTION_MODES.md)：规定引导/委托双模式、工程视图指针与框选语义，以及 AI 修改权限边界。
+- [企业版管理器/运行器说明](architecture/ENTERPRISE_MANAGER_RUNNER_PLAIN_GUIDE.md)：用团队可共享的大白话解释统一管理器、分布式运行器和卡带的职责边界。
+- [官方接口接入验证卡带](architecture/OFFICIAL_INTERFACE_ONBOARDING_CARTRIDGE_ACTION_GUIDE.md)：定义最小接口探测、负责人确认、本地知识库、仿真报告和正式接入门槛。
+- [AI 视频日报卡带](architecture/AI_VIDEO_DAILY_CARTRIDGE.md)：记录日报采集、筛选、生成、视频发布和人工审批的完整参考闭环。
+- [大型 Flow 画布性能优化方案](development/FLOW_GRAPH_PERFORMANCE_OPTIMIZATION.md)：记录大型流程的已知瓶颈、分阶段改造顺序、基准规模与行为回归要求。
 - [协议治理](protocol/GOVERNANCE.md)：修改协议、实现 Flow 和发布快照时必须遵守的规则。
 
 当前基座支持矩阵以 `config/base/BASE_IMPLEMENTATION.json` 为准：

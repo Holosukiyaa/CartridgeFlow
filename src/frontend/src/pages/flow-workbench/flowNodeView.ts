@@ -1,4 +1,4 @@
-import type { FlowEdge, FlowNode } from '../../api.ts'
+import type { FlowEdge, FlowGraph, FlowNode } from '../../api.ts'
 import { getNodeCategory, getProcessDisplayLabel, getProtocolEffect, getProtocolExecutor, getProtocolKind, isStartNode } from './nodeModel.ts'
 import type { NodeRunState } from './runState.ts'
 
@@ -14,6 +14,17 @@ export type FlowNodeField = {
 export type FlowNodeSection = {
   title: string
   fields: FlowNodeField[]
+}
+
+export type OutcomeNodeRow = {
+  label: string
+  value: string
+}
+
+export type OutcomeNodeCardView = ReturnType<typeof buildOutcomeNodeCardView>
+
+export type OutcomeNodeRenderModel = {
+  view: OutcomeNodeCardView
 }
 
 export type NodeSemanticKind =
@@ -524,6 +535,190 @@ export function buildFlowNodeCardView(node: FlowNode, runState?: NodeRunState, c
     runClass: runState ? `node-run-${runState.status}` : '',
     hasRunData: Boolean(runState && runState.status !== 'idle'),
   }
+}
+
+const PLAIN_FIELD_LABELS: Record<string, string> = {
+  query: '用户说的话',
+  session: '当前会话',
+  session_id: '会话信息',
+  request: '用户请求',
+  intent: '用户想做的事',
+  intent_envelope: '判断结果',
+  entities: '关键信息',
+  products: '商品信息',
+  product_total: '商品数量',
+  orders: '订单信息',
+  order_total: '订单数量',
+  payload: '整理后的结果',
+  reply: '给用户的回复',
+  reply_envelope: '回复结果',
+  references: '参考资料',
+  recovery_result: '失败处理说明',
+  error: '出错信息',
+  context: '当时的流程信息',
+  result: '处理结果',
+}
+
+const PLAIN_FIELD_DESCRIPTIONS: Record<string, string> = {
+  query: '一句话或一段话',
+  session: '帮助 AI 接着聊',
+  session_id: '帮助系统记住这次对话',
+  request: '整理好的请求内容',
+  intent: '是查订单还是查商品',
+  intent_envelope: '下一步应该做什么',
+  entities: '订单号、商品名等线索',
+  products: '从商品库查到的内容',
+  product_total: '一共找到多少件商品',
+  orders: '从订单系统查到的内容',
+  order_total: '一共找到多少条订单',
+  payload: '统一格式的查询结果',
+  reply: '可以直接展示给用户',
+  reply_envelope: '已经组织好的回答',
+  references: '结果来自哪里',
+  recovery_result: '告诉用户哪里出了问题',
+  error: '前面节点的失败原因',
+  context: '出错时已经处理到哪里',
+  result: '交给下一个节点使用',
+}
+
+function plainFieldKey(value: unknown) {
+  return String(value || '')
+    .trim()
+    .replace(/^store:/, '')
+    .replace(/^\$\{(.+)\}$/, '$1')
+    .split('.')
+    .filter(Boolean)
+    .at(-1) || ''
+}
+
+export function plainOutcomeFieldLabel(value: unknown) {
+  const key = plainFieldKey(value)
+  return PLAIN_FIELD_LABELS[key] || key || '上一步的内容'
+}
+
+function plainOutcomeFieldDescription(value: unknown) {
+  const key = plainFieldKey(value)
+  return PLAIN_FIELD_DESCRIPTIONS[key] || '给后续节点继续使用'
+}
+
+function outcomeTitle(node: FlowNode, kind: NodeSemanticKind) {
+  const title = String(node.display_name || node.title || '').trim()
+  const searchable = `${node.id} ${title} ${node.action || ''}`.toLowerCase()
+  if (kind === 'start') return '开始'
+  if (kind === 'terminal') return '把结果交给用户'
+  if (kind === 'input') return /用户|request|collect/.test(searchable) ? '先收集用户说了什么' : '先收集需要的信息'
+  if (kind === 'decision' && /意图|intent|router/.test(searchable)) return '先判断用户想做什么'
+  if (kind === 'decision' && /回复|reply|answer|response/.test(searchable)) return '让 AI 写好最终回复'
+  if (kind === 'decision') return '让 AI 判断下一步怎么做'
+  if ((kind === 'mcp_read' || kind === 'retrieval') && /订单|order/.test(searchable)) return '去订单系统查订单'
+  if ((kind === 'mcp_read' || kind === 'retrieval') && /商品|产品|product|catalog/.test(searchable)) return '去商品库查商品'
+  if (kind === 'mcp_read' || kind === 'retrieval') return `去外部资料库查${title || '信息'}`
+  if (kind === 'transform') return '把查询结果整理好'
+  if (kind === 'transfer' && /失败|错误|error|fail/.test(searchable)) return '遇到问题时统一处理'
+  if (kind === 'delivery') return '整理并保存最终成果'
+  return title || '处理这一步'
+}
+
+function outcomeCopy(node: FlowNode, kind: NodeSemanticKind) {
+  const searchable = `${node.id} ${node.display_name || node.title || ''} ${node.action || ''}`.toLowerCase()
+  if (kind === 'start') return ['流程从这里开始，接收用户输入。', '这是整个流程的起点。']
+  if (kind === 'terminal') return ['把整理好的回复交给用户，然后结束本次流程。', '用户最终看到的内容从这里交付。']
+  if (kind === 'input') return ['把用户原话整理好，方便后续步骤使用。', '先把用户输入变成统一格式。']
+  if (kind === 'decision' && /意图|intent|router/.test(searchable)) return ['识别用户想做什么，决定接下来走哪条流程。', '判断这是查订单、查商品，还是需要补充信息。']
+  if (kind === 'decision' && /回复|reply|answer|response/.test(searchable)) return ['根据查询结果，写成用户容易理解的回复。', 'AI 会在这里组织最终说法。']
+  if (kind === 'decision') return ['让 AI 根据已有信息做出判断。', '判断结果会决定下一步怎么走。']
+  if ((kind === 'mcp_read' || kind === 'retrieval') && /订单|order/.test(searchable)) return ['根据用户请求查询订单系统，获取订单信息。', '这里只读取订单，不会修改订单。']
+  if ((kind === 'mcp_read' || kind === 'retrieval') && /商品|产品|product|catalog/.test(searchable)) return ['根据用户请求查询商品库，获取商品信息。', '这里只读取商品资料，不会修改商品。']
+  if (kind === 'mcp_read' || kind === 'retrieval') return ['根据上一步的要求，到外部资料库查找信息。', '这里只负责查询，不会修改外部数据。']
+  if (kind === 'transform') return ['把不同来源的结果整理成统一格式。', '这样后面的 AI 不用理解多种数据格式。']
+  if (kind === 'transfer' && /失败|错误|error|fail/.test(searchable)) return ['当前面步骤失败时，整理原因并给出可交付的说明。', '任何查询失败都会统一走到这里。']
+  if (kind === 'delivery') return ['把流程生成的内容整理成可以交付的成果。', '这是成果保存和交付的位置。']
+  const technical = buildFlowNodeCardView(node)
+  return [technical.description, '完成这一小步后，流程会自动继续。']
+}
+
+function schemaInputRows(node: FlowNode): OutcomeNodeRow[] {
+  const schema = node.input_schema && typeof node.input_schema === 'object' ? node.input_schema as AnyRecord : null
+  const properties = schema?.properties && typeof schema.properties === 'object' ? schema.properties as AnyRecord : null
+  if (!properties) return []
+  return Object.keys(properties).slice(0, 3).map((key) => ({
+    label: plainOutcomeFieldLabel(key),
+    value: plainOutcomeFieldDescription(key),
+  }))
+}
+
+function bindingInputRows(node: FlowNode): OutcomeNodeRow[] {
+  if (!node.input_binding || typeof node.input_binding !== 'object') return []
+  const labels = (node.params?.data_labels || node.params?.field_labels || {}) as Record<string, unknown>
+  return Object.entries(node.input_binding).slice(0, 3).map(([key, reference]) => ({
+    label: plainOutcomeFieldLabel(key),
+    value: compactNodeValue(labels[key] || plainOutcomeFieldDescription(reference || key), '上一步提供的内容', 32),
+  }))
+}
+
+function outputRows(node: FlowNode): OutcomeNodeRow[] {
+  const params = node.params || {}
+  const names = [...new Set([
+    ...asList(node.output),
+    ...asList(node.primary_output),
+    ...asList(params.output),
+    ...asList(params.save_to),
+  ])]
+  return names.slice(0, 3).map((name) => ({
+    label: plainOutcomeFieldLabel(name),
+    value: plainOutcomeFieldDescription(name),
+  }))
+}
+
+export function buildOutcomeNodeCardView(node: FlowNode, runState?: NodeRunState, context: NodePresentationContext = {}) {
+  const technical = buildFlowNodeCardView(node, runState, context)
+  const [what, beginnerTip] = outcomeCopy(node, technical.semanticKind)
+  const bindingRows = bindingInputRows(node)
+  const inputs = bindingRows.length ? bindingRows : schemaInputRows(node)
+  if (!inputs.length && technical.semanticKind === 'start') {
+    inputs.push({ label: '用户输入', value: '用户在运行前填写的内容' })
+  } else if (!inputs.length) {
+    inputs.push({ label: plainOutcomeFieldLabel(readNodeValue(node, 'input', 'input_key', 'source')), value: '由上一步自动提供' })
+  }
+  const outputs = outputRows(node)
+  if (!outputs.length) {
+    outputs.push({
+      label: technical.semanticKind === 'start' ? '交给下一步' : technical.semanticKind === 'terminal' ? '最终结果' : '处理结果',
+      value: technical.semanticKind === 'start' ? '用户刚刚填写的内容' : technical.semanticKind === 'terminal' ? '直接交给用户' : '交给下一步继续使用',
+    })
+  }
+  return {
+    ...technical,
+    title: outcomeTitle(node, technical.semanticKind),
+    what,
+    beginnerTip,
+    inputs: inputs.slice(0, 3),
+    outputs: outputs.slice(0, 3),
+  }
+}
+
+export function buildOutcomeNodeModels(graph: FlowGraph, runStates?: Map<string, NodeRunState>) {
+  const nodeById = new Map(graph.nodes.map((node) => [node.id, node]))
+  const incomingByNode = new Map(graph.nodes.map((node) => [node.id, [] as FlowNode[]]))
+  const outgoingByNode = new Map(graph.nodes.map((node) => [node.id, [] as FlowNode[]]))
+  const incomingEdgesByNode = new Map(graph.nodes.map((node) => [node.id, [] as FlowEdge[]]))
+  const outgoingEdgesByNode = new Map(graph.nodes.map((node) => [node.id, [] as FlowEdge[]]))
+  graph.edges.forEach((edge) => {
+    const source = nodeById.get(edge.from)
+    const target = nodeById.get(edge.to)
+    if (source) incomingByNode.get(edge.to)?.push(source)
+    if (target) outgoingByNode.get(edge.from)?.push(target)
+    incomingEdgesByNode.get(edge.to)?.push(edge)
+    outgoingEdgesByNode.get(edge.from)?.push(edge)
+  })
+  return new Map(graph.nodes.map((node) => [node.id, {
+    view: buildOutcomeNodeCardView(node, runStates?.get(node.id), {
+      incomingNodes: incomingByNode.get(node.id),
+      outgoingNodes: outgoingByNode.get(node.id),
+      incomingEdges: incomingEdgesByNode.get(node.id),
+      outgoingEdges: outgoingEdgesByNode.get(node.id),
+    }),
+  } satisfies OutcomeNodeRenderModel]))
 }
 
 export function buildNodeDetailFacts(node: FlowNode, section: string, options: {

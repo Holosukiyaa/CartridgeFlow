@@ -1,9 +1,9 @@
-import type { DragEvent, ReactNode } from 'react'
+import { memo, type DragEvent, type ReactNode } from 'react'
 import { ArrowDownToLine, ArrowLeftRight, Bot, Braces, CheckCircle2, Cloud, CornerUpRight, Database, FileCheck2, Flag, GitBranch, PackageCheck, PanelTop, Play, Route, Search, ShieldCheck, Shuffle, UserCheck, Wrench } from 'lucide-react'
 import type { FlowNode } from '../../api.ts'
 import { getNodePalette, type FlowNodeViewMode } from './nodeModel.ts'
 import { FlowNodePorts, type PortCounts } from './FlowNodePorts.tsx'
-import { buildFlowNodeCardView } from './flowNodeView.ts'
+import { buildFlowNodeCardView, buildOutcomeNodeCardView, type OutcomeNodeCardView } from './flowNodeView.ts'
 import type { NodeRunState } from './runState.ts'
 
 export type TestProbeKind = 'start' | 'end'
@@ -26,6 +26,7 @@ type FlowNodeCardProps = {
   counts: PortCounts
   incomingNodes: FlowNode[]
   outgoingNodes: FlowNode[]
+  presentation?: OutcomeNodeCardView
   runState?: NodeRunState
   probeState?: FlowNodeProbeState
   probeSelected: boolean
@@ -63,35 +64,36 @@ function NodeKindIcon({ iconKey }: { iconKey: string }) {
   return <Braces aria-hidden="true" />
 }
 
-function DetailedNodeContent({ node, order, incomingNodes, outgoingNodes, runState }: Pick<FlowNodeCardProps, 'node' | 'order' | 'incomingNodes' | 'outgoingNodes' | 'runState'>) {
-  const view = buildFlowNodeCardView(node, runState, { incomingNodes, outgoingNodes })
+function DetailedNodeContent({ node, order, view, runState }: Pick<FlowNodeCardProps, 'node' | 'order' | 'runState'> & { view: OutcomeNodeCardView }) {
   return (
-    <div className="flow-node-detailed-content">
+    <div className="flow-node-outcome-content">
       <header className="flow-node-detailed-head">
         <div className="flow-node-title">
           <strong style={{ background: node.locked ? undefined : view.category.bg, color: node.locked ? undefined : view.category.color }}>{String(order).padStart(2, '0')}</strong>
           <i className="flow-node-category-icon"><NodeKindIcon iconKey={view.iconKey} /></i>
           <span className="flow-node-title-copy">
-            <b className="flow-node-title-text" title={node.display_name || node.title}>{node.display_name || node.title}</b>
-            <small title={`${view.protocolLabel || view.category.shortLabel} · ${node.action || 'none'}`}>{view.protocolLabel || view.category.shortLabel} · {node.action || 'none'}</small>
+            <b className="flow-node-title-text" title={`${view.title}（原节点：${node.display_name || node.title}）`}>{view.title}</b>
           </span>
         </div>
         <span className={`flow-node-status status-${runState?.status || view.configHealth}`}>{view.runStatusLabel}</span>
+        <p className="flow-node-beginner-tip"><b>提示：</b>{view.beginnerTip}</p>
       </header>
-      <section className="flow-node-detail-band summary">
-        <h4><GitBranch />{view.purposeTitle}</h4>
-        <p title={view.description || view.category.description || '当前节点尚未补充摘要说明。'}>{view.description || view.category.description || '当前节点尚未补充摘要说明。'}</p>
+      <section className="flow-node-outcome-band summary">
+        <h4><GitBranch />做什么</h4>
+        <p title={view.what}>{view.what}</p>
         {view.primaryIssue && <small className={`flow-node-issue ${view.primaryIssue.severity}`} title={view.primaryIssue.message}>{view.primaryIssue.severity === 'blocker' ? '阻断' : '提醒'} · {view.primaryIssue.message}</small>}
       </section>
-      <section className="flow-node-detail-band fields">
-        <h4><FileCheck2 />{view.infoSection.title}</h4>
+      <section className="flow-node-outcome-band fields input-fields">
+        <h4><FileCheck2 />输入什么</h4>
         <dl>
-          {view.infoSection.fields.map((item) => <div key={item.label} data-tone={item.tone || 'default'}><dt>{item.label}</dt><dd className={item.mono ? 'mono' : ''} title={item.value}>{item.value}</dd></div>)}
+          {view.inputs.map((item) => <div key={`${item.label}:${item.value}`}><dt>{item.label}</dt><dd title={item.value}>{item.value}</dd></div>)}
         </dl>
       </section>
-      <section className="flow-node-detail-band connections">
-        <h4><CornerUpRight />{view.flowSection.title}</h4>
-        {view.flowSection.fields.map((item) => <div className="flow-node-io-row" key={item.label} data-tone={item.tone || 'default'}><span>{item.label}</span><b className={item.mono ? 'mono' : ''} title={item.value}>{item.value}</b></div>)}
+      <section className="flow-node-outcome-band fields output-fields">
+        <h4><CornerUpRight />输出什么</h4>
+        <dl>
+          {view.outputs.map((item) => <div key={`${item.label}:${item.value}`}><dt>{item.label}</dt><dd title={item.value}>{item.value}</dd></div>)}
+        </dl>
       </section>
     </div>
   )
@@ -124,9 +126,9 @@ function CompactNodeContent({ node, order, runState }: Pick<FlowNodeCardProps, '
   )
 }
 
-export function FlowNodeCard(props: FlowNodeCardProps): ReactNode {
-  const { node, viewMode, order, selected, detailOwner, compactStatic, counts, incomingNodes, outgoingNodes, runState, probeState, probeSelected, onSelect } = props
-  const view = buildFlowNodeCardView(node, runState, { incomingNodes, outgoingNodes })
+export const FlowNodeCard = memo(function FlowNodeCard(props: FlowNodeCardProps): ReactNode {
+  const { node, viewMode, order, selected, detailOwner, compactStatic, counts, incomingNodes, outgoingNodes, presentation, runState, probeState, probeSelected, onSelect } = props
+  const view = presentation || buildOutcomeNodeCardView(node, runState, { incomingNodes, outgoingNodes })
   const palette = getNodePalette(node)
   const boundaryNode = node.id === 'start' || node.id === 'complete' || node.action === 'complete' || node.action === 'end'
   const hasStartProbe = probeState?.startNodeId === node.id
@@ -163,8 +165,8 @@ export function FlowNodeCard(props: FlowNodeCardProps): ReactNode {
       <FlowNodePorts node={node} counts={counts} />
       {probeState && <ProbeBadges hasStart={Boolean(hasStartProbe)} hasEnd={Boolean(hasEndProbe)} onDragStart={startProbeDrag} />}
       {viewMode === 'detailed'
-        ? <DetailedNodeContent node={node} order={order} incomingNodes={incomingNodes} outgoingNodes={outgoingNodes} runState={runState} />
+        ? <DetailedNodeContent node={node} order={order} view={view} runState={runState} />
         : <CompactNodeContent node={node} order={order} runState={runState} />}
     </div>
   )
-}
+})

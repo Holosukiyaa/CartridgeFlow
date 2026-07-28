@@ -23,7 +23,6 @@ _SHARED_MARKERS = {
     "builtin",
     "cartridge",
     "filesystem",
-    "media",
     "filesystem_read",
     "filesystem_write",
     "filesystem_list",
@@ -32,10 +31,6 @@ _SHARED_MARKERS = {
     "append_file",
     "list_dir",
     "exists",
-    "media_probe",
-    "extract_keyframes",
-    "style_keyframes",
-    "qc_outputs",
 }
 
 _LITERAL_BRANCH_PATTERNS = (

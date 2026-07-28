@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { Box, Button, Spinner, Text } from '../ui.tsx'
 import {
   cloneCartridgeToDev,
+  answerPendingInteraction,
   controlCartridgeRun,
   createFlowNode,
   deleteFlowNode,
@@ -30,16 +31,50 @@ import { DesignView, RunHistoryPanel, RunLogDialog, WorkbenchHeader } from './fl
 import { CATEGORY_BY_ID, getPreset } from './flow-workbench/nodeModel.ts'
 import type { CreateNodeOptions, GraphResult, NodeCategoryId } from './flow-workbench/types.ts'
 import { buildPresetConfig, buildProtocolPatch, buildToolSpecs, firstText } from './flow-workbench/nodeBuilder.ts'
-import { ModelManagementPanel, ToolManagementPanel } from './flow-workbench/ResourceManagementPanels.tsx'
+import { ModelManagementPanel, PackagingPanel, ToolManagementPanel } from './flow-workbench/ResourceManagementPanels.tsx'
 import CartridgeWorkspaceControl from './flow-workbench/CartridgeWorkspaceControl.tsx'
+import { CartridgeDefinitionPanel } from './flow-workbench/CartridgeDefinitionPanel.tsx'
 import { RunInputDialog } from './flow-workbench/RunInputDialog.tsx'
-import { buildNodeRunStates } from './flow-workbench/runState.ts'
+import { PendingInteractionForm } from './flow-workbench/TestBenchView.tsx'
+import { DlcSandboxFrame } from '../components/DlcSandboxFrame.tsx'
+import { buildNodeRunStates, extractUiHtml } from './flow-workbench/runState.ts'
+import { passiveHtmlDocument } from './flow-workbench/passiveHtml.ts'
 import { NODE_DETAIL_SECTION_BY_ID, nodeDetailId, normalizeNodeDetailSection, type NodeDetailSection, type OpenNodeDetail } from './flow-workbench/nodeDetails.ts'
+import { clearNewFlowAutoLayout, shouldAutoLayoutNewFlow } from './flow-workbench/newFlowSetup.ts'
 import './flow-workbench/TestBench.css'
 
 const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms))
 const pinnedNodeDetailsStorageKey = (flowId: string) => `cartridgeflow.lite.pinned-node-details.v1:${flowId}`
-const RUN_COMPLETION_NOTICE_MS = 2600
+const RUN_COMPLETION_NOTICE_MS = 8000
+
+type OptimisticRunTransition = {
+  runId: string
+  from: string
+  to: string
+}
+
+function resolveInteractionTransition(pendingInteraction: any, graph: FlowLabDetail['graph'], actionId: string): Omit<OptimisticRunTransition, 'runId'> | null {
+  const from = String(pendingInteraction?.node_id || '').trim()
+  if (!from) return null
+  const configuredRoute = pendingInteraction?.resume?.action_routes?.[actionId]
+  const configuredTarget = typeof configuredRoute === 'string'
+    ? configuredRoute
+    : configuredRoute?.target_node || configuredRoute?.node_id || configuredRoute?.target
+  const outgoing = graph.edges.filter((edge) => edge.from === from)
+  const to = String(configuredTarget || (outgoing.length === 1 ? outgoing[0].to : '')).trim()
+  return to ? { from, to } : null
+}
+
+function findRunResultHtml(runEvents: FlowEvent[]) {
+  for (let index = runEvents.length - 1; index >= 0; index -= 1) {
+    const event = runEvents[index]
+    const action = (event.data as any)?.action
+    if (!['show_ui', 'show_result', 'render_ui'].includes(action)) continue
+    const html = extractUiHtml(event.data)
+    if (html) return html
+  }
+  return ''
+}
 
 export default function FlowWorkbench({ flowId, onSwitchFlow }: {
   flowId: string
@@ -60,23 +95,70 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
   const [cloningToDev, setCloningToDev] = useState(false)
   const [runInputOpen, setRunInputOpen] = useState(false)
   const [runControlBusy, setRunControlBusy] = useState(false)
+  const [interactionSubmitting, setInteractionSubmitting] = useState(false)
+  const [optimisticRunTransition, setOptimisticRunTransition] = useState<OptimisticRunTransition | null>(null)
+  const [dismissedInteractionId, setDismissedInteractionId] = useState('')
+  const [interactionPresentationSize, setInteractionPresentationSize] = useState<{ width: number; height: number } | null>(null)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [selectedHistoryRunId, setSelectedHistoryRunId] = useState('')
   const [runLog, setRunLog] = useState<{ run: RunResult; events: FlowEvent[] } | null>(null)
   const [runCompletionNotice, setRunCompletionNotice] = useState<{ runId: string; shownAt: number } | null>(null)
-  const activeRuntimeRun = runs.find((run) => ['created', 'running', 'retrying', 'recovering', 'rolling_back', 'paused', 'paused_waiting_user'].includes(run.status))
-  const visualRuntimeRun = activeRuntimeRun || (runCompletionNotice ? runs.find((run) => run.run_id === runCompletionNotice.runId) : undefined)
+  const [resultModal, setResultModal] = useState<{ runId: string; html: string } | null>(null)
+  const latestRun = runs[0]
+  const pendingInteraction = latestRun?.status === 'paused_waiting_user' ? latestRun.pending_interaction : null
+  const pendingInteractionId = String(pendingInteraction?.interaction_id || '')
+  const visiblePendingInteraction = pendingInteraction && pendingInteractionId !== dismissedInteractionId ? pendingInteraction : null
+  const latestResultHtml = useMemo(() => findRunResultHtml(events), [events])
+  const activeRuntimeRun = latestRun && ['created', 'running', 'retrying', 'recovering', 'rolling_back', 'paused', 'paused_waiting_user'].includes(latestRun.status)
+    ? latestRun
+    : undefined
   const selectedRunId = selectedHistoryRunId || runs[0]?.run_id || ''
-  const designNodeRunStates = useMemo(
-    () => detail && visualRuntimeRun ? buildNodeRunStates(detail.graph, events) : undefined,
-    [detail, events, visualRuntimeRun],
-  )
+  const visualRuntimeRun = activeRuntimeRun
+    || (runCompletionNotice ? runs.find((run) => run.run_id === runCompletionNotice.runId) : undefined)
+  const designRunEvents = useMemo(() => {
+    if (!optimisticRunTransition || optimisticRunTransition.runId !== visualRuntimeRun?.run_id) return events
+    return [...events, {
+      type: 'flow_edge_traversed',
+      state: optimisticRunTransition.to,
+      message: `Flow edge traversing: ${optimisticRunTransition.from} -> ${optimisticRunTransition.to}`,
+      data: { from: optimisticRunTransition.from, to: optimisticRunTransition.to, reason: 'interaction_resume_pending' },
+    } satisfies FlowEvent]
+  }, [events, optimisticRunTransition, visualRuntimeRun?.run_id])
+  const designNodeRunStates = useMemo(() => {
+    if (!detail || !visualRuntimeRun) return undefined
+    const states = buildNodeRunStates(detail.graph, designRunEvents)
+    if (optimisticRunTransition?.runId === visualRuntimeRun.run_id) {
+      const sourceState = states.get(optimisticRunTransition.from)
+      const targetState = states.get(optimisticRunTransition.to)
+      if (sourceState && sourceState.status !== 'failed') sourceState.status = 'completed'
+      if (targetState) {
+        targetState.status = 'running'
+        targetState.pendingInteraction = undefined
+        targetState.errorMsg = undefined
+      }
+    }
+    return states
+  }, [designRunEvents, detail, optimisticRunTransition, visualRuntimeRun])
   const availableMcpTools = useMemo(() => {
     const merged = new Map<string, McpTool>()
     for (const tool of flowResourceTools) merged.set(tool.id, tool)
-    for (const tool of mcpTools) merged.set(tool.id, tool)
+    const selectedEntries = new Set(flowResourceTools.map((tool) => `${tool.server}/${tool.tool}`))
+    for (const tool of mcpTools) {
+      if (merged.has(tool.id) || selectedEntries.has(`${tool.server}/${tool.tool}`)) merged.set(tool.id, tool)
+    }
     return [...merged.values()]
   }, [flowResourceTools, mcpTools])
+  const openRunLog = useCallback(async (run: RunResult) => {
+    try {
+      const [selectedRun, selectedEvents] = await Promise.all([
+        fetchCartridgeRun(run.run_id),
+        fetchCartridgeRunEvents(run.run_id),
+      ])
+      setRunLog({ run: selectedRun, events: selectedEvents.items || [] })
+    } catch (e: any) {
+      showToast({ title: '读取运行日志失败', description: e.message, type: 'error' })
+    }
+  }, [])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -114,12 +196,21 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
   useEffect(() => { load() }, [load])
   useEffect(() => {
     if (!runCompletionNotice) return
+    const noticeRun = runs.find((run) => run.run_id === runCompletionNotice.runId)
+    if (noticeRun?.status === 'paused' || noticeRun?.status === 'paused_waiting_user') return
     const remaining = Math.max(0, RUN_COMPLETION_NOTICE_MS - (Date.now() - runCompletionNotice.shownAt))
     const timer = window.setTimeout(() => {
       setRunCompletionNotice((current) => current?.runId === runCompletionNotice.runId ? null : current)
     }, remaining)
     return () => window.clearTimeout(timer)
-  }, [runCompletionNotice])
+  }, [runCompletionNotice, runs])
+  useEffect(() => {
+    if (latestRun?.status === 'completed' && latestResultHtml) setResultModal({ runId: latestRun.run_id, html: latestResultHtml })
+  }, [latestResultHtml, latestRun?.run_id, latestRun?.status])
+  useEffect(() => {
+    setDismissedInteractionId('')
+    setInteractionPresentationSize(null)
+  }, [pendingInteractionId])
   useEffect(() => {
     setRestoredNodeDetailsFlowId('')
     try {
@@ -181,19 +272,24 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
       latest = runData
       setRuns((current) => [runData, ...current.filter((item) => item.run_id !== runData.run_id)])
       setEvents(eventData.items || [])
-      if (runData.status === 'completed') {
+      if (['completed', 'failed', 'cancelled', 'interrupted', 'paused', 'paused_waiting_user'].includes(runData.status)) {
         setRunCompletionNotice((current) => current?.runId === runData.run_id
           ? current
           : { runId: runData.run_id, shownAt: Date.now() })
       }
       if (['completed', 'failed', 'cancelled', 'interrupted', 'paused', 'paused_waiting_user'].includes(runData.status)) break
     }
+    if (latest && ['created', 'running', 'retrying', 'recovering', 'rolling_back'].includes(latest.status)) {
+      throw new Error(`运行 ${runId} 在等待时限内没有结束，请在运行历史中继续查看状态`)
+    }
     return latest
   }, [])
 
   const startFlowRun = useCallback(async (inputs: Record<string, string>, probeRange?: TestProbeRange) => {
     setRunInputOpen(false)
+    setOptimisticRunTransition(null)
     setRunCompletionNotice(null)
+    setResultModal(null)
     setEvents([])
     setRunControlBusy(true)
     try {
@@ -203,23 +299,10 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
       setEvents(result.events || [])
       setRunControlBusy(false)
       const latest = await pollRunUntilStable(result.run.run_id) || result.run
-      if (latest.status === 'completed') {
+      if (['completed', 'failed', 'cancelled', 'interrupted', 'paused', 'paused_waiting_user'].includes(latest.status)) {
         setRunCompletionNotice((current) => current?.runId === latest.run_id
           ? current
           : { runId: latest.run_id, shownAt: Date.now() })
-      } else {
-        showToast({
-          title: latest.status === 'paused_waiting_user'
-            ? '运行已暂停，等待用户补充信息'
-            : latest.status === 'paused'
-              ? '运行已在节点边界暂停'
-              : latest.status === 'interrupted'
-                ? '运行被底座中断，可从检查点恢复'
-                : latest.status === 'failed'
-                  ? '运行发现失败节点'
-                  : '运行已停止',
-          type: ['failed', 'interrupted'].includes(latest.status) ? 'error' : 'success',
-        })
       }
     } catch (e: any) {
       showToast({ title: '运行失败', description: e.message, type: 'error' })
@@ -239,17 +322,51 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
       const eventData = await fetchCartridgeRunEvents(activeRun.run_id).catch(() => ({ items: events }))
       setRuns((current) => [updated, ...current.filter((item) => item.run_id !== updated.run_id)])
       setEvents(eventData.items || [])
-      showToast({
-        title: action === 'pause' ? '已请求暂停' : action === 'resume' ? '已继续运行' : '已停止运行',
-        description: action === 'pause' ? '当前节点结束后会停在可恢复检查点。' : undefined,
-        type: 'success',
-      })
+      if (['completed', 'failed', 'cancelled', 'interrupted', 'paused', 'paused_waiting_user'].includes(updated.status)) {
+        setRunCompletionNotice({ runId: updated.run_id, shownAt: Date.now() })
+      }
     } catch (e: any) {
       showToast({ title: '运行控制失败', description: e.message, type: 'error' })
     } finally {
       setRunControlBusy(false)
     }
   }, [activeRuntimeRun, events, runControlBusy])
+
+  const submitPendingInteraction = useCallback(async (values: Record<string, any>, options?: Record<string, any>) => {
+    if (!latestRun?.run_id || !pendingInteraction || interactionSubmitting) return
+    const runId = latestRun.run_id
+    const firstAction = pendingInteraction.allowed_actions?.[0]
+    const actionId = String(options?.action_id || (typeof firstAction === 'string' ? firstAction : firstAction?.id || ''))
+    const transition = detail ? resolveInteractionTransition(pendingInteraction, detail.graph, actionId) : null
+    setInteractionSubmitting(true)
+    setRunCompletionNotice(null)
+    setOptimisticRunTransition(transition ? { runId, ...transition } : null)
+    setRuns((current) => current.map((run) => run.run_id === runId ? { ...run, status: 'running' } : run))
+    try {
+      const result = await answerPendingInteraction(runId, values, options)
+      setRuns((current) => [result.run, ...current.filter((item) => item.run_id !== result.run.run_id)])
+      setEvents(result.events || [])
+      setOptimisticRunTransition(null)
+      setRunCompletionNotice(null)
+      if (['created', 'running', 'retrying', 'recovering', 'rolling_back'].includes(result.run.status)) {
+        await pollRunUntilStable(result.run.run_id)
+      } else if (['completed', 'failed', 'cancelled', 'interrupted', 'paused', 'paused_waiting_user'].includes(result.run.status)) {
+        setRunCompletionNotice({ runId: result.run.run_id, shownAt: Date.now() })
+      }
+    } catch (e: any) {
+      setOptimisticRunTransition(null)
+      showToast({ title: '提交交互失败', description: e.message, type: 'error' })
+      try {
+        const [restoredRun, restoredEvents] = await Promise.all([fetchCartridgeRun(runId), fetchCartridgeRunEvents(runId)])
+        setRuns((current) => [restoredRun, ...current.filter((item) => item.run_id !== restoredRun.run_id)])
+        setEvents(restoredEvents.items || [])
+      } catch {
+        // Keep the original submission error visible.
+      }
+    } finally {
+      setInteractionSubmitting(false)
+    }
+  }, [detail, interactionSubmitting, latestRun?.run_id, pendingInteraction, pollRunUntilStable])
 
   const cloneReadonlyToDev = useCallback(async () => {
     if (!detail?.cartridge || detail.cartridge.editable) return
@@ -278,14 +395,13 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
     setOpenNodeEditors((current) => current.filter((editor) => editor.pinned || editor.nodeId === node.id))
   }, [])
 
-  const openNodeEditor = useCallback((node: FlowNode, section: NodeDetailSection) => {
+  const openGuidedNodeEditor = useCallback((node: FlowNode, section: NodeDetailSection) => {
     setSelectedNode(node)
-    setFocusNodeId(node.id)
     setOpenNodeEditors((current) => {
-      const retained = current.filter((editor) => editor.pinned || editor.nodeId === node.id)
+      const retained = current.filter((editor) => editor.pinned)
       const editorId = nodeDetailId(node.id, section)
-      const existing = retained.find((editor) => nodeDetailId(editor.nodeId, editor.section) === editorId)
-      return existing ? retained : [...retained, { nodeId: node.id, section, pinned: true }]
+      if (retained.some((editor) => nodeDetailId(editor.nodeId, editor.section) === editorId)) return retained
+      return [...retained, { nodeId: node.id, section, pinned: false }]
     })
   }, [])
 
@@ -400,7 +516,10 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
             if ((detail.cartridge.inputs || []).length) setRunInputOpen(true)
             else void startFlowRun({})
           }}
-          onPause={() => void controlActiveRun(activeRuntimeRun?.status === 'paused' ? 'resume' : 'pause')}
+          onPause={() => {
+            if (activeRuntimeRun?.status === 'paused_waiting_user') setDismissedInteractionId('')
+            else void controlActiveRun(activeRuntimeRun?.status === 'paused' ? 'resume' : 'pause')
+          }}
           onStop={() => void controlActiveRun('cancel')}
           onCloneToDev={cloneReadonlyToDev}
           cloningToDev={cloningToDev}
@@ -415,6 +534,45 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
           />
         )}
 
+        {visiblePendingInteraction && latestRun && (
+          <div className="cf-pending-modal-backdrop cf-workbench-interaction-backdrop" onClick={() => setDismissedInteractionId(pendingInteractionId)}>
+            <div
+              className={`cf-pending-modal cf-workbench-interaction-modal ${visiblePendingInteraction.ui_extension === 'portable_dlc' ? 'cf-pending-modal-dlc' : ''}`}
+              role="dialog"
+              aria-modal="true"
+              aria-label="等待用户交互"
+              style={interactionPresentationSize ? {
+                '--cf-interaction-content-width': `${interactionPresentationSize.width}px`,
+                '--cf-interaction-content-height': `${interactionPresentationSize.height}px`,
+              } as CSSProperties : undefined}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="cf-pending-modal-head">
+                <strong>{visiblePendingInteraction.question?.prompt || '当前节点需要你的输入'}</strong>
+                <span>提交后流程将自动继续</span>
+                <button type="button" onClick={() => setDismissedInteractionId(pendingInteractionId)} title="关闭并保持暂停" aria-label="关闭并保持暂停">×</button>
+              </div>
+              {visiblePendingInteraction.ui_extension === 'portable_dlc' && detail.cartridge.portable_dlc ? (
+                <DlcSandboxFrame cartridgeId={detail.cartridge.id} runId={latestRun.run_id} onSubmit={submitPendingInteraction} />
+              ) : (
+                <PendingInteractionForm pending={visiblePendingInteraction} disabled={interactionSubmitting} onSubmit={submitPendingInteraction} onPresentationSize={setInteractionPresentationSize} />
+              )}
+            </div>
+          </div>
+        )}
+
+        {resultModal && (
+          <div className="cf-pending-modal-backdrop" onClick={() => setResultModal(null)}>
+            <div className="cf-pending-modal cf-run-result-modal" role="dialog" aria-modal="true" aria-label="运行结果" onClick={(event) => event.stopPropagation()}>
+              <div className="cf-pending-modal-head">
+                <strong>运行结果</strong>
+                <button type="button" onClick={() => setResultModal(null)} title="关闭结果" aria-label="关闭结果">×</button>
+              </div>
+              <iframe className="cf-run-result-frame" title="运行结果页面" sandbox="" srcDoc={passiveHtmlDocument(resultModal.html)} />
+            </div>
+          </div>
+        )}
+
         <div className="cf-workbench-design-shell">
             <DesignView
             graph={detail.graph}
@@ -425,11 +583,13 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
             focusNodeId={focusNodeId}
             openNodeEditors={openNodeEditors}
             onSelectNode={selectNode}
-            onOpenNodeEditor={openNodeEditor}
+            onGuideNodeEditor={openGuidedNodeEditor}
             onCloseNodeEditor={closeNodeEditor}
             onToggleNodeEditorPin={toggleNodeEditorPin}
             onNodeEditorPositionChange={updateNodeEditorPosition}
             onCloseUnpinnedNodeEditors={closeUnpinnedNodeEditors}
+            autoLayoutOnMount={shouldAutoLayoutNewFlow(flowId)}
+            onAutoLayoutComplete={() => clearNewFlowAutoLayout(flowId)}
             onLayoutSave={async (layout) => {
               const result = await saveFlowLayout(flowId, files, layout)
               setFiles(result.files)
@@ -444,13 +604,34 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
               updateGraphResult(result)
             }}
             onCreateNode={createCategoryNode}
+            onFilesChange={setFiles}
             runStatus={visualRuntimeRun?.status}
             nodeRunStates={designNodeRunStates}
-            runEvents={events}
+            runEvents={designRunEvents}
             runCompletionVisible={Boolean(runCompletionNotice)}
+            runCompletion={runCompletionNotice ? runs.find((run) => run.run_id === runCompletionNotice.runId) : undefined}
             onDismissRunCompletion={() => setRunCompletionNotice(null)}
-            modelPanel={<ModelManagementPanel flowId={flowId} cartridge={detail.cartridge} />}
+            onOpenRunLog={openRunLog}
+            onOpenPendingInteraction={() => setDismissedInteractionId('')}
+            modelPanel={<ModelManagementPanel flowId={flowId} cartridge={detail.cartridge} graph={detail.graph} />}
             toolPanel={<ToolManagementPanel flowId={flowId} onFlowToolsChange={setFlowResourceTools} />}
+            packagePanel={<PackagingPanel flowId={flowId} />}
+            cartridgePanel={<CartridgeDefinitionPanel
+              flowId={flowId}
+              files={files}
+              onFilesChange={setFiles}
+              onManifestChange={(manifest) => setDetail((current) => current ? {
+                ...current,
+                cartridge: {
+                  ...current.cartridge,
+                  manifest,
+                  inputs: manifest.inputs || [],
+                  outputs: manifest.outputs || [],
+                  mcp_tools: manifest.mcp_tools || [],
+                  llm_recipe: manifest.llm_recipe,
+                },
+              } : current)}
+            />}
             onDeleteNode={async (node) => {
               const result = await deleteFlowNode(flowId, node.id, files)
               updateGraphResult(result)
@@ -486,6 +667,19 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
                   setRunLog({ run: selectedRun, events: selectedEvents.items || [] })
                 } catch (e: any) {
                   showToast({ title: '读取运行日志失败', description: e.message, type: 'error' })
+                }
+              }}
+              onOpenArtifacts={async (run) => {
+                try {
+                  const eventData = await fetchCartridgeRunEvents(run.run_id)
+                  const html = findRunResultHtml(eventData.items || [])
+                  if (!html) {
+                    showToast({ title: '本次运行没有可打开的页面产物', type: 'info' })
+                    return
+                  }
+                  setResultModal({ runId: run.run_id, html })
+                } catch (e: any) {
+                  showToast({ title: '读取运行产物失败', description: e.message, type: 'error' })
                 }
               }}
               onRefresh={async () => {

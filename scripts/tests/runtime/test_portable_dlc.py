@@ -25,10 +25,8 @@ class PortableDlcTests(unittest.TestCase):
 
     def test_core_registry_exposes_no_legacy_cartridge_tools(self):
         tools = BuiltinMcpRegistry(ROOT).list_tools()
-        media = set(tools["media"])
-        self.assertNotIn("generate_pixel_shot_plan", media)
-        self.assertNotIn("generate_short_video", media)
-        self.assertNotIn("forge_spatial_blockout", media)
+        self.assertEqual({"filesystem"}, set(tools))
+        self.assertNotIn("media", tools)
 
     def test_descriptor_activates_only_in_explicit_cartridge_scope(self):
         with PortableDlcFixture() as fixture:

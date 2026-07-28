@@ -52,7 +52,7 @@ const deadline = Date.now() + 20000
 let ready = false
 while (Date.now() < deadline) {
   const result = await command('Runtime.evaluate', {
-    expression: `Boolean(document.querySelector('.cf-workbench-header') && document.querySelector('.flow-node-card'))`,
+    expression: `Boolean(document.querySelector('.cf-workbench-header') && document.querySelector('.flow-node-card, .react-flow__node'))`,
     returnByValue: true,
   })
   if (result.result?.value) {
@@ -160,6 +160,19 @@ if (clickSelector.result?.value) {
   const point = target.result.value
   await command('Input.dispatchMouseEvent', { type: 'mousePressed', x: point.x, y: point.y, button: 'left', buttons: 1, clickCount: 1 })
   await command('Input.dispatchMouseEvent', { type: 'mouseReleased', x: point.x, y: point.y, button: 'left', buttons: 0, clickCount: 1 })
+  await new Promise((resolve) => setTimeout(resolve, 350))
+}
+const hoverSelector = await command('Runtime.evaluate', {
+  expression: `window.__cfHoverSelector || ''`,
+  returnByValue: true,
+})
+if (hoverSelector.result?.value) {
+  const target = await command('Runtime.evaluate', {
+    expression: `(() => { const element = document.querySelector(${JSON.stringify(hoverSelector.result.value)}); if (!element) return null; const rect = element.getBoundingClientRect(); return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + Math.min(rect.height / 2, 42)) } })()`,
+    returnByValue: true,
+  })
+  if (!target.result?.value) throw new Error(`Hover selector not found: ${hoverSelector.result.value}`)
+  await command('Input.dispatchMouseEvent', { type: 'mouseMoved', x: target.result.value.x, y: target.result.value.y, button: 'none', buttons: 0 })
   await new Promise((resolve) => setTimeout(resolve, 350))
 }
 const dragSelector = await command('Runtime.evaluate', {

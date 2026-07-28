@@ -205,15 +205,22 @@ def resolve_model(
     model: str | None = None,
 ) -> ModelConfig:
     ensure_llm_config()
-    assignment = _assignment_for(role, cartridge_id, node_id)
+    assignment = _assignment_for(role, cartridge_id, node_id, include_defaults=not bool(cartridge_id))
     providers = list_providers(False)
     provider = None
     assignment_provider_found = False
+    if cartridge_id and not assignment:
+        raise ValueError(f"Cartridge {cartridge_id} has no explicit model binding for role {role}")
     selected_provider_id = _clean(provider_id) or _clean((assignment or {}).get("provider_id"))
     if selected_provider_id:
         provider = get_provider(selected_provider_id)
         assignment_provider_found = bool(provider)
-    provider = provider or next((item for item in providers if item.get("api_key")), None) or next(iter(providers), None) or DEFAULT_DEEPSEEK_PROVIDER
+        if cartridge_id and not provider:
+            raise ValueError(f"Cartridge model binding references an unavailable provider: {selected_provider_id}")
+    if not cartridge_id:
+        provider = provider or next((item for item in providers if item.get("api_key")), None) or next(iter(providers), None) or DEFAULT_DEEPSEEK_PROVIDER
+    if provider is None:
+        raise ValueError(f"Cartridge {cartridge_id} has no available provider for role {role}")
     validate_provider_route(provider)
     resolved_model = _clean(model) or (((assignment or {}).get("model") if assignment_provider_found else None) or provider.get("default_model") or "")
     base_url = provider.get("base_url") or ""
@@ -362,12 +369,13 @@ def build_model_binding_report(manifest: dict, root_flow: dict | None = None) ->
         if not role_id:
             continue
         required = role.get("required", True) is not False
-        binding = _assignment_for(role_id, cartridge_id) or {}
+        binding = _assignment_for(role_id, cartridge_id, include_defaults=False) or {}
         provider = providers.get(binding.get("provider_id"))
-        provider = provider or next((item for item in providers.values() if item.get("api_key")), None) or next(iter(providers.values()), None)
         status = "ok"
         issue = ""
-        if provider is None:
+        if not binding.get("provider_id"):
+            issue = f"当前卡带尚未显式绑定模型角色：{role_id}"
+        elif provider is None:
             issue = "未绑定本机模型连接"
         elif provider_route_issue(provider):
             issue = provider_route_issue(provider)
@@ -438,7 +446,13 @@ def build_model_binding_report(manifest: dict, root_flow: dict | None = None) ->
     }
 
 
-def _assignment_for(role: str, cartridge_id: str | None = None, node_id: str | None = None) -> dict | None:
+def _assignment_for(
+    role: str,
+    cartridge_id: str | None = None,
+    node_id: str | None = None,
+    *,
+    include_defaults: bool = True,
+) -> dict | None:
     data = get_assignments()
     if cartridge_id and node_id:
         item = data.get("nodes", {}).get(f"{cartridge_id}/{node_id}", {}).get(role)
@@ -448,7 +462,7 @@ def _assignment_for(role: str, cartridge_id: str | None = None, node_id: str | N
         item = data.get("cartridges", {}).get(cartridge_id, {}).get(role)
         if item:
             return item
-    return data.get("defaults", {}).get(role)
+    return data.get("defaults", {}).get(role) if include_defaults else None
 
 
 def _set_default_assignments(provider: dict) -> None:

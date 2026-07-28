@@ -337,8 +337,9 @@ class RuntimeRecoveryTests(unittest.TestCase):
                 {"ok": True, "content": "recovered"},
             ])
             runner.lab_node_executor._builtin_mcp = tools
-            failed = runner.create_run("test.recovery")
-            recovered = runner.recover_run(failed["run_id"], "retry_current_node")
+            with patch("core.studio.resources.merge_flow_tools", side_effect=lambda _flow_id, manifest_tools: manifest_tools):
+                failed = runner.create_run("test.recovery")
+                recovered = runner.recover_run(failed["run_id"], "retry_current_node")
 
             self.assertEqual("failed", failed["status"])
             self.assertEqual("completed", recovered["status"])

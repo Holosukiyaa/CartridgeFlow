@@ -124,7 +124,12 @@ class LabNodeExecutor:
             if handler:
                 result = handler(params, store, run, run_dir)
             else:
-                result = {"action": action, "skipped": True, "reason": f"action '{action}' 暂无执行器，节点已进入/完成但未实际执行"}
+                result = {
+                    "action": action,
+                    "failed": True,
+                    "error_code": "ACTION_EXECUTOR_MISSING",
+                    "error": f"action '{action}' 暂无执行器，节点未执行",
+                }
 
             if isinstance(result, dict) and self._pending_missing:
                 # 去重保序
@@ -676,11 +681,14 @@ class LabNodeExecutor:
         data_value = store.get(input_key) if input_key else None
         if not html and not markdown and data_value is not None:
             if isinstance(data_value, str):
-                markdown = data_value
+                if ui_type == "html":
+                    html = data_value
+                else:
+                    markdown = data_value
             else:
                 import json
                 markdown = "```json\n" + json.dumps(data_value, ensure_ascii=False, indent=2) + "\n```"
-            ui_type = "markdown"
+                ui_type = "markdown"
 
         payload = {
             "type": ui_type,
@@ -947,47 +955,52 @@ class LabNodeExecutor:
             or ""
         )
 
+        is_mock_decision = (
+            output_contract == "decision_envelope.v1"
+            and str(decision_test_mode).strip() in {"mock", "mock_resolved", "mock_interaction", "mock_blocked"}
+        )
         try:
-            from core.llm import chat
-            from core.llm.config_manager import resolve_model
-            role_binding = next(
-                (item for item in run.get("model_bindings", {}).get("items", []) if item.get("id") == model_role),
-                {},
-            )
-            resolve_options = dict(
-                role=model_role,
-                cartridge_id=run.get("cartridge_id"),
-                node_id=params.get("_node_id"),
-            )
-            if role_binding.get("provider_id"):
-                resolve_options["provider_id"] = role_binding["provider_id"]
-            if role_binding.get("model"):
-                resolve_options["model"] = role_binding["model"]
-            cfg = resolve_model(**resolve_options)
-            provider_id = cfg.provider_id
-            model = cfg.model
-            if output_contract == "decision_envelope.v1" and str(decision_test_mode).strip() in {"mock", "mock_resolved", "mock_interaction", "mock_blocked"}:
+            if is_mock_decision:
                 fallback = f"mock_decision:{decision_test_mode}"
                 mock = params.get("mock_decision_envelope") or preset_config.get("mock_decision_envelope")
                 envelope = self._mock_decision_envelope_for_mode(str(decision_test_mode).strip(), mock, decision_contract, params, output_key)
                 result_text = json.dumps(envelope, ensure_ascii=False)
-            elif not cfg.api_key:
-                fallback = "missing_api_key"
-                provider_error = {"type": "ProviderConfiguration", "message": "API key is not configured", "retryable": False}
-                result_text = self._offline_llm_response(system_prompt, prompt_template, final_prompt)
             else:
-                messages = [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": final_prompt},
-                ]
-                try:
-                    response = asyncio.run(chat(cfg, messages, agent_name="lab_node", phase="flow_node"))
-                except RuntimeError:
-                    loop = asyncio.get_event_loop()
-                    response = loop.run_until_complete(chat(cfg, messages, agent_name="lab_node", phase="flow_node"))
-                result_text = response.get("content", "")
-                llm_response_meta = response.get("meta") if isinstance(response.get("meta"), dict) else {}
-                used_llm = True
+                from core.llm import chat
+                from core.llm.config_manager import resolve_model
+                role_binding = next(
+                    (item for item in run.get("model_bindings", {}).get("items", []) if item.get("id") == model_role),
+                    {},
+                )
+                resolve_options = dict(
+                    role=model_role,
+                    cartridge_id=run.get("cartridge_id"),
+                    node_id=params.get("_node_id"),
+                )
+                if role_binding.get("provider_id"):
+                    resolve_options["provider_id"] = role_binding["provider_id"]
+                if role_binding.get("model"):
+                    resolve_options["model"] = role_binding["model"]
+                cfg = resolve_model(**resolve_options)
+                provider_id = cfg.provider_id
+                model = cfg.model
+                if not cfg.api_key:
+                    fallback = "missing_api_key"
+                    provider_error = {"type": "ProviderConfiguration", "message": "API key is not configured", "retryable": False}
+                    result_text = self._offline_llm_response(system_prompt, prompt_template, final_prompt)
+                else:
+                    messages = [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": final_prompt},
+                    ]
+                    try:
+                        response = asyncio.run(chat(cfg, messages, agent_name="lab_node", phase="flow_node"))
+                    except RuntimeError:
+                        loop = asyncio.get_event_loop()
+                        response = loop.run_until_complete(chat(cfg, messages, agent_name="lab_node", phase="flow_node"))
+                    result_text = response.get("content", "")
+                    llm_response_meta = response.get("meta") if isinstance(response.get("meta"), dict) else {}
+                    used_llm = True
         except Exception as exc:
             from core.llm.errors import classify_llm_error
 

@@ -106,13 +106,40 @@ def resolve_flow_tools(cartridge_id: str, resources: dict | None = None) -> list
 
 
 def merge_flow_tools(cartridge_id: str, manifest_tools, resources: dict | None = None) -> list[dict]:
+    """Build the runtime tool set from this Flow's explicit bindings.
+
+    Manifest entries describe portable tool requirements; they do not grant a
+    machine capability. A bound resource may satisfy a legacy manifest alias
+    through the same server/tool pair, while preserving the alias used by
+    existing nodes.
+    """
     source_tools = manifest_tools if isinstance(manifest_tools, list) else []
-    merged = {
-        str(item.get("id")): dict(item)
-        for item in source_tools if isinstance(item, dict) and item.get("id")
+    selected_tools = resolve_flow_tools(cartridge_id, resources)
+    selected_by_id = {str(item["id"]): item for item in selected_tools}
+    selected_by_entry = {
+        (str(item.get("server") or ""), str(item.get("tool") or "")): item
+        for item in selected_tools
+        if item.get("server") and item.get("tool")
     }
-    for item in resolve_flow_tools(cartridge_id, resources):
-        merged[item["id"]] = item
+    merged = {}
+    consumed = set()
+    for raw in source_tools:
+        if not isinstance(raw, dict) or not raw.get("id"):
+            continue
+        manifest_tool = dict(raw)
+        manifest_id = str(manifest_tool["id"])
+        selected = selected_by_id.get(manifest_id) or selected_by_entry.get((
+            str(manifest_tool.get("server") or ""),
+            str(manifest_tool.get("tool") or ""),
+        ))
+        if not selected:
+            continue
+        selected_id = str(selected["id"])
+        consumed.add(selected_id)
+        merged[manifest_id] = {**manifest_tool, **selected, "id": manifest_id}
+    for item in selected_tools:
+        if str(item["id"]) not in consumed:
+            merged[str(item["id"])] = item
     return list(merged.values())
 
 

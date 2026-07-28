@@ -1,7 +1,7 @@
 // API 工具：封装所有对后端的 fetch 调用，统一走 /api 前缀
 
 // 基础请求方法：所有 API 调用共用
-import type { RuntimeErrorEnvelope, CartridgeSummary, CartridgeDetail, RunResult, FlowGraph, FlowEdge, FlowAnnotation, FlowLabItem, FlowLabDetail, FlowEvent, TestProbeRange, FlowFiles, CartridgeAsset, InteractionComponent, CartridgeAssetsResponse, McpTool, BaseImplementationResponse, StudioConformanceResponse, StudioTodoResponse, CompatibilityReport, ProtocolCertificationReport, McpToolsResponse, ValidationResponse, NodeUpdateResult, NodeCreatePayload, LlmProvider, LlmAssignments, LlmConfigBundle, LlmDetectionResult, LlmTestResult, StudioResources, StudioCredential, StudioEnvironmentSnapshot, StudioPackageItem, PortabilityReport, StudioReleasePreflight } from './api.types.ts'
+import type { RuntimeErrorEnvelope, CartridgeSummary, CartridgeDetail, RunResult, FlowGraph, FlowEdge, FlowAnnotation, FlowLabItem, FlowLabDetail, FlowEvent, TestProbeRange, FlowFiles, CartridgeAsset, InteractionComponent, CartridgeAssetsResponse, McpTool, BaseImplementationResponse, StudioConformanceResponse, StudioTodoResponse, CompatibilityReport, ProtocolCertificationReport, McpToolsResponse, ValidationResponse, NodeUpdateResult, NodeCreatePayload, LlmProvider, LlmAssignments, LlmConfigBundle, LlmDetectionResult, LlmTestResult, StudioResources, StudioCredential, StudioEnvironmentSnapshot, StudioPackageItem, PortabilityReport, StudioReleasePreflight, AIFlowStewardContext, AIFlowStewardMessage, AIFlowStewardMode } from './api.types.ts'
 export type * from './api.types.ts'
 
 export class ApiError extends Error {
@@ -30,9 +30,8 @@ export async function api<T = any>(path: string, options: RequestInit = {}): Pro
     const envelope = payload?.error_envelope as RuntimeErrorEnvelope | undefined
     const detail = payload?.detail
     const detailMessage = typeof detail === 'string' ? detail : detail?.message
-    const message = (path.startsWith('/api/llm/') && detailMessage)
+    const message = detailMessage
       || envelope?.message
-      || detailMessage
       || raw
       || `Request failed (${res.status})`
     throw new ApiError(message, res.status, envelope, detail)
@@ -164,7 +163,7 @@ export const fetchDlcRunContext = (runId: string) =>
   api<{ schema: string; run_id: string; cartridge_id: string; frontend_url: string; context: Record<string, any>; artifacts?: Array<Record<string, any>>; pending_interaction?: any }>(`/api/cartridge-runs/${runId}/dlc-context`)
 
 export const packageCartridge = (id: string, packageMode: 'dev' | 'production' = 'dev') =>
-  api<{ ok: boolean; cartridge_id: string; filename: string; package_mode: string; url: string; size: number; mcp_tool_count: number; compatibility?: any; portability?: PortabilityReport }>(`/api/cartridges/${id}/package`, {
+  api<{ ok: boolean; cartridge_id: string; filename: string; package_mode: string; url: string; size: number; mcp_tool_count: number; compatibility?: any; portability?: PortabilityReport }>(`/api/cartridges/${encodeURIComponent(id)}/package`, {
     method: 'POST',
     body: JSON.stringify({ package_mode: packageMode }),
   })
@@ -228,6 +227,16 @@ export const fetchLabFlow = (id: string) => api<FlowLabDetail>(`/api/lab/flows/$
 
 export const fetchLabFlowFiles = (id: string) =>
   api<{ cartridge_id: string; files: FlowFiles }>(`/api/lab/flows/${id}/files`)
+
+export const askAIFlowSteward = (
+  id: string,
+  message: string,
+  mode: AIFlowStewardMode,
+  context: AIFlowStewardContext,
+) => api<{ ok: boolean; message: AIFlowStewardMessage; meta?: Record<string, any> }>(`/api/lab/flows/${id}/ai-steward`, {
+  method: 'POST',
+  body: JSON.stringify({ message, mode, ...context }),
+})
 
 export const fetchCartridgeAssets = (id: string) =>
   api<CartridgeAssetsResponse>(`/api/lab/flows/${id}/assets`)

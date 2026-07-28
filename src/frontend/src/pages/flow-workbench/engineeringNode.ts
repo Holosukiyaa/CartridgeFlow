@@ -1,0 +1,403 @@
+import type { FlowEdge, FlowFiles, FlowGraph, FlowNode } from '../../api.ts'
+import { buildFlowNodeCardView, compactNodeValue } from './flowNodeView.ts'
+import { getProtocolEffect, getProtocolExecutor, getProtocolKind } from './nodeModel.ts'
+import type { NodeRunState } from './runState.ts'
+
+export type EngineeringFieldTone = 'input' | 'output' | 'binding' | 'route' | 'policy' | 'neutral'
+
+export type EngineeringField = {
+  key: string
+  value: string
+  meta?: string
+  tone: EngineeringFieldTone
+}
+
+export type EngineeringSection = {
+  id: 'inputs' | 'outputs' | 'bindings' | 'execution' | 'routes' | 'policies'
+  label: string
+  fields: EngineeringField[]
+}
+
+export type EngineeringDataRelation = {
+  from: string
+  to: string
+  fromField: string
+  toField: string
+  label: string
+  expression: string
+  source: string
+  kind: 'data' | 'dependency'
+  type?: string
+}
+
+export type EngineeringNodeSource = {
+  key: string
+  path: string
+  line: number
+}
+
+export type EngineeringNodeView = ReturnType<typeof buildEngineeringNodeView>
+
+export type EngineeringNodeRenderModel = {
+  view: EngineeringNodeView
+  connectedFields: ReadonlySet<string>
+  connectedInputs: ReadonlySet<string>
+  connectedOutputs: ReadonlySet<string>
+  dependencyInputs: ReadonlySet<string>
+  dependencyOutputs: ReadonlySet<string>
+}
+
+export type EngineeringEdgeVisibility = {
+  control: boolean
+  data: boolean
+  dependency: boolean
+  branch: boolean
+  failure: boolean
+}
+
+function displayValue(value: unknown, fallback = '-') {
+  if (value === undefined || value === null || value === '') return fallback
+  if (typeof value === 'string') return value
+  try { return JSON.stringify(value) } catch { return String(value) }
+}
+
+function valueType(value: unknown) {
+  if (Array.isArray(value)) return 'array'
+  if (value === null) return 'null'
+  if (typeof value === 'object') return 'object'
+  return typeof value
+}
+
+function parseSchema(value: unknown): unknown {
+  if (typeof value !== 'string') return value
+  const trimmed = value.trim()
+  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return value
+  try { return JSON.parse(trimmed) } catch { return value }
+}
+
+function schemaFields(value: unknown, tone: EngineeringFieldTone): EngineeringField[] {
+  const schema = parseSchema(value)
+  if (!schema) return []
+  if (typeof schema === 'string') return [{ key: 'contract', value: schema, meta: 'schema', tone }]
+  if (Array.isArray(schema)) return schema.slice(0, 6).map((item, index) => ({
+    key: String((item as any)?.name || (item as any)?.id || index),
+    value: displayValue((item as any)?.type || item),
+    meta: (item as any)?.required === true ? 'required' : undefined,
+    tone,
+  }))
+  if (typeof schema !== 'object') return [{ key: 'value', value: displayValue(schema), meta: valueType(schema), tone }]
+
+  const record = schema as Record<string, any>
+  const properties = record.properties && typeof record.properties === 'object' ? record.properties : record
+  const required = new Set(Array.isArray(record.required) ? record.required.map(String) : [])
+  return Object.entries(properties).slice(0, 8).map(([key, item]) => {
+    const itemRecord = item && typeof item === 'object' ? item as Record<string, unknown> : null
+    return {
+      key,
+      value: itemRecord ? displayValue(itemRecord.type || itemRecord.$ref || itemRecord.enum || item) : displayValue(item),
+      meta: required.has(key) || itemRecord?.required === true ? 'required' : undefined,
+      tone,
+    }
+  })
+}
+
+function recordFields(value: unknown, tone: EngineeringFieldTone): EngineeringField[] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return []
+  return Object.entries(value as Record<string, unknown>).slice(0, 8).map(([key, item]) => ({
+    key,
+    value: displayValue(item),
+    meta: valueType(item),
+    tone,
+  }))
+}
+
+function uniqueFields(fields: EngineeringField[]) {
+  const seen = new Set<string>()
+  return fields.filter((field) => {
+    const signature = `${field.key}:${field.value}`
+    if (!field.value || field.value === '-' || seen.has(signature)) return false
+    seen.add(signature)
+    return true
+  })
+}
+
+function addField(fields: EngineeringField[], key: string, value: unknown, tone: EngineeringFieldTone, meta?: string) {
+  if (value === undefined || value === null || value === '') return
+  fields.push({ key, value: displayValue(value), tone, meta })
+}
+
+function splitNames(value: unknown): string[] {
+  if (Array.isArray(value)) return value.flatMap(splitNames)
+  if (typeof value !== 'string') return []
+  const normalized = value.trim().replace(/^\$\{(.+)\}$/, '$1')
+  if (!normalized || normalized.startsWith('{') || normalized.startsWith('[')) return []
+  return normalized.split(/[,\n]/).map((item) => item.trim()).filter(Boolean)
+}
+
+function fieldNameFromReference(value: unknown) {
+  const text = String(value || '').trim().replace(/^store:/, '').replace(/^\$\{(.+)\}$/, '$1')
+  if (!text || text.includes(' ') || text.startsWith('{') || text.startsWith('[')) return ''
+  return text.split('.').filter(Boolean).at(-1) || ''
+}
+
+function fieldCandidatesFromReference(value: unknown) {
+  const text = String(value || '').trim().replace(/^store:/, '').replace(/^\$\{(.+)\}$/, '$1')
+  if (!text || text.includes(' ') || text.startsWith('{') || text.startsWith('[')) return []
+  const parts = text.split('.').filter(Boolean)
+  return [...new Set([parts.at(-1), parts[0]].filter((item): item is string => Boolean(item)))]
+}
+
+function declaredOutputFields(node: FlowNode) {
+  const params = node.params || {}
+  const names = new Set<string>([
+    ...splitNames(node.output),
+    ...splitNames(node.primary_output),
+    ...splitNames(params.output),
+    ...splitNames(params.output_name),
+    ...splitNames(params.save_to),
+  ])
+  return [...names]
+}
+
+function outputContractType(node: FlowNode) {
+  const contract = parseSchema(node.output_contract)
+  if (contract && typeof contract === 'object' && !Array.isArray(contract)) {
+    const type = (contract as Record<string, unknown>).type
+    if (typeof type === 'string') return type
+  }
+  return node.output_contract ? 'contract' : 'declared output'
+}
+
+function describeDataFlow(target: FlowNode, sourceField: string, targetField: string) {
+  const labels = (target.params?.data_labels || target.params?.field_labels || {}) as Record<string, unknown>
+  const declaredLabel = String(labels[targetField] || '').trim()
+  if (declaredLabel) return declaredLabel
+  const action = String(target.action || '').toLowerCase()
+  if (/render|interaction|show_ui/.test(action)) return `提供界面渲染数据：${sourceField} -> ${targetField}`
+  if (/tool|mcp|remote/.test(action)) return `提交工具调用参数：${sourceField} -> ${targetField}`
+  if (/llm|decision|prompt|agent/.test(action)) return `作为模型上下文：${sourceField} -> ${targetField}`
+  if (target.type === 'terminal' || /complete|end/.test(action)) return `传递最终交付结果：${sourceField} -> ${targetField}`
+  return `传递数据：${sourceField} -> ${targetField}`
+}
+
+function relationKind(target: FlowNode): EngineeringDataRelation['kind'] {
+  const action = String(target.action || '').toLowerCase()
+  return target.tool_binding || target.mcp_binding || target.allowed_tools?.length || /tool|mcp|remote/.test(action)
+    ? 'dependency'
+    : 'data'
+}
+
+export function engineeringHandleId(direction: 'source' | 'target', field: string) {
+  return `engineering-${direction}-${encodeURIComponent(field)}`
+}
+
+export function engineeringControlHandleId(direction: 'source' | 'target') {
+  return `engineering-control-${direction}`
+}
+
+export function buildEngineeringDataRelations(graph: FlowGraph): EngineeringDataRelation[] {
+  const outputs = new Map<string, Array<{ node: FlowNode; field: string }>>()
+  graph.nodes.forEach((node) => declaredOutputFields(node).forEach((field) => {
+    const key = field.toLowerCase()
+    outputs.set(key, [...(outputs.get(key) || []), { node, field }])
+  }))
+
+  const relations: EngineeringDataRelation[] = []
+  const seen = new Set<string>()
+  graph.nodes.forEach((target) => {
+    const bindings = target.input_binding && typeof target.input_binding === 'object' ? target.input_binding : {}
+    const params = target.params || {}
+    const declarations: Array<{ field: string; reference: unknown; source: string }> = [
+      ...Object.entries(bindings).map(([field, reference]) => ({ field, reference, source: `input_binding.${field}` })),
+      ...splitNames(target.source || params.source || params.input).map((reference) => ({ field: fieldNameFromReference(reference) || 'input', reference, source: 'source' })),
+    ]
+
+    declarations.forEach(({ field, reference, source }) => {
+      const referenceFields = fieldCandidatesFromReference(reference)
+      if (!referenceFields.length) return
+      const candidates = referenceFields.flatMap((fieldName) => outputs.get(fieldName.toLowerCase()) || [])
+      candidates.forEach(({ node: sourceNode, field: sourceField }) => {
+        if (sourceNode.id === target.id) return
+        const signature = `${sourceNode.id}:${sourceField}->${target.id}:${field}`
+        if (seen.has(signature)) return
+        seen.add(signature)
+        relations.push({
+          from: sourceNode.id,
+          to: target.id,
+          fromField: sourceField,
+          toField: field,
+          label: describeDataFlow(target, sourceField, field),
+          expression: `${sourceField} -> ${field}`,
+          source,
+          kind: relationKind(target),
+        })
+      })
+    })
+  })
+  return relations
+}
+
+export function locateNodeSource(files: FlowFiles, nodeId: string) {
+  const preferredKeys = ['root_flow', ...Object.keys(files).filter((key) => key !== 'root_flow')]
+  for (const key of preferredKeys) {
+    const content = files[key]
+    if (!content) continue
+    const lines = content.split(/\r?\n/)
+    const lineIndex = lines.findIndex((line) => line.includes(`"${nodeId}"`) || line.includes(`'${nodeId}'`) || line.includes(`id: ${nodeId}`))
+    if (lineIndex >= 0) return { key, path: key === 'root_flow' ? 'root.flow.json' : key, line: lineIndex + 1 }
+  }
+  return { key: 'root_flow', path: 'root.flow.json', line: 1 }
+}
+
+function buildNodeSourceIndex(files: FlowFiles, nodes: FlowNode[]) {
+  const nodeIds = new Set(nodes.map((node) => node.id))
+  const sourceByNode = new Map<string, EngineeringNodeSource>()
+  const preferredKeys = ['root_flow', ...Object.keys(files).filter((key) => key !== 'root_flow')]
+  for (const key of preferredKeys) {
+    const content = files[key]
+    if (!content) continue
+    const lines = content.split(/\r?\n/)
+    lines.forEach((line, lineIndex) => {
+      const candidates = new Set<string>()
+      for (const match of line.matchAll(/["']([^"']+)["']/g)) candidates.add(match[1])
+      const yamlId = line.match(/\bid\s*:\s*["']?([^\s,"'}]+)/)?.[1]
+      if (yamlId) candidates.add(yamlId)
+      candidates.forEach((nodeId) => {
+        if (!nodeIds.has(nodeId) || sourceByNode.has(nodeId)) return
+        sourceByNode.set(nodeId, {
+          key,
+          path: key === 'root_flow' ? 'root.flow.json' : key,
+          line: lineIndex + 1,
+        })
+      })
+    })
+  }
+  nodes.forEach((node) => {
+    if (!sourceByNode.has(node.id)) sourceByNode.set(node.id, { key: 'root_flow', path: 'root.flow.json', line: 1 })
+  })
+  return sourceByNode
+}
+
+export function buildEngineeringSections(node: FlowNode, graph: FlowGraph, indexedEdges?: { incoming: FlowEdge[]; outgoing: FlowEdge[] }): EngineeringSection[] {
+  const params = node.params || {}
+  const incoming = indexedEdges?.incoming || graph.edges.filter((edge) => edge.to === node.id)
+  const outgoing = indexedEdges?.outgoing || graph.edges.filter((edge) => edge.from === node.id)
+  const inputs: EngineeringField[] = [...schemaFields(node.input_schema, 'input')]
+  recordFields(node.input_binding, 'input').forEach((field) => {
+    if (!inputs.some((input) => input.key === field.key)) inputs.push({ ...field, meta: 'binding' })
+  })
+  const inputSource = node.source || params.source || params.input
+  if (!inputs.length) incoming.slice(0, 6).forEach((edge) => addField(inputs, edge.label || 'request', edge.from, 'input', 'node ref'))
+
+  const outputs: EngineeringField[] = []
+  const declaredOutputs = declaredOutputFields(node)
+  declaredOutputs.forEach((name) => addField(outputs, name, outputContractType(node), 'output', node.primary_output === name ? 'primary' : 'output'))
+  if (!outputs.length && node.output_contract) outputs.push(...schemaFields(node.output_contract, 'output'))
+  if (!outputs.length && outgoing.length) addField(outputs, 'result', outgoing.map((edge) => edge.to).join(', '), 'output', 'object')
+
+  const bindings = recordFields(node.input_binding, 'binding')
+  addField(bindings, 'tool_binding', node.tool_binding, 'binding', 'tool')
+  addField(bindings, 'allowed_tools', node.allowed_tools, 'binding', 'allowlist')
+  addField(bindings, 'mcp_binding', node.mcp_binding, 'binding', 'mcp')
+
+  const execution: EngineeringField[] = []
+  addField(execution, 'source', inputSource, 'neutral', node.input_kind || 'input')
+  addField(execution, 'kind', getProtocolKind(node) || node.kind || node.type, 'neutral', 'protocol')
+  addField(execution, 'executor', getProtocolExecutor(node) || node.executor, 'neutral')
+  addField(execution, 'action', node.action, 'neutral')
+  addField(execution, 'effect', getProtocolEffect(node) || node.effect, 'neutral')
+  addField(execution, 'model_role', node.model_role || node.agent, 'neutral')
+  addField(execution, 'endpoint', node.endpoint, 'neutral')
+
+  const routes = recordFields(node.action_routes, 'route')
+  outgoing.slice(0, 8).forEach((edge) => addField(routes, edge.label || 'onSuccess', edge.to, 'route', edge.scope || 'root'))
+  addField(routes, 'next', node.next, 'route')
+
+  const policies: EngineeringField[] = []
+  addField(policies, 'timeout_ms', node.timeout_ms || params.timeout_ms, 'policy', 'ms')
+  addField(policies, 'failure_policy', node.failure_policy, 'policy')
+  addField(policies, 'permission', node.permission, 'policy')
+  addField(policies, 'audit_log', node.audit_log, 'policy', 'boolean')
+
+  return [
+    { id: 'inputs', label: 'Inputs', fields: uniqueFields(inputs) },
+    { id: 'outputs', label: 'Outputs', fields: uniqueFields(outputs) },
+    { id: 'bindings', label: 'Bindings', fields: uniqueFields(bindings) },
+    { id: 'execution', label: 'Execution', fields: uniqueFields(execution) },
+    { id: 'routes', label: 'Routes', fields: uniqueFields(routes) },
+    { id: 'policies', label: 'Policies', fields: uniqueFields(policies) },
+  ]
+}
+
+export function buildEngineeringNodeView(node: FlowNode, graph: FlowGraph, files: FlowFiles, runState?: NodeRunState) {
+  const incomingEdges: FlowEdge[] = graph.edges.filter((edge) => edge.to === node.id)
+  const outgoingEdges: FlowEdge[] = graph.edges.filter((edge) => edge.from === node.id)
+  return buildEngineeringNodeViewFromParts(node, graph, runState, incomingEdges, outgoingEdges, locateNodeSource(files, node.id))
+}
+
+function buildEngineeringNodeViewFromParts(
+  node: FlowNode,
+  graph: FlowGraph,
+  runState: NodeRunState | undefined,
+  incomingEdges: FlowEdge[],
+  outgoingEdges: FlowEdge[],
+  source: EngineeringNodeSource,
+) {
+  const presentation = buildFlowNodeCardView(node, runState, { incomingEdges, outgoingEdges })
+  return {
+    ...presentation,
+    sections: buildEngineeringSections(node, graph, { incoming: incomingEdges, outgoing: outgoingEdges }),
+    source,
+    raw: JSON.stringify(node, null, 2),
+    idLabel: compactNodeValue(node.id, 'unknown', 30),
+  }
+}
+
+export function buildEngineeringNodeModels(
+  graph: FlowGraph,
+  files: FlowFiles,
+  runStates: Map<string, NodeRunState> | undefined,
+  dataRelations: EngineeringDataRelation[],
+) {
+  const incomingByNode = new Map<string, FlowEdge[]>()
+  const outgoingByNode = new Map<string, FlowEdge[]>()
+  graph.nodes.forEach((node) => {
+    incomingByNode.set(node.id, [])
+    outgoingByNode.set(node.id, [])
+  })
+  graph.edges.forEach((edge) => {
+    incomingByNode.get(edge.to)?.push(edge)
+    outgoingByNode.get(edge.from)?.push(edge)
+  })
+
+  const relationsByNode = new Map<string, EngineeringDataRelation[]>()
+  graph.nodes.forEach((node) => relationsByNode.set(node.id, []))
+  dataRelations.forEach((relation) => {
+    relationsByNode.get(relation.from)?.push(relation)
+    if (relation.to !== relation.from) relationsByNode.get(relation.to)?.push(relation)
+  })
+
+  const sourceByNode = buildNodeSourceIndex(files, graph.nodes)
+  const models = new Map<string, EngineeringNodeRenderModel>()
+  graph.nodes.forEach((node) => {
+    const relations = relationsByNode.get(node.id) || []
+    const connectedInputs = new Set(relations.filter((relation) => relation.to === node.id).map((relation) => relation.toField))
+    const connectedOutputs = new Set(relations.filter((relation) => relation.from === node.id).map((relation) => relation.fromField))
+    models.set(node.id, {
+      view: buildEngineeringNodeViewFromParts(
+        node,
+        graph,
+        runStates?.get(node.id),
+        incomingByNode.get(node.id) || [],
+        outgoingByNode.get(node.id) || [],
+        sourceByNode.get(node.id)!,
+      ),
+      connectedFields: new Set([...connectedInputs, ...connectedOutputs]),
+      connectedInputs,
+      connectedOutputs,
+      dependencyInputs: new Set(relations.filter((relation) => relation.to === node.id && relation.kind === 'dependency').map((relation) => relation.toField)),
+      dependencyOutputs: new Set(relations.filter((relation) => relation.from === node.id && relation.kind === 'dependency').map((relation) => relation.fromField)),
+    })
+  })
+  return models
+}

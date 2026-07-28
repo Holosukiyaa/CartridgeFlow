@@ -32,17 +32,37 @@ class FlowToolBindingTests(unittest.TestCase):
         self.assertNotIn("endpoint", external)
         self.assertNotIn("auth_env", external)
 
-    def test_selected_tools_are_merged_without_removing_manifest_tools(self):
+    def test_unbound_manifest_tools_do_not_enter_runtime(self):
         merged = merge_flow_tools(
             "dev.example",
             [{"id": "manifest-tool", "type": "builtin", "server": "filesystem", "tool": "exists"}],
             self.resources(),
         )
         self.assertEqual({item["id"] for item in merged}, {
-            "manifest-tool",
             "docs-search",
             "builtin:filesystem/read_file",
         })
+
+    def test_bound_builtin_satisfies_legacy_manifest_alias(self):
+        merged = merge_flow_tools(
+            "dev.example",
+            [{"id": "filesystem_read", "type": "builtin", "server": "filesystem", "tool": "read_file"}],
+            self.resources(),
+        )
+        self.assertEqual({item["id"] for item in merged}, {"docs-search", "filesystem_read"})
+        alias = next(item for item in merged if item["id"] == "filesystem_read")
+        self.assertEqual(alias["server"], "filesystem")
+        self.assertEqual(alias["tool"], "read_file")
+
+    def test_manifest_tools_are_empty_when_flow_has_no_bindings(self):
+        resources = self.resources()
+        resources["bindings"]["tools"] = {}
+        merged = merge_flow_tools(
+            "dev.example",
+            [{"id": "filesystem_read", "type": "builtin", "server": "filesystem", "tool": "read_file"}],
+            resources,
+        )
+        self.assertEqual(merged, [])
 
     def test_runtime_resolves_private_connection_only_for_selected_flow(self):
         run = {

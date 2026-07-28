@@ -1,6 +1,7 @@
 import type { FlowFiles, FlowGraph, FlowLabDetail, FlowNode, ValidationResponse } from '../../api.ts'
 
 export type WorkbenchMode = 'design' | 'run'
+export type DesignDisplayMode = 'engineering' | 'outcome'
 export type NodeCategoryId = 'input' | 'interaction' | 'process' | 'tool' | 'remote' | 'transfer' | 'store' | 'control' | 'custom'
 
 export type NodePreset = {
@@ -57,9 +58,16 @@ export type NodeDraft = {
   auditLog: boolean
   description: string
   input: string
+  optionalInput: string
   output: string
   saveTo: string
   condition: string
+  endpoint: string
+  timeoutMs: string
+  replayPolicy: string
+  idempotency: string
+  artifactType: string
+  deliveryPath: string
   agent: string
   modelRole: string
   tools: string

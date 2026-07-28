@@ -1,6 +1,7 @@
 import asyncio
 import json
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -33,7 +34,8 @@ class RuntimeErrorEnvelopeTests(unittest.TestCase):
             "INPUT_REQUIRED", "DECISION_ENVELOPE_INVALID", "DECISION_CONSUME_FAILED",
             "PROVIDER_CONFIGURATION_MISSING", "PROVIDER_AUTH_FAILED", "PROVIDER_RATE_LIMITED",
             "PROVIDER_TIMEOUT", "PROVIDER_UNAVAILABLE", "TOOL_TIMEOUT", "TOOL_WORKER_CRASHED",
-            "PERMISSION_DENIED", "ARTIFACT_MISSING", "DEPENDENCY_UNAVAILABLE", "INTERNAL_UNEXPECTED",
+            "PERMISSION_DENIED", "ARTIFACT_MISSING", "DEPENDENCY_UNAVAILABLE", "ACTION_EXECUTOR_MISSING",
+            "INTERNAL_UNEXPECTED",
         }
         self.assertTrue(required_codes <= set(ERROR_CATALOG))
 
@@ -108,6 +110,59 @@ class RuntimeErrorEnvelopeTests(unittest.TestCase):
         self.assertEqual("TOOL_WORKER_CRASHED", crashed["code"])
         self.assertEqual("TOOL_CANCELLED", cancelled["code"])
 
+    def test_missing_action_executor_keeps_its_stable_identity(self):
+        envelope = error_from_node_result({
+            "action": "business_action_without_executor",
+            "failed": True,
+            "error_code": "ACTION_EXECUTOR_MISSING",
+            "error": "executor is not registered",
+        }, run_id="run_test", node_id="transform")
+
+        self.assertEqual("ACTION_EXECUTOR_MISSING", envelope["code"])
+        self.assertEqual(["edit_node_contract", "inspect_node"], envelope["recovery_actions"])
+
+    def test_async_queue_record_is_immediately_readable_and_can_fail_durably(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runner = CartridgeRunner(Path(temp_dir), _Registry({"id": "test.async"}))
+            queued = runner.create_queued_run(
+                "test.async",
+                {"topic": "daily"},
+                run_id="run_async",
+                compatibility={"ok": True, "status": "compatible"},
+            )
+
+            self.assertEqual("created", queued["status"])
+            self.assertEqual("queued", runner.get_run("run_async")["current_state"])
+            envelope = build_runtime_error("PROVIDER_CONFIGURATION_MISSING", run_id="run_async")
+            failed = runner.fail_queued_run("run_async", "test.async", envelope)
+
+            self.assertEqual("failed", failed["status"])
+            self.assertEqual(envelope["error_id"], runner.get_run("run_async")["error"]["error_id"])
+            self.assertEqual("run_failed", runner.get_events("run_async")[-1]["type"])
+
+    def test_run_snapshot_remains_valid_during_concurrent_polling(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runner = CartridgeRunner(Path(temp_dir), _Registry({"id": "test.concurrent"}))
+            runner.create_queued_run("test.concurrent", {}, run_id="run_concurrent")
+            failures = []
+
+            def writer():
+                for revision in range(150):
+                    snapshot = runner.get_run("run_concurrent")
+                    snapshot["revision"] = revision
+                    runner._write_json(runner.runs_dir / "run_concurrent" / "run.json", snapshot)
+
+            worker = threading.Thread(target=writer)
+            worker.start()
+            while worker.is_alive():
+                try:
+                    runner.get_run("run_concurrent")
+                except (OSError, ValueError, json.JSONDecodeError) as exc:
+                    failures.append(exc)
+            worker.join()
+
+            self.assertEqual([], failures)
+
     def test_run_snapshot_and_events_share_one_error_identity(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -146,6 +201,92 @@ class RuntimeErrorEnvelopeTests(unittest.TestCase):
             self.assertEqual("failed", run["status"])
             self.assertEqual(run["error"]["error_id"], failed_event["data"]["error_envelope"]["error_id"])
             self.assertEqual(run["error"]["error_id"], final_event["data"]["error_envelope"]["error_id"])
+
+    def test_node_failure_takes_precedence_over_pending_interaction(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            package = root / "package"
+            package.mkdir()
+            cartridge = {
+                "id": "test.invalid-pause",
+                "package_path": str(package),
+                "manifest": {"id": "test.invalid-pause", "version": "1.0.0", "inputs": [], "runtime": {"type": "none"}},
+                "root_flow": {
+                    "id": "invalid-pause.root",
+                    "start": "decide",
+                    "states": {
+                        "decide": {"type": "process", "kind": "transform", "executor": "deterministic", "effect": "none", "action": "custom_action", "next": "complete"},
+                        "complete": {"type": "terminal"},
+                    },
+                },
+            }
+
+            class InvalidPauseExecutor:
+                def execute(self, *args, **kwargs):
+                    return {
+                        "action": "llm_prompt",
+                        "failed": True,
+                        "error_code": "INPUT_REQUIRED",
+                        "error": "request is missing",
+                        "paused": True,
+                        "pause_status": "paused_waiting_user",
+                        "pending_interaction": {"status": "waiting_user"},
+                    }
+
+            runner = CartridgeRunner(root, _Registry(cartridge))
+            runner.build_compatibility_report = lambda *args, **kwargs: {
+                "ok": True, "status": "compatible", "legacy": False, "base": {}, "protocol": {}, "summary": {}, "findings": [],
+            }
+            runner.lab_node_executor = InvalidPauseExecutor()
+            run = runner.create_run("test.invalid-pause")
+            event_types = [event["type"] for event in runner.get_events(run["run_id"])]
+
+            self.assertEqual("failed", run["status"])
+            self.assertEqual("INPUT_REQUIRED", run["error"]["code"])
+            self.assertNotIn("pending_interaction", run)
+            self.assertIn("lab_node_failed", event_types)
+            self.assertNotIn("lab_node_paused", event_types)
+
+    def test_node_failure_stops_current_path_by_default(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            package = root / "package"
+            package.mkdir()
+            cartridge = {
+                "id": "test.fail-closed",
+                "package_path": str(package),
+                "manifest": {"id": "test.fail-closed", "version": "1.0.0", "inputs": [], "runtime": {"type": "none"}},
+                "root_flow": {
+                    "id": "fail-closed.root",
+                    "start": "first",
+                    "states": {
+                        "first": {"type": "process", "action": "custom_action", "next": "second"},
+                        "second": {"type": "process", "action": "custom_action", "next": "complete"},
+                        "complete": {"type": "terminal"},
+                    },
+                },
+            }
+
+            class FailingExecutor:
+                def __init__(self):
+                    self.executed = []
+
+                def execute(self, node_id, *_args, **_kwargs):
+                    self.executed.append(node_id)
+                    return {"action": "custom_action", "failed": True, "error": "first node failed"}
+
+            runner = CartridgeRunner(root, _Registry(cartridge))
+            runner.build_compatibility_report = lambda *args, **kwargs: {
+                "ok": True, "status": "compatible", "legacy": False, "base": {}, "protocol": {}, "summary": {}, "findings": [],
+            }
+            executor = FailingExecutor()
+            runner.lab_node_executor = executor
+            run = runner.create_run("test.fail-closed")
+
+            self.assertEqual("failed", run["status"])
+            self.assertEqual("first", run["current_state"])
+            self.assertEqual(["first"], executor.executed)
+            self.assertNotIn("complete", [event["state"] for event in runner.get_events(run["run_id"]) if event["type"] == "state_entered"])
 
     def test_required_model_binding_blocks_before_run_directory_is_created(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -196,6 +337,36 @@ class RuntimeErrorEnvelopeTests(unittest.TestCase):
         handler_payload = json.loads(handler_response.body)
         self.assertEqual(original["error_id"], handler_payload["error_envelope"]["error_id"])
         self.assertEqual(original["code"], handler_payload["error_envelope"]["code"])
+
+    def test_compatibility_block_reports_flow_contract_error_and_specific_reason(self):
+        from fastapi.testclient import TestClient
+        from backend.main import app
+
+        class BlockedRegistry:
+            def get_cartridge(self, cartridge_id):
+                return {"id": cartridge_id, "root_flow": {}, "inputs": [], "editable": True}
+
+        class BlockedRunner:
+            def build_cartridge_compatibility_report(self, cartridge_id):
+                return {
+                    "ok": False,
+                    "summary": {"blocker": 1},
+                    "findings": [{
+                        "severity": "blocker",
+                        "node_id": "writer",
+                        "code": "contract_missing",
+                        "message": "output contract is missing",
+                    }],
+                }
+
+        with patch("backend.main.registry", BlockedRegistry()), patch("backend.main.runner", BlockedRunner()):
+            response = TestClient(app).post("/api/lab/flows/test.blocked/test-run", json={"inputs": {}})
+        payload = response.json()
+
+        self.assertEqual(400, response.status_code)
+        self.assertEqual("FLOW_CONTRACT_INVALID", payload["error_envelope"]["code"])
+        self.assertIn("writer", payload["detail"]["message"])
+        self.assertIn("output contract is missing", payload["detail"]["message"])
 
     def test_diagnostic_bundle_aggregates_run_evidence_and_redacts_secrets(self):
         from fastapi.testclient import TestClient

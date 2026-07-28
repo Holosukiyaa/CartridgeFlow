@@ -494,6 +494,64 @@
   overflow: auto;
 }
 
+.cf-workbench-interaction-modal:not(.cf-pending-modal-dlc) {
+  width: min(calc(var(--cf-interaction-content-width, 694px) + 26px), calc(100vw - 16px));
+  max-height: calc(100vh - 16px);
+}
+
+.cf-workbench-interaction-modal .cf-pending-modal-head button {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  border-radius: 4px;
+}
+
+.cf-workbench-interaction-backdrop {
+  padding: 8px;
+}
+
+.cf-workbench-interaction-modal .cf-pending-head,
+.cf-workbench-interaction-modal .cf-pending-card > p {
+  display: none;
+}
+
+.cf-workbench-interaction-modal .cf-passive-interaction-frame {
+  width: 100%;
+  height: min(var(--cf-interaction-content-height, 320px), calc(100vh - 220px));
+  max-height: min(var(--cf-interaction-content-height, 320px), calc(100vh - 220px));
+  margin: 0;
+  flex: 0 0 auto;
+  border: 0;
+  background: #fff;
+}
+
+.cf-workbench-interaction-modal .cf-pending-card {
+  gap: 12px;
+  padding: 12px;
+}
+
+.cf-workbench-interaction-modal .cf-pending-field textarea {
+  min-height: 64px;
+  max-height: 120px;
+}
+
+.cf-workbench-interaction-modal .cf-btn-accent {
+  min-height: 40px;
+}
+
+.cf-run-result-modal {
+  width: min(900px, calc(100vw - 40px));
+  height: min(720px, calc(100vh - 40px));
+}
+
+.cf-run-result-frame {
+  width: 100%;
+  min-height: 0;
+  flex: 1 1 auto;
+  border: 0;
+  background: #fff;
+}
+
 .cf-btn-accent,
 .cf-btn-outline {
   padding: 7px 12px;

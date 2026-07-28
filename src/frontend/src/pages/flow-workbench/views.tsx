@@ -1,14 +1,20 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Box, Button } from '../../ui.tsx'
-import { AlertTriangle, ChevronDown, ChevronUp, ClipboardCopy, Copy, Download, FileOutput, History, Pause, PlayCircle, RefreshCw, Square, SquarePen, X } from 'lucide-react'
-import type { FlowAnnotation, FlowEdge, FlowEvent, FlowFiles, FlowGraph, FlowLabDetail, FlowNode, RunResult } from '../../api.ts'
-import type { CreateNodeHandler, GraphResult } from './types.ts'
-import { FlowGraphView } from './FlowGraphView.tsx'
+import { AlertTriangle, Bot, Braces, ChevronDown, ChevronUp, ClipboardCopy, Copy, Download, FileOutput, History, PanelRight, Pause, PlayCircle, RefreshCw, Square, SquarePen, X } from 'lucide-react'
+import type { AIFlowSelection, AIFlowStewardContext, FlowAnnotation, FlowEdge, FlowEvent, FlowFiles, FlowGraph, FlowLabDetail, FlowNode, RunResult } from '../../api.ts'
+import type { CreateNodeHandler, DesignDisplayMode, GraphResult, NodeDraft } from './types.ts'
+import { FlowGraphView, type CanvasTool } from './FlowGraphView.tsx'
 import { NodeDetailCard } from './NodeDetailCard.tsx'
-import { NodeDrawer } from './NodeDrawer.tsx'
 import { BrandMark } from './BrandMark.tsx'
 import { NODE_DETAIL_SECTION_BY_ID, nodeDetailId, type NodeDetailSection, type OpenNodeDetail } from './nodeDetails.ts'
 import type { NodeRunState } from './runState.ts'
+import { makeNodeDraft } from './nodeModel.ts'
+import { saveNodeDraft } from './nodeEditing.ts'
+import { showToast } from '../../toast.tsx'
+import { buildNodeAuthoringPath } from './nodeAuthoring.ts'
+import { EngineeringInspector } from './EngineeringInspector.tsx'
+import { buildEngineeringDataRelations, buildEngineeringNodeModels, type EngineeringEdgeVisibility } from './engineeringNode.ts'
+import { AIFlowStewardPanel } from './AIFlowStewardPanel.tsx'
 
 export function WorkbenchHeader({
   detail,
@@ -36,13 +42,14 @@ export function WorkbenchHeader({
   cloningToDev?: boolean
 }) {
   const running = ['created', 'running', 'retrying', 'recovering', 'rolling_back'].includes(runStatus || '')
-  const paused = runStatus === 'paused'
-  const stoppable = running || paused || runStatus === 'paused_waiting_user'
+  const paused = ['paused', 'paused_waiting_user'].includes(runStatus || '')
+  const stoppable = running || paused
   return (
     <header className="cf-workbench-header">
       <div className="cf-workbench-brand">
         <BrandMark className="cf-workbench-brand-mark" />
-        <strong>CARTRIDGE WORKSPACE <i>/</i> 卡带工作区</strong>
+        <strong>CARTRIDGE WORKSPACE <i>/</i> 卡带工作台</strong>
+        <div className="cf-workbench-protocol-tags" aria-label="协议支持"><span>基座协议 v0.7</span><span>Flow Graph v0.7</span><span>LLM Binding v0.7</span><span>MCP v0.7</span></div>
       </div>
       <div className="cf-workbench-header-spacer" />
       <div className="cf-workbench-actions">
@@ -57,10 +64,10 @@ export function WorkbenchHeader({
             <button type="button" onClick={onRun} disabled={running || paused || runBusy} title="使用真实模型与真实工具运行当前流程">
               <PlayCircle aria-hidden="true" />运行
             </button>
-            <button type="button" onClick={onPause} disabled={(!running && !paused) || runBusy} title={paused ? '从最近检查点继续运行' : '在当前节点完成后暂停'}>
+            <button type="button" className={paused ? 'active' : ''} onClick={onPause} disabled={(!running && !paused) || runBusy} title={paused ? '从最近检查点继续运行' : '在当前节点完成后暂停'}>
               {paused ? <PlayCircle aria-hidden="true" /> : <Pause aria-hidden="true" />}{paused ? '继续' : '暂停'}
             </button>
-            <button type="button" onClick={onStop} disabled={!stoppable || runBusy} title="停止当前运行">
+            <button type="button" className={stoppable ? 'active' : ''} onClick={onStop} disabled={!stoppable || runBusy} title="停止当前运行">
               <Square aria-hidden="true" />停止
             </button>
             <button type="button" className={historyOpen ? 'active' : ''} onClick={onHistory} title="在画布右侧查看运行历史">
@@ -76,8 +83,8 @@ export function WorkbenchHeader({
 
 export function DesignView({
   graph, editable, files, flowId, selectedNode, focusNodeId, openNodeEditors,
-  onSelectNode, onOpenNodeEditor, onCloseNodeEditor, onToggleNodeEditorPin, onNodeEditorPositionChange, onCloseUnpinnedNodeEditors, onLayoutSave, onEdgesSave, onAnnotationsSave, onCreateNode, onDeleteNode, onSaved,
-  modelPanel, toolPanel, runStatus, nodeRunStates, runEvents, runCompletionVisible, onDismissRunCompletion,
+  onSelectNode, onGuideNodeEditor, onCloseNodeEditor, onToggleNodeEditorPin, onNodeEditorPositionChange, onCloseUnpinnedNodeEditors, onLayoutSave, autoLayoutOnMount, onAutoLayoutComplete, onEdgesSave, onAnnotationsSave, onCreateNode, onDeleteNode, onFilesChange, onSaved,
+  modelPanel, toolPanel, packagePanel, cartridgePanel, runStatus, nodeRunStates, runEvents, runCompletionVisible, runCompletion, onDismissRunCompletion, onOpenRunLog, onOpenPendingInteraction,
 }: {
   graph: FlowGraph
   editable: boolean
@@ -87,31 +94,127 @@ export function DesignView({
   focusNodeId: string | null
   openNodeEditors: OpenNodeDetail[]
   onSelectNode: (node: FlowNode) => void
-  onOpenNodeEditor: (node: FlowNode, section: NodeDetailSection) => void
+  onGuideNodeEditor: (node: FlowNode, section: NodeDetailSection) => void
   onCloseNodeEditor: (editorId: string) => void
   onToggleNodeEditorPin: (editorId: string) => void
   onNodeEditorPositionChange: (editorId: string, position: { x: number; y: number }) => void
   onCloseUnpinnedNodeEditors: () => void
   onLayoutSave: (layout: Record<string, { x: number; y: number }>) => Promise<void>
+  autoLayoutOnMount?: boolean
+  onAutoLayoutComplete?: () => void
   onEdgesSave: (edges: FlowEdge[]) => Promise<void>
   onAnnotationsSave: (annotations: FlowAnnotation[]) => Promise<void>
   onCreateNode: CreateNodeHandler
   onDeleteNode: (node: FlowNode) => Promise<void>
+  onFilesChange: (files: FlowFiles) => void
   onSaved: (result: GraphResult) => void
   modelPanel?: ReactNode
   toolPanel?: ReactNode
+  packagePanel?: ReactNode
+  cartridgePanel?: ReactNode
   runStatus?: string
   nodeRunStates?: Map<string, NodeRunState>
   runEvents?: FlowEvent[]
   runCompletionVisible?: boolean
+  runCompletion?: RunResult
   onDismissRunCompletion?: () => void
+  onOpenRunLog?: (run: RunResult) => void
+  onOpenPendingInteraction?: () => void
 }) {
+  const [engineeringInspectorOpen, setEngineeringInspectorOpen] = useState(false)
+  const [stewardOpen, setStewardOpen] = useState(false)
+  const [displayMode, setDisplayMode] = useState<DesignDisplayMode>('engineering')
+  const [canvasTool, setCanvasTool] = useState<CanvasTool>('select')
+  const [stewardRevision, setStewardRevision] = useState('')
+  const [stewardSelection, setStewardSelection] = useState<AIFlowSelection>({ node_ids: [], edge_ids: [], field_paths: [] })
+  const [engineeringUnlocked, setEngineeringUnlocked] = useState(false)
+  const [edgeVisibility, setEdgeVisibility] = useState<EngineeringEdgeVisibility>({ control: true, data: true, dependency: true, branch: true, failure: true })
+  const [nodeDrafts, setNodeDrafts] = useState<Record<string, NodeDraft>>({})
+  const [savingNodeIds, setSavingNodeIds] = useState<Set<string>>(() => new Set())
+  const engineeringDataRelations = useMemo(() => buildEngineeringDataRelations(graph), [graph])
+  const engineeringRelationCounts = useMemo(() => {
+    const relations = engineeringDataRelations
+    return {
+      data: relations.filter((relation) => relation.kind === 'data').length,
+      dependency: relations.filter((relation) => relation.kind === 'dependency').length,
+    }
+  }, [engineeringDataRelations])
+  const authoringPaths = useMemo(() => new Map(graph.nodes.flatMap((node) => {
+    const path = editable ? buildNodeAuthoringPath(node, graph, files) : null
+    return path ? [[node.id, path] as const] : []
+  })), [editable, files, graph])
+  const updateStewardSelection = useCallback((next: AIFlowSelection) => {
+    setStewardSelection((current) => (
+      current.node_ids.join('\u0000') === next.node_ids.join('\u0000')
+      && current.edge_ids.join('\u0000') === next.edge_ids.join('\u0000')
+      && current.field_paths.join('\u0000') === next.field_paths.join('\u0000')
+        ? current
+        : next
+    ))
+  }, [])
+
+  useEffect(() => {
+    let active = true
+    const bytes = new TextEncoder().encode(files.root_flow || JSON.stringify(graph))
+    crypto.subtle.digest('SHA-256', bytes).then((buffer) => {
+      if (!active) return
+      const next = [...new Uint8Array(buffer)].slice(0, 8).map((value) => value.toString(16).padStart(2, '0')).join('')
+      setStewardRevision((current) => {
+        if (current && current !== next) setStewardSelection({ node_ids: [], edge_ids: [], field_paths: [] })
+        return next
+      })
+    })
+    return () => { active = false }
+  }, [files.root_flow, graph])
+
+  const updateNodeDraft = useCallback((node: FlowNode, patch: Partial<NodeDraft>) => {
+    setNodeDrafts((current) => ({
+      ...current,
+      [node.id]: { ...(current[node.id] || makeNodeDraft(node)), ...patch },
+    }))
+  }, [])
+
+  const resetNodeDraft = useCallback((nodeId: string) => {
+    setNodeDrafts((current) => {
+      const next = { ...current }
+      delete next[nodeId]
+      return next
+    })
+  }, [])
+
+  const persistNodeDraft = useCallback(async (node: FlowNode) => {
+    const draft = nodeDrafts[node.id] || makeNodeDraft(node)
+    setSavingNodeIds((current) => new Set(current).add(node.id))
+    try {
+      const result = await saveNodeDraft(flowId, files, node, draft)
+      resetNodeDraft(node.id)
+      onSaved(result)
+      return result
+    } catch (error: any) {
+      showToast({ title: '节点保存失败', description: error?.message || String(error), type: 'error' })
+      return null
+    } finally {
+      setSavingNodeIds((current) => {
+        const next = new Set(current)
+        next.delete(node.id)
+        return next
+      })
+    }
+  }, [files, flowId, nodeDrafts, onSaved, resetNodeDraft])
+
   const nodeEditors = openNodeEditors.flatMap((editor) => {
     const node = graph.nodes.find((item) => item.id === editor.nodeId)
     const meta = NODE_DETAIL_SECTION_BY_ID.get(editor.section)
     if (!node || !meta) return []
     const editorId = nodeDetailId(node.id, editor.section)
     const nodeEvents = (runEvents || []).filter((event) => event.state === node.id)
+    const authoringPath = authoringPaths.get(node.id) || null
+    const authoringIndex = authoringPath?.steps.findIndex((item) => item.section === editor.section) ?? -1
+    const nextAuthoringStep = authoringPath && authoringIndex >= 0 ? authoringPath.steps[authoringIndex + 1] : null
+    const continueAuthoring = (targetNode: FlowNode) => {
+      onCloseNodeEditor(editorId)
+      if (nextAuthoringStep) onGuideNodeEditor(targetNode, nextAuthoringStep.section)
+    }
     return [{
       editorId,
       nodeId: node.id,
@@ -120,65 +223,152 @@ export function DesignView({
       height: meta.height,
       connectorFraction: meta.connectorFraction,
       position: editor.position,
-      content: editor.section === 'config' ? (
-        <NodeDrawer
-          node={node}
-          graphEdges={graph.edges || []}
-          flowId={flowId}
-          files={files}
-          editable={editable}
-          open
-          showSummary={false}
-          pinned={editor.pinned}
-          runState={nodeRunStates?.get(node.id)}
-          runEvents={nodeEvents}
-          onTogglePin={() => onToggleNodeEditorPin(editorId)}
-          onClose={() => onCloseNodeEditor(editorId)}
-          onDelete={() => onDeleteNode(node)}
-          onSaved={onSaved}
-        />
-      ) : (
-        <NodeDetailCard
-          node={node}
-          section={editor.section}
-          graphEdges={graph.edges || []}
-          pinned={editor.pinned}
-          runState={nodeRunStates?.get(node.id)}
-          runEvents={nodeEvents}
-          onTogglePin={() => onToggleNodeEditorPin(editorId)}
-          onClose={() => onCloseNodeEditor(editorId)}
-        />
-      ),
+      content: <NodeDetailCard
+        node={node}
+        section={editor.section}
+        graphNodes={graph.nodes}
+        graphEdges={graph.edges || []}
+        files={files}
+        flowId={flowId}
+        pinned={editor.pinned}
+        runState={nodeRunStates?.get(node.id)}
+        runEvents={nodeEvents}
+        editable={editable && !node.locked && node.scope !== 'root' && editor.section !== 'runtime'}
+        draft={nodeDrafts[node.id] || makeNodeDraft(node)}
+        dirty={Boolean(nodeDrafts[node.id] && JSON.stringify(nodeDrafts[node.id]) !== JSON.stringify(makeNodeDraft(node)))}
+        saving={savingNodeIds.has(node.id)}
+        authoringPath={authoringPath}
+        onFilesChange={onFilesChange}
+        onDraftChange={(patch) => updateNodeDraft(node, patch)}
+        onReset={() => resetNodeDraft(node.id)}
+        onSave={async () => { await persistNodeDraft(node) }}
+        onContinue={() => continueAuthoring(node)}
+        onSaveAndContinue={async () => {
+          const result = await persistNodeDraft(node)
+          if (!result) return
+          continueAuthoring(result.graph.nodes.find((item) => item.id === node.id) || node)
+        }}
+        onTogglePin={() => onToggleNodeEditorPin(editorId)}
+        onClose={() => onCloseNodeEditor(editorId)}
+      />,
     }]
   })
 
+  const engineering = displayMode === 'engineering'
+  const stewardTool = canvasTool === 'steward-pointer' ? 'pointer' : canvasTool === 'steward-lasso' ? 'lasso' : 'none'
+  const stewardContext = useMemo<AIFlowStewardContext>(() => ({
+    tool: stewardTool,
+    view: displayMode,
+    revision: stewardRevision,
+    selection: stewardSelection,
+    scope_policy: stewardTool === 'pointer' ? 'single_anchor' : 'selected_and_direct_edges',
+  }), [displayMode, stewardRevision, stewardSelection, stewardTool])
+  useEffect(() => { setEngineeringUnlocked(false) }, [engineering, selectedNode?.id])
+  const canMutateGraph = editable
+  const canEditSelectedNode = Boolean(editable && selectedNode && !selectedNode.locked && selectedNode.scope !== 'root')
+  const visibleEngineeringRelations = useMemo(() => engineeringDataRelations.filter((relation) => (
+    relation.kind === 'dependency' ? edgeVisibility.dependency : edgeVisibility.data
+  )), [edgeVisibility.data, edgeVisibility.dependency, engineeringDataRelations])
+  const engineeringNodeModels = useMemo(
+    () => engineering ? buildEngineeringNodeModels(graph, files, nodeRunStates, visibleEngineeringRelations) : new Map(),
+    [engineering, files, graph, nodeRunStates, visibleEngineeringRelations],
+  )
+  const emptyNodeEditors = useMemo(() => [], [])
   return (
-    <div className={`cf-design-studio ${nodeEditors.length ? 'drawer-open' : ''}`}>
-      <Box className="cf-flow-panel cf-flow-overview cf-flow-overview-studio" overflow="hidden">
+    <div className={`cf-design-studio ${engineering ? 'engineering-mode' : 'outcome-mode'} ${engineeringInspectorOpen && engineering ? 'inspector-open' : ''} ${stewardOpen ? 'ai-steward-open' : ''} ${nodeEditors.length ? 'drawer-open' : ''}`}>
+      <div className="cf-design-main">
+        <div className="cf-design-modebar">
+          <div className={`cf-design-canvas-status ${canvasTool === 'connect' ? 'active' : ''}`} aria-live="polite"><i />{canvasTool === 'connect' ? '连线模式' : '选择模式'}</div>
+          <div className="cf-design-view-switch" role="tablist" aria-label="设计视图">
+            <button type="button" className={engineering ? 'active' : ''} onClick={() => setDisplayMode('engineering')} role="tab" aria-selected={engineering}><Braces aria-hidden="true" />工程视图</button>
+            <button type="button" className={!engineering ? 'active' : ''} onClick={() => setDisplayMode('outcome')} role="tab" aria-selected={!engineering}><span className="cf-view-dot" />引导视图</button>
+          </div>
+          {engineering && <div className="cf-engineering-legend" aria-label="工程关系筛选">
+            {([
+              ['control', '主流程'],
+              ['data', '数据流'],
+              ['dependency', '资源依赖'],
+              ['branch', '条件分支'],
+              ['failure', '失败处理'],
+            ] as Array<[keyof EngineeringEdgeVisibility, string]>).map(([kind, label]) => (
+              <label key={kind}><input type="checkbox" checked={edgeVisibility[kind]} onChange={() => setEdgeVisibility((current) => ({ ...current, [kind]: !current[kind] }))} /><i className={kind} />{label}</label>
+            ))}
+            <b>{graph.nodes.length} 节点 · {graph.edges.length} 控制 · {engineeringRelationCounts.data} 数据 · {engineeringRelationCounts.dependency} 依赖</b>
+          </div>}
+          <div className="cf-design-panel-toggles">
+            {engineering && <button type="button" className={engineeringInspectorOpen ? 'active' : ''} onClick={() => setEngineeringInspectorOpen((current) => !current)} title={engineeringInspectorOpen ? '收起节点详情' : '展开节点详情'} aria-pressed={engineeringInspectorOpen}><PanelRight aria-hidden="true" /><span>详情</span></button>}
+            <button type="button" className={stewardOpen ? 'active' : ''} onClick={() => setStewardOpen((current) => !current)} title={stewardOpen ? '收起 AI 管家' : '展开 AI 管家'} aria-pressed={stewardOpen}><Bot aria-hidden="true" /><span>AI 管家</span></button>
+          </div>
+        </div>
+        <Box className="cf-flow-panel cf-flow-overview cf-flow-overview-studio" overflow="hidden">
         <FlowGraphView
           graph={graph}
+          files={files}
+          displayMode={displayMode}
+          engineeringEdgeVisibility={edgeVisibility}
+          engineeringDataRelations={engineeringDataRelations}
+          engineeringNodeModels={engineeringNodeModels}
           selectedNode={selectedNode}
           focusNodeId={focusNodeId}
           onSelectNode={onSelectNode}
-          onOpenNodeEditor={onOpenNodeEditor}
           onNodeEditorPositionChange={onNodeEditorPositionChange}
           onLayoutSave={editable ? onLayoutSave : undefined}
-          onEdgesSave={editable ? onEdgesSave : undefined}
+          autoLayoutOnMount={editable && autoLayoutOnMount}
+          onAutoLayoutComplete={onAutoLayoutComplete}
+          onEdgesSave={canMutateGraph ? onEdgesSave : undefined}
           onAnnotationsSave={editable ? onAnnotationsSave : undefined}
-          onCreateNode={editable ? onCreateNode : undefined}
-          onDeleteNode={editable ? onDeleteNode : undefined}
+          onCreateNode={canMutateGraph ? onCreateNode : undefined}
+          onDeleteNode={canMutateGraph ? onDeleteNode : undefined}
           modelPanel={editable ? modelPanel : undefined}
           toolPanel={editable ? toolPanel : undefined}
-          nodeEditors={nodeEditors}
+          packagePanel={editable ? packagePanel : undefined}
+          cartridgePanel={editable ? cartridgePanel : undefined}
+          nodeEditors={engineering ? emptyNodeEditors : nodeEditors}
           activeNodeEditorId={selectedNode?.id || null}
           onCloseNodeEditor={onCloseUnpinnedNodeEditors}
+          onCanvasToolChange={setCanvasTool}
+          requestedCanvasTool={canvasTool}
+          onStewardSelectionChange={updateStewardSelection}
           runStatus={runStatus}
           nodeRunStates={nodeRunStates}
           runEvents={runEvents}
           runCompletionVisible={runCompletionVisible}
+          runCompletion={runCompletion}
           onDismissRunCompletion={onDismissRunCompletion}
+          onOpenRunLog={onOpenRunLog}
+          onOpenPendingInteraction={onOpenPendingInteraction}
         />
-      </Box>
+        </Box>
+      </div>
+      {engineering && engineeringInspectorOpen && <EngineeringInspector
+        node={selectedNode}
+        graph={graph}
+        view={selectedNode ? engineeringNodeModels.get(selectedNode.id)?.view || null : null}
+        unlocked={engineeringUnlocked}
+        canEdit={canEditSelectedNode}
+        onToggleLock={() => {
+          setEngineeringUnlocked((current) => {
+            if (current) onCloseUnpinnedNodeEditors()
+            return !current
+          })
+        }}
+        draft={selectedNode ? nodeDrafts[selectedNode.id] || makeNodeDraft(selectedNode) : undefined}
+        dirty={Boolean(selectedNode && nodeDrafts[selectedNode.id] && JSON.stringify(nodeDrafts[selectedNode.id]) !== JSON.stringify(makeNodeDraft(selectedNode)))}
+        saving={Boolean(selectedNode && savingNodeIds.has(selectedNode.id))}
+        onDraftChange={(patch) => selectedNode && updateNodeDraft(selectedNode, patch)}
+        onResetDraft={() => selectedNode && resetNodeDraft(selectedNode.id)}
+        onSaveDraft={() => selectedNode ? void persistNodeDraft(selectedNode) : undefined}
+        stewardTool={stewardTool}
+        onStewardFieldSelect={(fieldPath) => setStewardSelection({ node_ids: [selectedNode!.id], edge_ids: [], field_paths: [fieldPath] })}
+      />}
+      {stewardOpen && <AIFlowStewardPanel
+        flowId={flowId}
+        context={stewardContext}
+        tool={stewardTool}
+        onToolChange={(tool) => setCanvasTool(tool === 'pointer' ? 'steward-pointer' : tool === 'lasso' ? 'steward-lasso' : 'select')}
+        onClearSelection={() => setStewardSelection({ node_ids: [], edge_ids: [], field_paths: [] })}
+        onClose={() => setStewardOpen(false)}
+      />}
     </div>
   )
 }
@@ -196,16 +386,23 @@ const RUN_STATUS_LABELS: Record<string, string> = {
   retrying: '重试中',
 }
 
-export function RunHistoryPanel({ runs, selectedRunId, busy = false, onSelect, onOpenLog, onRefresh, onClose }: {
+export function RunHistoryPanel({ runs, selectedRunId, busy = false, onSelect, onOpenLog, onOpenArtifacts, onRefresh, onClose }: {
   runs: RunResult[]
   selectedRunId?: string
   busy?: boolean
   onSelect: (runId: string) => void
   onOpenLog: (run: RunResult) => void
-  onRefresh: () => void
+  onOpenArtifacts: (run: RunResult) => void
+  onRefresh: () => void | Promise<void>
   onClose: () => void
 }) {
   const [expandedRunId, setExpandedRunId] = useState(selectedRunId || runs[0]?.run_id || '')
+  const [refreshing, setRefreshing] = useState(false)
+  const refresh = async () => {
+    if (refreshing) return
+    setRefreshing(true)
+    try { await onRefresh() } finally { setRefreshing(false) }
+  }
   return (
     <aside className="cf-canvas-history-panel">
       <header>
@@ -214,7 +411,7 @@ export function RunHistoryPanel({ runs, selectedRunId, busy = false, onSelect, o
       </header>
       <div className="cf-canvas-history-tools">
         <p>选择记录后，画布会同步显示该次运行的节点状态。</p>
-        <button type="button" onClick={onRefresh} disabled={busy}><RefreshCw aria-hidden="true" />刷新</button>
+        <button type="button" onClick={() => void refresh()} disabled={busy || refreshing}><RefreshCw className={refreshing ? 'spinning' : ''} aria-hidden="true" /><span>{refreshing ? '刷新中' : '刷新'}</span></button>
       </div>
       <div className="cf-canvas-history-list">
         {runs.length ? runs.map((run) => {
@@ -236,7 +433,7 @@ export function RunHistoryPanel({ runs, selectedRunId, busy = false, onSelect, o
                 <div className="cf-canvas-history-summary"><span>摘要</span><p>{summary}</p></div>
                 <div className="cf-canvas-history-actions">
                   <button type="button" className={hasFailureLog ? 'is-error' : ''} onClick={() => onOpenLog(run)}>{hasFailureLog ? <AlertTriangle aria-hidden="true" /> : <History aria-hidden="true" />}{hasFailureLog ? '查看错误日志' : '查看日志'}</button>
-                  <button type="button" disabled={!artifactCount} title={artifactCount ? `打开 ${artifactCount} 个运行产物` : '本次运行没有可打开的产物'}><FileOutput aria-hidden="true" />打开产物</button>
+                  <button type="button" disabled={run.status !== 'completed' && !artifactCount} title={artifactCount ? `打开 ${artifactCount} 个运行产物` : run.status === 'completed' ? '打开本次运行的页面结果' : '本次运行没有可打开的产物'} onClick={() => onOpenArtifacts(run)}><FileOutput aria-hidden="true" />打开产物</button>
                 </div>
               </div>}
             </article>
@@ -276,17 +473,28 @@ function eventLabel(event: FlowEvent) {
 function buildFailureSummary(run: RunResult, events: FlowEvent[]) {
   const errors = [run.error, ...(run.errors || [])].filter(Boolean) as any[]
   const failedEvents = events.filter((event) => event.type === 'lab_node_failed' || event.type === 'run_failed')
+  const primaryError = errors[0] || (failedEvents[0]?.data as any)?.error_envelope
   const lines = [
     `Run: ${run.run_id}`,
     `Status: ${run.status}`,
-    `Node: ${run.current_state || errors[0]?.node_id || 'unknown'}`,
+    `Node: ${primaryError?.node_id || run.current_state || 'unknown'}`,
   ]
-  errors.forEach((error) => lines.push(`[${error.code || 'RUNTIME_ERROR'}] ${error.message || '运行失败'}`))
+  const seenErrorIds = new Set<string>()
+  errors.forEach((error) => {
+    const identity = String(error.error_id || `${error.node_id || ''}:${error.code || ''}:${error.message || ''}`)
+    if (seenErrorIds.has(identity)) return
+    seenErrorIds.add(identity)
+    const detail = error.cause_chain?.[0]?.message || error.message || '运行失败'
+    lines.push(`[${error.code || 'RUNTIME_ERROR'}] ${error.node_id ? `${error.node_id}: ` : ''}${detail}`)
+  })
   failedEvents.forEach((event) => {
     const data = (event.data || {}) as any
     const envelope = data.error_envelope || {}
-    const message = envelope.message || data.error || data.reason || event.message
-    if (message) lines.push(`${event.state || 'runtime'}: ${message}`)
+    const identity = String(envelope.error_id || '')
+    if (identity && seenErrorIds.has(identity)) return
+    if (identity) seenErrorIds.add(identity)
+    const message = envelope.cause_chain?.[0]?.message || envelope.message || data.error || data.reason || event.message
+    if (message) lines.push(`${envelope.node_id || event.state || 'runtime'}: ${message}`)
   })
   return [...new Set(lines)].join('\n')
 }

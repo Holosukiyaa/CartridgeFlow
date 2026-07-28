@@ -14,6 +14,7 @@ import {
 import ConfigModal from '../../components/ConfigModal.tsx'
 import { showToast } from '../../toast.tsx'
 import { BrandMark } from './BrandMark.tsx'
+import { markNewFlowForAutoLayout } from './newFlowSetup.ts'
 
 type CartridgeSummary = {
   id: string
@@ -110,6 +111,7 @@ export default function CartridgeWorkspaceControl({ current, empty = false, onSw
       showToast({ title: '卡带已创建', description: result.id, type: 'success' })
       setModalOpen(false)
       await loadFlows()
+      markNewFlowForAutoLayout(result.id)
       onSwitchFlow(result.id)
     } catch (createError: any) {
       showToast({ title: '创建失败', description: createError.message, type: 'error' })
@@ -277,8 +279,8 @@ export default function CartridgeWorkspaceControl({ current, empty = false, onSw
   return (
     <div className="cf-workbench-cartridge-control">
       {hiddenPicker}
-      <button type="button" className="cf-workbench-current-trigger" title="查看当前卡带" onClick={() => { if (panel === 'current' && modalOpen) setModalOpen(false); else openPanel('current') }}>
-        <span className="cf-workbench-live-dot" /><b>{current?.id}</b><span>· v{current?.version} · {current?.source || 'dev'} · {current?.editable ? 'editable' : 'readonly'}</span><ChevronDown aria-hidden="true" />
+      <button type="button" className="cf-workbench-current-trigger" title={`${current?.name || current?.id || ''} (${current?.id || ''})`} onClick={() => { if (panel === 'current' && modalOpen) setModalOpen(false); else openPanel('current') }}>
+        <span className="cf-workbench-live-dot" /><b>{current?.name || current?.id}</b><span>{current?.id} · v{current?.version}</span><ChevronDown aria-hidden="true" />
       </button>
       {floatingPanel}
       {managerPanel}

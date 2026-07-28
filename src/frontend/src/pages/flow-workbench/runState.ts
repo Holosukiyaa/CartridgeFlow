@@ -19,6 +19,7 @@ export type NodeRunState = {
 
 export function extractUiHtml(data: any) {
   if (typeof data?.ui_html === 'string' && data.ui_html.trim()) return data.ui_html
+  if (typeof data?.ui_markdown === 'string' && /^\s*<(?:!doctype|html|body|main|div|section|article)\b/i.test(data.ui_markdown)) return data.ui_markdown
   const output = data?.output_value
   if (output && typeof output === 'object' && typeof output.html === 'string') return output.html
   if (typeof output !== 'string') return ''
@@ -27,7 +28,10 @@ export function extractUiHtml(data: any) {
   if (text.startsWith('<!doctype') || text.startsWith('<html') || text.includes('<body')) return output
   try {
     const parsed = JSON.parse(text)
-    return typeof parsed?.html === 'string' ? parsed.html : ''
+    if (typeof parsed?.html === 'string' && parsed.html.trim()) return parsed.html
+    return typeof parsed?.markdown === 'string' && /^\s*<(?:!doctype|html|body|main|div|section|article)\b/i.test(parsed.markdown)
+      ? parsed.markdown
+      : ''
   } catch {
     return ''
   }
@@ -60,7 +64,9 @@ export function buildNodeRunStates(graph: FlowGraph, events: FlowEvent[]) {
       if (sourceState && sourceState.status !== 'failed') sourceState.status = 'completed'
       return
     }
-    const nodeId = event.state
+    const nodeId = event.type === 'run_failed'
+      ? String(eventData.error_envelope?.node_id || event.state || '')
+      : event.state
     if (!nodeId || !map.has(nodeId)) return
     const state = map.get(nodeId)!
     state.events.push(event)
@@ -84,7 +90,11 @@ export function buildNodeRunStates(graph: FlowGraph, events: FlowEvent[]) {
       state.errorMsg = undefined
     } else if (event.type === 'lab_node_failed' || event.type === 'run_failed') {
       state.status = 'failed'
-      state.errorMsg = data.error_envelope?.message || data.error || data.reason || 'Node failed.'
+      state.errorMsg = data.error_envelope?.cause_chain?.[0]?.message
+        || data.error_envelope?.message
+        || data.error
+        || data.reason
+        || 'Node failed.'
       state.pendingInteraction = undefined
     } else if (event.type === 'lab_node_paused') {
       state.status = 'paused'
@@ -121,4 +131,3 @@ export function getProbePayload(graph: FlowGraph, startId: string, endId: string
     node_ids: nodes.slice(from, to + 1).map((node) => node.id),
   }
 }
-

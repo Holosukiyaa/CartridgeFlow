@@ -33,8 +33,8 @@
     "builtin_tools": {
       "verification": "verified",
       "implementation": ["src/core/lab/builtin_mcp.py#BuiltinMcpRegistry"],
-      "positive_tests": ["test_builtin_media_core.BuiltinMediaCoreTest.test_local_probe_executes_without_cartridge_helpers"],
-      "failure_tests": ["test_builtin_media_core.BuiltinMediaCoreTest.test_default_registry_matches_explicit_base_tool_allowlist"],
+      "positive_tests": ["test_builtin_filesystem.BuiltinFilesystemTest.test_read_file_is_scoped_to_workspace"],
+      "failure_tests": ["test_builtin_filesystem.BuiltinFilesystemTest.test_path_escape_is_rejected"],
       "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/flow-workbench/ResourceManagementPanels.tsx"]}
     },
     "artifacts": {
@@ -299,7 +299,7 @@
       "implementation": ["src/core/cartridge/assets.py#load_asset_bundle", "src/core/lab/node_executor.py#LabNodeExecutor._render_interaction", "src/core/cartridge/runner.py#CartridgeRunner.answer_pending_interaction"],
       "positive_tests": ["test_interaction_assets.InteractionAssetRuntimeTests.test_new_dev_flow_is_v07_compatible_and_asset_backed", "test_interaction_assets.InteractionAssetRuntimeTests.test_interaction_executor_displays_or_pauses_without_running_html", "test_interaction_assets.InteractionAssetRuntimeTests.test_named_action_resume_is_static_and_fail_closed"],
       "failure_tests": ["test_interaction_assets.InteractionAssetRuntimeTests.test_passive_html_rejects_script_events_and_external_navigation", "test_interaction_assets.InteractionAssetRuntimeTests.test_asset_bundle_validates_integrity_and_interaction_nodes"],
-      "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/flow-workbench/FlowGraphView.tsx", "src/frontend/src/pages/flow-workbench/NodeDrawer.tsx", "src/frontend/src/pages/flow-workbench/TestBenchView.tsx"]},
+      "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/flow-workbench/FlowGraphView.tsx", "src/frontend/src/pages/flow-workbench/FlowNodeCard.tsx", "src/frontend/src/pages/flow-workbench/NodeDetailCard.tsx", "src/frontend/src/pages/flow-workbench/nodeAuthoring.ts", "src/frontend/src/pages/flow-workbench/InteractionAssetEditor.tsx", "src/frontend/src/pages/flow-workbench/InteractionContractEditor.tsx", "src/frontend/src/pages/flow-workbench/TestBenchView.tsx"]},
       "notes": "Passive HTML remains non-executable; scripted components use the separately evidenced sandbox path."
     },
     "sandbox_interactions": {

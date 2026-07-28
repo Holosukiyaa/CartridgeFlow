@@ -12,9 +12,12 @@ class LiteApiSurfaceTests(unittest.TestCase):
             "/api/lab/flows/dev.example/test-run",
             "/api/llm/providers",
             "/api/studio/resources",
+            "/api/studio/packages",
+            "/api/studio/release/dev.example/preflight",
             "/api/studio/environment/credentials/IMAGE_API_KEY",
             "/api/cartridge-runs/run_123/events",
             "/api/cartridges/dev.example/clone-to-dev",
+            "/api/cartridges/dev.example/package",
         ]
         for path in allowed:
             with self.subTest(path=path):
@@ -25,7 +28,6 @@ class LiteApiSurfaceTests(unittest.TestCase):
             "/api/base",
             "/api/studio/conformance",
             "/api/studio/todo",
-            "/api/studio/packages",
             "/api/settings",
             "/api/cartridge-runs",
             "/api/lab/flows/dev.example/assistant",

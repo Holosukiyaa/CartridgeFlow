@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
+  ArrowRight,
+  BrainCircuit,
+  Cable,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -9,8 +12,12 @@ import {
   Download,
   FileJson,
   Info,
+  PackageCheck,
+  RefreshCw,
   Search,
+  ShieldCheck,
   Upload,
+  Workflow,
   Wrench,
   X,
   Zap,
@@ -23,8 +30,11 @@ import {
   fetchLlmAssignments,
   fetchLlmProviders,
   fetchStudioEnvironment,
+  fetchStudioPackages,
+  fetchStudioReleasePreflight,
   fetchStudioResources,
   importOpenCodeConfig,
+  packageCartridge,
   saveLlmAssignments,
   saveStudioResources,
   testLlmProvider,
@@ -34,10 +44,15 @@ import {
   type LlmProvider,
   type McpTool,
   type StudioResources,
+  type StudioPackageItem,
+  type StudioReleasePreflight,
   type StudioToolResource,
+  type FlowGraph,
 } from '../../api.ts'
+import { resolveNodeSemanticKind } from './flowNodeView.ts'
 
 type ModelRole = { id: string; label: string; model?: string }
+type ModelManagementStage = 'connections' | 'flow' | 'nodes'
 type ProviderDraft = {
   id: string
   name: string
@@ -96,24 +111,33 @@ function flowModelRoles(cartridge: CartridgeDetail): ModelRole[] {
     const id = String(item?.id || '').trim()
     return id ? [{ id, label: String(item?.label || id), model: String(item?.model || '') }] : []
   })
-  return normalized.length ? normalized : [{ id: 'runtime', label: '默认运行模型' }]
+  const result: ModelRole[] = normalized.length ? normalized : [{ id: 'runtime', label: '默认运行模型' }]
+  if (!result.some((role) => role.id === 'mentor')) result.push({ id: 'mentor', label: 'AI 管家' })
+  return result
 }
 
 function StatusMessage({ text, tone = 'neutral' }: { text: string; tone?: 'neutral' | 'success' | 'error' }) {
   return <div className={`cf-resource-feedback ${tone}`}>{tone === 'success' ? <CheckCircle2 /> : tone === 'error' ? <X /> : <Info />}<span>{text}</span></div>
 }
 
-export function ModelManagementPanel({ flowId, cartridge }: { flowId: string; cartridge: CartridgeDetail }) {
+export function ModelManagementPanel({ flowId, cartridge, graph }: { flowId: string; cartridge: CartridgeDetail; graph?: FlowGraph }) {
   const [providers, setProviders] = useState<LlmProvider[]>([])
   const [assignments, setAssignments] = useState<LlmAssignments>(EMPTY_ASSIGNMENTS)
   const [expandedId, setExpandedId] = useState('')
   const [draft, setDraft] = useState<ProviderDraft>(providerDraft())
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<{ text: string; tone: 'neutral' | 'success' | 'error' } | null>(null)
+  const [activeStage, setActiveStage] = useState<ModelManagementStage>('connections')
   const importRef = useRef<HTMLInputElement>(null)
   const initialExpansionRef = useRef(false)
   const roles = useMemo(() => flowModelRoles(cartridge), [cartridge])
   const flowBindings = assignments.cartridges?.[flowId] || {}
+  const decisionNodes = useMemo(() => (graph?.nodes || []).filter((node) => resolveNodeSemanticKind(node) === 'decision' || Boolean(node.model_role) || /decision|intent_router/i.test(`${node.type} ${node.action || ''}`)), [graph])
+  const providerById = useMemo(() => new Map(providers.map((provider) => [provider.id, provider])), [providers])
+  const flowProviderIds = useMemo(() => new Set(Object.values(flowBindings).map((binding) => binding.provider_id).filter(Boolean) as string[]), [flowBindings])
+  const flowProviders = useMemo(() => providers.filter((provider) => flowProviderIds.has(provider.id)), [providers, flowProviderIds])
+  const boundRoleCount = roles.filter((role) => Boolean(flowBindings[role.id]?.provider_id)).length
+  const boundNodeCount = decisionNodes.filter((node) => Boolean(assignments.nodes?.[`${flowId}/${node.id}`]?.[node.model_role || 'runtime']?.provider_id)).length
 
   const reload = async () => {
     const [providerData, assignmentData] = await Promise.all([fetchLlmProviders(), fetchLlmAssignments()])
@@ -191,24 +215,64 @@ export function ModelManagementPanel({ flowId, cartridge }: { flowId: string; ca
     }
   }
 
-  const bindRole = async (role: ModelRole, provider: LlmProvider) => {
+  const bindRole = async (role: ModelRole, providerId: string) => {
     const next: LlmAssignments = JSON.parse(JSON.stringify(assignments || EMPTY_ASSIGNMENTS))
     next.cartridges ||= {}
     next.cartridges[flowId] ||= {}
-    const current = next.cartridges[flowId][role.id]
-    if (current?.provider_id === provider.id) delete next.cartridges[flowId][role.id]
-    else next.cartridges[flowId][role.id] = { provider_id: provider.id, model: draft.model || provider.default_model || role.model || '' }
+    const provider = providerById.get(providerId)
+    if (provider) next.cartridges[flowId][role.id] = { provider_id: provider.id, model: provider.default_model || role.model || '' }
+    else delete next.cartridges[flowId][role.id]
     if (Object.keys(next.cartridges[flowId]).length === 0) delete next.cartridges[flowId]
+
+    const nextFlowProviderIds = new Set(Object.values(next.cartridges?.[flowId] || {}).map((binding) => binding.provider_id).filter(Boolean))
+    const affectedNodeKeys: string[] = []
+    for (const [nodeKey, nodeRoles] of Object.entries(next.nodes || {})) {
+      if (!nodeKey.startsWith(`${flowId}/`)) continue
+      for (const [nodeRole, binding] of Object.entries(nodeRoles)) {
+        if (binding.provider_id && !nextFlowProviderIds.has(binding.provider_id)) {
+          affectedNodeKeys.push(`${nodeKey}:${nodeRole}`)
+        }
+      }
+    }
+    if (affectedNodeKeys.length && !window.confirm(`这次修改会让 ${affectedNodeKeys.length} 个节点绑定失去 Flow 级来源。是否同时解除这些节点绑定？`)) return
+    for (const reference of affectedNodeKeys) {
+      const splitAt = reference.lastIndexOf(':')
+      const nodeKey = reference.slice(0, splitAt)
+      const nodeRole = reference.slice(splitAt + 1)
+      delete next.nodes[nodeKey][nodeRole]
+      if (Object.keys(next.nodes[nodeKey]).length === 0) delete next.nodes[nodeKey]
+    }
     setBusy(true)
     try {
       const result = await saveLlmAssignments(next)
       setAssignments(result.assignments)
-      setMessage({ text: current?.provider_id === provider.id ? `${role.label} 已恢复使用全局默认连接。` : `${role.label} 已绑定连接 ID：${provider.id}`, tone: 'success' })
+      const suffix = affectedNodeKeys.length ? `，并解除 ${affectedNodeKeys.length} 个失去来源的节点绑定` : ''
+      setMessage({ text: provider ? `${role.label} 已绑定连接 ID：${provider.id}${suffix}` : `${role.label} 已解除 Flow 绑定${suffix}。`, tone: 'success' })
     } catch (error: any) {
       setMessage({ text: error.message || '绑定失败', tone: 'error' })
     } finally {
       setBusy(false)
     }
+  }
+
+  const bindDecisionNode = async (node: FlowGraph['nodes'][number], providerId: string) => {
+    const next: LlmAssignments = JSON.parse(JSON.stringify(assignments || EMPTY_ASSIGNMENTS))
+    next.nodes ||= {}
+    const key = `${flowId}/${node.id}`
+    const role = node.model_role || 'runtime'
+    const provider = flowProviders.find((item) => item.id === providerId)
+    next.nodes[key] ||= {}
+    if (provider) next.nodes[key][role] = { provider_id: provider.id, model: provider.default_model || '' }
+    else delete next.nodes[key][role]
+    if (Object.keys(next.nodes[key] || {}).length === 0) delete next.nodes[key]
+    setBusy(true)
+    try {
+      const result = await saveLlmAssignments(next)
+      setAssignments(result.assignments)
+      setMessage({ text: provider ? `${node.display_name || node.title || node.id} 已绑定 ${provider.name || provider.id}。` : `${node.display_name || node.title || node.id} 已解除节点绑定。`, tone: 'success' })
+    } catch (error: any) {
+      setMessage({ text: error.message || '节点绑定失败', tone: 'error' })
+    } finally { setBusy(false) }
   }
 
   const removeProvider = async (provider: LlmProvider) => {
@@ -244,59 +308,116 @@ export function ModelManagementPanel({ flowId, cartridge }: { flowId: string; ca
   return (
     <div className="cf-resource-manager">
       <div className="cf-resource-manager-actions">
-        <button className="primary" type="button" onClick={() => importRef.current?.click()}><Upload />导入配置</button>
+        <button className="primary" type="button" onClick={startNew}><CirclePlus />新增连接</button>
+        <button type="button" onClick={() => importRef.current?.click()}><Upload />导入配置</button>
         <button type="button" onClick={async () => downloadJson('cartridgeflow-models.json', await exportLlmConfig())}><Download />导出配置</button>
-        <button type="button" onClick={startNew}><CirclePlus />新增连接</button>
         <input ref={importRef} type="file" accept="application/json,.json" hidden onChange={(event) => void importConfig(event.target.files?.[0])} />
       </div>
-      <div className="cf-resource-scope-note"><Info /><span>模型连接由底座统一保管；当前 Flow 只保存连接 ID 与模型角色，不会写入 API Key。</span></div>
+      <nav className="cf-model-binding-path" aria-label="模型绑定层级">
+        <button type="button" className={activeStage === 'connections' ? 'active' : ''} onClick={() => setActiveStage('connections')}>
+          <i><Cable /></i><span><b>1. 模型 API</b><small>本机连接资源池</small></span><em>{providers.length} 个</em>
+        </button>
+        <ArrowRight className="cf-model-binding-arrow" />
+        <button type="button" className={activeStage === 'flow' ? 'active' : ''} onClick={() => setActiveStage('flow')}>
+          <i><Workflow /></i><span><b>2. 当前 Flow</b><small>按模型角色接入</small></span><em>{boundRoleCount}/{roles.length}</em>
+        </button>
+        <ArrowRight className="cf-model-binding-arrow" />
+        <button type="button" className={activeStage === 'nodes' ? 'active' : ''} onClick={() => setActiveStage('nodes')}>
+          <i><BrainCircuit /></i><span><b>3. AI 节点</b><small>分配到具体节点</small></span><em>{boundNodeCount}/{decisionNodes.length}</em>
+        </button>
+      </nav>
+      <div className="cf-resource-scope-note"><Info /><span>连接先保存在本机资源池，再进入当前 Flow，最后才能分配给具体 AI 节点；API Key 始终不会写入 Flow。</span></div>
       {message && <StatusMessage {...message} />}
-      <div className="cf-resource-list">
-        {providers.length === 0 && expandedId !== '__new__' && <div className="cf-resource-empty"><FileJson /><b>还没有模型连接</b><span>导入 OpenCode 配置，或手动新增一个 OpenAI 兼容连接。</span></div>}
-        {[...(expandedId === '__new__' ? [{ id: '__new__', name: '新模型连接' } as LlmProvider] : []), ...providers].map((provider) => {
-          const expanded = expandedId === provider.id
-          const boundRoles = roles.filter((role) => flowBindings[role.id]?.provider_id === provider.id)
-          const tested = provider.id === '__new__' ? false : provider.tested_ok
-          return (
-            <article key={provider.id} className={`cf-resource-card ${expanded ? 'expanded' : ''}`}>
-              <button className="cf-resource-card-summary" type="button" onClick={() => provider.id === '__new__' ? undefined : openProvider(provider)}>
-                <span className={`cf-resource-status ${tested ? 'ok' : 'pending'}`}><i />{tested ? '连接成功' : provider.id === '__new__' ? '尚未保存' : '等待测试'}</span>
-                <span className={`cf-resource-binding ${boundRoles.length ? 'ok' : ''}`}>{boundRoles.length ? <CheckCircle2 /> : <Info />}{boundRoles.length ? `已绑定 ${boundRoles.length} 个角色` : '未绑定当前 Flow'}</span>
-                {provider.id !== '__new__' && (expanded ? <ChevronUp /> : <ChevronDown />)}
-                <strong>{provider.name}</strong>
-                <small>{provider.id === '__new__' ? '填写连接信息后会生成稳定连接 ID' : `连接 ID：${provider.id}`}</small>
-              </button>
-              {expanded && (
-                <div className="cf-resource-card-body">
-                  <section className="cf-resource-flow-bindings">
-                    <header><div><b>当前 Flow 模型角色</b><span>每个角色可以使用不同连接；打包时只携带角色与连接 ID。</span></div></header>
-                    {roles.map((role) => {
-                      const binding = flowBindings[role.id]
-                      const selected = binding?.provider_id === provider.id
-                      return <div key={role.id}><span><b>{role.label}</b><code>{role.id}</code></span><em>{selected ? binding.model || provider.default_model : binding?.provider_id ? `当前：${binding.provider_id}` : '使用全局默认'}</em><button className={selected ? 'selected' : ''} type="button" disabled={busy || provider.id === '__new__'} onClick={() => void bindRole(role, provider)}>{selected ? <><Check />已绑定</> : '使用此连接'}</button></div>
-                    })}
-                  </section>
-                  <div className="cf-resource-form">
-                    <label><span>连接 ID</span><div className="with-action"><input value={draft.id || '保存后自动生成'} readOnly /><button type="button" disabled={!draft.id} onClick={() => navigator.clipboard.writeText(draft.id)} title="复制连接 ID"><Copy /></button></div></label>
-                    <label><span>API Key</span><input type="password" value={draft.apiKey} placeholder={provider.has_key ? `已保存在本机 ${provider.key_preview || ''}` : '输入本机密钥'} onChange={(event) => setDraft({ ...draft, apiKey: event.target.value })} /></label>
-                    <label><span>Base URL / 接口地址</span><input value={draft.baseUrl} placeholder="https://api.example.com/v1" onChange={(event) => setDraft({ ...draft, baseUrl: event.target.value })} /></label>
-                    <label><span>模型</span><input list={`models-${provider.id}`} value={draft.model} onChange={(event) => setDraft({ ...draft, model: event.target.value })} /><datalist id={`models-${provider.id}`}>{(provider.available_models || []).map((model) => <option key={model} value={model} />)}</datalist></label>
-                    <label><span>名称</span><input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></label>
-                    <label><span>调用协议</span><select value={draft.wireApi} onChange={(event) => setDraft({ ...draft, wireApi: event.target.value })}><option value="chat_completions">Chat Completions</option><option value="responses">Responses</option></select></label>
-                    <label><span>超时时间</span><div className="input-suffix"><input type="number" min="1" max="900" value={draft.timeout} onChange={(event) => setDraft({ ...draft, timeout: Number(event.target.value) })} /><i>秒</i></div></label>
+
+      {activeStage === 'connections' && <section className="cf-model-stage">
+        <header className="cf-model-stage-head">
+          <div><span>第 1 层</span><h3>模型 API 连接</h3><p>这里管理本机可用连接。新增或导入连接后，它仍未属于任何 Flow。</p></div>
+          <strong>{providers.length}<small>资源池连接</small></strong>
+        </header>
+        <div className="cf-resource-list">
+          {providers.length === 0 && expandedId !== '__new__' && <div className="cf-resource-empty"><FileJson /><b>还没有模型 API 连接</b><span>新增一个 OpenAI 兼容连接，保存后再进入下一层绑定当前 Flow。</span><button type="button" onClick={startNew}><CirclePlus />新增连接</button></div>}
+          {[...(expandedId === '__new__' ? [{ id: '__new__', name: '新模型连接' } as LlmProvider] : []), ...providers].map((provider) => {
+            const expanded = expandedId === provider.id
+            const boundRoles = roles.filter((role) => flowBindings[role.id]?.provider_id === provider.id)
+            const tested = provider.id === '__new__' ? false : provider.tested_ok
+            return (
+              <article key={provider.id} className={`cf-resource-card cf-model-resource-card ${expanded ? 'expanded' : ''}`}>
+                <button className="cf-resource-card-summary" type="button" onClick={() => provider.id === '__new__' ? undefined : openProvider(provider)}>
+                  <span className={`cf-resource-status ${tested ? 'ok' : 'pending'}`}><i />{tested ? '连接成功' : provider.id === '__new__' ? '尚未保存' : '等待测试'}</span>
+                  <span className={`cf-resource-binding ${boundRoles.length ? 'ok' : ''}`}>{boundRoles.length ? <CheckCircle2 /> : <Info />}{boundRoles.length ? `当前 Flow · ${boundRoles.length} 个角色` : '资源池 · 未绑定 Flow'}</span>
+                  {provider.id !== '__new__' && (expanded ? <ChevronUp /> : <ChevronDown />)}
+                  <strong>{provider.name}</strong>
+                  <small>{provider.id === '__new__' ? '填写连接信息后会生成稳定连接 ID' : `${provider.default_model || '未设置默认模型'} · 连接 ID：${provider.id}`}</small>
+                </button>
+                {expanded && (
+                  <div className="cf-resource-card-body">
+                    <div className="cf-resource-form">
+                      <label><span>连接 ID</span><div className="with-action"><input value={draft.id || '保存后自动生成'} readOnly /><button type="button" disabled={!draft.id} onClick={() => navigator.clipboard.writeText(draft.id)} title="复制连接 ID"><Copy /></button></div></label>
+                      <label><span>API Key</span><input type="password" value={draft.apiKey} placeholder={provider.has_key ? `已保存在本机 ${provider.key_preview || ''}` : '输入本机密钥'} onChange={(event) => setDraft({ ...draft, apiKey: event.target.value })} /></label>
+                      <label><span>Base URL / 接口地址</span><input value={draft.baseUrl} placeholder="https://api.example.com/v1" onChange={(event) => setDraft({ ...draft, baseUrl: event.target.value })} /></label>
+                      <label><span>模型</span><input list={`models-${provider.id}`} value={draft.model} onChange={(event) => setDraft({ ...draft, model: event.target.value })} /><datalist id={`models-${provider.id}`}>{(provider.available_models || []).map((model) => <option key={model} value={model} />)}</datalist></label>
+                      <label><span>名称</span><input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></label>
+                      <label><span>调用协议</span><select value={draft.wireApi} onChange={(event) => setDraft({ ...draft, wireApi: event.target.value })}><option value="chat_completions">Chat Completions</option><option value="responses">Responses</option></select></label>
+                      <label><span>超时时间</span><div className="input-suffix"><input type="number" min="1" max="900" value={draft.timeout} onChange={(event) => setDraft({ ...draft, timeout: Number(event.target.value) })} /><i>秒</i></div></label>
+                    </div>
+                    <div className="cf-resource-card-actions">
+                      <button type="button" disabled={busy || !draft.id} onClick={() => void testProvider()}><Zap />测试连接</button>
+                      {provider.id !== '__new__' && <button className="danger" type="button" disabled={busy} onClick={() => void removeProvider(provider)}>删除连接</button>}
+                      {provider.id !== '__new__' && <button type="button" onClick={() => setActiveStage('flow')}>前往 Flow 绑定<ArrowRight /></button>}
+                      <button className="primary" type="button" disabled={busy} onClick={() => void saveProvider()}>保存</button>
+                    </div>
                   </div>
-                  <div className="cf-resource-card-actions">
-                    <button type="button" disabled={busy || !draft.id} onClick={() => void testProvider()}><Zap />测试连接</button>
-                    {provider.id !== '__new__' && <button className="danger" type="button" disabled={busy} onClick={() => void removeProvider(provider)}>删除连接</button>}
-                    <button className="primary" type="button" disabled={busy} onClick={() => void saveProvider()}>保存</button>
-                  </div>
-                </div>
-              )}
+                )}
+              </article>
+            )
+          })}
+        </div>
+      </section>}
+
+      {activeStage === 'flow' && <section className="cf-model-stage">
+        <header className="cf-model-stage-head">
+          <div><span>第 2 层</span><h3>绑定到当前 Flow</h3><p>把资源池连接分配给当前 Flow 声明的模型角色。未选择的连接仍只属于本机资源池。</p></div>
+          <strong>{boundRoleCount}/{roles.length}<small>角色已绑定</small></strong>
+        </header>
+        {providers.length === 0 ? <div className="cf-resource-empty"><Cable /><b>资源池中没有可绑定连接</b><span>请先新增并测试模型 API，再返回这里完成 Flow 绑定。</span><button type="button" onClick={() => { setActiveStage('connections'); startNew() }}><CirclePlus />新增连接</button></div> : <>
+          <div className="cf-model-available-strip"><span>资源池可用</span>{providers.map((provider) => <button type="button" key={provider.id} onClick={() => { openProvider(provider); setActiveStage('connections') }}><i className={provider.tested_ok ? 'ok' : ''} />{provider.name || provider.id}<small>{provider.default_model}</small></button>)}</div>
+          <div className="cf-model-binding-list">
+            {roles.map((role) => {
+              const binding = flowBindings[role.id]
+              const provider = binding?.provider_id ? providerById.get(binding.provider_id) : undefined
+              return <article className={binding ? 'is-bound' : ''} key={role.id}>
+                <i><Workflow /></i>
+                <span><b>{role.label}</b><code>{role.id}</code></span>
+                <div>{provider ? <><b>{provider.name || provider.id}</b><small>{binding.model || provider.default_model || '使用连接默认模型'}</small></> : <><b>尚未绑定</b><small>此角色暂时不能运行</small></>}</div>
+                <select aria-label={`为 ${role.label} 选择模型连接`} value={binding?.provider_id || ''} disabled={busy} onChange={(event) => void bindRole(role, event.target.value)}><option value="">不绑定</option>{providers.map((item) => <option key={item.id} value={item.id}>{item.name || item.id} · {item.default_model || '默认模型未设置'}</option>)}</select>
+              </article>
+            })}
+          </div>
+        </>}
+        <footer className="cf-model-stage-next"><span>{boundRoleCount ? `当前 Flow 已使用 ${flowProviderIds.size} 个模型 API 连接。` : '完成至少一个 Flow 角色绑定后，才能继续分配具体节点。'}</span><button type="button" disabled={!flowProviderIds.size} onClick={() => setActiveStage('nodes')}>继续绑定 AI 节点<ArrowRight /></button></footer>
+      </section>}
+
+      {activeStage === 'nodes' && <section className="cf-model-stage">
+        <header className="cf-model-stage-head">
+          <div><span>第 3 层</span><h3>绑定具体 AI 节点</h3><p>节点只能选择已经进入当前 Flow 的模型 API；资源池中未绑定 Flow 的连接不会出现在这里。</p></div>
+          <strong>{boundNodeCount}/{decisionNodes.length}<small>节点已绑定</small></strong>
+        </header>
+        {!flowProviders.length ? <div className="cf-resource-empty"><Workflow /><b>当前 Flow 还没有模型连接</b><span>先完成第 2 层 Flow 绑定，再为具体 AI 节点选择执行模型。</span><button type="button" onClick={() => setActiveStage('flow')}>返回 Flow 绑定</button></div> : decisionNodes.length === 0 ? <div className="cf-resource-empty"><BrainCircuit /><b>当前 Flow 没有 AI 决策节点</b><span>添加具有模型角色的 AI 决策节点后，它们会显示在这里。</span></div> : <div className="cf-model-binding-list node-list">
+          {decisionNodes.map((node) => {
+            const role = node.model_role || 'runtime'
+            const binding = assignments.nodes?.[`${flowId}/${node.id}`]?.[role]
+            const provider = binding?.provider_id ? providerById.get(binding.provider_id) : undefined
+            return <article className={binding ? 'is-bound' : ''} key={node.id}>
+              <i><BrainCircuit /></i>
+              <span><b>{node.display_name || node.title || node.id}</b><code>{node.id} · {role}</code></span>
+              <div>{provider ? <><b>{provider.name || provider.id}</b><small>{binding.model || provider.default_model || '使用连接默认模型'}</small></> : <><b>尚未绑定</b><small>运行前需要选择 Flow 内连接</small></>}</div>
+              <select aria-label={`为 ${node.display_name || node.title || node.id} 选择模型连接`} value={binding?.provider_id || ''} disabled={busy} onChange={(event) => void bindDecisionNode(node, event.target.value)}><option value="">不绑定</option>{flowProviders.map((item) => <option key={item.id} value={item.id}>{item.name || item.id} · {item.default_model || '默认模型未设置'}</option>)}</select>
             </article>
-          )
-        })}
-      </div>
-      <p className="cf-resource-manager-foot"><Info />连接 ID 是 Flow 的本地插座编号；换机器后只需用同名 ID 重新接上模型。</p>
+          })}
+        </div>}
+        <footer className="cf-model-stage-next"><span>节点绑定会覆盖 Flow 角色的默认选择；解绑后节点恢复为未指定状态。</span><button type="button" onClick={() => setActiveStage('flow')}>返回 Flow 绑定</button></footer>
+      </section>}
+      <p className="cf-resource-manager-foot"><Info />连接 ID 是本机模型插座编号；Flow 和节点只保存连接 ID 与模型角色，不保存 API Key。</p>
     </div>
   )
 }
@@ -515,16 +636,15 @@ export function ToolManagementPanel({ flowId, onFlowToolsChange }: { flowId: str
           const expanded = expandedId === tool.id
           const selected = selectedSet.has(tool.id)
           const configured = tool.id !== '__new__' && toolConfigured(tool, configuredKeys)
-          return <article key={tool.id} className={`cf-resource-card ${expanded ? 'expanded' : ''}`}>
+          return <article key={tool.id} className={`cf-resource-card cf-tool-resource-card ${expanded ? 'expanded' : ''}`}>
             <div className="cf-resource-card-summary tool-summary">
               <button className="cf-tool-select" type="button" disabled={busy || tool.id === '__new__'} onClick={() => void toggleFlowTool(tool)} aria-label={selected ? '从当前 Flow 移除' : '加入当前 Flow'}><i className={selected ? 'checked' : ''}>{selected && <Check />}</i></button>
-              <button className="cf-tool-summary-main" type="button" onClick={() => tool.id === '__new__' ? undefined : openTool(tool)}>
+              <div className="cf-tool-summary-main">
                 <span className={`cf-resource-status ${configured ? 'ok' : 'pending'}`}><i />{configured ? '配置完整' : tool.id === '__new__' ? '尚未保存' : '等待配置'}</span>
-                <span className={`cf-resource-binding ${selected ? 'ok' : ''}`}>{selected ? <CheckCircle2 /> : <CirclePlus />}{selected ? '已加入当前 Flow' : '加入当前 Flow'}</span>
-                {tool.id !== '__new__' && (expanded ? <ChevronUp /> : <ChevronDown />)}
-                <strong>{tool.name}</strong>
-                <small>{tool.description || `${tool.kind} · ${tool.id}`}</small>
-              </button>
+                <button className={`cf-resource-binding cf-tool-binding-action ${selected ? 'ok' : ''}`} type="button" disabled={busy || tool.id === '__new__'} onClick={() => void toggleFlowTool(tool)}>{selected ? <CheckCircle2 /> : <CirclePlus />}{selected ? '已加入当前 Flow' : '加入当前 Flow'}</button>
+                {tool.id !== '__new__' && <button className="cf-tool-expand-action" type="button" onClick={() => openTool(tool)} title={expanded ? '收起工具配置' : '展开工具配置'}>{expanded ? <ChevronUp /> : <ChevronDown />}</button>}
+                <button className="cf-tool-summary-copy" type="button" onClick={() => tool.id === '__new__' ? undefined : openTool(tool)}><strong>{tool.name}</strong><small>{tool.description || `${tool.kind} · ${tool.id}`}</small></button>
+              </div>
             </div>
             {expanded && (
               <div className="cf-resource-card-body">
@@ -556,6 +676,126 @@ export function ToolManagementPanel({ flowId, onFlowToolsChange }: { flowId: str
         })}
       </div>
       <p className="cf-resource-manager-foot"><Info />工具连接保存在本机；Flow 只记录允许使用的连接 ID，密钥不会进入卡带。</p>
+    </div>
+  )
+}
+
+type PackageResult = {
+  filename: string
+  url: string
+  size: number
+  package_mode: string
+}
+
+function formatPackageSize(size: number) {
+  if (size < 1024) return `${size} B`
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
+  return `${(size / 1024 / 1024).toFixed(1)} MB`
+}
+
+function downloadPackage(item: PackageResult) {
+  const link = document.createElement('a')
+  link.href = item.url
+  link.download = item.filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+}
+
+function preflightStatus(status?: string) {
+  return status === 'ok' || status === 'ready' || status === 'passed'
+}
+
+export function PackagingPanel({ flowId }: { flowId: string }) {
+  const [preflight, setPreflight] = useState<StudioReleasePreflight | null>(null)
+  const [packages, setPackages] = useState<StudioPackageItem[]>([])
+  const [loading, setLoading] = useState(true)
+  const [packagingMode, setPackagingMode] = useState<'dev' | 'production' | null>(null)
+  const [message, setMessage] = useState<{ text: string; tone: 'neutral' | 'success' | 'error' } | null>(null)
+
+  const load = async () => {
+    setLoading(true)
+    try {
+      const [nextPreflight, packageData] = await Promise.all([
+        fetchStudioReleasePreflight(flowId),
+        fetchStudioPackages(),
+      ])
+      setPreflight(nextPreflight)
+      setPackages((packageData.items || []).filter((item) => item.cartridge_id === flowId))
+      setMessage(null)
+    } catch (error: any) {
+      setMessage({ text: error.message || '读取打包预检失败。', tone: 'error' })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { void load() }, [flowId])
+
+  const buildPackage = async (mode: 'dev' | 'production') => {
+    setPackagingMode(mode)
+    setMessage(null)
+    try {
+      const result = await packageCartridge(flowId, mode)
+      const packageData = await fetchStudioPackages()
+      setPackages((packageData.items || []).filter((item) => item.cartridge_id === flowId))
+      setMessage({ text: `${mode === 'production' ? '生产包' : '开发包'}已生成：${result.filename}`, tone: 'success' })
+      downloadPackage(result)
+    } catch (error: any) {
+      setMessage({ text: error.message || '生成卡带包失败。', tone: 'error' })
+    } finally {
+      setPackagingMode(null)
+    }
+  }
+
+  const statusItems = preflight ? [
+    { label: '包内容检查', ready: preflightStatus(preflight.package_hygiene.status), detail: `${preflight.package_hygiene.scanned_files || 0} 个文件` },
+    { label: '可移植性', ready: preflightStatus(preflight.portability.status), detail: `${preflight.portability.summary?.local_rebind || 0} 项需本地重绑` },
+    { label: '开发包', ready: preflight.dev_ready, detail: preflight.dev_ready ? '可以生成' : '存在阻断项' },
+    { label: '生产包', ready: preflight.production_ready, detail: preflight.production_ready ? '可以生成' : '未达到生产门槛' },
+  ] : []
+
+  return (
+    <div className="cf-resource-manager cf-package-manager">
+      <div className="cf-package-heading">
+        <div><PackageCheck /><span><strong>{preflight?.cartridge.name || '当前卡带'}</strong><small>{preflight ? `${preflight.cartridge.id} · v${preflight.cartridge.version}` : '正在读取发布信息'}</small></span></div>
+        <button type="button" disabled={loading || Boolean(packagingMode)} onClick={() => void load()}><RefreshCw className={loading ? 'spinning' : ''} />刷新预检</button>
+      </div>
+
+      {message && <StatusMessage {...message} />}
+      {loading && !preflight ? (
+        <div className="cf-package-loading"><RefreshCw className="spinning" /><span>正在检查卡带文件、依赖、模型和资源配置…</span></div>
+      ) : preflight ? (
+        <>
+          <div className="cf-package-status-grid">
+            {statusItems.map((item) => <div key={item.label} className={item.ready ? 'ready' : 'blocked'}><i>{item.ready ? <CheckCircle2 /> : <X />}</i><span><b>{item.label}</b><small>{item.detail}</small></span></div>)}
+          </div>
+
+          <section className="cf-package-issues">
+            <header><div><ShieldCheck /><strong>发布预检</strong></div><span>{preflight.issues.length ? `${preflight.issues.length} 个问题` : '全部通过'}</span></header>
+            {preflight.issues.length ? (
+              <div>{preflight.issues.map((issue, index) => <article key={`${issue.area}-${index}`}><span className={issue.severity}>{issue.severity === 'error' || issue.severity === 'blocker' ? '阻断' : '提醒'}</span><p><b>{issue.area}</b>{issue.message}</p></article>)}</div>
+            ) : <p className="empty"><CheckCircle2 />当前卡带没有发现发布阻断项。</p>}
+          </section>
+
+          <div className="cf-package-actions">
+            <div><strong>开发包</strong><span>保留开发态信息，用于交接、备份和继续编辑。</span><button type="button" disabled={!preflight.dev_ready || Boolean(packagingMode)} onClick={() => void buildPackage('dev')}><Download />{packagingMode === 'dev' ? '正在生成…' : '生成并下载开发包'}</button></div>
+            <div><strong>生产包</strong><span>执行更严格的生产门槛检查，用于正式部署。</span><button className="primary" type="button" disabled={!preflight.production_ready || Boolean(packagingMode)} onClick={() => void buildPackage('production')}><PackageCheck />{packagingMode === 'production' ? '正在生成…' : '生成并下载生产包'}</button></div>
+          </div>
+
+          <section className="cf-package-history">
+            <header><strong>本卡带打包历史</strong><span>{packages.length} 个包</span></header>
+            {packages.length ? packages.slice(0, 8).map((item) => (
+              <article key={`${item.filename}-${item.modified_at}`}>
+                <PackageCheck />
+                <span><b>{item.filename}</b><small>{item.package_mode === 'production' ? '生产包' : '开发包'} · {formatPackageSize(item.size)} · {new Date(item.modified_at).toLocaleString('zh-CN')}</small></span>
+                <button type="button" onClick={() => downloadPackage(item)} title={`下载 ${item.filename}`}><Download /><span>下载</span></button>
+              </article>
+            )) : <p className="empty">当前卡带还没有生成过安装包。</p>}
+          </section>
+        </>
+      ) : null}
+      <p className="cf-resource-manager-foot"><Info />包内不会写入本机保存的 API Key；部署到其他环境后，需要按预检报告重新绑定本地凭据。</p>
     </div>
   )
 }

@@ -141,6 +141,19 @@ class ProcessNodeContractTests(unittest.TestCase):
 
 
 class ProcessNodeExecutionTests(unittest.TestCase):
+    def test_unknown_action_fails_instead_of_reporting_a_skipped_success(self):
+        state_doc = {"context": {"store": {}}}
+        result = LabNodeExecutor().execute(
+            "unsupported",
+            {"type": "process", "action": "unsupported_action"},
+            state_doc,
+            {"inputs": {}},
+            ".",
+        )
+        self.assertTrue(result["failed"])
+        self.assertEqual("ACTION_EXECUTOR_MISSING", result["error_code"])
+        self.assertNotIn("skipped", result)
+
     def test_input_process_collects_declared_inputs(self):
         state_doc = {"context": {"store": {}}}
         run = {"inputs": {"episode_id": "ep_001", "goal": "open with a chase"}}
@@ -173,6 +186,27 @@ class ProcessNodeExecutionTests(unittest.TestCase):
         result = LabNodeExecutor().execute("transfer", state, state_doc, {"inputs": {}}, ".")
         self.assertEqual("pass_result", result["action"])
         self.assertEqual({"episode_id": "ep_001"}, state_doc["context"]["store"]["brief_copy"])
+
+    def test_html_ui_uses_string_input_as_html(self):
+        html = "<main><h1>Expanded result</h1></main>"
+        state_doc = {"context": {"store": {"expanded_html": html}}}
+        state = {
+            "type": "process",
+            "kind": "ui",
+            "executor": "deterministic",
+            "effect": "writes_store",
+            "action": "show_ui",
+            "input": "expanded_html",
+            "output": "result_page",
+            "params": {"ui_type": "html"},
+        }
+
+        result = LabNodeExecutor().execute("show_result", state, state_doc, {"inputs": {}}, ".")
+
+        self.assertEqual("html", result["ui_type"])
+        self.assertEqual(html, result["ui_html"])
+        self.assertEqual("", result["ui_markdown"])
+        self.assertEqual(html, state_doc["context"]["store"]["result_page"]["html"])
 
     def test_rules_decision_maps_to_custom_action(self):
         state_doc = {"context": {"store": {"brief": "episode brief"}}}

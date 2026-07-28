@@ -51,6 +51,7 @@
 | `src/core/lab/dev_flow.py` | 开发 Flow 的创建、读取和保存。 |
 | `src/core/lab/graph.py` | Flow 图结构与编辑操作。 |
 | `src/core/lab/flow_analyzer.py` | 可达性、孤立节点和结构诊断。 |
+| `src/core/lab/ai_steward.py` | AI 管家的结构化上下文、提示构造和响应解析。 |
 | `src/core/lab/node_executor.py` | 工作台节点的真实执行入口。 |
 | `src/core/lab/todo.py` | TODO Markdown 解析。 |
 | `src/core/lab/mcp_slots.py` | Flow 工具槽位和启用清单。 |
@@ -92,14 +93,22 @@
 | `flow-workbench/clusterLayout.ts` | 主节点与卫星卡片的节点簇整理、拓扑排布和自适应折行。 |
 | `flow-workbench/FlowNodeCard.tsx` | 协议驱动的主节点卡片。 |
 | `flow-workbench/FlowNodePorts.tsx` | 节点连接端口。 |
-| `flow-workbench/NodeDetailCard.tsx` | 可拖动、可钉住、可恢复的详情卫星卡。 |
-| `flow-workbench/NodeDrawer.tsx` | 节点库及拖入画布交互。 |
-| `flow-workbench/ResourceManagementPanels.tsx` | 模型连接、角色和 Flow 工具配置。 |
+| `flow-workbench/EngineeringNodeCard.tsx`、`engineeringNode.ts` | 工程视图节点、数据/依赖关系和展示模型。 |
+| `flow-workbench/EngineeringInspector.tsx` | 工程视图节点检查与字段级选择面板。 |
+| `flow-workbench/AIFlowStewardPanel.tsx` | AI 管家引导、委托和结构化变更交互。 |
+| `flow-workbench/NodeDetailCard.tsx` | 可拖动、可钉住、共享草稿并按协议分区编辑的节点卫星卡。 |
+| `flow-workbench/InteractionAssetEditor.tsx` | 交互卫星内的组件定义与 HTML/Markdown 页面资产编辑。 |
+| `flow-workbench/InteractionContractEditor.tsx` | 交互节点的输入字段映射与命名动作静态路由编辑。 |
+| `flow-workbench/CartridgeDefinitionPanel.tsx` | 画布配置内的运行入口、模型角色、工具绑定与交付输出编辑。 |
+| `flow-workbench/ResourceManagementPanels.tsx` | 模型连接、角色、Flow 工具配置和当前卡带打包面板。 |
 | `flow-workbench/RunInputDialog.tsx` | 主工作台运行输入与本地文件上传弹窗。 |
 | `flow-workbench/TestBenchView.tsx`、`TestBench.css` | 真实运行、历史、失败日志、恢复和产物。 |
 | `flow-workbench/flowNodeView.ts` | 主节点展示模型与状态映射。 |
 | `flow-workbench/nodeBuilder.ts` | 节点预设、MCP 绑定和协议字段组装。 |
 | `flow-workbench/nodeDetails.ts` | 按节点能力生成详情分区。 |
+| `flow-workbench/nodeEditing.ts` | 各卫星分区共享的节点草稿校验与统一保存。 |
+| `flow-workbench/nodeAuthoring.ts` | 按节点语义生成画布内引导步骤、进度和完成判定。 |
+| `flow-workbench/newFlowSetup.ts` | 新建卡带首次进入工作台时的一次性自动整理标记。 |
 | `flow-workbench/nodeModel.ts` | 节点类型、默认值和转换。 |
 | `flow-workbench/passiveHtml.ts` | 被动 HTML 资产安全处理。 |
 | `flow-workbench/runState.ts` | 运行事件到节点状态及探针范围的纯计算。 |
@@ -126,9 +135,14 @@
 | 路径 | 作用 |
 |---|---|
 | `docs/README.md` | 文档总入口。 |
+| `docs/architecture/AI_STEWARD_INTERACTION_MODES.md` | AI 管家的引导/委托双模式、工程视图定位工具和修改边界。 |
+| `docs/architecture/AI_VIDEO_DAILY_CARTRIDGE.md` | AI 视频日报参考卡带的完整闭环、质量门槛、发布安全和版本演进草案。 |
+| `docs/architecture/ENTERPRISE_MANAGER_RUNNER_PLAIN_GUIDE.md` | 企业版统一管理器与分布式卡带运行器的大白话架构说明。 |
+| `docs/architecture/OFFICIAL_INTERFACE_ONBOARDING_CARTRIDGE_ACTION_GUIDE.md` | 官方接口接入验证卡带、最小探测、知识沉淀和审批上线行动指南。 |
 | `docs/architecture/FLOW_NODE_INFORMATION_ARCHITECTURE.md` | 各节点主卡和详情信息架构。 |
 | `docs/architecture/PORTABLE_DLC_ARCHITECTURE.md` | DLC 所有权、安全和宿主边界。 |
 | `docs/development/AI_DEVELOPER_GUIDE.md` | 深层架构与验收参考。 |
+| `docs/development/FLOW_GRAPH_PERFORMANCE_OPTIMIZATION.md` | 大型 Flow 画布的性能瓶颈、分阶段优化方案、基准与行为回归要求。 |
 | `docs/development/README.md` | 开发维护区说明。 |
 | `docs/development/skills/` | 可选协议升级 AI Skill。 |
 | `docs/overview/PROJECT_STRUCTURE.md` | 项目分层和数据流。 |

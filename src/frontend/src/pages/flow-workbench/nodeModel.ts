@@ -2,10 +2,11 @@ import dagre from '@dagrejs/dagre'
 import type { FlowEdge, FlowGraph, FlowNode } from '../../api.ts'
 import type { NodeCategory, NodeDraft, NodePreset, NodeCategoryId } from './types.ts'
 
-export type FlowNodeViewMode = 'detailed' | 'compact'
+export type FlowNodeViewMode = 'engineering' | 'detailed' | 'compact'
 
 export const FLOW_NODE_DIMENSIONS: Record<FlowNodeViewMode, { width: number; height: number }> = {
-  detailed: { width: 440, height: 394 },
+  engineering: { width: 334, height: 430 },
+  detailed: { width: 440, height: 436 },
   compact: { width: 280, height: 146 },
 }
 
@@ -19,8 +20,8 @@ function getFlowLayoutMetrics(options: FlowLayoutOptions = {}) {
   return {
     viewMode,
     ...dimensions,
-    nodesep: viewMode === 'detailed' ? 140 : 72,
-    ranksep: viewMode === 'detailed' ? 120 : 112,
+    nodesep: viewMode === 'engineering' ? 86 : viewMode === 'detailed' ? 140 : 72,
+    ranksep: viewMode === 'engineering' ? 132 : viewMode === 'detailed' ? 120 : 112,
   }
 }
 
@@ -528,9 +529,16 @@ export function makeNodeDraft(node: FlowNode): NodeDraft {
     auditLog: Boolean(node.audit_log ?? node.data?.audit_log ?? defaults.auditLog ?? false),
     description: params.description || params.message || params.prompt || '',
     input: params.input || params.source || '',
+    optionalInput: params.optional_input || params.optional_inputs || '',
     output: params.output || params.target || '',
     saveTo: params.save_to || params.store_key || params.artifact_name || '',
     condition: params.condition || params.message || '',
+    endpoint: String(node.endpoint || params.endpoint || ''),
+    timeoutMs: String(node.timeout_ms || params.timeout_ms || ''),
+    replayPolicy: String(params.replay_policy || ''),
+    idempotency: String(params.idempotency || params.idempotency_key || ''),
+    artifactType: String(params.artifact_type || params.format || ''),
+    deliveryPath: String(params.delivery_path || params.path || params.save_to || ''),
     agent: node.agent || '',
     modelRole: node.model_role || '',
     tools: node.tools?.length ? JSON.stringify(node.tools, null, 2) : '',
@@ -610,6 +618,8 @@ export function buildProtocolNodePayload(draft: NodeDraft, category: NodeCategor
     failure_policy: draft.failurePolicy || defaults.failurePolicy || null,
     permission: draft.permission || defaults.permission || null,
     audit_log: draft.auditLog || defaults.auditLog || null,
+    endpoint: draft.endpoint || null,
+    timeout_ms: draft.timeoutMs ? Number(draft.timeoutMs) : null,
   }
 }
 
@@ -681,18 +691,19 @@ function getExecutionOrder(graph: FlowGraph): FlowNode[] {
 
 export function buildBalancedLayout(graph: FlowGraph, options: FlowLayoutOptions = {}): Record<string, { x: number; y: number }> {
   const metrics = getFlowLayoutMetrics(options)
-  const automatic = buildAutoAlignLayout(graph, options)
   const layout: Record<string, { x: number; y: number }> = {}
   let hasCompleteSavedLayout = graph.nodes.length > 0
   graph.nodes.forEach((node) => {
     const saved = node.data?.layout || node.params?.layout
     const hasSavedPosition = Boolean(saved && typeof saved.x === 'number' && typeof saved.y === 'number')
     if (!hasSavedPosition) hasCompleteSavedLayout = false
-    layout[node.id] = hasSavedPosition
-      ? { x: saved!.x, y: saved!.y }
-      : automatic[node.id] || { x: node.x, y: node.y }
+    if (hasSavedPosition) layout[node.id] = { x: saved!.x, y: saved!.y }
   })
   if (hasCompleteSavedLayout) return layout
+  const automatic = buildAutoAlignLayout(graph, options)
+  graph.nodes.forEach((node) => {
+    if (!layout[node.id]) layout[node.id] = automatic[node.id] || { x: node.x, y: node.y }
+  })
   return resolveLayoutCollisions(layout, {
     rowGap: metrics.height + (metrics.viewMode === 'detailed' ? 84 : 34),
     xTolerance: metrics.width + 16,

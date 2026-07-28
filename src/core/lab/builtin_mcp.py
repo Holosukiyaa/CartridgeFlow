@@ -14,28 +14,8 @@ FILESYSTEM_DESCRIPTIONS = {
     "exists": {"description": "Check whether a workspace path exists.", "params": {"path": "Workspace-relative path."}},
 }
 
-MEDIA_DESCRIPTIONS = {
-    "media_probe": {
-        "description": "Probe base-owned local media capabilities.",
-        "params": {"providers": "Provider list: local/ffmpeg."},
-    },
-    "extract_keyframes": {
-        "description": "Extract reusable control keyframes from a rendered frame sequence.",
-        "params": {"render_bundle": "Render bundle.", "frame_dir": "Source frames.", "output_dir": "Artifact directory."},
-    },
-    "style_keyframes": {
-        "description": "Apply the base-owned local style pass or copy keyframes unchanged.",
-        "params": {"input_manifest": "Control manifest.", "provider": "Provider: local/off.", "style_prompt": "Local style notes.", "output_dir": "Artifact directory."},
-    },
-    "qc_outputs": {
-        "description": "Validate a media output manifest and write a structured QC report.",
-        "params": {"input_manifest": "Media manifest.", "output_path": "QC report path.", "min_outputs": "Required output count."},
-    },
-}
-
 BASE_BUILTIN_TOOL_IDS = frozenset(
     {f"filesystem/{tool}" for tool in FILESYSTEM_DESCRIPTIONS}
-    | {f"media/{tool}" for tool in MEDIA_DESCRIPTIONS}
 )
 
 
@@ -66,7 +46,6 @@ class BuiltinMcpRegistry:
         self._package_dlc_descriptor: dict | None = None
         self._dlc_report: list[dict] = []
         self._register_filesystem()
-        self._register_media()
         self._register_package_dlc()
 
     @classmethod
@@ -177,17 +156,6 @@ class BuiltinMcpRegistry:
             "exists": exists,
         }
 
-    def _register_media(self) -> None:
-        from .mcp.dlc import register_media_modules
-
-        self._registry.setdefault("media", {})
-        register_media_modules(
-            self,
-            protocol_extensions=self._protocol_extensions,
-            capabilities=self._capabilities,
-            supported_protocols=self._supported_protocols,
-        )
-
     def call(self, server: str, tool: str, params: dict) -> dict:
         tools = self._registry.get(server)
         if not tools:
@@ -204,7 +172,7 @@ class BuiltinMcpRegistry:
         return deepcopy(self._dlc_report)
 
     def describe(self) -> list[dict]:
-        descriptions = {"filesystem": FILESYSTEM_DESCRIPTIONS, "media": MEDIA_DESCRIPTIONS}
+        descriptions = {"filesystem": FILESYSTEM_DESCRIPTIONS}
         result = []
         for server, tools in self._registry.items():
             for tool_name in tools:

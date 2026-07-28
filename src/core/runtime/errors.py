@@ -47,6 +47,7 @@ ERROR_CATALOG: dict[str, ErrorSpec] = {
     "FLOW_CONTRACT_INVALID": ErrorSpec("flow", "流程或节点配置不符合当前运行契约。", False, True, ("edit_flow", "validate_flow"), 422),
     "REPLAY_CONFIRMATION_REQUIRED": ErrorSpec("recovery", "恢复路径包含不可安全重放的副作用，需要开发者明确确认。", False, True, ("confirm_replay", "choose_safe_checkpoint"), 409),
     "NODE_EXECUTION_FAILED": ErrorSpec("runtime", "节点执行失败。", False, True, ("inspect_node", "retry_node"), 422),
+    "ACTION_EXECUTOR_MISSING": ErrorSpec("runtime", "节点声明的动作没有可用执行器。", False, True, ("edit_node_contract", "inspect_node"), 422),
     "RESOURCE_NOT_FOUND": ErrorSpec("request", "请求的资源不存在。", False, False, (), 404),
     "REQUEST_INVALID": ErrorSpec("request", "请求内容不符合接口要求。", False, True, ("edit_request",), 400),
     "INTERNAL_UNEXPECTED": ErrorSpec("system", "底座发生了未预期的内部错误。", False, False, ("export_diagnostics",), 500),

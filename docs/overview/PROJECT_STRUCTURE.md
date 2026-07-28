@@ -240,7 +240,7 @@ CartridgeFlow-main/
 | `src/core/workspace/base.py` | 未被 WorkspaceHostManager 使用的旧基类 |
 | `src/frontend/src/pages/flow-workbench/AdvancedPanels.tsx` | 已被当前 Flow 工作台替代的旧高级面板 |
 | `src/frontend/src/pages/flow-workbench/cards.tsx` | 只服务于已删除旧高级面板的组件 |
-| `src/frontend/src/pages/flow-workbench/NodeEditor.tsx` | 没有任何页面入口，节点编辑已由 `NodeDrawer.tsx` 承担 |
+| `src/frontend/src/pages/flow-workbench/NodeEditor.tsx` | 没有任何页面入口，节点编辑已由分区卫星卡 `NodeDetailCard.tsx` 承担 |
 | `src/frontend/public/icons.svg` | 未被页面引用的旧社交图标精灵 |
 | `src/frontend/src/App.css` | 只有一行注释且从未导入 |
 | `src/frontend/src/assets/hero.png` | 无引用的旧视觉素材 |

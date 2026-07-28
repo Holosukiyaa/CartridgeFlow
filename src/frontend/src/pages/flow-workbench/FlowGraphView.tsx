@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { createContext, memo, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import {
   ReactFlow,
   Background,
@@ -7,37 +7,136 @@ import {
   MarkerType,
   MiniMap,
   Panel,
+  SelectionMode,
   ViewportPortal,
   addEdge,
-  applyEdgeChanges,
-  applyNodeChanges,
   getViewportForBounds,
   type Connection,
   type Edge,
-  type EdgeChange,
   type Node,
-  type NodeChange,
+  type NodeProps,
   type ReactFlowInstance,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { AlignHorizontalSpaceAround, Box, Braces, BrainCircuit, CheckCircle2, GitBranch, GripVertical, Lock, Maximize, Maximize2, MessageSquare, MessageSquarePlus, MousePointer2, Plus, Settings, Trash2, Unlock, Wrench, X, ZoomIn, ZoomOut } from 'lucide-react'
-import type { FlowAnnotation, FlowEdge, FlowEvent, FlowGraph, FlowNode } from '../../api.ts'
+import { AlertTriangle, AlignHorizontalSpaceAround, Box, Braces, BrainCircuit, CheckCircle2, CirclePause, FileText, GitBranch, GripVertical, Info, Lock, Maximize, Maximize2, MessageSquare, MessageSquarePlus, MousePointer2, PackageCheck, Plus, Settings, Trash2, Unlock, Wrench, X, ZoomIn, ZoomOut } from 'lucide-react'
+import type { AIFlowSelection, FlowAnnotation, FlowEdge, FlowEvent, FlowFiles, FlowGraph, FlowNode, RunResult } from '../../api.ts'
 import { DEFAULT_WORKSPACE_THEME, loadWorkspaceTheme, saveWorkspaceTheme, WORKSPACE_THEME_PRESETS, type WorkspaceTheme } from '../../appearance.ts'
 import { showToast } from '../../toast.tsx'
-import type { CreateNodeHandler, NodeCategoryId } from './types.ts'
+import type { CreateNodeHandler, DesignDisplayMode, NodeCategoryId } from './types.ts'
 import { FLOW_NODE_DIMENSIONS, NODE_CATEGORIES, buildBalancedLayout, getNodeCategory, getNodePalette, getPreset, getPresets, isStartNode, type FlowNodeViewMode } from './nodeModel.ts'
-import { getAvailableNodeDetailSections, type NodeDetailSection } from './nodeDetails.ts'
+import type { NodeDetailSection } from './nodeDetails.ts'
 import type { NodeRunState } from './runState.ts'
 import { FlowNodeCard, type FlowNodeProbeState } from './FlowNodeCard.tsx'
 import { createPortCounts, getPortHandleId, type EdgePortAssignment, type PortCounts, type PortSide } from './FlowNodePorts.tsx'
 import { CanvasAnnotationCard } from './CanvasAnnotationCard.tsx'
 import { buildClusterAwareLayout } from './clusterLayout.ts'
+import { EngineeringNodeCard } from './EngineeringNodeCard.tsx'
+import { buildEngineeringDataRelations, buildEngineeringNodeModels, engineeringControlHandleId, engineeringHandleId, type EngineeringDataRelation, type EngineeringEdgeVisibility, type EngineeringNodeRenderModel } from './engineeringNode.ts'
+import { buildOutcomeNodeModels, plainOutcomeFieldLabel, type OutcomeNodeRenderModel } from './flowNodeView.ts'
 
 type FlowGraphNode = Node<Record<string, unknown>>
 type FlowGraphEdge = Edge<Record<string, unknown>>
+type DataRelation = { from: string; to: string; key: string; kind?: 'data' | 'dependency'; label?: string; fromField?: string; toField?: string; expression?: string; source?: string }
 type RunEdgeStatus = 'visited' | 'active'
-type CanvasTool = 'select' | 'connect'
-type CanvasPanel = 'nodes' | 'notes' | 'models' | 'variables' | 'settings' | 'tools' | null
+export type CanvasTool = 'select' | 'connect' | 'steward-pointer' | 'steward-lasso'
+type CanvasPanel = 'nodes' | 'notes' | 'models' | 'variables' | 'settings' | 'tools' | 'package' | 'base-info' | null
+
+type EngineeringNodeRenderContextValue = {
+  models: Map<string, EngineeringNodeRenderModel>
+  nodeOrder: Map<string, number>
+  counts: Map<string, PortCounts>
+  runStates?: Map<string, NodeRunState>
+  onSelect: (node: FlowNode) => void
+}
+
+const EngineeringNodeRenderContext = createContext<EngineeringNodeRenderContextValue | null>(null)
+
+const EngineeringCanvasNode = memo(function EngineeringCanvasNode({ data, selected }: NodeProps<FlowGraphNode>) {
+  const context = useContext(EngineeringNodeRenderContext)
+  const node = data as unknown as FlowNode
+  const model = context?.models.get(node.id)
+  if (!context || !model) return null
+  return (
+    <EngineeringNodeCard
+      node={node}
+      model={model}
+      order={context.nodeOrder.get(node.id) || 0}
+      selected={selected}
+      counts={context.counts.get(node.id) || createPortCounts()}
+      runState={context.runStates?.get(node.id)}
+      onSelect={context.onSelect}
+    />
+  )
+})
+
+const ENGINEERING_NODE_TYPES = { custom: EngineeringCanvasNode }
+
+type OutcomeNodeRenderContextValue = {
+  models: Map<string, OutcomeNodeRenderModel>
+  nodeOrder: Map<string, number>
+  counts: Map<string, PortCounts>
+  expandedNodeIds: ReadonlySet<string>
+  runStates?: Map<string, NodeRunState>
+  probeState?: FlowNodeProbeState
+  probeSelectedNodeIds: ReadonlySet<string>
+  onSelect: (node: FlowNode) => void
+}
+
+const OutcomeNodeRenderContext = createContext<OutcomeNodeRenderContextValue | null>(null)
+
+const OutcomeCanvasNode = memo(function OutcomeCanvasNode({ data, selected }: NodeProps<FlowGraphNode>) {
+  const context = useContext(OutcomeNodeRenderContext)
+  const node = data as unknown as FlowNode
+  const model = context?.models.get(node.id)
+  if (!context || !model) return null
+  return (
+    <FlowNodeCard
+      node={node}
+      viewMode="detailed"
+      order={context.nodeOrder.get(node.id) || 0}
+      selected={selected}
+      detailOwner={context.expandedNodeIds.has(node.id)}
+      compactStatic={false}
+      counts={context.counts.get(node.id) || createPortCounts()}
+      incomingNodes={[]}
+      outgoingNodes={[]}
+      presentation={model.view}
+      runState={context.runStates?.get(node.id)}
+      probeState={context.probeState}
+      probeSelected={context.probeSelectedNodeIds.has(node.id)}
+      onSelect={context.onSelect}
+    />
+  )
+})
+
+const OUTCOME_NODE_TYPES = { custom: OutcomeCanvasNode }
+
+function completionSummary(run: RunResult | undefined, events: FlowEvent[]) {
+  if (!run) return '本次运行已经结束。'
+  if (['failed', 'interrupted', 'cancelled'].includes(run.status)) {
+    const failedEvent = events.slice().reverse().find((event) => /failed|error|cancelled/i.test(String(event.type || '')))
+    return run.error?.message || run.errors?.at(-1)?.message || failedEvent?.message
+      || `运行在 ${run.current_state || '未知节点'} 结束，请查看详细日志。`
+  }
+  if (['paused', 'paused_waiting_user'].includes(run.status)) {
+    return run.pending_interaction?.question?.prompt
+      || `运行停在 ${run.current_state || '当前节点'}，等待用户继续。`
+  }
+  const delivery = String(run.delivery?.summary || '').trim()
+  if (delivery) return delivery
+  const outputEvent = events.slice().reverse().find((event) => {
+    const data = event.data as Record<string, unknown> | undefined
+    return data && (data.output_value !== undefined || data.output !== undefined)
+  })
+  const data = outputEvent?.data as Record<string, unknown> | undefined
+  const output = data?.output_value ?? data?.output
+  if (output !== undefined && output !== null && String(output).trim()) {
+    const text = typeof output === 'string' ? output : JSON.stringify(output)
+    return text.length > 150 ? `${text.slice(0, 150)}...` : text
+  }
+  const artifactCount = run.delivery?.artifacts?.length || run.artifacts?.length || 0
+  return artifactCount ? `本次流程完成，已生成 ${artifactCount} 个交付产物。` : '本次流程已完成，所有节点已执行结束。'
+}
 type CanvasNodeEditor = {
   editorId: string
   nodeId: string
@@ -185,6 +284,39 @@ function normalizeGraphEdges(edges: FlowEdge[] = []) {
   }, [])
 }
 
+function variableNames(value: unknown): string[] {
+  if (Array.isArray(value)) return value.flatMap(variableNames)
+  if (typeof value !== 'string') return []
+  const normalized = value.trim().replace(/^\$\{(.+)\}$/, '$1')
+  if (!normalized || normalized.startsWith('{') || normalized.startsWith('[')) return []
+  return normalized.split(/[,\n]/).map((item) => item.trim()).filter(Boolean)
+}
+
+function nodeOutputNames(node: FlowNode) {
+  const params = node.params || {}
+  return new Set([
+    ...variableNames(node.output),
+    ...variableNames(node.primary_output),
+    ...variableNames(params.output),
+    ...variableNames(params.save_to),
+  ])
+}
+
+function nodeInputNames(node: FlowNode) {
+  const params = node.params || {}
+  const bindingInputs = Object.values(node.input_binding || {}).flatMap((value) => {
+    const reference = String(value || '').trim()
+    if (!reference.startsWith('store:')) return []
+    return [reference.slice('store:'.length).split('.')[0]].filter(Boolean)
+  })
+  return new Set([
+    ...variableNames(node.source),
+    ...variableNames(params.input),
+    ...variableNames(params.source),
+    ...bindingInputs,
+  ])
+}
+
 async function copyNodeText(node: FlowNode, mode: 'id' | 'config') {
   const value = mode === 'id' ? node.id : JSON.stringify(node, null, 2)
   try {
@@ -232,30 +364,44 @@ function buildRunEdgeStates(graphEdges: FlowEdge[], runEvents: FlowEvent[] = EMP
   return edgeStates
 }
 
-export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, onOpenNodeEditor, onNodeEditorPositionChange, onLayoutSave, onEdgesSave, onAnnotationsSave, onCreateNode, onDeleteNode, modelPanel, toolPanel, nodeEditors = [], activeNodeEditorId, onCloseNodeEditor, compactStatic = false, readOnlyGraph = false, runStatus, nodeRunStates, runEvents, runCompletionVisible = false, onDismissRunCompletion, testProbeState }: {
+export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engineeringEdgeVisibility = { control: true, data: true, dependency: true, branch: true, failure: true }, engineeringDataRelations: providedEngineeringDataRelations, engineeringNodeModels: providedEngineeringNodeModels, selectedNode, focusNodeId, onSelectNode, onNodeEditorPositionChange, onLayoutSave, autoLayoutOnMount = false, onAutoLayoutComplete, onEdgesSave, onAnnotationsSave, onCreateNode, onDeleteNode, modelPanel, toolPanel, packagePanel, cartridgePanel, nodeEditors = [], activeNodeEditorId, onCloseNodeEditor, onCanvasToolChange, requestedCanvasTool, onStewardSelectionChange, compactStatic = false, readOnlyGraph = false, runStatus, nodeRunStates, runEvents, runCompletionVisible = false, runCompletion, onDismissRunCompletion, onOpenRunLog, onOpenPendingInteraction, testProbeState }: {
   graph: FlowGraph
+  files?: FlowFiles
+  displayMode?: DesignDisplayMode
+  engineeringEdgeVisibility?: EngineeringEdgeVisibility
+  engineeringDataRelations?: EngineeringDataRelation[]
+  engineeringNodeModels?: Map<string, EngineeringNodeRenderModel>
   selectedNode: FlowNode | null
   focusNodeId: string | null
   onSelectNode: (node: FlowNode) => void
-  onOpenNodeEditor?: (node: FlowNode, section: NodeDetailSection) => void
   onNodeEditorPositionChange?: (editorId: string, position: NodeEditorPosition) => void
   onLayoutSave?: (layout: Record<string, { x: number; y: number }>) => Promise<void>
+  autoLayoutOnMount?: boolean
+  onAutoLayoutComplete?: () => void
   onEdgesSave?: (edges: FlowEdge[]) => Promise<void>
   onAnnotationsSave?: (annotations: FlowAnnotation[]) => Promise<void>
   onCreateNode?: CreateNodeHandler
   onDeleteNode?: (node: FlowNode) => Promise<void>
   modelPanel?: ReactNode
   toolPanel?: ReactNode
+  packagePanel?: ReactNode
+  cartridgePanel?: ReactNode
   nodeEditors?: CanvasNodeEditor[]
   activeNodeEditorId?: string | null
   onCloseNodeEditor?: () => void
+  onCanvasToolChange?: (tool: CanvasTool) => void
+  requestedCanvasTool?: CanvasTool
+  onStewardSelectionChange?: (selection: AIFlowSelection) => void
   compactStatic?: boolean
   readOnlyGraph?: boolean
   runStatus?: string
   nodeRunStates?: Map<string, NodeRunState>
   runEvents?: FlowEvent[]
   runCompletionVisible?: boolean
+  runCompletion?: RunResult
   onDismissRunCompletion?: () => void
+  onOpenRunLog?: (run: RunResult) => void
+  onOpenPendingInteraction?: () => void
   testProbeState?: FlowNodeProbeState
 }) {
   const [fullscreen, setFullscreen] = useState(false)
@@ -269,6 +415,7 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
   const [workspaceTheme, setWorkspaceTheme] = useState<WorkspaceTheme>(() => loadWorkspaceTheme())
   const [annotations, setAnnotations] = useState<FlowAnnotation[]>(() => graph.annotations || [])
   const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(null)
+  const requestedCanvasToolRef = useRef<CanvasTool | undefined>(requestedCanvasTool)
   const [contextMenu, setContextMenu] = useState<{
     x: number
     y: number
@@ -277,12 +424,25 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
     side?: 'left' | 'right'
     verticalSide?: 'up' | 'down'
   } | null>(null)
+  useEffect(() => onCanvasToolChange?.(activeCanvasTool), [activeCanvasTool, onCanvasToolChange])
+  useEffect(() => {
+    if (requestedCanvasTool && requestedCanvasTool !== requestedCanvasToolRef.current) {
+      requestedCanvasToolRef.current = requestedCanvasTool
+      setActiveCanvasTool(requestedCanvasTool)
+      setCanvasPanel(null)
+    }
+  }, [requestedCanvasTool])
+  useEffect(() => {
+    if (!onEdgesSave && activeCanvasTool === 'connect') setActiveCanvasTool('select')
+    if (!onCreateNode && canvasPanel === 'nodes') setCanvasPanel(null)
+  }, [activeCanvasTool, canvasPanel, onCreateNode, onEdgesSave])
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance | null>(null)
   const [nodeEditorPositions, setNodeEditorPositions] = useState<Record<string, NodeEditorPosition>>({})
   const [draggingEditorId, setDraggingEditorId] = useState<string | null>(null)
   const wrapperRef = useRef<HTMLDivElement | null>(null)
   const deletingNodeRef = useRef(false)
   const lastFittedGraphIdRef = useRef('')
+  const autoLayoutGraphIdRef = useRef('')
   const nodeEditorDragRef = useRef<NodeEditorDragState | null>(null)
   const annotationPointerRef = useRef<AnnotationPointerState | null>(null)
   const annotationsRef = useRef<FlowAnnotation[]>(graph.annotations || [])
@@ -294,10 +454,61 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
   const runInProgress = ['created', 'running', 'retrying', 'recovering', 'rolling_back'].includes(runStatus || '')
   const runPaused = ['paused', 'paused_waiting_user'].includes(runStatus || '')
   const runActive = runInProgress || runPaused
+  const runFinished = ['completed', 'failed', 'cancelled', 'interrupted'].includes(runStatus || '')
+  const runFrameVisible = runActive || runFinished
+  const runOutcomeClass = runStatus === 'completed'
+    ? 'run-outcome-success'
+    : ['failed', 'interrupted'].includes(runStatus || '')
+      ? 'run-outcome-failure'
+      : runStatus === 'cancelled'
+        ? 'run-outcome-cancelled'
+        : ''
   const nodeOrder = useMemo(() => new Map(graph.nodes.map((node, index) => [node.id, index + 1])), [graph.nodes])
   const nodeById = useMemo(() => new Map(graph.nodes.map((node) => [node.id, node])), [graph.nodes])
   const probeSelectedNodeIds = useMemo(() => new Set(testProbeState?.selectedNodeIds || []), [testProbeState?.selectedNodeIds])
   const graphEdges = useMemo(() => normalizeGraphEdges(graph.edges), [graph.edges])
+  const inferredDataRelations = useMemo(() => {
+    const producers = new Map<string, string[]>()
+    graph.nodes.forEach((node) => nodeOutputNames(node).forEach((key) => {
+      producers.set(key, [...(producers.get(key) || []), node.id])
+    }))
+    const seen = new Set<string>()
+    return graph.nodes.reduce<DataRelation[]>((relations, target) => {
+      nodeInputNames(target).forEach((key) => {
+        const sourceIds = producers.get(key) || []
+        sourceIds.forEach((sourceId) => {
+          const relationId = `${sourceId}->${target.id}:${key}`
+          if (sourceId === target.id || seen.has(relationId)) return
+          seen.add(relationId)
+          relations.push({ from: sourceId, to: target.id, key, label: plainOutcomeFieldLabel(key) })
+        })
+      })
+      return relations
+    }, [])
+  }, [graph.nodes])
+  const engineeringDataRelations = useMemo(() => (providedEngineeringDataRelations || buildEngineeringDataRelations(graph)).map((relation) => ({
+    ...relation,
+    key: `${relation.fromField}->${relation.toField}`,
+  })), [graph, providedEngineeringDataRelations])
+  const visibleGraphEdges = useMemo(() => displayMode !== 'engineering' ? graphEdges : graphEdges.filter((edge) => {
+    const label = String(edge.label || '')
+    const failure = edge.scope === 'failure' || /fail|error|异常|失败/i.test(label)
+    if (failure) return engineeringEdgeVisibility.failure
+    if (edge.scope === 'branch') return engineeringEdgeVisibility.branch
+    return engineeringEdgeVisibility.control
+  }), [displayMode, engineeringEdgeVisibility, graphEdges])
+  const visibleEngineeringRelations = useMemo(() => engineeringDataRelations.filter((relation) => (
+    relation.kind === 'dependency' ? engineeringEdgeVisibility.dependency : engineeringEdgeVisibility.data
+  )), [engineeringDataRelations, engineeringEdgeVisibility])
+  const engineeringNodeModels = useMemo(
+    () => providedEngineeringNodeModels || buildEngineeringNodeModels(graph, files, nodeRunStates, visibleEngineeringRelations),
+    [files, graph, nodeRunStates, providedEngineeringNodeModels, visibleEngineeringRelations],
+  )
+  const dataRelations = displayMode === 'engineering' ? visibleEngineeringRelations : inferredDataRelations
+  const visualEdges = useMemo(() => [
+    ...visibleGraphEdges,
+    ...dataRelations.map((relation) => ({ from: relation.from, to: relation.to, scope: 'data', label: relation.key })),
+  ], [dataRelations, visibleGraphEdges])
   const stableRunEvents = runEvents ?? EMPTY_FLOW_EVENTS
   const runEdgeStates = useMemo(() => buildRunEdgeStates(graphEdges, stableRunEvents), [graphEdges, stableRunEvents])
   const renderGraph = useMemo(() => ({ ...graph, edges: graphEdges }), [graph, graphEdges])
@@ -326,7 +537,7 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
     })
     return [...variables.values()]
   }, [graph.nodes])
-  const nodeViewMode: FlowNodeViewMode = compactStatic ? 'compact' : 'detailed'
+  const nodeViewMode: FlowNodeViewMode = compactStatic ? 'compact' : displayMode === 'engineering' ? 'engineering' : 'detailed'
   const expandedMainNodeIds = useMemo(() => new Set(nodeEditors.map((editor) => editor.nodeId)), [nodeEditors])
   const layoutViewMode = nodeViewMode
   const layout = useMemo(() => buildBalancedLayout(renderGraph, { viewMode: layoutViewMode }), [layoutViewMode, renderGraph])
@@ -336,12 +547,13 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
     const edgePorts = new Map<string, EdgePortAssignment>()
     const outgoingCount = new Map<string, number>()
     const incomingCount = new Map<string, number>()
-    graphEdges.forEach((edge) => {
+    const portPlanningEdges = displayMode === 'engineering' ? visibleGraphEdges : visualEdges
+    portPlanningEdges.forEach((edge) => {
       outgoingCount.set(edge.from, (outgoingCount.get(edge.from) || 0) + 1)
       incomingCount.set(edge.to, (incomingCount.get(edge.to) || 0) + 1)
     })
     graph.nodes.forEach((node) => counts.set(node.id, createPortCounts()))
-    graphEdges.forEach((edge, index) => {
+    portPlanningEdges.forEach((edge, index) => {
       const sourcePoint = layout[edge.from]
       const targetPoint = layout[edge.to]
       const targetNode = nodeById.get(edge.to)
@@ -364,10 +576,28 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
       edgePorts.set(`${index}:${edge.from}->${edge.to}`, { ...sides, sourceIndex, targetIndex })
     })
     return { counts, edgePorts }
-  }, [graphEdges, graph.nodes, layout, nodeById])
+  }, [displayMode, graph.nodes, layout, nodeById, visibleGraphEdges, visualEdges])
+  const engineeringNodeRenderContext = useMemo<EngineeringNodeRenderContextValue>(() => ({
+    models: engineeringNodeModels,
+    nodeOrder,
+    counts: edgePortPlan.counts,
+    runStates: nodeRunStates,
+    onSelect: onSelectNode,
+  }), [edgePortPlan.counts, engineeringNodeModels, nodeOrder, nodeRunStates, onSelectNode])
+  const outcomeNodeModels = useMemo(() => buildOutcomeNodeModels(renderGraph, nodeRunStates), [nodeRunStates, renderGraph])
+  const outcomeNodeRenderContext = useMemo<OutcomeNodeRenderContextValue>(() => ({
+    models: outcomeNodeModels,
+    nodeOrder,
+    counts: edgePortPlan.counts,
+    expandedNodeIds: expandedMainNodeIds,
+    runStates: nodeRunStates,
+    probeState: testProbeState,
+    probeSelectedNodeIds,
+    onSelect: onSelectNode,
+  }), [edgePortPlan.counts, expandedMainNodeIds, nodeOrder, nodeRunStates, onSelectNode, outcomeNodeModels, probeSelectedNodeIds, testProbeState])
   const initialFocusId = focusNodeId || graph.nodes.find((node) => node.scope !== 'root')?.id || graph.nodes[0]?.id || null
 
-  const CustomNode = useCallback(({ data }: { data: Record<string, unknown> }) => {
+  const CompactCanvasNode = useCallback(({ data }: { data: Record<string, unknown> }) => {
     const node = data as unknown as FlowNode
     const resolvedNodeViewMode = nodeViewMode
     const runState = nodeRunStates?.get(node.id)
@@ -397,24 +627,32 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
         onSelect={onSelectNode}
       />
     )
-  }, [compactStatic, edgePortPlan, expandedMainNodeIds, graphEdges, nodeById, nodeOrder, nodeRunStates, nodeViewMode, onSelectNode, probeSelectedNodeIds, readOnlyGraph, selectedNode, testProbeState])
+  }, [compactStatic, edgePortPlan, expandedMainNodeIds, graphEdges, nodeById, nodeOrder, nodeRunStates, nodeViewMode, onSelectNode, probeSelectedNodeIds, selectedNode, testProbeState])
 
-  const nodeTypes = useMemo(() => ({ custom: CustomNode }), [CustomNode])
+  const compactNodeTypes = useMemo(() => ({ custom: CompactCanvasNode }), [CompactCanvasNode])
+  const nodeTypes = compactStatic ? compactNodeTypes : displayMode === 'engineering' ? ENGINEERING_NODE_TYPES : OUTCOME_NODE_TYPES
   const initialNodes: FlowGraphNode[] = useMemo(() => graph.nodes.map((node) => {
     const dimensions = FLOW_NODE_DIMENSIONS[nodeViewMode]
+    const runState = nodeRunStates?.get(node.id)
     return {
       id: node.id,
       type: 'custom',
       position: layout[node.id] || { x: node.x, y: node.y },
-      data: node as unknown as Record<string, unknown>,
+      data: {
+        ...node,
+        __runtimeRenderKey: `${displayMode}:${runState?.status || 'normal'}`,
+      } as unknown as Record<string, unknown>,
+      className: runState ? `cf-runtime-node run-node-${runState.status}` : '',
       deletable: !node.locked && !isStartNode(node, node.id),
       style: { width: dimensions.width, height: dimensions.height },
     }
-  }), [expandedMainNodeIds, graph.nodes, layout, nodeViewMode])
+  }), [displayMode, graph.nodes, layout, nodeRunStates, nodeViewMode])
   const initialEdges: FlowGraphEdge[] = useMemo(() => {
     const branchLaneBySource = new Map<string, number>()
-    return graphEdges.map((edge, index) => {
+    const controlEdges = visibleGraphEdges.map((edge, index) => {
       const branch = edge.scope === 'branch'
+      const edgeLabel = String(edge.label || '').trim()
+      const failureRoute = edge.scope === 'failure' || /fail|error|异常|失败/i.test(edgeLabel)
       const runEdgeStatus = runEdgeStates.get(`${edge.from}->${edge.to}`)
       const isRunActive = runEdgeStatus === 'active'
       const isRunVisited = runEdgeStatus === 'visited'
@@ -422,7 +660,9 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
       const sourceAccent = isStartNode(sourceNode, edge.from)
         ? '#7d8791'
         : sourceNode ? getNodeCategory(sourceNode).color : 'var(--accent)'
-      const normalStroke = branch ? '#5e8bd8' : sourceAccent
+      const normalStroke = displayMode === 'engineering'
+        ? failureRoute ? '#d26764' : branch ? '#2f7fbe' : '#6d7c85'
+        : branch ? '#5e8bd8' : sourceAccent
       const lane = branch ? (branchLaneBySource.get(edge.from) || 0) : 0
       if (branch) branchLaneBySource.set(edge.from, lane + 1)
       const ports = edgePortPlan.edgePorts.get(`${index}:${edge.from}->${edge.to}`) || { sourceSide: 'right', targetSide: 'left', sourceIndex: 0, targetIndex: 0 }
@@ -433,26 +673,53 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
         id: `edge-${index}-${edge.from}-${edge.to}`,
         source: edge.from,
         target: edge.to,
-        sourceHandle: getPortHandleId('source', ports.sourceSide, ports.sourceIndex),
-        targetHandle: getPortHandleId('target', ports.targetSide, ports.targetIndex),
-        className: runActive
+        sourceHandle: displayMode === 'engineering' ? engineeringControlHandleId('source') : getPortHandleId('source', ports.sourceSide, ports.sourceIndex),
+        targetHandle: displayMode === 'engineering' ? engineeringControlHandleId('target') : getPortHandleId('target', ports.targetSide, ports.targetIndex),
+        className: `${displayMode === 'engineering' ? `cf-engineering-control-edge${failureRoute ? ' failure' : branch ? ' branch' : ''}` : ''} ${runActive
           ? isRunActive ? 'cf-run-edge-active' : isRunVisited ? 'cf-run-edge-visited' : 'cf-run-edge-pending'
-          : '',
-        animated: false,
+          : ''}`,
+        animated: isRunActive,
         type: 'default',
-        label: branch ? edge.label || '分支' : undefined,
+        label: displayMode === 'engineering' ? edgeLabel || (failureRoute ? '失败处理' : branch ? '条件分支' : undefined) : branch ? edgeLabel || '分支' : undefined,
         data: { scope: edge.scope || 'root', label: edge.label || '', lane, loopY, runEdgeStatus: runEdgeStatus || '' },
         zIndex: isRunActive ? 3 : isRunVisited ? 2 : 0,
         style: {
           stroke: isRunActive ? '#d05b2f' : normalStroke,
           strokeWidth: isRunActive ? 5 : isRunVisited ? 3.4 : branch ? 2.4 : 2.8,
-          strokeDasharray: isRunActive ? 'none' : branch ? '6 5' : undefined,
+          strokeDasharray: isRunActive ? '9 7' : branch ? '6 5' : undefined,
           filter: isRunActive ? 'drop-shadow(0 0 4px rgba(208, 91, 47, .72))' : undefined,
         },
         markerEnd: { type: MarkerType.ArrowClosed, color: isRunActive ? '#d05b2f' : normalStroke },
       }
     })
-  }, [edgePortPlan, graphEdges, layout, nodeById, runActive, runEdgeStates])
+    const relationEdges = dataRelations.map((relation, relationIndex) => {
+      const index = visibleGraphEdges.length + relationIndex
+      const ports = edgePortPlan.edgePorts.get(`${index}:${relation.from}->${relation.to}`) || { sourceSide: 'right', targetSide: 'left', sourceIndex: 0, targetIndex: 0 }
+      const engineeringRelation = displayMode === 'engineering' && relation.fromField && relation.toField
+      return {
+        id: `data-${relation.from}-${relation.to}-${relation.key}`,
+        source: relation.from,
+        target: relation.to,
+        sourceHandle: engineeringRelation ? engineeringHandleId('source', relation.fromField!) : getPortHandleId('source', ports.sourceSide, ports.sourceIndex),
+        targetHandle: engineeringRelation ? engineeringHandleId('target', relation.toField!) : getPortHandleId('target', ports.targetSide, ports.targetIndex),
+        className: `cf-data-edge${relation.kind === 'dependency' ? ' dependency' : ''}`,
+        type: 'default',
+        label: relation.label || relation.key,
+        selectable: false,
+        deletable: false,
+        focusable: false,
+        data: { scope: 'data', label: relation.label || relation.key, expression: relation.expression || relation.key, source: relation.source || '' },
+        zIndex: engineeringRelation ? 2 : -1,
+        style: engineeringRelation
+          ? relation.kind === 'dependency'
+            ? { stroke: '#8664bd', strokeWidth: 2.2, strokeDasharray: '6 4' }
+            : { stroke: '#3479df', strokeWidth: 2.4 }
+          : { stroke: '#6f968b', strokeWidth: 1.8, strokeDasharray: '3 6' },
+        markerEnd: { type: MarkerType.ArrowClosed, color: engineeringRelation ? relation.kind === 'dependency' ? '#8664bd' : '#3479df' : '#6f968b' },
+      } satisfies FlowGraphEdge
+    })
+    return [...controlEdges, ...relationEdges]
+  }, [dataRelations, displayMode, edgePortPlan, layout, nodeById, runActive, runEdgeStates, visibleGraphEdges])
 
   const [nodes, setNodes] = useState<FlowGraphNode[]>(initialNodes)
   const [edges, setEdges] = useState<FlowGraphEdge[]>(initialEdges)
@@ -476,6 +743,15 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
       || candidate.y + candidate.height + 18 <= item.y
       || item.y + item.height + 18 <= candidate.y
     ))
+    const overlapsMainNode = (candidate: { x: number; y: number; width: number; height: number }) => nodes.some((item) => {
+      const size = getGraphNodeSize(item)
+      return !(
+        candidate.x + candidate.width + 12 <= item.position.x
+        || item.position.x + size.width + 12 <= candidate.x
+        || candidate.y + candidate.height + 12 <= item.position.y
+        || item.position.y + size.height + 12 <= candidate.y
+      )
+    })
 
     return nodeEditors.reduce<NodeEditorPlacement[]>((result, editor) => {
       const graphNode = nodes.find((node) => node.id === editor.nodeId)
@@ -491,25 +767,24 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
       const centerX = graphNode.position.x + nodeWidth / 2
       const centerY = graphNode.position.y + nodeHeight / 2
       const satelliteGap = 48
-      const topY = graphNode.position.y - editor.height - satelliteGap
+      const topY = Math.max(24, graphNode.position.y - editor.height - satelliteGap)
       const bottomY = graphNode.position.y + nodeHeight + 34
       const leftX = graphNode.position.x - editor.width - satelliteGap
       const rightX = graphNode.position.x + nodeWidth + satelliteGap
       const preferredBySection: Record<NodeDetailSection, Omit<NodeEditorPlacement, keyof CanvasNodeEditor>> = {
-        contract: { x: leftX, y: graphNode.position.y - 150, side: 'left' },
+        contract: { x: leftX, y: Math.max(24, graphNode.position.y - 150), side: 'left' },
         inputs: { x: leftX, y: centerY - editor.height / 2, side: 'left' },
         outputs: { x: centerX - editor.width / 2, y: bottomY, side: 'bottom' },
-        component: { x: rightX, y: graphNode.position.y - 180, side: 'right' },
-        model: { x: rightX, y: graphNode.position.y - 180, side: 'right' },
+        component: { x: rightX, y: Math.max(24, graphNode.position.y - 180), side: 'right' },
+        model: { x: rightX, y: Math.max(24, graphNode.position.y - 180), side: 'right' },
         resources: { x: rightX, y: centerY - editor.height / 2, side: 'right' },
         routing: { x: leftX, y: centerY - editor.height / 2, side: 'left' },
         safety: { x: rightX, y: bottomY, side: 'bottom' },
         runtime: { x: rightX, y: centerY - editor.height / 2, side: 'right' },
         artifacts: { x: centerX - editor.width / 2, y: bottomY, side: 'bottom' },
-        config: { x: rightX + 36, y: graphNode.position.y - 130, side: 'right' },
       }
       const baseX = rightX
-      const baseY = graphNode.position.y - 180
+      const baseY = Math.max(24, graphNode.position.y - 180)
       const rightSlots = Array.from({ length: 12 }, (_, slot) => ({
         x: baseX + (slot % 2) * NODE_EDITOR_SLOT_WIDTH,
         y: baseY + Math.floor(slot / 2) * NODE_EDITOR_SLOT_HEIGHT,
@@ -529,12 +804,28 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
         ...rightSlots,
         ...leftSlots,
       ]
-      const chosen = candidates.find((candidate) => !overlaps({ ...candidate, width: editor.width, height: editor.height })) || candidates[0]
+      const wrapper = wrapperRef.current
+      const viewport = flowInstance?.getViewport()
+      const visiblePadding = 24
+      const visibleLeft = wrapper && viewport ? (visiblePadding - viewport.x) / viewport.zoom : Number.NEGATIVE_INFINITY
+      const visibleTop = wrapper && viewport ? (visiblePadding - viewport.y) / viewport.zoom : Number.NEGATIVE_INFINITY
+      const visibleRight = wrapper && viewport ? (wrapper.clientWidth - visiblePadding - viewport.x) / viewport.zoom : Number.POSITIVE_INFINITY
+      const visibleBottom = wrapper && viewport ? (wrapper.clientHeight - visiblePadding - viewport.y) / viewport.zoom : Number.POSITIVE_INFINITY
+      const keepVisible = (candidate: Omit<NodeEditorPlacement, keyof CanvasNodeEditor>) => ({
+        ...candidate,
+        x: Math.min(Math.max(candidate.x, visibleLeft), Math.max(visibleLeft, visibleRight - editor.width)),
+        y: Math.min(Math.max(candidate.y, visibleTop), Math.max(visibleTop, visibleBottom - editor.height)),
+      })
+      const visibleCandidates = candidates.map(keepVisible)
+      const chosen = visibleCandidates.find((candidate) => {
+        const bounds = { ...candidate, width: editor.width, height: editor.height }
+        return !overlaps(bounds) && !overlapsMainNode(bounds)
+      }) || visibleCandidates.find((candidate) => !overlaps({ ...candidate, width: editor.width, height: editor.height })) || visibleCandidates[0]
       occupied.push({ ...chosen, width: editor.width, height: editor.height })
       result.push({ ...editor, ...chosen })
       return result
     }, [])
-  }, [nodeEditorPositions, nodeEditors, nodes])
+  }, [flowInstance, nodeEditorPositions, nodeEditors, nodes])
   const hasNodeEditors = nodeEditorPlacements.length > 0
 
   useEffect(() => {
@@ -545,8 +836,26 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
     })
   }, [nodeEditorPlacements, nodeEditorPositions, onNodeEditorPositionChange])
 
-  useEffect(() => setNodes(initialNodes), [initialNodes])
-  useEffect(() => setEdges(initialEdges), [initialEdges])
+  useEffect(() => {
+    setNodes(initialNodes)
+    flowInstance?.setNodes(initialNodes)
+  }, [flowInstance, initialNodes])
+  useEffect(() => {
+    setEdges(initialEdges)
+    flowInstance?.setEdges(initialEdges)
+  }, [flowInstance, initialEdges])
+  useEffect(() => {
+    if (!flowInstance || compactStatic) return
+    const selectedId = selectedNode?.id || null
+    const currentNodes = flowInstance.getNodes() as FlowGraphNode[]
+    const selectionMatches = currentNodes.every((node) => Boolean(node.selected) === (node.id === selectedId))
+    if (selectionMatches) return
+    flowInstance.setNodes(currentNodes.map((node) => (
+      Boolean(node.selected) === (node.id === selectedId)
+        ? node
+        : { ...node, selected: node.id === selectedId }
+    )))
+  }, [compactStatic, displayMode, flowInstance, selectedNode?.id])
   useEffect(() => {
     const next = graph.annotations || []
     annotationsRef.current = next
@@ -572,11 +881,11 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
       flowInstance.setCenter(
         target.position.x + targetSize.width / 2,
         target.position.y + targetSize.height / 2,
-        { zoom: nodeViewMode === 'detailed' ? 1 : 1.02, duration: 260 },
+        { zoom: displayMode === 'engineering' ? 1.02 : 0.78, duration: 260 },
       )
     })
     return () => window.cancelAnimationFrame(frame)
-  }, [compactStatic, flowInstance, graph.id, hasNodeEditors, initialFocusId, initialNodes, nodeViewMode])
+  }, [compactStatic, displayMode, flowInstance, graph.id, hasNodeEditors, initialFocusId, initialNodes, nodeViewMode])
 
   const buildLayoutFromNodes = useCallback((items: FlowGraphNode[]) => {
     const nextLayout: Record<string, { x: number; y: number }> = {}
@@ -594,6 +903,7 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
     return items.reduce<FlowEdge[]>((result, edge) => {
       if (!edge.source || !edge.target || edge.source === edge.target) return result
       const scope = String(edge.data?.scope || 'root')
+      if (scope === 'data') return result
       const label = String(edge.data?.label || edge.label || '').trim()
       const key = `${scope}:${edge.source}->${edge.target}`
       if (seen.has(key)) return result
@@ -621,9 +931,10 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
   const fitBoundsIntoCanvas = useCallback((bounds: { x: number; y: number; width: number; height: number }, duration = 240) => {
     const wrapper = wrapperRef.current
     if (!flowInstance || !wrapper) return
-    const viewport = getViewportForBounds(bounds, wrapper.clientWidth, wrapper.clientHeight, 0.18, compactStatic ? 0.82 : 0.92, 0.08)
+    const maxZoom = compactStatic ? 0.82 : displayMode === 'engineering' ? 0.82 : 0.92
+    const viewport = getViewportForBounds(bounds, wrapper.clientWidth, wrapper.clientHeight, 0.18, maxZoom, displayMode === 'engineering' ? 0.13 : 0.08)
     void flowInstance.setViewport(viewport, { duration })
-  }, [compactStatic, flowInstance])
+  }, [compactStatic, displayMode, flowInstance])
 
   const fitCanvasContents = useCallback((duration = 240) => {
     if (nodes.length === 0) return
@@ -640,11 +951,23 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
 
   const handleFlowInit = useCallback((instance: ReactFlowInstance) => {
     setFlowInstance(instance)
-  }, [])
+    lastFittedGraphIdRef.current = ''
+    if (compactStatic) return
+    window.requestAnimationFrame(() => {
+      const target = instance.getNode(initialFocusId || initialNodes[0]?.id) || initialNodes[0]
+      if (!target) return
+      const targetSize = getGraphNodeSize(target as FlowGraphNode)
+      instance.setCenter(
+        target.position.x + targetSize.width / 2,
+        target.position.y + targetSize.height / 2,
+        { zoom: displayMode === 'engineering' ? 1.02 : 0.78, duration: 0 },
+      )
+    })
+  }, [compactStatic, displayMode, initialFocusId, initialNodes])
 
   const beginNodeEditorDrag = useCallback((event: React.PointerEvent<HTMLDivElement>, editor: NodeEditorPlacement) => {
     const target = event.target as HTMLElement
-    if (!target.closest('.cf-node-drawer-header, .cf-node-satellite-head')) return false
+    if (!target.closest('.cf-node-satellite-head')) return false
     if (target.closest('button, input, textarea, select, a, [contenteditable="true"]')) return false
     const node = nodeById.get(editor.nodeId)
     if (node) onSelectNode(node)
@@ -923,6 +1246,7 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
     })
     const aligned = currentNodes.map((node) => ({ ...node, position: result.nodeLayout[node.id] || node.position }))
     setNodes(aligned)
+    flowInstance?.setNodes(aligned)
     setNodeEditorPositions((current) => ({ ...current, ...result.satelliteLayout }))
     Object.entries(result.satelliteLayout).forEach(([editorId, position]) => {
       onNodeEditorPositionChange?.(editorId, position)
@@ -933,6 +1257,28 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
       fitBoundsIntoCanvas(result.bounds, 260)
     })
   }, [buildLayoutFromNodes, fitBoundsIntoCanvas, flowInstance, nodeEditorPlacements, nodes, onLayoutSave, onNodeEditorPositionChange, renderGraph.edges])
+
+  useEffect(() => {
+    if (!autoLayoutOnMount || !flowInstance || !onLayoutSave || initialNodes.length === 0) return
+    const graphId = graph.id || '__anonymous_graph__'
+    if (autoLayoutGraphIdRef.current === graphId) return
+    autoLayoutGraphIdRef.current = graphId
+    let started = false
+    const frame = window.requestAnimationFrame(() => {
+      started = true
+      void handleAutoAlign()
+        .then(() => onAutoLayoutComplete?.())
+        .catch((error: any) => {
+          autoLayoutGraphIdRef.current = ''
+          showToast({ title: '自动整理失败', description: error?.message || String(error), type: 'error' })
+        })
+    })
+    return () => {
+      if (started) return
+      window.cancelAnimationFrame(frame)
+      if (autoLayoutGraphIdRef.current === graphId) autoLayoutGraphIdRef.current = ''
+    }
+  }, [autoLayoutOnMount, flowInstance, graph.id, handleAutoAlign, initialNodes.length, onAutoLayoutComplete, onLayoutSave])
 
   const toggleCanvasPanel = useCallback((panel: Exclude<CanvasPanel, null>) => {
     setCanvasPanel((current) => {
@@ -965,7 +1311,8 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
   }, [libraryPresetConfig, selectLibraryCategory, selectedLibraryCategoryId, selectedLibraryPresetId])
 
   const handleNodeTemplateDragOver = useCallback((event: React.DragEvent) => {
-    if (!Array.from(event.dataTransfer.types || []).includes(NODE_TEMPLATE_MIME)) return
+    const types = Array.from(event.dataTransfer.types || [])
+    if (!types.includes(NODE_TEMPLATE_MIME) && !types.includes('application/x-cf-steward-tool')) return
     event.preventDefault()
     event.dataTransfer.dropEffect = 'copy'
   }, [])
@@ -988,6 +1335,30 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
     }
   }, [flowInstance, onCreateNode, selectedNode])
 
+  const handleCanvasDrop = useCallback(async (event: React.DragEvent) => {
+    if (event.dataTransfer.getData('application/x-cf-steward-tool') === 'pointer') {
+      event.preventDefault()
+      setActiveCanvasTool('steward-pointer')
+      const target = document.elementFromPoint(event.clientX, event.clientY) as Element | null
+      const nodeElement = target?.closest('.react-flow__node') as HTMLElement | null
+      const edgeElement = target?.closest('.react-flow__edge') as HTMLElement | null
+      if (nodeElement?.dataset.id) {
+        const node = nodeById.get(nodeElement.dataset.id)
+        if (node) onSelectNode(node)
+        onStewardSelectionChange?.({ node_ids: [nodeElement.dataset.id], edge_ids: [], field_paths: [] })
+        return
+      }
+      if (edgeElement?.dataset.id) {
+        const edge = ((flowInstance?.getEdges() as FlowGraphEdge[] | undefined) || edges).find((item) => item.id === edgeElement.dataset.id)
+        if (edge) onStewardSelectionChange?.({ node_ids: [edge.source, edge.target], edge_ids: [`${edge.source}->${edge.target}`], field_paths: [] })
+        return
+      }
+      showToast({ title: '没有指向工程对象', description: '请把指针放到节点或连线上。', type: 'info' })
+      return
+    }
+    await handleNodeTemplateDrop(event)
+  }, [edges, flowInstance, handleNodeTemplateDrop, nodeById, onSelectNode, onStewardSelectionChange])
+
   useEffect(() => {
     if (!hasNodeEditors || compactStatic) return
     setCanvasPanel(null)
@@ -1000,6 +1371,7 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
     const sourceEdges = (flowInstance?.getEdges() as FlowGraphEdge[] | undefined) || edges
     const nextEdges = sourceEdges.filter((edge) => !deletedIds.has(edge.id))
     setEdges(nextEdges)
+    flowInstance?.setEdges(nextEdges)
     await saveEdgesQuietly(nextEdges)
     setContextMenu(null)
   }, [compactStatic, edges, flowInstance, onEdgesSave, readOnlyGraph, saveEdgesQuietly])
@@ -1012,6 +1384,7 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
     const sourceEdges = (flowInstance?.getEdges() as FlowGraphEdge[] | undefined) || edges
     const nextEdges = sourceEdges.map((item) => item.id === edge.id ? { ...item, label: nextLabel, data: { ...(item.data || {}), scope: 'branch', label: nextLabel } } : item)
     setEdges(nextEdges)
+    flowInstance?.setEdges(nextEdges)
     await saveEdgesQuietly(nextEdges)
     setContextMenu(null)
   }, [edges, flowInstance, readOnlyGraph, saveEdgesQuietly])
@@ -1027,6 +1400,7 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
       data: { ...(item.data || {}), scope, label },
     } : item)
     setEdges(nextEdges)
+    flowInstance?.setEdges(nextEdges)
     await saveEdgesQuietly(nextEdges)
     setContextMenu(null)
   }, [edges, flowInstance, readOnlyGraph, saveEdgesQuietly])
@@ -1113,41 +1487,48 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
   return (
     <div
       ref={wrapperRef}
-      className={`cf-flow-graph-shell canvas-tool-${activeCanvasTool} ${fullscreen ? 'fullscreen' : ''} ${runActive ? 'run-active' : ''} ${runInProgress ? 'run-in-progress' : ''} ${runPaused ? 'run-paused' : ''}`}
+      className={`cf-flow-graph-shell notranslate display-${displayMode} canvas-tool-${activeCanvasTool} ${fullscreen ? 'fullscreen' : ''} ${runActive ? 'run-active' : ''} ${runInProgress ? 'run-in-progress' : ''} ${runPaused ? 'run-paused' : ''} ${runFinished ? 'run-finished' : ''} ${runOutcomeClass}`}
+      translate="no"
       onPointerDownCapture={trackRightPointerDown}
       onPointerMoveCapture={trackRightPointerMove}
       onPointerUpCapture={trackRightPointerUp}
     >
-      {runActive && (
+      {runFrameVisible && (
         <svg className="cf-canvas-run-frame" aria-hidden="true">
           <rect />
         </svg>
       )}
       {runCompletionVisible && (
-        <section className="cf-canvas-run-completion" role="status" aria-live="polite">
-          <CheckCircle2 aria-hidden="true" />
+        <section className={`cf-canvas-run-completion ${['failed', 'interrupted', 'cancelled'].includes(runCompletion?.status || '') ? 'failed' : ['paused', 'paused_waiting_user'].includes(runCompletion?.status || '') ? 'paused' : ''}`} role="status" aria-live="polite">
+          {['failed', 'interrupted', 'cancelled'].includes(runCompletion?.status || '') ? <AlertTriangle aria-hidden="true" /> : ['paused', 'paused_waiting_user'].includes(runCompletion?.status || '') ? <CirclePause aria-hidden="true" /> : <CheckCircle2 aria-hidden="true" />}
           <div>
-            <strong>运行完成</strong>
-            <span>本次流程已完成，正在返回设计画布。</span>
+            <strong>{['failed', 'interrupted', 'cancelled'].includes(runCompletion?.status || '') ? '运行未完成' : ['paused', 'paused_waiting_user'].includes(runCompletion?.status || '') ? '等待用户确认' : '运行完成'}</strong>
+            <span title={completionSummary(runCompletion, stableRunEvents)}>{completionSummary(runCompletion, stableRunEvents)}</span>
           </div>
-          <button type="button" onClick={onDismissRunCompletion} title="关闭完成提示" aria-label="关闭完成提示">
+          {runCompletion && ['paused', 'paused_waiting_user'].includes(runCompletion.status) && onOpenPendingInteraction && <button className="cf-canvas-run-completion-log" type="button" onClick={onOpenPendingInteraction} title="重新打开当前交互"><CirclePause aria-hidden="true" /><span>打开交互</span></button>}
+          {runCompletion && <button className="cf-canvas-run-completion-log" type="button" onClick={() => onOpenRunLog?.(runCompletion)} title="查看运行详细日志"><FileText aria-hidden="true" /><span>查看日志</span></button>}
+          <button type="button" onClick={onDismissRunCompletion} title="关闭运行结果" aria-label="关闭运行结果">
             <X aria-hidden="true" />
           </button>
         </section>
       )}
+      <OutcomeNodeRenderContext.Provider value={outcomeNodeRenderContext}>
+      <EngineeringNodeRenderContext.Provider value={engineeringNodeRenderContext}>
       <ReactFlow<FlowGraphNode, FlowGraphEdge>
-        nodes={nodes}
-        edges={edges}
+        key={`${graph.id}:${displayMode}:${compactStatic ? 'compact' : 'canvas'}`}
+        defaultNodes={initialNodes}
+        defaultEdges={initialEdges}
         nodeTypes={nodeTypes}
         onInit={handleFlowInit}
         defaultViewport={{ x: 0, y: 0, zoom: compactStatic ? 0.72 : 1.05 }}
         minZoom={0.18}
         maxZoom={1.8}
         nodesDraggable={!compactStatic && !readOnlyGraph && !canvasLocked && activeCanvasTool === 'select'}
-        nodesConnectable={!compactStatic && !readOnlyGraph && !canvasLocked && activeCanvasTool === 'connect'}
-        elementsSelectable={!compactStatic && activeCanvasTool === 'select'}
+        nodesConnectable={!compactStatic && !readOnlyGraph && Boolean(onEdgesSave) && !canvasLocked && activeCanvasTool === 'connect'}
+        elementsSelectable={!compactStatic && ['select', 'steward-pointer', 'steward-lasso'].includes(activeCanvasTool)}
         panOnDrag={!compactStatic && [1, 2]}
-        selectionOnDrag={!compactStatic && activeCanvasTool === 'select'}
+        selectionOnDrag={!compactStatic && ['select', 'steward-lasso'].includes(activeCanvasTool)}
+        selectionMode={SelectionMode.Partial}
         zoomOnScroll={!compactStatic}
         panOnScroll={false}
         zoomOnPinch={!compactStatic}
@@ -1155,15 +1536,28 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
         zoomActivationKeyCode={null}
         preventScrolling={!compactStatic}
         onDragOver={handleNodeTemplateDragOver}
-        onDrop={handleNodeTemplateDrop}
+        onDrop={handleCanvasDrop}
         onMoveStart={() => setContextMenu(null)}
-        onNodesChange={(changes: NodeChange[]) => {
-          setNodes((current) => applyNodeChanges(changes, current) as FlowGraphNode[])
-        }}
         onSelectionChange={({ nodes: selectedNodes }) => {
+          if (activeCanvasTool === 'steward-lasso') {
+            const nodeIds = selectedNodes.map((item) => item.id)
+            const selectedSet = new Set(nodeIds)
+            const edgeIds = graphEdges
+              .filter((edge) => selectedSet.has(edge.from) && selectedSet.has(edge.to))
+              .map((edge) => `${edge.from}->${edge.to}`)
+            onStewardSelectionChange?.({ node_ids: nodeIds, edge_ids: edgeIds, field_paths: [] })
+            return
+          }
           if (activeCanvasTool !== 'select' || selectedNodes.length !== 1) return
           const node = selectedNodes[0]?.data as unknown as FlowNode
           if (node) onSelectNode(node)
+        }}
+        onNodeClick={(event, graphNode) => {
+          if (activeCanvasTool !== 'steward-pointer') return
+          event.preventDefault()
+          const node = graphNode.data as unknown as FlowNode
+          onSelectNode(node)
+          onStewardSelectionChange?.({ node_ids: [node.id], edge_ids: [], field_paths: [] })
         }}
         onNodeDoubleClick={(event, graphNode) => {
           if (compactStatic || activeCanvasTool !== 'select') return
@@ -1188,7 +1582,9 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
         onNodeDragStart={() => setContextMenu(null)}
         onNodeDragStop={async () => {
           if (compactStatic || readOnlyGraph || !onLayoutSave) return
-          await onLayoutSave(buildLayoutFromNodes((flowInstance?.getNodes() as FlowGraphNode[] | undefined) || nodes))
+          const currentNodes = (flowInstance?.getNodes() as FlowGraphNode[] | undefined) || nodes
+          setNodes(currentNodes)
+          await onLayoutSave(buildLayoutFromNodes(currentNodes))
         }}
         onNodesDelete={async (deletedNodes: FlowGraphNode[]) => {
           if (compactStatic || readOnlyGraph || !onDeleteNode || deletedNodes.length === 0) return
@@ -1197,7 +1593,6 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
           deletingNodeRef.current = true
           try { await onDeleteNode(node) } finally { deletingNodeRef.current = false }
         }}
-        onEdgesChange={(changes: EdgeChange[]) => setEdges((current) => applyEdgeChanges(changes, current))}
         onConnect={async (connection: Connection) => {
           if (compactStatic || readOnlyGraph || !onEdgesSave || !connection.source || !connection.target) return
           const reason = validateConnection(connection.source, connection.target)
@@ -1223,6 +1618,7 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
             markerEnd: { type: MarkerType.ArrowClosed, color: sourceAccent },
           }, edges)
           setEdges(nextEdges)
+          flowInstance?.setEdges(nextEdges)
           await saveEdgesQuietly(nextEdges)
         }}
         onEdgesDelete={deleteEdges}
@@ -1233,7 +1629,12 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
           if (Date.now() < suppressContextMenuUntilRef.current) return
           setContextMenu({ ...getContextMenuPlacement(event.clientX, event.clientY), node: null, edge })
         }}
-        deleteKeyCode={['Delete', 'Backspace']}
+        onEdgeClick={(event, edge) => {
+          if (activeCanvasTool !== 'steward-pointer') return
+          event.preventDefault()
+          onStewardSelectionChange?.({ node_ids: [edge.source, edge.target], edge_ids: [`${edge.source}->${edge.target}`], field_paths: [] })
+        }}
+        deleteKeyCode={activeCanvasTool === 'select' ? ['Delete', 'Backspace'] : null}
         connectionLineType={ConnectionLineType.Bezier}
         connectionLineStyle={{ stroke: 'var(--accent)', strokeWidth: 2.8 }}
         onPaneClick={() => setContextMenu(null)}
@@ -1366,13 +1767,15 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
           <Panel position="top-left" className="cf-canvas-tool-rail">
             <nav aria-label="画布工具">
               <button type="button" className={activeCanvasTool === 'select' && !canvasPanel ? 'active' : ''} onClick={() => { setActiveCanvasTool('select'); setCanvasPanel(null); onCloseNodeEditor?.() }} title="选择与移动"><MousePointer2 /><span>选择</span></button>
-              <button type="button" className={activeCanvasTool === 'connect' && !canvasPanel ? 'active' : ''} onClick={activateConnectMode} title="连接节点"><GitBranch /><span>连线</span></button>
-              <button type="button" className={canvasPanel === 'nodes' ? 'active' : ''} onClick={() => toggleCanvasPanel('nodes')} title="节点库"><Box /><span>节点</span></button>
+              <button type="button" className={activeCanvasTool === 'connect' && !canvasPanel ? 'active' : ''} onClick={activateConnectMode} title={onEdgesSave ? '连接节点' : '请先在右侧解锁工程操作'} disabled={!onEdgesSave}><GitBranch /><span>连线</span></button>
+              <button type="button" className={canvasPanel === 'nodes' ? 'active' : ''} onClick={() => toggleCanvasPanel('nodes')} title={onCreateNode ? '节点库' : '请先在右侧解锁工程操作'} disabled={!onCreateNode}><Box /><span>节点</span></button>
               <button type="button" className={canvasPanel === 'notes' ? 'active' : ''} onClick={() => { onCloseNodeEditor?.(); toggleCanvasPanel('notes') }} title="画布注释"><MessageSquare /><span>注释</span></button>
               {modelPanel && <button type="button" className={canvasPanel === 'models' ? 'active' : ''} onClick={() => { onCloseNodeEditor?.(); toggleCanvasPanel('models') }} title="模型管理"><BrainCircuit /><span>模型</span></button>}
               <button type="button" className={canvasPanel === 'variables' ? 'active' : ''} onClick={() => { onCloseNodeEditor?.(); toggleCanvasPanel('variables') }} title="流程变量"><Braces /><span>变量</span></button>
               <button type="button" className={canvasPanel === 'settings' ? 'active' : ''} onClick={() => { onCloseNodeEditor?.(); toggleCanvasPanel('settings') }} title="画布配置"><Settings /><span>配置</span></button>
               {toolPanel && <button type="button" className={canvasPanel === 'tools' ? 'active' : ''} onClick={() => { onCloseNodeEditor?.(); toggleCanvasPanel('tools') }} title="MCP 工具库"><Wrench /><span>工具</span></button>}
+              {packagePanel && <button type="button" className={canvasPanel === 'package' ? 'active' : ''} onClick={() => { onCloseNodeEditor?.(); toggleCanvasPanel('package') }} title="打包当前卡带"><PackageCheck /><span>打包</span></button>}
+              <button type="button" className={canvasPanel === 'base-info' ? 'active' : ''} onClick={() => { onCloseNodeEditor?.(); toggleCanvasPanel('base-info') }} title="基座信息"><Info /><span>基座</span></button>
             </nav>
             <div className="cf-canvas-zoom-tools">
               <button type="button" onClick={() => flowInstance?.zoomIn({ duration: 180 })} title="放大"><ZoomIn /></button>
@@ -1384,8 +1787,8 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
           </Panel>
         )}
         {!compactStatic && canvasPanel && (
-          <Panel position="top-left" className={`cf-canvas-tool-panel ${canvasPanel === 'tools' || canvasPanel === 'models' ? 'resource-panel' : ''}`}>
-            <header><strong>{canvasPanel === 'nodes' ? '节点库' : canvasPanel === 'notes' ? '画布注释' : canvasPanel === 'models' ? '模型管理' : canvasPanel === 'variables' ? '流程变量' : canvasPanel === 'tools' ? '工具管理' : '画布配置'}</strong><button type="button" onClick={() => { setCanvasPanel(null); setSelectedLibraryCategoryId(null) }}>×</button></header>
+          <Panel position="top-left" className={`cf-canvas-tool-panel ${canvasPanel === 'tools' || canvasPanel === 'models' || canvasPanel === 'package' ? 'resource-panel' : ''}`}>
+            <header><strong>{canvasPanel === 'nodes' ? '节点库' : canvasPanel === 'notes' ? '画布注释' : canvasPanel === 'models' ? '模型管理' : canvasPanel === 'variables' ? '流程变量' : canvasPanel === 'tools' ? '工具管理' : canvasPanel === 'package' ? '卡带打包' : canvasPanel === 'base-info' ? '基座信息' : '卡带与画布配置'}</strong><button type="button" onClick={() => { setCanvasPanel(null); setSelectedLibraryCategoryId(null) }}>×</button></header>
             {canvasPanel === 'nodes' && (
               <div className="cf-canvas-node-library">
                 <p>拖到画布创建节点；右键打开新节点预配置。</p>
@@ -1430,6 +1833,7 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
             {canvasPanel === 'variables' && <div className="cf-canvas-data-list variables">{canvasVariables.length ? canvasVariables.map((item) => <div key={`${item.kind}-${item.name}`}><b>{item.name}</b><span>{item.kind} · {item.source}</span></div>) : <p>当前流程还没有声明输入或输出变量。</p>}</div>}
             {canvasPanel === 'settings' && (
               <div className="cf-canvas-settings">
+                {cartridgePanel}
                 <section className="cf-canvas-theme-settings" aria-label="工作台主题">
                   <div className="cf-canvas-theme-heading"><span>工作台主题</span><small>仅调整界面强调色</small></div>
                   <div className="cf-canvas-theme-presets" role="group" aria-label="选择工作台主题色">
@@ -1464,6 +1868,8 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
             )}
             {canvasPanel === 'models' && <div className="cf-canvas-resource-content">{modelPanel}</div>}
             {canvasPanel === 'tools' && <div className="cf-canvas-tool-content">{toolPanel}</div>}
+            {canvasPanel === 'package' && <div className="cf-canvas-resource-content">{packagePanel}</div>}
+            {canvasPanel === 'base-info' && <div className="cf-base-info-panel"><p>当前基座推荐使用 v0.7 协议族：</p><div><b>CartridgeFlow Protocol</b><span>v0.7 · 卡带清单与节点图</span></div><div><b>Flow Graph</b><span>v0.7 · 节点、连线、路由</span></div><div><b>LLM Binding</b><span>v0.7 · Flow 与节点级模型绑定</span></div><div><b>MCP Tool Binding</b><span>v0.7 · Flow 级工具隔离</span></div><div><b>Runtime</b><span>v0.7 · 交互暂停、恢复与产物交付</span></div></div>}
           </Panel>
         )}
         {!compactStatic && canvasPanel === 'nodes' && selectedLibraryCategory && selectedLibraryPreset && (
@@ -1518,7 +1924,6 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
             <footer><GripVertical aria-hidden="true" /><span>配置会随节点条目一起拖入画布，松开后创建</span></footer>
           </Panel>
         )}
-        {!compactStatic && <Panel position="bottom-left" className="cf-canvas-status"><span className={activeCanvasTool === 'connect' ? 'active' : ''}><i />{activeCanvasTool === 'connect' ? '连线模式' : '选择模式'}</span></Panel>}
         {!compactStatic && <MiniMap pannable zoomable nodeColor={(node) => (node.data as unknown as FlowNode).locked ? '#b7bbb4' : getNodeCategory(node.data as unknown as FlowNode).bg} nodeStrokeColor={(node) => (node.data as unknown as FlowNode).locked ? '#898f87' : getNodeCategory(node.data as unknown as FlowNode).color} nodeBorderRadius={3} maskColor="rgb(var(--cf-accent-rgb) / .12)" />}
         {contextMenu && !compactStatic && !readOnlyGraph && (
             <div
@@ -1542,27 +1947,6 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
             ) : (
               <>
                 <div className="cf-graph-menu-group cf-graph-menu-group-primary">
-                  {contextMenu.node && <div className="cf-graph-submenu-item">
-                    <button type="button">打开节点详情 <span aria-hidden="true">›</span></button>
-                    <div className="cf-graph-submenu cf-node-detail-submenu">
-                      {getAvailableNodeDetailSections(contextMenu.node, {
-                        edges: graphEdges,
-                        hasRunData: Boolean(nodeRunStates?.has(contextMenu.node.id) || stableRunEvents.some((event) => event.state === contextMenu.node!.id)),
-                        editable: !readOnlyGraph,
-                      }).map((section) => (
-                        <button
-                          key={section.id}
-                          type="button"
-                          data-section={section.id}
-                          onClick={() => {
-                            onOpenNodeEditor?.(contextMenu.node!, section.id)
-                          }}
-                        >
-                          <span><b>{section.label}</b><small>{section.description}</small></span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>}
                   {contextMenu.node && onAnnotationsSave && <button type="button" onClick={() => createAnnotation(contextMenu.node)}><span>添加关联注释</span><MessageSquarePlus aria-hidden="true" /></button>}
                   <div className="cf-graph-submenu-item">
                     <button disabled={!contextMenu.node || !onCreateNode}>新增 Flow <span aria-hidden="true">›</span></button>
@@ -1603,6 +1987,8 @@ export function FlowGraphView({ graph, selectedNode, focusNodeId, onSelectNode, 
             </div>
         )}
       </ReactFlow>
+      </EngineeringNodeRenderContext.Provider>
+      </OutcomeNodeRenderContext.Provider>
     </div>
   )
 }

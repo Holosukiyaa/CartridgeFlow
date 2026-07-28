@@ -335,13 +335,14 @@ export function RunInputDialog({
   )
 }
 
-function PendingInteractionForm({
+export function PendingInteractionForm({
   pending,
   disabled,
   onSubmit,
   artifacts = [],
   nodeById,
   artifactScopeLabel,
+  onPresentationSize,
 }: {
   pending: any
   disabled?: boolean
@@ -349,6 +350,7 @@ function PendingInteractionForm({
   artifacts?: ArtifactItem[]
   nodeById?: Map<string, FlowNode>
   artifactScopeLabel?: string
+  onPresentationSize?: (size: { width: number; height: number }) => void
 }) {
   const question = pending?.question || {}
   const isV2 = pending?.schema === 'cartridgeflow.pending_interaction.v2'
@@ -365,6 +367,7 @@ function PendingInteractionForm({
   const [values, setValues] = useState<Record<string, any>>({})
   const [sandboxDraftHash, setSandboxDraftHash] = useState('')
   const [showArtifacts, setShowArtifacts] = useState(false)
+  const presentationFrameRef = useRef<HTMLIFrameElement | null>(null)
   const canSubmitValues = (candidate: Record<string, any>) => Object.keys(properties).every((key) => !required.has(key) || candidate[key] !== undefined && candidate[key] !== '')
   const isConfirmValue = (item: string) => ['approve', 'approved', 'confirm', 'confirmed', 'yes', '通过'].includes(item.trim().toLowerCase())
   const isRevisionValue = (item: any) => {
@@ -397,6 +400,23 @@ function PendingInteractionForm({
     const firstAction = pending?.allowed_actions?.[0]
     setSelectedActionId(String(typeof firstAction === 'string' ? firstAction : firstAction?.id || ''))
   }, [pending?.interaction_id])
+  const measurePresentation = () => {
+    const frame = presentationFrameRef.current
+    const document = frame?.contentDocument
+    const body = document?.body
+    if (!document || !body || !onPresentationSize) return
+    const style = frame.contentWindow?.getComputedStyle(body)
+    const paddingX = Number.parseFloat(style?.paddingLeft || '0') + Number.parseFloat(style?.paddingRight || '0')
+    const paddingBottom = Number.parseFloat(style?.paddingBottom || '0')
+    const bodyRect = body.getBoundingClientRect()
+    const children = [...body.children] as HTMLElement[]
+    const naturalWidth = Math.max(0, ...children.map((item) => item.getBoundingClientRect().width)) + paddingX
+    const naturalBottom = Math.max(bodyRect.top, ...children.map((item) => item.getBoundingClientRect().bottom))
+    onPresentationSize({
+      width: Math.ceil(Math.max(320, Math.min(960, naturalWidth || body.scrollWidth))),
+      height: Math.ceil(Math.max(120, Math.min(600, naturalBottom - bodyRect.top + paddingBottom))),
+    })
+  }
   return (
     <div className="cf-pending-card">
       <div className="cf-pending-head">
@@ -405,7 +425,7 @@ function PendingInteractionForm({
       </div>
       <p>{question.prompt || '该节点需要用户输入后继续。'}</p>
       {isV2 && pending?.presentation?.html && (
-        <iframe className="cf-passive-interaction-frame" title="interaction preview" sandbox="" srcDoc={passiveHtmlDocument(pending.presentation.html)} />
+        <iframe ref={presentationFrameRef} className="cf-passive-interaction-frame" title="interaction preview" sandbox="allow-same-origin" srcDoc={passiveHtmlDocument(pending.presentation.html)} onLoad={measurePresentation} />
       )}
       {isSandboxed && (
         <InteractionSandboxFrame
@@ -414,7 +434,7 @@ function PendingInteractionForm({
           onPropose={(actionId) => { if (allowedActions.some((item: any) => item.id === actionId)) setSelectedActionId(actionId) }}
         />
       )}
-      {isV2 && allowedActions.length > 0 && (
+      {isV2 && allowedActions.length > 1 && (
         <div className="cf-host-action-picker">
           <span>由底座提交下一步</span>
           <div>
@@ -426,20 +446,19 @@ function PendingInteractionForm({
           </div>
         </div>
       )}
-      <div className="cf-pending-draft-entry">
-        <div className="cf-pending-draft-copy">
-          <strong>草稿作品</strong>
-          <span>{artifacts.length > 0 ? '确认前可查看 ' + artifacts.length + ' 个相关产物' : '当前没有可查看的草稿产物'}</span>
-        </div>
-        <button
-          type="button"
-          className="cf-btn-outline cf-pending-draft-toggle"
-          disabled={artifacts.length === 0}
-          onClick={() => setShowArtifacts((value) => !value)}
-        >
-          {showArtifacts ? '收起草稿' : '查看草稿'}
-        </button>
-      </div>
+      {artifacts.length > 0 && <div className="cf-pending-draft-entry">
+          <div className="cf-pending-draft-copy">
+            <strong>草稿作品</strong>
+            <span>确认前可查看 {artifacts.length} 个相关产物</span>
+          </div>
+          <button
+            type="button"
+            className="cf-btn-outline cf-pending-draft-toggle"
+            onClick={() => setShowArtifacts((value) => !value)}
+          >
+            {showArtifacts ? '收起草稿' : '查看草稿'}
+          </button>
+        </div>}
       {showArtifacts && artifacts.length > 0 && (
         <div className="cf-pending-draft-panel">
           <div className="cf-pending-draft-panel-head">
@@ -480,7 +499,7 @@ function PendingInteractionForm({
                 />
               ) : (
                 <textarea
-                  rows={3}
+                  rows={2}
                   value={values[key] || ''}
                   placeholder={config?.description || ''}
                   onChange={(event) => setValues((current) => ({ ...current, [key]: event.target.value }))}
@@ -774,6 +793,7 @@ export function TestBenchView({
   const logBodyRef = useRef<HTMLDivElement | null>(null)
   const logDragRef = useRef<{ startY: number; startHeight: number } | null>(null)
   const probePanelRef = useRef<HTMLElement | null>(null)
+  const autoOpenedPendingRef = useRef('')
   const defaultNodeId = detail.graph.nodes[0]?.id || ''
   const [startNodeId, setStartNodeId] = useState(defaultNodeId)
   const [endNodeId, setEndNodeId] = useState(defaultNodeId)
@@ -869,6 +889,14 @@ export function TestBenchView({
   useEffect(() => {
     if (!pendingInteraction) setPendingModalOpen(false)
   }, [pendingInteraction])
+
+  useEffect(() => {
+    const pendingKey = latestRun?.run_id && rawPendingId ? `${latestRun.run_id}:${rawPendingId}` : ''
+    if (!pendingInteraction || !pendingKey || autoOpenedPendingRef.current === pendingKey) return
+    autoOpenedPendingRef.current = pendingKey
+    if (pendingNode) setSelectedNode(pendingNode)
+    setPendingModalOpen(true)
+  }, [latestRun?.run_id, pendingInteraction, pendingNode, rawPendingId])
 
   useEffect(() => {
     if (!rawPendingInteraction) setLockedPendingKey('')
@@ -1196,7 +1224,7 @@ export function TestBenchView({
                 <strong>UI 预览</strong>
                 <button type="button" onClick={() => setShowUiPreview(false)}>x</button>
               </div>
-              <iframe className="cf-welcome-frame" title="latest-ui-preview" srcDoc={latestUiHtml} sandbox="" />
+              <iframe className="cf-welcome-frame" title="latest-ui-preview" srcDoc={passiveHtmlDocument(latestUiHtml)} sandbox="" />
             </div>
           )}
           {latestRun && showArtifactsPreview && runArtifacts.length > 0 && (

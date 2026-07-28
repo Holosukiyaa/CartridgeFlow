@@ -1,6 +1,8 @@
 import json
 import hashlib
 import shutil
+import threading
+import time
 import uuid
 from copy import deepcopy
 from datetime import datetime
@@ -44,6 +46,7 @@ class CartridgeRunner:
         self.checkpoint_manager = CheckpointManager()
         self.runs_dir = self.root / RUNS_DIR
         self.runs_dir.mkdir(parents=True, exist_ok=True)
+        self._json_lock = threading.RLock()
         self._mark_interrupted_runs()
 
     def _normalize_run_inputs(self, manifest: dict, inputs: dict | None) -> dict:
@@ -322,7 +325,8 @@ class CartridgeRunner:
                 store = _state_doc["context"].setdefault("store", {})
                 params_ = state_.get("params") or {}
                 preset_config_ = params_.get("preset_config") or {}
-                abort_on_failed = bool(state_.get("abort_on_failed") or params_.get("abort_on_failed") or preset_config_.get("abort_on_failed"))
+                failure_policy = state_.get("failure_policy") or params_.get("failure_policy") or preset_config_.get("failure_policy") or "fail_closed"
+                abort_on_failed = bool(state_.get("abort_on_failed") or params_.get("abort_on_failed") or preset_config_.get("abort_on_failed")) or failure_policy not in {"continue_with_report", "skip_with_report"}
                 input_key = params_.get("input") or preset_config_.get("from") or preset_config_.get("source") or preset_config_.get("items")
 
                 def _truncate(val, limit=2000):
@@ -403,6 +407,20 @@ class CartridgeRunner:
                         _state_doc["context"]["_cancel_flow"] = {"state": state_name_, "reason": "user_cancelled"}
                         event_type = "lab_node_cancelled"
                         event_msg = f"节点 {state_name_} 已随运行取消"
+                    elif result.get("failed"):
+                        lab_failed = True
+                        error_envelope = self._record_node_failure(run, run_dir, state_name_, result)
+                        if result.get("paused"):
+                            store.pop("_pending_interaction", None)
+                        if abort_on_failed or result.get("paused"):
+                            _state_doc["context"]["_abort_flow"] = {
+                                "state": state_name_,
+                                "reason": error_envelope["message"],
+                                "error_id": error_envelope["error_id"],
+                                "action": result.get("action"),
+                            }
+                        event_type = "lab_node_failed"
+                        event_msg = f"节点 {state_name_} 执行失败：{error_envelope['message']}"
                     elif result.get("paused") and result.get("pause_status") == "paused_waiting_user":
                         pending = result.get("pending_interaction") if isinstance(result.get("pending_interaction"), dict) else {}
                         pending["node_id"] = state_name_
@@ -416,18 +434,6 @@ class CartridgeRunner:
                         }
                         event_type = "lab_node_paused"
                         event_msg = f"节点 {state_name_} 暂停等待用户输入"
-                    elif result.get("failed"):
-                        lab_failed = True
-                        error_envelope = self._record_node_failure(run, run_dir, state_name_, result)
-                        if abort_on_failed:
-                            _state_doc["context"]["_abort_flow"] = {
-                                "state": state_name_,
-                                "reason": error_envelope["message"],
-                                "error_id": error_envelope["error_id"],
-                                "action": result.get("action"),
-                            }
-                        event_type = "lab_node_failed"
-                        event_msg = f"节点 {state_name_} 执行失败：{error_envelope['message']}"
                     else:
                         event_type = "lab_node_skipped" if skipped else "lab_node_executed"
                         event_msg = f"节点 {state_name_} 已{'跳过' if skipped else '执行'}：{result.get('action', '')}"
@@ -477,14 +483,15 @@ class CartridgeRunner:
         cancelled = (state_doc.get("context") or {}).get("_cancel_flow") or self._run_cancelled_on_disk(run_id)
         aborted = (state_doc.get("context") or {}).get("_abort_flow")
         pause_status = str((paused or {}).get("status") or "paused_waiting_user") if paused else ""
-        if paused and pause_status == "paused_waiting_user":
+        failed = bool(lab_failed or aborted)
+        if paused and not failed and pause_status == "paused_waiting_user":
             run["pending_interaction"] = paused.get("pending_interaction") or run.get("pending_interaction") or {}
         else:
             run.pop("pending_interaction", None)
         target_status = (
             "cancelled" if cancelled
+            else "failed" if failed
             else pause_status if paused
-            else "failed" if lab_failed or aborted
             else "completed" if normalized_probe_range or state_doc["current_state"] == "complete"
             else "completed"
         )
@@ -495,8 +502,8 @@ class CartridgeRunner:
         # 这是测试台"能检测到数据链断裂"的权威结论——之前这些 bug 在测试台完全隐形。
         data_chain = self._summarize_data_chain(run_id, state_doc, normalized_probe_range)
         run["data_chain"] = data_chain
-        run_event_type = "run_cancelled" if cancelled else "run_paused" if paused else "run_failed" if lab_failed or aborted else "run_completed"
-        run_event_message = "Root Flow 执行已取消" if cancelled else "Root Flow 已在节点边界暂停" if pause_status == "paused" else "Root Flow 暂停等待用户输入" if paused else "Root Flow 执行失败" if lab_failed or aborted else "Root Flow 执行完成"
+        run_event_type = "run_cancelled" if cancelled else "run_failed" if failed else "run_paused" if paused else "run_completed"
+        run_event_message = "Root Flow 执行已取消" if cancelled else "Root Flow 执行失败" if failed else "Root Flow 已在节点边界暂停" if pause_status == "paused" else "Root Flow 暂停等待用户输入" if paused else "Root Flow 执行完成"
         self._append_event(
             run_id, cartridge_id, run_event_type, run["current_state"],
             run_event_message, {"status": run["status"], "data_chain": data_chain, "error_envelope": run.get("error")},
@@ -977,6 +984,80 @@ class CartridgeRunner:
             raise FileNotFoundError(f"Run not found: {run_id}")
         return self._read_json(path)
 
+    def create_queued_run(
+        self,
+        cartridge_id: str,
+        inputs: dict,
+        *,
+        run_id: str | None = None,
+        probe_range: dict | None = None,
+        test_mode: dict | None = None,
+        compatibility: dict | None = None,
+    ) -> dict:
+        """Persist an async run before its worker starts so clients can poll immediately."""
+        run_id = run_id or f"run_{uuid.uuid4().hex[:12]}"
+        created_at = now_iso()
+        report = compatibility or {}
+        run = {
+            "run_id": run_id,
+            "cartridge_id": cartridge_id,
+            "status": "created",
+            "current_state": "queued",
+            "inputs": dict(inputs or {}),
+            "run_mode": "probe_range" if probe_range else "full_flow",
+            "probe_range": probe_range,
+            "test_mode": dict(test_mode or {}),
+            "compatibility": {
+                "ok": report.get("ok"),
+                "status": report.get("status"),
+                "legacy": report.get("legacy"),
+                "summary": report.get("summary", {}),
+                "findings": report.get("findings", []),
+            },
+            "errors": [],
+            "status_history": [{"from": None, "to": "created", "reason": "run_queued", "at": created_at}],
+            "created_at": created_at,
+            "updated_at": created_at,
+        }
+        self._write_json(self.runs_dir / run_id / "run.json", run)
+        self._append_event(run_id, cartridge_id, "run_queued", "queued", "Run queued for execution", {})
+        return run
+
+    def fail_queued_run(self, run_id: str, cartridge_id: str, envelope: dict) -> dict:
+        """Close an async run whose worker failed before or during normal run creation."""
+        try:
+            run = self.get_run(run_id)
+        except FileNotFoundError:
+            run = self.create_queued_run(cartridge_id, {}, run_id=run_id)
+        previous = str(run.get("status") or "created")
+        if previous != "failed":
+            try:
+                self._set_run_status(run, "failed", "async_run_failed")
+            except ValueError:
+                run["status"] = "failed"
+                run.setdefault("status_history", []).append({
+                    "from": previous,
+                    "to": "failed",
+                    "reason": "async_run_failed",
+                    "at": now_iso(),
+                })
+        run["current_state"] = str(envelope.get("node_id") or run.get("current_state") or "queued")
+        run["error"] = envelope
+        errors = run.setdefault("errors", [])
+        if not any(isinstance(item, dict) and item.get("error_id") == envelope.get("error_id") for item in errors):
+            errors.append(envelope)
+        run["updated_at"] = now_iso()
+        self._write_json(self.runs_dir / run_id / "run.json", run)
+        self._append_event(
+            run_id,
+            cartridge_id,
+            "run_failed",
+            run["current_state"],
+            "Run failed before asynchronous execution completed",
+            {"status": "failed", "error_envelope": envelope},
+        )
+        return run
+
     def delete_run(self, run_id: str) -> dict:
         """Delete one completed or stopped run and its local evidence directory."""
         normalized_id = str(run_id or "").strip()
@@ -1282,7 +1363,8 @@ class CartridgeRunner:
                 store = _state_doc["context"].setdefault("store", {})
                 params_ = state_.get("params") or {}
                 preset_config_ = params_.get("preset_config") or {}
-                abort_on_failed = bool(state_.get("abort_on_failed") or params_.get("abort_on_failed") or preset_config_.get("abort_on_failed"))
+                failure_policy = state_.get("failure_policy") or params_.get("failure_policy") or preset_config_.get("failure_policy") or "fail_closed"
+                abort_on_failed = bool(state_.get("abort_on_failed") or params_.get("abort_on_failed") or preset_config_.get("abort_on_failed")) or failure_policy not in {"continue_with_report", "skip_with_report"}
                 input_key = params_.get("input") or preset_config_.get("from") or preset_config_.get("source") or preset_config_.get("items")
 
                 def _truncate(val, limit=2000):
@@ -1362,6 +1444,20 @@ class CartridgeRunner:
                         _state_doc["context"]["_cancel_flow"] = {"state": state_name_, "reason": "user_cancelled"}
                         event_type = "lab_node_cancelled"
                         event_msg = f"Node {state_name_} cancelled with its run"
+                    elif result.get("failed"):
+                        lab_failed = True
+                        error_envelope = self._record_node_failure(run, run_dir, state_name_, result)
+                        if result.get("paused"):
+                            store.pop("_pending_interaction", None)
+                        if abort_on_failed or result.get("paused"):
+                            _state_doc["context"]["_abort_flow"] = {
+                                "state": state_name_,
+                                "reason": error_envelope["message"],
+                                "error_id": error_envelope["error_id"],
+                                "action": result.get("action"),
+                            }
+                        event_type = "lab_node_failed"
+                        event_msg = f"Node {state_name_} failed: {error_envelope['message']}"
                     elif result.get("paused") and result.get("pause_status") == "paused_waiting_user":
                         pending = result.get("pending_interaction") if isinstance(result.get("pending_interaction"), dict) else {}
                         pending["node_id"] = state_name_
@@ -1375,18 +1471,6 @@ class CartridgeRunner:
                         }
                         event_type = "lab_node_paused"
                         event_msg = f"Node {state_name_} paused waiting for user input"
-                    elif result.get("failed"):
-                        lab_failed = True
-                        error_envelope = self._record_node_failure(run, run_dir, state_name_, result)
-                        if abort_on_failed:
-                            _state_doc["context"]["_abort_flow"] = {
-                                "state": state_name_,
-                                "reason": error_envelope["message"],
-                                "error_id": error_envelope["error_id"],
-                                "action": result.get("action"),
-                            }
-                        event_type = "lab_node_failed"
-                        event_msg = f"Node {state_name_} failed: {error_envelope['message']}"
                     else:
                         event_type = "lab_node_skipped" if skipped else "lab_node_executed"
                         event_msg = f"Node {state_name_} {'skipped' if skipped else 'executed'}: {result.get('action', '')}"
@@ -1443,14 +1527,15 @@ class CartridgeRunner:
         cancelled = (state_doc.get("context") or {}).get("_cancel_flow") or self._run_cancelled_on_disk(run_id)
         aborted = (state_doc.get("context") or {}).get("_abort_flow")
         pause_status = str((paused or {}).get("status") or "paused_waiting_user") if paused else ""
-        if paused and pause_status == "paused_waiting_user":
+        failed = bool(lab_failed or aborted)
+        if paused and not failed and pause_status == "paused_waiting_user":
             run["pending_interaction"] = paused.get("pending_interaction") or run.get("pending_interaction") or {}
         else:
             run.pop("pending_interaction", None)
         target_status = (
             "cancelled" if cancelled
+            else "failed" if failed
             else pause_status if paused
-            else "failed" if lab_failed or aborted
             else "completed" if normalized_probe_range or state_doc["current_state"] == "complete"
             else "completed"
         )
@@ -1459,8 +1544,8 @@ class CartridgeRunner:
         state_doc["context"]["artifacts"] = run.get("artifacts", [])
         data_chain = self._summarize_data_chain(run_id, state_doc, normalized_probe_range)
         run["data_chain"] = data_chain
-        run_event_type = "run_cancelled" if cancelled else "run_paused" if paused else "run_failed" if lab_failed or aborted else "run_completed"
-        run_event_message = "Root Flow execution cancelled" if cancelled else "Root Flow paused at a node boundary" if pause_status == "paused" else "Root Flow paused waiting for user input" if paused else "Root Flow execution failed" if lab_failed or aborted else "Root Flow execution completed"
+        run_event_type = "run_cancelled" if cancelled else "run_failed" if failed else "run_paused" if paused else "run_completed"
+        run_event_message = "Root Flow execution cancelled" if cancelled else "Root Flow execution failed" if failed else "Root Flow paused at a node boundary" if pause_status == "paused" else "Root Flow paused waiting for user input" if paused else "Root Flow execution completed"
         self._append_event(
             run_id,
             cartridge_id,
@@ -2220,10 +2305,33 @@ class CartridgeRunner:
         )
 
     def _read_json(self, path: Path) -> dict:
-        with path.open("r", encoding="utf-8") as f:
-            return json.load(f)
+        with self._json_lock:
+            for attempt in range(8):
+                try:
+                    with path.open("r", encoding="utf-8") as f:
+                        return json.load(f)
+                except PermissionError:
+                    if attempt == 7:
+                        raise
+                    time.sleep(0.003 * (attempt + 1))
+            raise RuntimeError(f"Unable to read JSON snapshot: {path}")
 
     def _write_json(self, path: Path, data: dict):
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        with self._json_lock:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+            with temporary.open("w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+                f.flush()
+            try:
+                for attempt in range(12):
+                    try:
+                        temporary.replace(path)
+                        break
+                    except PermissionError:
+                        if attempt == 11:
+                            raise
+                        time.sleep(0.003 * (attempt + 1))
+            finally:
+                if temporary.exists():
+                    temporary.unlink()

@@ -240,6 +240,35 @@ export interface FlowFiles {
   [key: string]: string | undefined
 }
 
+export type AIFlowStewardMode = 'guided' | 'delegated'
+
+export interface AIFlowSelection {
+  node_ids: string[]
+  edge_ids: string[]
+  field_paths: string[]
+}
+
+export interface AIFlowStewardContext {
+  tool: 'none' | 'pointer' | 'lasso'
+  view: 'engineering' | 'outcome'
+  revision: string
+  selection: AIFlowSelection
+  scope_policy: 'selected_and_direct_edges' | 'single_anchor'
+}
+
+export interface AIFlowStewardMessage {
+  mode: AIFlowStewardMode
+  understanding: string
+  answer: string
+  selection_revision: string
+  scope: AIFlowSelection
+  operations: Array<{ op: string; target: string; description: string }>
+  validation: { checks: string[] }
+  risk: 'none' | 'low' | 'medium' | 'high'
+  confirmation_required: boolean
+  next_step: string
+}
+
 export interface CartridgeAsset {
   id: string
   kind: string

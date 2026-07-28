@@ -6,6 +6,7 @@ import subprocess
 import sys
 import threading
 import uuid
+import hashlib
 from datetime import datetime
 from pathlib import Path
 
@@ -144,8 +145,9 @@ async def request_validation_error_handler(request: Request, exc: RequestValidat
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
     context = _request_error_context(request)
+    compatibility_blocked = isinstance(exc.detail, dict) and exc.detail.get("error") == "compatibility_blocked"
     envelope = build_runtime_error(
-        _http_error_code(exc.status_code, request.url.path),
+        "FLOW_CONTRACT_INVALID" if compatibility_blocked else _http_error_code(exc.status_code, request.url.path),
         run_id=context["run_id"],
         source=context["source"],
         cause_chain=[{"type": "HTTPException", "message": str(exc.detail)}],
@@ -303,6 +305,22 @@ class DevFlowFileSave(BaseModel):
 
 class DevFlowFilesPayload(BaseModel):
     files: dict = Field(default_factory=dict)
+
+
+class AIFlowSelection(BaseModel):
+    node_ids: list[str] = Field(default_factory=list)
+    edge_ids: list[str] = Field(default_factory=list)
+    field_paths: list[str] = Field(default_factory=list)
+
+
+class AIFlowStewardPayload(BaseModel):
+    message: str
+    mode: str = "guided"
+    view: str = "engineering"
+    revision: str = ""
+    tool: str = "none"
+    selection: AIFlowSelection = Field(default_factory=AIFlowSelection)
+    scope_policy: str = "selected_and_direct_edges"
 
 
 class CartridgeAssetPayload(BaseModel):
@@ -1796,6 +1814,96 @@ def get_lab_flow_files(cartridge_id: str):
         raise HTTPException(status_code=404, detail=str(e))
 
 
+@app.post("/api/lab/flows/{cartridge_id}/ai-steward")
+async def ask_lab_flow_ai_steward(cartridge_id: str, payload: AIFlowStewardPayload):
+    try:
+        cartridge = registry.get_cartridge(cartridge_id)
+        if not cartridge.get("editable"):
+            raise HTTPException(status_code=403, detail="Only dev flows can use the AI steward")
+        files = dev_flow_manager.read_files(cartridge_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+    mode = str(payload.mode or "guided").strip().lower()
+    view = str(payload.view or "engineering").strip().lower()
+    tool = str(payload.tool or "none").strip().lower()
+    if mode not in {"guided", "delegated"}:
+        raise HTTPException(status_code=400, detail="AI steward mode must be guided or delegated")
+    if view not in {"engineering", "outcome"}:
+        raise HTTPException(status_code=400, detail="AI steward view must be engineering or outcome")
+    if tool not in {"none", "pointer", "lasso"}:
+        raise HTTPException(status_code=400, detail="Unknown AI steward selection tool")
+    message = str(payload.message or "").strip()
+    if not message:
+        raise HTTPException(status_code=400, detail="请输入要交给 AI 管家的问题或目标")
+
+    root_flow_text = str(files.get("root_flow") or "")
+    revision = hashlib.sha256(root_flow_text.encode("utf-8")).hexdigest()[:16]
+    if payload.revision and payload.revision != revision:
+        raise HTTPException(status_code=409, detail={
+            "message": "Flow 已在选择后发生变化，请重新指向或框选后再继续。",
+            "expected_revision": revision,
+            "selection_revision": payload.revision,
+        })
+
+    graph = flow_graph_builder.build(dev_flow_manager.preview_graph(cartridge_id, files))
+    node_ids = {str(node.get("id") or "") for node in graph.get("nodes") or []}
+    edge_ids = {
+        f"{edge.get('from') or edge.get('source')}->{edge.get('to') or edge.get('target')}"
+        for edge in graph.get("edges") or []
+    }
+    selection = payload.selection.model_dump()
+    unknown_nodes = sorted(set(selection["node_ids"]) - node_ids)
+    unknown_edges = sorted(set(selection["edge_ids"]) - edge_ids)
+    invalid_fields = sorted(path for path in selection["field_paths"] if not any(
+        path == f"states.{node_id}" or path.startswith(f"states.{node_id}.")
+        for node_id in node_ids
+    ))
+    if unknown_nodes or unknown_edges or invalid_fields:
+        raise HTTPException(status_code=409, detail={
+            "message": "选区包含已经失效的工程引用，请重新选择。",
+            "unknown_nodes": unknown_nodes,
+            "unknown_edges": unknown_edges,
+            "invalid_field_paths": invalid_fields,
+        })
+
+    from core.lab.ai_steward import build_messages, parse_response
+    from core.llm import chat
+    from core.llm.config_manager import resolve_model
+
+    try:
+        steward_model = resolve_model("mentor", cartridge_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail={
+            "code": "AI_STEWARD_MODEL_UNBOUND",
+            "message": "当前 Flow 尚未绑定 AI 管家模型，请先在模型管理中为“AI 管家”分配模型 API。",
+            "role": "mentor",
+        }) from exc
+
+    try:
+        response = await chat(
+            steward_model,
+            build_messages(message, mode, view, revision, selection, graph),
+            agent_name="ai_steward",
+            phase="flow_guidance" if mode == "guided" else "flow_delegation",
+        )
+        result = parse_response(
+            response.get("content", ""),
+            mode=mode,
+            revision=revision,
+            selection=selection,
+        )
+        return {"ok": True, "message": result, "meta": response.get("meta", {})}
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        from core.llm.errors import classify_llm_error
+        error = classify_llm_error(exc)
+        raise HTTPException(status_code=error.status_code, detail=str(error))
+
+
 @app.put("/api/lab/flows/{cartridge_id}/files/{file_type}")
 def save_lab_flow_file(cartridge_id: str, file_type: str, payload: DevFlowFileSave):
     try:
@@ -2365,8 +2473,13 @@ def update_lab_flow_node(cartridge_id: str, node_id: str, payload: NodeUpdatePay
         "model_role": payload.model_role,
         "layout": payload.layout,
     }
+    provided_fields = payload.model_fields_set
     for key, value in updates.items():
-        if value is not None:
+        if key not in provided_fields:
+            continue
+        if value is None:
+            state.pop(key, None)
+        else:
             state[key] = value
 
     files["root_flow"] = _json.dumps(root_flow, ensure_ascii=False, indent=2)
@@ -2555,6 +2668,22 @@ class LabTestRunCreate(BaseModel):
     probe_range: dict | None = None
 
 
+def _compatibility_blocked_detail(report: dict) -> dict:
+    blockers = [
+        item for item in report.get("findings") or []
+        if isinstance(item, dict) and item.get("severity") == "blocker"
+    ]
+    first = blockers[0] if blockers else {}
+    location = f"节点 {first.get('node_id')}：" if first.get("node_id") else ""
+    reason = str(first.get("message") or "当前流程不符合运行契约")
+    count = len(blockers) or int((report.get("summary") or {}).get("blocker") or 0)
+    return {
+        "error": "compatibility_blocked",
+        "message": f"运行前检查发现 {count} 个阻断项。{location}{reason}",
+        "report": report,
+    }
+
+
 @app.post("/api/lab/flows/{cartridge_id}/test-run")
 def create_lab_flow_test_run(cartridge_id: str, payload: LabTestRunCreate | None = None):
     try:
@@ -2573,11 +2702,7 @@ def create_lab_flow_test_run(cartridge_id: str, payload: LabTestRunCreate | None
     except BaseManifestError as e:
         raise HTTPException(status_code=500, detail=str(e))
     if not compatibility.get("ok"):
-        raise HTTPException(status_code=400, detail={
-            "error": "compatibility_blocked",
-            "message": "Cartridge is not compatible with current base.",
-            "report": compatibility,
-        })
+        raise HTTPException(status_code=400, detail=_compatibility_blocked_detail(compatibility))
     user_inputs = (payload.inputs if payload and payload.inputs else None) or {}
     inputs = {}
     for item in cartridge.get("inputs", []):
@@ -2596,41 +2721,38 @@ def create_lab_flow_test_run(cartridge_id: str, payload: LabTestRunCreate | None
         else:
             inputs[input_id] = f"Lab {input_id}"
     run_id = f"run_{uuid.uuid4().hex[:12]}"
+    run = runner.create_queued_run(
+        cartridge_id,
+        inputs,
+        run_id=run_id,
+        probe_range=probe_range,
+        test_mode=test_mode,
+        compatibility=compatibility,
+    )
 
     def _run_test():
         try:
             runner.create_run(cartridge_id, inputs, probe_range=probe_range, run_id=run_id, test_mode=test_mode)
         except CompatibilityBlockedError as exc:
-            try:
-                runner._append_event(run_id, cartridge_id, "run_blocked", "created", "运行被兼容性检查阻断", {"report": exc.report})
-            except Exception:
-                pass
+            envelope = build_runtime_error(
+                "FLOW_CONTRACT_INVALID",
+                run_id=run_id,
+                source="runtime.async.compatibility",
+                cause_chain=[{"type": exc.__class__.__name__, "message": str(exc)}],
+            )
+            runner.fail_queued_run(run_id, cartridge_id, envelope)
+        except RuntimeFailure as exc:
+            runner.fail_queued_run(run_id, cartridge_id, exc.envelope)
         except Exception as exc:
-            try:
-                runner._append_event(run_id, cartridge_id, "run_failed", "created", f"运行失败：{exc}", {"error": str(exc)})
-            except Exception:
-                pass
+            envelope = build_runtime_error(
+                exception=exc,
+                run_id=run_id,
+                source="runtime.async.test_run",
+            )
+            write_diagnostic(runner.runs_dir / run_id, envelope, exc, {"cartridge_id": cartridge_id})
+            runner.fail_queued_run(run_id, cartridge_id, envelope)
 
     threading.Thread(target=_run_test, daemon=True).start()
-    run = {
-        "run_id": run_id,
-        "cartridge_id": cartridge_id,
-        "status": "running",
-        "current_state": "queued",
-        "inputs": inputs,
-        "run_mode": "probe_range" if probe_range else "full_flow",
-        "probe_range": probe_range,
-        "test_mode": test_mode or {},
-        "compatibility": {
-            "ok": compatibility.get("ok"),
-            "status": compatibility.get("status"),
-            "legacy": compatibility.get("legacy"),
-            "summary": compatibility.get("summary", {}),
-            "findings": compatibility.get("findings", []),
-        },
-        "created_at": datetime.now().isoformat(timespec="seconds"),
-        "updated_at": datetime.now().isoformat(timespec="seconds"),
-    }
     return {"run": run, "events": []}
 
 
@@ -2641,11 +2763,7 @@ def create_cartridge_run(payload: CartridgeRunCreate):
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except CompatibilityBlockedError as e:
-        raise HTTPException(status_code=400, detail={
-            "error": "compatibility_blocked",
-            "message": "Cartridge is not compatible with current base.",
-            "report": e.report,
-        })
+        raise HTTPException(status_code=400, detail=_compatibility_blocked_detail(e.report))
     except BaseManifestError as e:
         raise HTTPException(status_code=500, detail=str(e))
     except ValueError as e:

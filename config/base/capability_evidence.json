@@ -60,11 +60,18 @@
       "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/flow-workbench/TestBenchView.tsx"]}
     },
     "flow_analysis": {
-      "verification": "implementation_only",
-      "implementation": ["src/core/lab/flow_analyzer.py#analyze_flow_structure"],
-      "positive_tests": [],
-      "failure_tests": [],
-      "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/flow-workbench/TestBenchView.tsx"]}
+      "verification": "verified",
+      "implementation": ["src/core/lab/flow_analyzer.py#analyze_flow", "src/core/cartridge/root_flow.py#RootFlowEngine", "src/core/lab/node_executor.py#LabNodeExecutor._prepare_structured_inputs", "src/backend/main.py#analyze_lab_flow"],
+      "positive_tests": ["test_protocol_v08_runtime.ProtocolV08RuntimeTests.test_valid_v08_flow_analyzes_and_runs_with_structured_bindings", "test_protocol_v08_runtime.ProtocolV08RuntimeTests.test_analysis_digest_ignores_layout_but_changes_with_binding"],
+      "failure_tests": ["test_protocol_v08_runtime.ProtocolV08RuntimeTests.test_derived_edge_and_missing_branch_data_fail_closed", "test_protocol_v08_runtime.ProtocolV08RuntimeTests.test_runner_filters_non_control_relations"],
+      "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/flow-workbench/FlowGraphView.tsx", "src/frontend/src/pages/flow-workbench/EngineeringInspector.tsx"]}
+    },
+    "flow_resource_catalog": {
+      "verification": "verified",
+      "implementation": ["src/core/studio/resource_catalog.py#build_flow_resource_catalog", "src/core/cartridge/runner.py#CartridgeRunner.create_run", "src/core/llm/config_manager.py#build_model_binding_report", "src/backend/main.py#get_lab_flow_resource_catalog"],
+      "positive_tests": ["test_resource_catalog_v08.ResourceCatalogV08Tests.test_dlc_tool_keeps_cartridge_origin", "test_resource_catalog_v08.ResourceCatalogV08Tests.test_decision_node_requires_explicit_binding_from_flow_pool"],
+      "failure_tests": ["test_resource_catalog_v08.ResourceCatalogV08Tests.test_referenced_local_tool_without_flow_binding_is_blocked", "test_resource_catalog_v08.ResourceCatalogV08Tests.test_authoring_role_cannot_enter_cartridge_recipe"],
+      "ui": {"status": "visible", "entries": ["src/frontend/src/pages/flow-workbench/ResourceManagementPanels.tsx"]}
     },
     "data_chain": {
       "verification": "happy_path_only",
@@ -406,6 +413,27 @@
     "model_recipe_binding": "model_recipe_binding",
     "local_resource_binding": "local_resources",
     "resource_preflight": "local_resources",
-    "delivery_primary_output_guard": "delivery_guard"
+    "delivery_primary_output_guard": "delivery_guard",
+    "structured_io_contract": "flow_analysis",
+    "explicit_input_binding": "flow_analysis",
+    "typed_control_edges": "flow_analysis",
+    "executable_topology_filter": "flow_analysis",
+    "normalized_topology_projection": "flow_analysis",
+    "flow_analysis_report_v1": "flow_analysis",
+    "flow_source_digest": "flow_analysis",
+    "flow_analysis_target_gates": "flow_analysis",
+    "analysis_report_freshness_guard": "flow_analysis",
+    "derived_engineering_relations": "flow_analysis",
+    "dataflow_static_analysis": "flow_analysis",
+    "branch_data_availability_analysis": "flow_analysis",
+    "resource_dependency_analysis": "flow_analysis",
+    "policy_static_analysis": "flow_analysis",
+    "finding_contract_v1": "flow_analysis",
+    "flow_resource_catalog_v1": "flow_resource_catalog",
+    "resource_origin_tracking": "flow_resource_catalog",
+    "node_resource_binding_preflight": "flow_resource_catalog",
+    "explicit_node_model_binding": "flow_resource_catalog",
+    "silent_model_fallback_guard": "flow_resource_catalog",
+    "authoring_model_scope_isolation": "flow_resource_catalog"
   }
 }

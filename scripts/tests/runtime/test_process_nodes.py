@@ -2,6 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from core.cartridge.node_normalizer import normalize_runtime_node
 from core.lab.node_executor import LabNodeExecutor
 from core.protocol import build_v06_flow_contract_report
 
@@ -141,6 +142,22 @@ class ProcessNodeContractTests(unittest.TestCase):
 
 
 class ProcessNodeExecutionTests(unittest.TestCase):
+    def test_top_level_llm_instructions_are_preserved_for_runtime(self):
+        state = {
+            "type": "process",
+            "kind": "decision",
+            "executor": "llm",
+            "effect": "none",
+            "system_prompt": "You are a narration editor.",
+            "prompt": "Write the final narration into payload.script.",
+            "params": {},
+        }
+
+        normalized = normalize_runtime_node(state)
+
+        self.assertEqual("You are a narration editor.", normalized["params"]["system_prompt"])
+        self.assertEqual("Write the final narration into payload.script.", normalized["params"]["prompt"])
+
     def test_unknown_action_fails_instead_of_reporting_a_skipped_success(self):
         state_doc = {"context": {"store": {}}}
         result = LabNodeExecutor().execute(

@@ -13,7 +13,7 @@ import { saveNodeDraft } from './nodeEditing.ts'
 import { showToast } from '../../toast.tsx'
 import { buildNodeAuthoringPath } from './nodeAuthoring.ts'
 import { EngineeringInspector } from './EngineeringInspector.tsx'
-import { buildEngineeringDataRelations, buildEngineeringNodeModels, type EngineeringEdgeVisibility } from './engineeringNode.ts'
+import { buildEngineeringNodeModels, buildEngineeringProjection, type EngineeringEdgeVisibility } from './engineeringNode.ts'
 import { AIFlowStewardPanel } from './AIFlowStewardPanel.tsx'
 
 export function WorkbenchHeader({
@@ -131,7 +131,8 @@ export function DesignView({
   const [edgeVisibility, setEdgeVisibility] = useState<EngineeringEdgeVisibility>({ control: true, data: true, dependency: true, branch: true, failure: true })
   const [nodeDrafts, setNodeDrafts] = useState<Record<string, NodeDraft>>({})
   const [savingNodeIds, setSavingNodeIds] = useState<Set<string>>(() => new Set())
-  const engineeringDataRelations = useMemo(() => buildEngineeringDataRelations(graph), [graph])
+  const engineeringProjection = useMemo(() => buildEngineeringProjection(graph), [graph])
+  const engineeringDataRelations = engineeringProjection.relations
   const engineeringRelationCounts = useMemo(() => {
     const relations = engineeringDataRelations
     return {
@@ -270,9 +271,15 @@ export function DesignView({
     relation.kind === 'dependency' ? edgeVisibility.dependency : edgeVisibility.data
   )), [edgeVisibility.data, edgeVisibility.dependency, engineeringDataRelations])
   const engineeringNodeModels = useMemo(
-    () => engineering ? buildEngineeringNodeModels(graph, files, nodeRunStates, visibleEngineeringRelations) : new Map(),
-    [engineering, files, graph, nodeRunStates, visibleEngineeringRelations],
+    () => engineering ? buildEngineeringNodeModels(engineeringProjection.graph, files, nodeRunStates, visibleEngineeringRelations) : new Map(),
+    [engineering, engineeringProjection.graph, files, nodeRunStates, visibleEngineeringRelations],
   )
+  const canvasGraph = engineering ? engineeringProjection.graph : graph
+  const persistBusinessLayout = useCallback(async (layout: Record<string, { x: number; y: number }>) => {
+    const businessNodeIds = new Set(graph.nodes.map((node) => node.id))
+    const filtered = Object.fromEntries(Object.entries(layout).filter(([nodeId]) => businessNodeIds.has(nodeId)))
+    await onLayoutSave(filtered)
+  }, [graph.nodes, onLayoutSave])
   const emptyNodeEditors = useMemo(() => [], [])
   return (
     <div className={`cf-design-studio ${engineering ? 'engineering-mode' : 'outcome-mode'} ${engineeringInspectorOpen && engineering ? 'inspector-open' : ''} ${stewardOpen ? 'ai-steward-open' : ''} ${nodeEditors.length ? 'drawer-open' : ''}`}>
@@ -293,7 +300,7 @@ export function DesignView({
             ] as Array<[keyof EngineeringEdgeVisibility, string]>).map(([kind, label]) => (
               <label key={kind}><input type="checkbox" checked={edgeVisibility[kind]} onChange={() => setEdgeVisibility((current) => ({ ...current, [kind]: !current[kind] }))} /><i className={kind} />{label}</label>
             ))}
-            <b>{graph.nodes.length} 节点 · {graph.edges.length} 控制 · {engineeringRelationCounts.data} 数据 · {engineeringRelationCounts.dependency} 依赖</b>
+            <b>{graph.nodes.length} 节点 · {engineeringProjection.resourceCount} 资源 · {graph.edges.length} 控制 · {engineeringRelationCounts.data} 数据 · {engineeringRelationCounts.dependency} 依赖</b>
           </div>}
           <div className="cf-design-panel-toggles">
             {engineering && <button type="button" className={engineeringInspectorOpen ? 'active' : ''} onClick={() => setEngineeringInspectorOpen((current) => !current)} title={engineeringInspectorOpen ? '收起节点详情' : '展开节点详情'} aria-pressed={engineeringInspectorOpen}><PanelRight aria-hidden="true" /><span>详情</span></button>}
@@ -302,7 +309,7 @@ export function DesignView({
         </div>
         <Box className="cf-flow-panel cf-flow-overview cf-flow-overview-studio" overflow="hidden">
         <FlowGraphView
-          graph={graph}
+          graph={canvasGraph}
           files={files}
           displayMode={displayMode}
           engineeringEdgeVisibility={edgeVisibility}
@@ -312,7 +319,7 @@ export function DesignView({
           focusNodeId={focusNodeId}
           onSelectNode={onSelectNode}
           onNodeEditorPositionChange={onNodeEditorPositionChange}
-          onLayoutSave={editable ? onLayoutSave : undefined}
+          onLayoutSave={editable ? persistBusinessLayout : undefined}
           autoLayoutOnMount={editable && autoLayoutOnMount}
           onAutoLayoutComplete={onAutoLayoutComplete}
           onEdgesSave={canMutateGraph ? onEdgesSave : undefined}
@@ -433,7 +440,7 @@ export function RunHistoryPanel({ runs, selectedRunId, busy = false, onSelect, o
                 <div className="cf-canvas-history-summary"><span>摘要</span><p>{summary}</p></div>
                 <div className="cf-canvas-history-actions">
                   <button type="button" className={hasFailureLog ? 'is-error' : ''} onClick={() => onOpenLog(run)}>{hasFailureLog ? <AlertTriangle aria-hidden="true" /> : <History aria-hidden="true" />}{hasFailureLog ? '查看错误日志' : '查看日志'}</button>
-                  <button type="button" disabled={run.status !== 'completed' && !artifactCount} title={artifactCount ? `打开 ${artifactCount} 个运行产物` : run.status === 'completed' ? '打开本次运行的页面结果' : '本次运行没有可打开的产物'} onClick={() => onOpenArtifacts(run)}><FileOutput aria-hidden="true" />打开产物</button>
+                  <button type="button" disabled={run.status !== 'completed' && !artifactCount} title={artifactCount ? `打开主要产物（共 ${artifactCount} 个）` : run.status === 'completed' ? '打开本次运行的页面结果' : '本次运行没有可打开的产物'} onClick={() => onOpenArtifacts(run)}><FileOutput aria-hidden="true" />打开产物</button>
                 </div>
               </div>}
             </article>

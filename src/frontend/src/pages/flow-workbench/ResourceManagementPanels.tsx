@@ -28,7 +28,7 @@ import {
   deleteLlmProvider,
   exportLlmConfig,
   fetchLlmAssignments,
-  fetchLlmProviders,
+  fetchFlowResourceCatalog,
   fetchStudioEnvironment,
   fetchStudioPackages,
   fetchStudioReleasePreflight,
@@ -48,6 +48,7 @@ import {
   type StudioReleasePreflight,
   type StudioToolResource,
   type FlowGraph,
+  type FlowResourceCatalog,
 } from '../../api.ts'
 import { resolveNodeSemanticKind } from './flowNodeView.ts'
 
@@ -109,11 +110,10 @@ function flowModelRoles(cartridge: CartridgeDetail): ModelRole[] {
   const roles = Array.isArray(recipe.roles) ? recipe.roles : []
   const normalized = roles.flatMap((item: any) => {
     const id = String(item?.id || '').trim()
-    return id ? [{ id, label: String(item?.label || id), model: String(item?.model || '') }] : []
+    return id && id !== 'authoring' && id !== 'mentor' ? [{ id, label: String(item?.label || id), model: String(item?.model || '') }] : []
   })
-  const result: ModelRole[] = normalized.length ? normalized : [{ id: 'runtime', label: '默认运行模型' }]
-  if (!result.some((role) => role.id === 'mentor')) result.push({ id: 'mentor', label: 'AI 管家' })
-  return result
+  if (normalized.length) return normalized
+  return [{ id: 'runtime', label: 'Runtime model' }]
 }
 
 function StatusMessage({ text, tone = 'neutral' }: { text: string; tone?: 'neutral' | 'success' | 'error' }) {
@@ -140,10 +140,19 @@ export function ModelManagementPanel({ flowId, cartridge, graph }: { flowId: str
   const boundNodeCount = decisionNodes.filter((node) => Boolean(assignments.nodes?.[`${flowId}/${node.id}`]?.[node.model_role || 'runtime']?.provider_id)).length
 
   const reload = async () => {
-    const [providerData, assignmentData] = await Promise.all([fetchLlmProviders(), fetchLlmAssignments()])
-    const nextProviders = providerData.providers || []
+    const [assignmentData, resourceCatalog] = await Promise.all([fetchLlmAssignments(), fetchFlowResourceCatalog(flowId)])
+    const nextProviders = resourceCatalog.models.providers || []
     setProviders(nextProviders)
-    setAssignments(assignmentData || EMPTY_ASSIGNMENTS)
+    const nextAssignments = assignmentData || EMPTY_ASSIGNMENTS
+    nextAssignments.cartridges ||= {}
+    nextAssignments.nodes ||= {}
+    nextAssignments.cartridges[flowId] = resourceCatalog.models.flow_bindings || {}
+    for (const item of resourceCatalog.models.node_bindings || []) {
+      const key = `${flowId}/${item.node_id}`
+      if (item.binding && item.role) nextAssignments.nodes[key] = { ...(nextAssignments.nodes[key] || {}), [item.role]: item.binding }
+      else if (nextAssignments.nodes[key] && item.role) delete nextAssignments.nodes[key][item.role]
+    }
+    setAssignments(nextAssignments)
     if (!initialExpansionRef.current && nextProviders[0]) {
       initialExpansionRef.current = true
       setExpandedId(nextProviders[0].id)
@@ -415,7 +424,7 @@ export function ModelManagementPanel({ flowId, cartridge, graph }: { flowId: str
             </article>
           })}
         </div>}
-        <footer className="cf-model-stage-next"><span>节点绑定会覆盖 Flow 角色的默认选择；解绑后节点恢复为未指定状态。</span><button type="button" onClick={() => setActiveStage('flow')}>返回 Flow 绑定</button></footer>
+        <footer className="cf-model-stage-next"><span>每个 AI 节点必须从当前 Flow 的连接池中明确选择模型；解绑后该节点不可运行。</span><button type="button" onClick={() => setActiveStage('flow')}>返回 Flow 绑定</button></footer>
       </section>}
       <p className="cf-resource-manager-foot"><Info />连接 ID 是本机模型插座编号；Flow 和节点只保存连接 ID 与模型角色，不保存 API Key。</p>
     </div>
@@ -443,6 +452,7 @@ function toolDraft(tool?: StudioToolResource): ToolDraft {
 }
 
 function toolConfigured(tool: StudioToolResource, configuredKeys: Set<string>) {
+  if (tool.source !== 'local_resource') return tool.status === 'ready' || tool.status === 'available'
   if (tool.kind === 'builtin') return true
   const transportReady = tool.kind === 'remote_api' ? Boolean(tool.endpoint || tool.openapi_url) : Boolean(tool.endpoint || tool.command)
   return transportReady && (!tool.auth_env || configuredKeys.has(tool.auth_env.toUpperCase()))
@@ -452,7 +462,7 @@ function toFlowMcpTool(tool: StudioToolResource): McpTool {
   return {
     id: tool.id,
     name: tool.name,
-    type: 'builtin',
+    type: tool.source === 'cartridge_dlc' ? 'cartridge_dlc' : tool.source === 'local_resource' ? 'local_resource' : 'base_builtin',
     server: tool.server || tool.id,
     tool: tool.tool || tool.id,
     description: tool.description,
@@ -462,6 +472,7 @@ function toFlowMcpTool(tool: StudioToolResource): McpTool {
 
 export function ToolManagementPanel({ flowId, onFlowToolsChange }: { flowId: string; onFlowToolsChange?: (tools: McpTool[]) => void }) {
   const [resources, setResources] = useState<StudioResources>(EMPTY_RESOURCES)
+  const [catalog, setCatalog] = useState<FlowResourceCatalog | null>(null)
   const [configuredKeys, setConfiguredKeys] = useState<Set<string>>(new Set())
   const [expandedId, setExpandedId] = useState('')
   const [draft, setDraft] = useState<ToolDraft>(toolDraft())
@@ -472,9 +483,9 @@ export function ToolManagementPanel({ flowId, onFlowToolsChange }: { flowId: str
   const [message, setMessage] = useState<{ text: string; tone: 'neutral' | 'success' | 'error' } | null>(null)
   const importRef = useRef<HTMLInputElement>(null)
   const initialExpansionRef = useRef(false)
-  const selectedIds = resources.bindings.tools?.[flowId] || []
+  const selectedIds = (catalog?.tools || []).filter((tool) => tool.flow_binding?.bound).map((tool) => tool.id)
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds])
-  const allTools = useMemo(() => [...(resources.builtin_tools || []), ...(resources.tools || [])], [resources])
+  const allTools = useMemo(() => catalog?.tools || [], [catalog])
   const visibleTools = useMemo(() => allTools.filter((tool) => {
     if (filter === 'selected' && !selectedSet.has(tool.id)) return false
     if (filter === 'unused' && selectedSet.has(tool.id)) return false
@@ -484,13 +495,13 @@ export function ToolManagementPanel({ flowId, onFlowToolsChange }: { flowId: str
   }), [allTools, filter, kind, query, selectedSet])
 
   const reload = async () => {
-    const [resourceData, environment] = await Promise.all([fetchStudioResources(), fetchStudioEnvironment()])
+    const [resourceData, environment, resourceCatalog] = await Promise.all([fetchStudioResources(), fetchStudioEnvironment(), fetchFlowResourceCatalog(flowId)])
     setResources(resourceData)
+    setCatalog(resourceCatalog)
     setConfiguredKeys(new Set((environment.credentials || []).filter((item) => item.has_value).map((item) => item.key.toUpperCase())))
-    const selected = new Set(resourceData.bindings.tools?.[flowId] || [])
-    onFlowToolsChange?.([...(resourceData.builtin_tools || []), ...(resourceData.tools || [])].filter((tool) => selected.has(tool.id)).map(toFlowMcpTool))
+    onFlowToolsChange?.(resourceCatalog.tools.filter((tool) => tool.status === 'ready' && tool.manifest_requirement?.declared).map(toFlowMcpTool))
     if (!initialExpansionRef.current) {
-      const first = [...(resourceData.builtin_tools || []), ...(resourceData.tools || [])][0]
+      const first = resourceCatalog.tools[0]
       if (first) {
         initialExpansionRef.current = true
         setExpandedId(first.id)
@@ -506,16 +517,18 @@ export function ToolManagementPanel({ flowId, onFlowToolsChange }: { flowId: str
   }
 
   const toggleFlowTool = async (tool: StudioToolResource) => {
+    if (tool.source !== 'local_resource') return
     const next: StudioResources = JSON.parse(JSON.stringify(resources))
     next.bindings ||= { roles: {}, tools: {} }
     next.bindings.tools ||= {}
     const values = new Set(next.bindings.tools[flowId] || [])
-    if (values.has(tool.id)) values.delete(tool.id); else values.add(tool.id)
+    const resourceId = tool.resource_id || tool.id
+    if (values.has(resourceId)) values.delete(resourceId); else values.add(resourceId)
     if (values.size) next.bindings.tools[flowId] = [...values]; else delete next.bindings.tools[flowId]
     setBusy(true)
     try {
       await persist(next)
-      setMessage({ text: values.has(tool.id) ? `${tool.name} 已加入当前 Flow。` : `${tool.name} 已从当前 Flow 移除。`, tone: 'success' })
+      setMessage({ text: values.has(resourceId) ? `${tool.name} 已加入当前 Flow。` : `${tool.name} 已从当前 Flow 移除。`, tone: 'success' })
     } catch (error: any) {
       setMessage({ text: error.message || '更新 Flow 工具名单失败', tone: 'error' })
     } finally {
@@ -638,12 +651,12 @@ export function ToolManagementPanel({ flowId, onFlowToolsChange }: { flowId: str
           const configured = tool.id !== '__new__' && toolConfigured(tool, configuredKeys)
           return <article key={tool.id} className={`cf-resource-card cf-tool-resource-card ${expanded ? 'expanded' : ''}`}>
             <div className="cf-resource-card-summary tool-summary">
-              <button className="cf-tool-select" type="button" disabled={busy || tool.id === '__new__'} onClick={() => void toggleFlowTool(tool)} aria-label={selected ? '从当前 Flow 移除' : '加入当前 Flow'}><i className={selected ? 'checked' : ''}>{selected && <Check />}</i></button>
+              <button className="cf-tool-select" type="button" disabled={busy || tool.id === '__new__' || tool.source !== 'local_resource'} onClick={() => void toggleFlowTool(tool)} aria-label={selected ? '从当前 Flow 移除' : '加入当前 Flow'}><i className={selected ? 'checked' : ''}>{selected && <Check />}</i></button>
               <div className="cf-tool-summary-main">
                 <span className={`cf-resource-status ${configured ? 'ok' : 'pending'}`}><i />{configured ? '配置完整' : tool.id === '__new__' ? '尚未保存' : '等待配置'}</span>
-                <button className={`cf-resource-binding cf-tool-binding-action ${selected ? 'ok' : ''}`} type="button" disabled={busy || tool.id === '__new__'} onClick={() => void toggleFlowTool(tool)}>{selected ? <CheckCircle2 /> : <CirclePlus />}{selected ? '已加入当前 Flow' : '加入当前 Flow'}</button>
+                <button className={`cf-resource-binding cf-tool-binding-action ${selected ? 'ok' : ''}`} type="button" disabled={busy || tool.id === '__new__' || tool.source !== 'local_resource'} onClick={() => void toggleFlowTool(tool)}>{selected ? <CheckCircle2 /> : <CirclePlus />}{selected ? '已加入当前 Flow' : '加入当前 Flow'}</button>
                 {tool.id !== '__new__' && <button className="cf-tool-expand-action" type="button" onClick={() => openTool(tool)} title={expanded ? '收起工具配置' : '展开工具配置'}>{expanded ? <ChevronUp /> : <ChevronDown />}</button>}
-                <button className="cf-tool-summary-copy" type="button" onClick={() => tool.id === '__new__' ? undefined : openTool(tool)}><strong>{tool.name}</strong><small>{tool.description || `${tool.kind} · ${tool.id}`}</small></button>
+                <button className="cf-tool-summary-copy" type="button" onClick={() => tool.id === '__new__' ? undefined : openTool(tool)}><strong>{tool.name}</strong><small>{tool.source ? `${tool.source} · ` : ''}{tool.description || `${tool.kind} · ${tool.id}`}</small></button>
               </div>
             </div>
             {expanded && (

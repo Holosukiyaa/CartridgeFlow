@@ -480,6 +480,8 @@
 
 .cf-engineering-node::before { content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit; background: color-mix(in srgb, var(--node-tint) 52%, #fff); opacity: .72; }
 .cf-engineering-node.selected { border-color: var(--node-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--node-accent) 17%, transparent), 0 7px 18px rgba(32, 45, 56, .14); }
+.cf-engineering-node.engineering-resource { border-style: dashed; --node-accent: #8664bd !important; --node-tint: #f7f2ff !important; }
+.cf-engineering-node.engineering-resource > header small::after { content: ' / 只读资源'; color: #8664bd; }
 .cf-engineering-node > header { min-width: 0; padding: 9px 10px 7px; display: grid; grid-template-columns: 28px minmax(0, 1fr) 24px; align-items: center; gap: 8px; border-bottom: 1px solid color-mix(in srgb, var(--node-accent) 16%, #dbe3e5); }
 .cf-engineering-node-order { width: 26px; height: 26px; display: grid; place-items: center; border: 1px solid color-mix(in srgb, var(--node-accent) 28%, #d8e0e2); border-radius: 999px; background: #fff; color: var(--node-accent); font: 700 10px var(--mono); }
 .cf-engineering-node > header > div { min-width: 0; display: grid; gap: 3px; }

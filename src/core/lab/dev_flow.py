@@ -177,24 +177,31 @@ class DevFlowManager:
                 errors.append(f"root_flow.states.{state_id}.next points to missing state: {next_state}")
             if state.get("type") == "terminal":
                 terminal_count += 1
-        edges = root_flow.get("edges") or []
+        protocol = root_flow.get("protocol") if isinstance(root_flow.get("protocol"), dict) else {}
+        is_v08 = protocol.get("id") == "CF-FARP" and str(protocol.get("version")) == "0.8"
+        if is_v08 and root_flow.get("edges"):
+            errors.append("CF-FARP@0.8 root_flow.edges is legacy; use typed root_flow.control_edges")
+        edge_field = "control_edges" if is_v08 else "edges"
+        edges = root_flow.get(edge_field) or []
         if edges and not isinstance(edges, list):
-            errors.append("root_flow.edges must be an array")
+            errors.append(f"root_flow.{edge_field} must be an array")
         elif isinstance(edges, list):
             for index, edge in enumerate(edges):
                 if not isinstance(edge, dict):
-                    errors.append(f"root_flow.edges[{index}] must be an object")
+                    errors.append(f"root_flow.{edge_field}[{index}] must be an object")
                     continue
+                if is_v08 and edge.get("kind") not in {"control", "branch", "action_route", "failure_route"}:
+                    errors.append(f"root_flow.control_edges[{index}].kind is invalid")
                 source = edge.get("from") or edge.get("source")
                 target = edge.get("to") or edge.get("target")
                 if not source:
-                    errors.append(f"root_flow.edges[{index}].from is required")
+                    errors.append(f"root_flow.{edge_field}[{index}].from is required")
                 elif source not in states:
-                    errors.append(f"root_flow.edges[{index}].from points to missing state: {source}")
+                    errors.append(f"root_flow.{edge_field}[{index}].from points to missing state: {source}")
                 if not target:
-                    errors.append(f"root_flow.edges[{index}].to is required")
+                    errors.append(f"root_flow.{edge_field}[{index}].to is required")
                 elif target not in states:
-                    errors.append(f"root_flow.edges[{index}].to points to missing state: {target}")
+                    errors.append(f"root_flow.{edge_field}[{index}].to points to missing state: {target}")
         if terminal_count == 0:
             warnings.append("root_flow has no terminal state")
 

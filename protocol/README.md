@@ -7,8 +7,9 @@
 | 文件 | 状态 | 含义 |
 |---|---|---|
 | `CARTRIDGEFLOW-BASE-0.2.json` | active | 当前 Base Contract 身份和正文入口。 |
-| `CF-FARP-0.7.json` | active specification | 最新 Flow 协议；当前参考底座尚未声明运行支持。 |
-| `CF-FARP-0.6.json` | supported previous | 当前参考底座实际运行的上一版 Flow 协议。 |
+| `CF-FARP-0.8.json` | active specification | 最新 Flow 创作、分析与运行协议；当前参考底座声明 partial 运行支持。 |
+| `CF-FARP-0.7.json` | supported previous | 当前参考底座部分实现的上一版 Flow 协议。 |
+| `CF-FARP-0.6.json` | supported previous | 当前参考底座部分实现的历史 Flow 协议。 |
 | `protocol_history.json` | lifecycle index | 旧版本的 recognized 状态和迁移目标。 |
 | `CF-FARP-0.3.json` | published snapshot | 保留发布身份，不在运行支持矩阵中。 |
 | `CF-FARP-0.4.json` | published snapshot | 保留发布身份，不在运行支持矩阵中。 |
@@ -16,7 +17,7 @@
 | `CF-FARP-0.1.json` | historical draft | 仅保留历史身份，不在基座支持矩阵中。 |
 | `CF-FARP-0.2.json` | historical draft | 仅保留历史身份和迁移解析依据，不在基座支持矩阵中。 |
 
-`ProtocolRegistry.recognizes_protocol()` 能识别历史身份；`supports_protocol()` 只说明仓库存在可解释的发布 registry。最终运行支持必须同时出现在 `config/base/BASE_IMPLEMENTATION.json.supported_protocols` 中。当前 `CF-FARP@0.7` 可被识别但不在 Base 支持矩阵中，因此运行前必须返回 `unsupported_protocol`。
+`ProtocolRegistry.recognizes_protocol()` 能识别历史身份；`supports_protocol()` 只说明仓库存在可解释的发布 registry。最终运行支持必须同时出现在 `config/base/BASE_IMPLEMENTATION.json.supported_protocols` 中。当前 `CF-FARP@0.8` 已进入 Base 支持矩阵，并通过 capability evidence 与 conformance 报告说明实际覆盖范围。
 
 ## 共享词表
 
@@ -24,6 +25,7 @@
 |---|---|
 | `capabilities.json`、`profiles.json` | v0.6 及当前 Base 使用的 capability/profile 词表。 |
 | `capabilities-0.7.json`、`profiles-0.7.json` | v0.7 独立快照使用的版本化词表。 |
+| `capabilities-0.8.json`、`profiles-0.8.json` | v0.8 独立快照使用的版本化词表。 |
 | `tool_packs.json` | 基座通用工具包和工具身份。 |
 
 ## 三个权威来源

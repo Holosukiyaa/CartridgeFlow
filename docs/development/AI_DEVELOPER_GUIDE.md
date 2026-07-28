@@ -8,7 +8,7 @@
 
 1. 阅读根目录 `README.md`、`docs/planning/TODO.md` 和 `docs/planning/ROADMAP.md`。
 2. 阅读 `config/base/BASE_IMPLEMENTATION.json`，确认基座真实声明的协议、profile、capability 和 tool pack。
-3. 涉及宿主或流程语义时，完整阅读 Base v0.2 与最新 FARP v0.7；修改当前运行实现时还要核对 v0.6 快照和 `BASE_IMPLEMENTATION.json`，不得把目标规范当作已实现事实。
+3. 涉及宿主或流程语义时，完整阅读 Base v0.2 与最新 FARP v0.8；修改当前运行实现时还要核对 v0.6/v0.7 快照和 `BASE_IMPLEMENTATION.json`，不得把目标规范当作已实现事实。
 4. 涉及 DLC 时，阅读 `docs/architecture/PORTABLE_DLC_ARCHITECTURE.md` 和 `src/core/extensions/`。
 5. 检查 `git status --short`，保留用户已有改动。
 6. 先定位所有权边界，再决定修改核心还是卡带。
@@ -70,6 +70,9 @@ src/frontend/
 
 ```text
 protocol/CARTRIDGEFLOW-BASE-0.2.json
+protocol/CF-FARP-0.8.json
+protocol/capabilities-0.8.json
+protocol/profiles-0.8.json
 protocol/CF-FARP-0.7.json
 protocol/capabilities-0.7.json
 protocol/profiles-0.7.json
@@ -83,6 +86,7 @@ protocol/tool_packs.json
 
 ```text
 docs/protocol/CARTRIDGEFLOW_BASE_CONTRACT_v0.2.md
+docs/protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.8.md
 docs/protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.7.md
 docs/protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.6.md
 ```

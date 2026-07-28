@@ -37,7 +37,7 @@ export const EngineeringNodeCard = memo(function EngineeringNodeCard({
 
   return (
     <article
-      className={`cf-engineering-node ${selected ? 'selected' : ''} status-${runState?.status || view.configHealth}`}
+      className={`cf-engineering-node ${node.scope === 'engineering_resource' ? 'engineering-resource' : ''} ${selected ? 'selected' : ''} status-${runState?.status || view.configHealth}`}
       style={{ '--node-accent': palette.color, '--node-tint': palette.bg } as React.CSSProperties}
       data-node-id={node.id}
       onClick={() => onSelect(node)}
@@ -45,7 +45,7 @@ export const EngineeringNodeCard = memo(function EngineeringNodeCard({
       {hasIncomingControl && <Handle type="target" position={Position.Left} id={engineeringControlHandleId('target')} className="cf-engineering-control-port in" />}
       {hasOutgoingControl && <Handle type="source" position={Position.Right} id={engineeringControlHandleId('source')} className="cf-engineering-control-port out" />}
       <header>
-        <span className="cf-engineering-node-order">{String(order).padStart(2, '0')}</span>
+        <span className="cf-engineering-node-order">{node.scope === 'engineering_resource' ? 'R' : String(order).padStart(2, '0')}</span>
         <div>
           <strong title={node.display_name || node.title}>{node.display_name || node.title}</strong>
           <small title={node.id}>{node.id} · {view.semanticKind}</small>
@@ -56,24 +56,28 @@ export const EngineeringNodeCard = memo(function EngineeringNodeCard({
       </header>
       <div className="cf-engineering-node-sections">
         {sections.map((section) => {
-          const visibleFields = section.fields.slice().sort((left, right) => Number(connectedFields.has(right.key)) - Number(connectedFields.has(left.key))).slice(0, 3)
+          const connected = section.fields.filter((field) => connectedFields.has(field.key))
+          const unconnected = section.fields.filter((field) => !connectedFields.has(field.key))
+          const visibleFields = [...connected, ...unconnected.slice(0, Math.max(0, 3 - connected.length))]
           return (
           <section key={section.id} data-section={section.id}>
             <h4>{section.label}<span>{section.fields.length}</span></h4>
             {visibleFields.map((field) => {
-              const dataConnected = (section.id === 'inputs' && connectedInputs.has(field.key)) || (section.id === 'outputs' && connectedOutputs.has(field.key))
+              const connectedAsInput = connectedInputs.has(field.key)
+              const connectedAsOutput = connectedOutputs.has(field.key)
+              const dataConnected = connectedAsInput || connectedAsOutput
               return (
                 <div className="cf-engineering-field" data-tone={field.tone} key={`${field.key}:${field.value}`} title={`${field.key}: ${field.value}`}>
-                  {section.id === 'inputs' && dataConnected && <Handle type="target" position={Position.Left} id={engineeringHandleId('target', field.key)} className={`cf-engineering-field-port in ${dependencyInputs.has(field.key) ? 'dependency' : ''}`} />}
+                  {connectedAsInput && <Handle type="target" position={Position.Left} id={engineeringHandleId('target', field.key)} className={`cf-engineering-field-port in ${dependencyInputs.has(field.key) ? 'dependency' : ''}`} />}
                   {dataConnected ? <CircleDot aria-hidden="true" /> : <i className="cf-engineering-field-marker" aria-hidden="true" />}
                   <code>{field.key}</code>
                   <span>{field.value}</span>
                   {field.meta && <em>{field.meta}</em>}
-                  {section.id === 'outputs' && dataConnected && <Handle type="source" position={Position.Right} id={engineeringHandleId('source', field.key)} className={`cf-engineering-field-port out ${dependencyOutputs.has(field.key) ? 'dependency' : ''}`} />}
+                  {connectedAsOutput && <Handle type="source" position={Position.Right} id={engineeringHandleId('source', field.key)} className={`cf-engineering-field-port out ${dependencyOutputs.has(field.key) ? 'dependency' : ''}`} />}
                 </div>
               )
             })}
-            {section.fields.length > 3 && <small className="cf-engineering-more">+{section.fields.length - 3} fields</small>}
+            {section.fields.length > visibleFields.length && <small className="cf-engineering-more">+{section.fields.length - visibleFields.length} fields</small>}
           </section>
           )
         })}

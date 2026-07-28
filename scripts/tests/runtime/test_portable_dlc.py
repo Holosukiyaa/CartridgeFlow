@@ -1,6 +1,7 @@
 import json
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from core.extensions import PortableDlcValidationError, load_portable_dlc_descriptor
 from core.lab.builtin_mcp import BuiltinMcpRegistry
@@ -52,6 +53,56 @@ class PortableDlcTests(unittest.TestCase):
             self.assertTrue(result["ok"], result)
             self.assertEqual(marker, json.loads(result["content"])["value"]["marker"])
             self.assertEqual(1, len(list(fixture.worker_journal_dir.glob("*.json"))))
+
+    def test_node_executor_preserves_runtime_contract_for_dlc_activation(self):
+        with PortableDlcFixture() as fixture:
+            run = {
+                "run_id": "run_fixture",
+                "cartridge_id": fixture.manifest["id"],
+                "cartridge_version": fixture.manifest["version"],
+                "runtime_contract": fixture.manifest["runtime_contract"],
+                "mcp_tools": fixture.manifest["mcp_tools"],
+                "portable_dlc": fixture.manifest["portable_dlc"],
+                "package_path": str(fixture.package),
+            }
+            state = {
+                "type": "process",
+                "kind": "mcp_read",
+                "executor": "mcp",
+                "effect": "read_only",
+                "allowed_tools": ["fixture_echo"],
+                "mcp_binding": {"mode": "read_only", "allowed_tools": ["fixture_echo"]},
+                "output": "echo_result",
+                "params": {"tool_params": {"value": "runtime projection"}},
+            }
+            state_doc = {"context": {"store": {}}}
+
+            result = LabNodeExecutor(ROOT).execute("echo", state, state_doc, run, fixture.root)
+
+            self.assertFalse(result["failed"], result)
+            self.assertEqual("runtime projection", json.loads(state_doc["context"]["store"]["echo_result"])["value"])
+
+    def test_node_executor_projects_v07_dlc_registry_paths(self):
+        executor = LabNodeExecutor(ROOT)
+        run = {
+            "cartridge_id": "dev.fixture-v07",
+            "cartridge_version": "1.0.0",
+            "runtime_contract": {"protocol": "CF-FARP", "protocol_version": "0.7"},
+            "mcp_tools": [],
+            "portable_dlc": {"protocol": "CF-FARP@0.7", "descriptor": "dlc/descriptor.json"},
+            "asset_registry": "assets/registry.json",
+            "interaction_components": "assets/components.json",
+            "package_path": str(ROOT / "fixture-package"),
+        }
+        sentinel = object()
+
+        with patch.object(BuiltinMcpRegistry, "for_manifest", return_value=sentinel) as activate:
+            self.assertIs(sentinel, executor._registry_for_run(run))
+
+        projected = activate.call_args.args[1]
+        self.assertEqual(run["runtime_contract"], projected["runtime_contract"])
+        self.assertEqual(run["asset_registry"], projected["asset_registry"])
+        self.assertEqual(run["interaction_components"], projected["interaction_components"])
 
     def test_hash_mismatch_blocks_descriptor(self):
         with PortableDlcFixture() as fixture:

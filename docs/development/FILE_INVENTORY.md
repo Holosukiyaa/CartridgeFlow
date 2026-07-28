@@ -24,10 +24,10 @@
 | `config/templates/llm/*.json` | 无密钥的模型连接与角色分配模板。 |
 | `config/templates/studio/*.json` | 无密钥的凭据与工具资源模板。 |
 | `config/README.md` | 配置区与本机数据边界说明。 |
-| `protocol/CF-FARP-0.1.json` 至 `CF-FARP-0.7.json` | 历史 Flow 协议机器快照；只用于识别和迁移。 |
+| `protocol/CF-FARP-0.1.json` 至 `CF-FARP-0.8.json` | Flow 协议机器快照；v0.8 是最新规范，旧版本用于支持、识别或迁移。 |
 | `protocol/CARTRIDGEFLOW-BASE-0.2.json` | 当前 Base Contract 机器清单。 |
-| `protocol/capabilities*.json` | 能力注册表与 0.7 快照。 |
-| `protocol/profiles*.json` | Profile 注册表与 0.7 快照。 |
+| `protocol/capabilities*.json` | 能力注册表与 0.7/0.8 版本化快照。 |
+| `protocol/profiles*.json` | Profile 注册表与 0.7/0.8 版本化快照。 |
 | `protocol/protocol_history.json` | 版本生命周期和迁移目标。 |
 | `protocol/tool_packs.json` | 工具包契约注册表。 |
 | `protocol/README.md` | 机器协议目录说明。 |
@@ -140,6 +140,7 @@
 | `docs/architecture/ENTERPRISE_MANAGER_RUNNER_PLAIN_GUIDE.md` | 企业版统一管理器与分布式卡带运行器的大白话架构说明。 |
 | `docs/architecture/OFFICIAL_INTERFACE_ONBOARDING_CARTRIDGE_ACTION_GUIDE.md` | 官方接口接入验证卡带、最小探测、知识沉淀和审批上线行动指南。 |
 | `docs/architecture/FLOW_NODE_INFORMATION_ARCHITECTURE.md` | 各节点主卡和详情信息架构。 |
+| `docs/architecture/FLOW_AUTHORING_ANALYSIS_CONTRACT.md` | Flow 业务流程、执行契约、工程关系三层边界，以及统一分析、强制检测和创作 AI 入口。 |
 | `docs/architecture/PORTABLE_DLC_ARCHITECTURE.md` | DLC 所有权、安全和宿主边界。 |
 | `docs/development/AI_DEVELOPER_GUIDE.md` | 深层架构与验收参考。 |
 | `docs/development/FLOW_GRAPH_PERFORMANCE_OPTIMIZATION.md` | 大型 Flow 画布的性能瓶颈、分阶段优化方案、基准与行为回归要求。 |

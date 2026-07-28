@@ -32,6 +32,16 @@ def now_iso() -> str:
     return datetime.now().isoformat(timespec="seconds")
 
 
+def _executable_edges(root_flow: dict) -> list[dict]:
+    protocol = root_flow.get("protocol") if isinstance(root_flow.get("protocol"), dict) else {}
+    is_v08 = protocol.get("id") == "CF-FARP" and str(protocol.get("version")) == "0.8"
+    source = root_flow.get("control_edges") if is_v08 else root_flow.get("edges")
+    return [
+        edge for edge in (source or [])
+        if isinstance(edge, dict) and (not is_v08 or edge.get("kind") in {"control", "branch", "action_route", "failure_route"})
+    ]
+
+
 class CartridgeRunner:
     def __init__(self, root: str | Path, registry):
         self.root = Path(root)
@@ -93,8 +103,43 @@ class CartridgeRunner:
         run_id = run_id or f"run_{uuid.uuid4().hex[:12]}"
         cartridge = self.registry.get_cartridge(cartridge_id)
         manifest = deepcopy(cartridge["manifest"])
-        from core.studio.resources import merge_flow_tools
-        manifest["mcp_tools"] = merge_flow_tools(cartridge_id, manifest.get("mcp_tools") or [])
+        source_root_flow = cartridge.get("root_flow") or {}
+        runtime_contract = manifest.get("runtime_contract") if isinstance(manifest.get("runtime_contract"), dict) else {}
+        flow_protocol = source_root_flow.get("protocol") if isinstance(source_root_flow.get("protocol"), dict) else {}
+        is_v08 = (
+            runtime_contract.get("protocol") == "CF-FARP" and str(runtime_contract.get("protocol_version")) == "0.8"
+        ) or (
+            flow_protocol.get("id") == "CF-FARP" and str(flow_protocol.get("version")) == "0.8"
+        )
+        if is_v08:
+            from core.studio.resource_catalog import build_flow_resource_catalog
+            resource_catalog = build_flow_resource_catalog(
+                self.root,
+                manifest,
+                source_root_flow,
+                package_path=cartridge.get("package_path"),
+            )
+            catalog_blockers = [item for item in resource_catalog.get("findings") or [] if item.get("severity") == "blocker"]
+            if catalog_blockers:
+                raise RuntimeFailure(build_runtime_error(
+                    "DEPENDENCY_UNAVAILABLE",
+                    run_id=run_id,
+                    source="runtime.resource_catalog",
+                    cause_chain=[{"type": item.get("code"), "message": item.get("message")} for item in catalog_blockers],
+                    context={"resource_catalog": resource_catalog},
+                ))
+            manifest["mcp_tools"] = self._runtime_tools_from_catalog(manifest.get("mcp_tools") or [], resource_catalog)
+        else:
+            from core.studio.resources import merge_flow_tools
+            manifest["mcp_tools"] = merge_flow_tools(cartridge_id, manifest.get("mcp_tools") or [])
+            resource_catalog = {
+                "schema": "cartridgeflow.flow_resource_catalog.legacy_projection",
+                "cartridge_id": cartridge_id,
+                "tools": manifest.get("mcp_tools") or [],
+                "models": {},
+                "findings": [],
+                "summary": {"tools": len(manifest.get("mcp_tools") or []), "ready": len(manifest.get("mcp_tools") or []), "referenced": 0, "blockers": 0},
+            }
         inputs = self._normalize_run_inputs(manifest, inputs)
         missing_required_inputs = self._missing_required_inputs(manifest, inputs)
         if missing_required_inputs:
@@ -104,7 +149,6 @@ class CartridgeRunner:
                 source="runtime.create_run",
                 missing_inputs=missing_required_inputs,
             ))
-        source_root_flow = cartridge.get("root_flow") or {}
         compatibility = self.build_compatibility_report(manifest, source_root_flow, cartridge.get("package_path"))
         if not compatibility.get("ok"):
             raise CompatibilityBlockedError(compatibility)
@@ -164,8 +208,11 @@ class CartridgeRunner:
                 "summary": compatibility.get("summary", {}),
                 "findings": compatibility.get("findings", []),
             },
+            "flow_analysis": ((compatibility.get("flow_contract") or {}).get("analysis")),
+            "flow_output_bindings": self._flow_output_bindings(root_flow),
             "workspace": manifest.get("workspace", {}),
             "mcp_tools": manifest.get("mcp_tools", []),
+            "resource_catalog": resource_catalog,
             "llm_recipe": manifest.get("llm_recipe"),
             "model_bindings": model_binding_report,
             "resource_requirements": manifest.get("resource_requirements", []),
@@ -198,6 +245,7 @@ class CartridgeRunner:
         self._write_json(run_dir / "run.json", run)
         self._write_json(run_dir / "root_flow_state.json", state_doc)
         self._append_event(run_id, cartridge_id, "compatibility_checked", "created", "Compatibility report generated", compatibility)
+        self._append_event(run_id, cartridge_id, "resource_catalog_resolved", "created", "Flow resource catalog resolved", resource_catalog)
         self._append_event(
             run_id,
             cartridge_id,
@@ -512,12 +560,12 @@ class CartridgeRunner:
         self._write_json(run_dir / "run.json", run)
         return run
 
-    def build_compatibility_report(self, manifest: dict, root_flow: dict | None, package_path: str | Path | None = None) -> dict:
+    def build_compatibility_report(self, manifest: dict, root_flow: dict | None, package_path: str | Path | None = None, analysis_target: str = "dev") -> dict:
         base = load_base_implementation(self.root)
         overlay_dirs = []
         if package_path and manifest.get("portable_dlc"):
             overlay_dirs.append(Path(package_path) / "dlc" / "protocols")
-        return build_compatibility_report(base, manifest, root_flow, self.root, overlay_dirs)
+        return build_compatibility_report(base, manifest, root_flow, self.root, overlay_dirs, analysis_target=analysis_target)
 
     def build_cartridge_compatibility_report(self, cartridge_id: str) -> dict:
         cartridge = self.registry.get_cartridge(cartridge_id)
@@ -526,6 +574,43 @@ class CartridgeRunner:
             cartridge.get("root_flow") or {},
             cartridge.get("package_path"),
         )
+
+    def _flow_output_bindings(self, root_flow: dict) -> dict[str, dict]:
+        result: dict[str, dict] = {}
+        for node_id, node in (root_flow.get("states") or {}).items():
+            outputs = node.get("outputs") if isinstance(node, dict) and isinstance(node.get("outputs"), dict) else {}
+            for output_name, contract in outputs.items():
+                target = contract.get("target") if isinstance(contract, dict) and isinstance(contract.get("target"), dict) else None
+                if target:
+                    result[f"{node_id}:{output_name}"] = dict(target)
+        return result
+
+    def _runtime_tools_from_catalog(self, manifest_tools: list[dict], catalog: dict) -> list[dict]:
+        ready_by_id: dict[str, dict] = {}
+        for item in catalog.get("tools") or []:
+            if not isinstance(item, dict) or item.get("status") != "ready":
+                continue
+            if not (item.get("manifest_requirement") or {}).get("declared"):
+                continue
+            ready_by_id.setdefault(str(item.get("id") or ""), item)
+        result = []
+        for raw in manifest_tools:
+            if not isinstance(raw, dict) or not raw.get("id"):
+                continue
+            item = ready_by_id.get(str(raw["id"]))
+            if not item:
+                continue
+            source = str(item.get("source") or "")
+            runtime = {**raw, "source": source, "resource_id": item.get("resource_id")}
+            if source == "base_builtin":
+                runtime["type"] = "base_builtin"
+            elif source == "local_resource":
+                runtime["type"] = "local_resource"
+                runtime["local_resource_id"] = item.get("resource_id")
+            elif source == "cartridge_dlc":
+                runtime["type"] = "cartridge_dlc"
+            result.append(runtime)
+        return result
 
     def validate_probe_range(self, root_flow: dict, probe_range: dict | None) -> dict:
         normalized = self._normalize_probe_range(root_flow, probe_range)
@@ -743,14 +828,19 @@ class CartridgeRunner:
         probe_edges: list[dict] = []
         seen_edges: set[tuple[str, str]] = set()
 
-        def _keep_edge(source: str, target: str) -> None:
+        is_v08 = ((root_flow.get("protocol") or {}).get("id") == "CF-FARP" and str((root_flow.get("protocol") or {}).get("version")) == "0.8")
+
+        def _keep_edge(source: str, target: str, original: dict | None = None) -> None:
             if source not in node_id_set or target not in node_id_set:
                 return
             key = (source, target)
             if key in seen_edges:
                 return
             seen_edges.add(key)
-            probe_edges.append({"from": source, "to": target, "scope": "probe"})
+            if is_v08:
+                probe_edges.append({**(original or {}), "kind": (original or {}).get("kind") or "control", "from": source, "to": target, "scope": "probe"})
+            else:
+                probe_edges.append({"from": source, "to": target, "scope": "probe"})
 
         for node_id in node_ids:
             state = filtered_states.get(node_id)
@@ -763,15 +853,19 @@ class CartridgeRunner:
             else:
                 _keep_edge(node_id, next_target)
 
-        for edge in root_flow.get("edges") or []:
+        for edge in _executable_edges(root_flow):
             source = edge.get("from") or edge.get("source")
             target = edge.get("to") or edge.get("target")
             if source and target:
-                _keep_edge(source, target)
+                _keep_edge(source, target, edge)
 
         filtered["start"] = probe_range["start_node_id"]
         filtered["states"] = filtered_states
-        filtered["edges"] = probe_edges
+        if is_v08:
+            filtered.pop("edges", None)
+            filtered["control_edges"] = probe_edges
+        else:
+            filtered["edges"] = probe_edges
         filtered["_probe_range"] = probe_range
         return filtered
 
@@ -781,7 +875,7 @@ class CartridgeRunner:
         for state_id, state in states.items():
             if state.get("next") == node_id:
                 parents.append(state_id)
-        for edge in root_flow.get("edges") or []:
+        for edge in _executable_edges(root_flow):
             source = edge.get("from") or edge.get("source")
             target = edge.get("to") or edge.get("target")
             if target == node_id and source:
@@ -1720,7 +1814,7 @@ class CartridgeRunner:
             target = state.get("next")
             if target in states:
                 result.setdefault(target, set()).add(source_id)
-        for edge in root_flow.get("edges") or []:
+        for edge in _executable_edges(root_flow):
             source = edge.get("from") or edge.get("source")
             target = edge.get("to") or edge.get("target")
             if source in completed and target in states:

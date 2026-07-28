@@ -31,6 +31,8 @@ class FlowGraphBuilder:
                 "component_ref": state.get("component_ref"),
                 "interaction_mode": state.get("interaction_mode"),
                 "input_binding": state.get("input_binding"),
+                "inputs": state.get("inputs"),
+                "outputs": state.get("outputs"),
                 "action_routes": state.get("action_routes"),
                 "output": state.get("output"),
                 "display": state.get("display") or {},
@@ -46,6 +48,8 @@ class FlowGraphBuilder:
                 "allowed_tools": state.get("allowed_tools"),
                 "mcp_binding": state.get("mcp_binding"),
                 "failure_policy": state.get("failure_policy"),
+                "failure_route": state.get("failure_route"),
+                "replay_policy": state.get("replay_policy"),
                 "permission": state.get("permission"),
                 "audit_log": state.get("audit_log"),
                 "endpoint": state.get("endpoint"),
@@ -66,13 +70,18 @@ class FlowGraphBuilder:
             if state.get("next"):
                 edges.append({"from": state_id, "to": state.get("next"), "scope": "root"})
             edges.extend(self._answer_route_edges(state_id, state))
-        for edge in root_flow.get("edges") or []:
+        protocol = root_flow.get("protocol") if isinstance(root_flow.get("protocol"), dict) else {}
+        is_v08 = protocol.get("id") == "CF-FARP" and str(protocol.get("version")) == "0.8"
+        raw_edges = root_flow.get("control_edges") if is_v08 else root_flow.get("edges")
+        for edge in raw_edges or []:
+            if not isinstance(edge, dict) or (is_v08 and edge.get("kind") not in {"control", "branch", "action_route", "failure_route"}):
+                continue
             source = edge.get("from") or edge.get("source")
             target = edge.get("to") or edge.get("target")
             scope = edge.get("scope", "root")
             if source and target and not any(item.get("from") == source and item.get("to") == target and item.get("scope", "root") == scope for item in edges):
-                edges.append({"from": source, "to": target, "scope": scope, "label": edge.get("label")})
-        return {
+                edges.append({"from": source, "to": target, "scope": scope, "label": edge.get("label") or edge.get("condition_id") or edge.get("action_id"), "kind": edge.get("kind") or "control"})
+        graph = {
             "id": root_flow.get("id"),
             "name": root_flow.get("name"),
             "mode": root_flow.get("mode", "lifecycle"),
@@ -86,6 +95,12 @@ class FlowGraphBuilder:
             ],
             "sub_flows": [],
         }
+        if is_v08:
+            from core.lab.flow_analyzer import analyze_flow
+            analysis = analyze_flow(root_flow, cartridge, target="draft")
+            graph["analysis"] = analysis
+            graph["engineering_relations"] = analysis.get("relations") or []
+        return graph
 
     def _answer_route_edges(self, state_id: str, state: dict) -> list[dict]:
         named_routes = state.get("action_routes") if isinstance(state.get("action_routes"), dict) else {}

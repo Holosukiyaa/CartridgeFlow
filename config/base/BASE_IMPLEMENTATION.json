@@ -18,6 +18,11 @@
       "id": "CF-FARP",
       "version": "0.7",
       "status": "partial"
+    },
+    {
+      "id": "CF-FARP",
+      "version": "0.8",
+      "status": "partial"
     }
   ],
   "profiles": [
@@ -27,7 +32,8 @@
     "dynamic_decision_runtime",
     "interactive_decision_runtime",
     "interaction_runtime",
-    "portable_dlc_runtime"
+    "portable_dlc_runtime",
+    "flow_analysis"
   ],
   "capabilities": [
     "manifest_load",
@@ -110,11 +116,31 @@
     "model_recipe_binding",
     "local_resource_binding",
     "resource_preflight",
-    "delivery_primary_output_guard"
+    "delivery_primary_output_guard",
+    "structured_io_contract",
+    "explicit_input_binding",
+    "typed_control_edges",
+    "executable_topology_filter",
+    "normalized_topology_projection",
+    "flow_analysis_report_v1",
+    "flow_source_digest",
+    "flow_analysis_target_gates",
+    "analysis_report_freshness_guard",
+    "derived_engineering_relations",
+    "dataflow_static_analysis",
+    "branch_data_availability_analysis",
+    "resource_dependency_analysis",
+    "policy_static_analysis",
+    "finding_contract_v1",
+    "flow_resource_catalog_v1",
+    "resource_origin_tracking",
+    "node_resource_binding_preflight",
+    "explicit_node_model_binding",
+    "silent_model_fallback_guard",
+    "authoring_model_scope_isolation"
   ],
   "tool_packs": [
-    "builtin.filesystem",
-    "builtin.media"
+    "builtin.filesystem"
   ],
   "conformance": {
     "status": "partial",

@@ -199,8 +199,19 @@ class LlmConfigManagerTests(unittest.TestCase):
                         "model_role": "writer",
                     }},
                 })
-                self.assertEqual("ok", selected_node_role["status"])
+                self.assertEqual("blocked", selected_node_role["status"])
                 self.assertEqual("writer", selected_node_role["items"][-1]["model_role"])
+                current = manager.get_assignments()
+                current["nodes"] = {"flow.demo/decide": {"writer": {"provider_id": "local", "model": "model-one"}}}
+                manager.save_assignments(current)
+                selected_node_role = manager.build_model_binding_report(manifest, {
+                    "states": {"decide": {
+                        "type": "process", "kind": "decision", "executor": "llm", "action": "llm_prompt",
+                        "model_role": "writer",
+                    }},
+                })
+                self.assertEqual("ok", selected_node_role["status"])
+                self.assertEqual("local", selected_node_role["items"][-1]["provider_id"])
 
     def test_public_provider_and_config_paths_do_not_expose_secrets_or_absolute_paths(self):
         provider = {

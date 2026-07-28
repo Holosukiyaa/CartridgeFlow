@@ -129,6 +129,34 @@ def build_v07_flow_contract_report(root_flow: dict | None, manifest: dict | None
     }
 
 
+def build_v08_flow_contract_report(
+    root_flow: dict | None,
+    manifest: dict | None = None,
+    *,
+    target: str = "dev",
+    base: dict | None = None,
+) -> dict:
+    from core.lab.flow_analyzer import analyze_flow
+
+    analysis = analyze_flow(root_flow, manifest, target=target, base=base)
+    return {
+        "ok": (analysis.get("summary") or {}).get("blockers", 0) == 0,
+        "status": "compatible" if (analysis.get("summary") or {}).get("blockers", 0) == 0 else "blocked",
+        "protocol": "CF-FARP@0.8",
+        "summary": {
+            "blocker": (analysis.get("summary") or {}).get("blockers", 0),
+            "warning": (analysis.get("summary") or {}).get("warnings", 0),
+            "info": (analysis.get("summary") or {}).get("infos", 0),
+        },
+        "findings": analysis.get("findings") or [],
+        "analysis": analysis,
+    }
+
+
+def validate_v08_flow_contract(root_flow: dict | None, manifest: dict | None = None) -> list[dict]:
+    return build_v08_flow_contract_report(root_flow, manifest).get("findings") or []
+
+
 def validate_v02_flow_contract(root_flow: dict | None, manifest: dict | None = None) -> list[dict]:
     findings: list[dict] = []
     root_flow = root_flow if isinstance(root_flow, dict) else {}

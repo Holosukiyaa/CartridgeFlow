@@ -47,6 +47,12 @@ CONTRACT_FIELDS = {
     "interaction_mode",
     "input_binding",
     "action_routes",
+    "inputs",
+    "outputs",
+    "replay_policy",
+    "failure_route",
+    "system_prompt",
+    "prompt",
 }
 
 
@@ -77,6 +83,22 @@ def normalize_runtime_node(state: dict) -> dict:
     kind = str(params.get("kind") or normalized.get("kind") or "").strip()
     executor = str(params.get("executor") or normalized.get("executor") or "").strip()
     action = normalized.get("action") or V02_KIND_ACTIONS.get(kind) or "custom_action"
+
+    structured_inputs = params.get("inputs") if isinstance(params.get("inputs"), dict) else {}
+    if structured_inputs:
+        required_ports = [name for name, item in structured_inputs.items() if isinstance(item, dict) and item.get("required") is True]
+        optional_ports = [name for name, item in structured_inputs.items() if isinstance(item, dict) and item.get("required") is False]
+        if required_ports:
+            params["input"] = required_ports
+        if optional_ports:
+            params["optional_input"] = optional_ports
+
+    structured_outputs = params.get("outputs") if isinstance(params.get("outputs"), dict) else {}
+    for contract in structured_outputs.values():
+        target = contract.get("target") if isinstance(contract, dict) and isinstance(contract.get("target"), dict) else {}
+        if target.get("type") == "store" and target.get("key"):
+            params["output"] = str(target["key"])
+            break
 
     if kind == "decision" and executor and executor != "llm":
         action = normalized.get("action") or "custom_action"

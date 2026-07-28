@@ -361,6 +361,12 @@ def build_model_binding_report(manifest: dict, root_flow: dict | None = None) ->
     providers = {item.get("id"): item for item in list_providers()}
     assignments = get_assignments()
     cartridge_id = str(manifest.get("id") or "")
+    flow_assignments = (assignments.get("cartridges") or {}).get(cartridge_id) or {}
+    flow_provider_ids = {
+        _clean(binding.get("provider_id"))
+        for binding in flow_assignments.values()
+        if isinstance(binding, dict) and _clean(binding.get("provider_id"))
+    }
     items = []
     for role in roles:
         if not isinstance(role, dict):
@@ -369,6 +375,18 @@ def build_model_binding_report(manifest: dict, root_flow: dict | None = None) ->
         if not role_id:
             continue
         required = role.get("required", True) is not False
+        if role_id in {"authoring", "mentor"}:
+            items.append({
+                "id": role_id,
+                "label": _clean(role.get("label")) or role_id,
+                "required": True,
+                "status": "blocked",
+                "provider_id": "",
+                "provider_name": "",
+                "model": "",
+                "message": f"Authoring role {role_id} must not be declared in cartridge llm_recipe",
+            })
+            continue
         binding = _assignment_for(role_id, cartridge_id, include_defaults=False) or {}
         provider = providers.get(binding.get("provider_id"))
         status = "ok"
@@ -427,6 +445,25 @@ def build_model_binding_report(manifest: dict, root_flow: dict | None = None) ->
             issue = f"模型角色未在卡带配方中声明：{model_role}"
         elif role_items[model_role].get("status") != "ok":
             issue = f"模型角色 {model_role} 尚未就绪：{role_items[model_role].get('message')}"
+        node_binding = ((assignments.get("nodes") or {}).get(f"{cartridge_id}/{node_id}") or {}).get(model_role) if model_role else None
+        node_provider = providers.get((node_binding or {}).get("provider_id")) if isinstance(node_binding, dict) else None
+        if not issue and not isinstance(node_binding, dict):
+            issue = f"AI decision node {node_id} has no explicit model connection binding"
+        elif not issue and not node_binding.get("provider_id"):
+            issue = f"AI decision node {node_id} has no explicit model connection binding"
+        elif not issue and node_binding.get("provider_id") not in flow_provider_ids:
+            issue = f"Node model connection {node_binding.get('provider_id')} is not bound to Flow {cartridge_id}"
+        elif not issue and node_provider is None:
+            issue = f"Node model connection is unavailable: {node_binding.get('provider_id')}"
+        elif not issue and provider_route_issue(node_provider):
+            issue = provider_route_issue(node_provider)
+        elif not issue and (not node_provider.get("base_url") or not node_provider.get("api_key")):
+            issue = f"Node model connection is incomplete: {node_binding.get('provider_id')}"
+        node_model = ""
+        if node_provider and not issue:
+            node_model = _clean((node_binding or {}).get("model")) or _clean(node_provider.get("default_model"))
+            if not node_model:
+                issue = f"Node model connection has no model: {node_binding.get('provider_id')}"
         items.append({
             "id": f"node:{node_id}",
             "label": _clean(state.get("display_name") or state.get("title")) or node_id,
@@ -434,9 +471,9 @@ def build_model_binding_report(manifest: dict, root_flow: dict | None = None) ->
             "model_role": model_role,
             "required": True,
             "status": "blocked" if issue else "ok",
-            "provider_id": _clean(role_items.get(model_role, {}).get("provider_id")),
-            "provider_name": _clean(role_items.get(model_role, {}).get("provider_name")),
-            "model": _clean(role_items.get(model_role, {}).get("model")),
+            "provider_id": _clean(node_provider.get("id")) if node_provider and not issue else "",
+            "provider_name": _clean(node_provider.get("name")) if node_provider and not issue else "",
+            "model": node_model if not issue else "",
             "message": issue or f"使用模型角色 {model_role}",
         })
     statuses = {item.get("status") for item in items}

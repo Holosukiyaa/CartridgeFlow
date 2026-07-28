@@ -5,7 +5,7 @@ import type { NodeCategory, NodeDraft, NodePreset, NodeCategoryId } from './type
 export type FlowNodeViewMode = 'engineering' | 'detailed' | 'compact'
 
 export const FLOW_NODE_DIMENSIONS: Record<FlowNodeViewMode, { width: number; height: number }> = {
-  engineering: { width: 334, height: 430 },
+  engineering: { width: 334, height: 600 },
   detailed: { width: 440, height: 436 },
   compact: { width: 280, height: 146 },
 }

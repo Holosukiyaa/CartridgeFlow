@@ -130,6 +130,25 @@ export interface FlowGraph {
   edges: FlowEdge[]
   annotations?: FlowAnnotation[]
   sub_flows?: any[]
+  analysis?: Record<string, any>
+  engineering_relations?: FlowEngineeringRelation[]
+}
+
+export interface FlowEngineeringEndpoint {
+  type: string
+  node_id?: string
+  id?: string
+  port?: string
+}
+
+export interface FlowEngineeringRelation {
+  id: string
+  kind: 'control' | 'data' | 'tool_dependency' | 'model_dependency' | 'mcp_dependency' | 'component_dependency' | string
+  from: FlowEngineeringEndpoint
+  to: FlowEngineeringEndpoint
+  derived_from?: string[]
+  confidence?: string
+  runtime_effect?: boolean
 }
 
 export interface FlowAnnotation {
@@ -158,6 +177,8 @@ export interface FlowNode {
   component_ref?: string
   interaction_mode?: 'display' | 'collect' | 'review' | string
   input_binding?: Record<string, string>
+  inputs?: Record<string, any>
+  outputs?: Record<string, any>
   action_routes?: Record<string, string>
   output?: string
   display?: { label?: string; suffix?: string; [key: string]: any }
@@ -515,6 +536,13 @@ export interface StudioToolResource {
   locked?: boolean
   server?: string
   tool?: string
+  resource_id?: string
+  source?: 'base_builtin' | 'local_resource' | 'cartridge_dlc' | string
+  owner?: string
+  status?: 'ready' | 'available' | 'unbound' | 'unavailable' | string
+  flow_binding?: { bound: boolean; status: string }
+  manifest_requirement?: { declared: boolean; required: boolean }
+  node_references?: string[]
 }
 
 export interface StudioResources {
@@ -525,6 +553,21 @@ export interface StudioResources {
     tools?: Record<string, string[]>
   }
   builtin_tools: StudioToolResource[]
+}
+
+export interface FlowResourceCatalog {
+  schema: 'cartridgeflow.flow_resource_catalog.v1' | string
+  cartridge_id: string
+  tools: StudioToolResource[]
+  models: {
+    providers: LlmProvider[]
+    runtime_roles: any[]
+    flow_bindings: Record<string, { provider_id?: string; model?: string }>
+    node_bindings: Array<{ node_id: string; role: string; binding?: { provider_id?: string; model?: string } | null; status: string }>
+    authoring: { scope: 'base_authoring' | string; bindings: Record<string, { provider_id?: string; model?: string }> }
+  }
+  findings: Array<{ severity: string; code: string; message: string; path?: string; node_ids?: string[] }>
+  summary: { tools: number; ready: number; referenced: number; blockers: number }
 }
 
 export interface StudioCredential {

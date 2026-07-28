@@ -74,8 +74,11 @@ class LabNodeExecutor:
                 "id": run.get("cartridge_id"),
                 "version": run.get("cartridge_version"),
                 "mcp_tools": run.get("mcp_tools") or [],
+                "runtime_contract": run.get("runtime_contract") or {},
                 "protocol_extensions": extensions or [],
                 "portable_dlc": portable_dlc,
+                "asset_registry": run.get("asset_registry"),
+                "interaction_components": run.get("interaction_components"),
             }
             registry = BuiltinMcpRegistry.for_manifest(
                 self.workspace_root,
@@ -93,6 +96,7 @@ class LabNodeExecutor:
         params = dict(state.get("params") or {})
         if state.get("tools") and not params.get("tools"):
             params["tools"] = state.get("tools")
+        params, structured_keys = self._prepare_structured_inputs(state_name, params, store, run)
         params = self._prepare_protocol_runtime(state, params, store, run)
         params["_node_id"] = state_name
         action = state.get("action") or ""
@@ -150,6 +154,8 @@ class LabNodeExecutor:
                     result["error"] = "Required inputs are missing: " + ", ".join(str(item.get("key")) for item in required_missing)
             return result
         finally:
+            for key in structured_keys:
+                store.pop(key, None)
             self._pending_missing = []
             self._optional_input_keys = set()
 
@@ -170,6 +176,84 @@ class LabNodeExecutor:
         if kind in {"mcp_read", "mcp_execute"}:
             return self._prepare_v02_mcp_node(kind, runtime, params, store, run)
         return params
+
+    def _prepare_structured_inputs(self, state_name: str, params: dict, store: dict, run: dict) -> tuple[dict, list[str]]:
+        inputs = params.get("inputs") if isinstance(params.get("inputs"), dict) else {}
+        if not inputs:
+            return params, []
+        params = dict(params)
+        aliases: dict[str, str] = {}
+        required_aliases: list[str] = []
+        optional_aliases: list[str] = []
+        temporary_keys: list[str] = []
+        for port, contract in inputs.items():
+            if not isinstance(contract, dict):
+                continue
+            alias = f"_cf_input:{state_name}:{port}"
+            aliases[str(port)] = alias
+            required = contract.get("required") is True
+            (required_aliases if required else optional_aliases).append(alias)
+            binding = contract.get("binding") if isinstance(contract.get("binding"), dict) else None
+            found, value = self._resolve_structured_binding(binding, store, run)
+            if not found and not required and "default" in contract:
+                found, value = True, contract.get("default")
+            if found:
+                store[alias] = value
+                temporary_keys.append(alias)
+        params["input"] = required_aliases[0] if len(required_aliases) == 1 else required_aliases
+        params["optional_input"] = optional_aliases[0] if len(optional_aliases) == 1 else optional_aliases
+        params["_structured_input_aliases"] = aliases
+        return params, temporary_keys
+
+    def _resolve_structured_binding(self, binding: dict | None, store: dict, run: dict) -> tuple[bool, object]:
+        if not isinstance(binding, dict):
+            return False, None
+        source = str(binding.get("source") or "")
+        found = False
+        value = None
+        if source == "run_input":
+            inputs = run.get("inputs") if isinstance(run.get("inputs"), dict) else {}
+            key = str(binding.get("key") or "")
+            found, value = key in inputs, inputs.get(key)
+        elif source in {"store", "interaction_answer"}:
+            key = str(binding.get("key") or binding.get("store_key") or "")
+            found, value = key in store, store.get(key)
+        elif source == "node_output":
+            identity = f"{binding.get('node_id')}:{binding.get('output')}"
+            target = (run.get("flow_output_bindings") or {}).get(identity) if isinstance(run.get("flow_output_bindings"), dict) else None
+            target = target if isinstance(target, dict) else {}
+            if target.get("type") == "store":
+                key = str(target.get("key") or "")
+                found, value = key in store, store.get(key)
+            elif target.get("type") == "artifact":
+                found, value = self._find_run_artifact(run, str(target.get("artifact_id") or ""))
+        elif source == "artifact":
+            found, value = self._find_run_artifact(run, str(binding.get("artifact_id") or ""))
+        elif source == "constant":
+            found, value = "value" in binding, binding.get("value")
+        if found and binding.get("path"):
+            found, value = self._resolve_value_path(value, str(binding.get("path")))
+        return found, value
+
+    def _find_run_artifact(self, run: dict, artifact_id: str) -> tuple[bool, object]:
+        for artifact in run.get("artifacts") or []:
+            if not isinstance(artifact, dict):
+                continue
+            if artifact_id in {str(artifact.get("artifact_id") or ""), str(artifact.get("name") or "")}:
+                return True, artifact
+        return False, None
+
+    def _resolve_value_path(self, value, path: str) -> tuple[bool, object]:
+        current = value
+        for part in [item for item in path.split(".") if item]:
+            if isinstance(current, dict) and part in current:
+                current = current[part]
+                continue
+            if isinstance(current, list) and part.isdigit() and int(part) < len(current):
+                current = current[int(part)]
+                continue
+            return False, None
+        return True, current
 
     def _prepare_v02_mcp_node(self, kind: str, runtime: dict, params: dict, store: dict, run: dict) -> dict:
         params = dict(params)
@@ -280,11 +364,15 @@ class LabNodeExecutor:
                 **({"ref": ref} if ref else {}),
             })
 
-    def _resolve_tool_params(self, raw_params: dict, store: dict) -> dict:
+    def _resolve_tool_params(self, raw_params: dict, store: dict, input_aliases: dict | None = None) -> dict:
         resolved = {}
         for key, value in (raw_params or {}).items():
             if isinstance(value, str) and value.startswith("store:"):
                 resolved[key] = self._resolve_store_ref(store, value)
+            elif isinstance(value, str) and value.startswith("input:"):
+                port = value.split(":", 1)[1]
+                alias = (input_aliases or {}).get(port)
+                resolved[key] = store.get(alias) if alias else None
             else:
                 resolved[key] = value
         return resolved
@@ -382,12 +470,12 @@ class LabNodeExecutor:
             if not isinstance(tool, dict) or tool.get("enabled", True) is False:
                 continue
             tool_type = str(tool.get("type") or "builtin").strip()
-            if tool_type not in {"builtin", "mcp", "remote", "plugin"}:
+            if tool_type not in {"builtin", "base_builtin", "local_resource", "cartridge_dlc", "mcp", "remote", "plugin"}:
                 tool_results.append({"type": tool_type, "ok": False, "code": "dependency_unavailable", "error": "Unsupported tool adapter type"})
                 continue
             server = tool.get("server") or ""
             tool_name = tool.get("tool") or ""
-            tool_params = self._resolve_tool_params(tool.get("params") or {}, store)
+            tool_params = self._resolve_tool_params(tool.get("params") or {}, store, params.get("_structured_input_aliases"))
             tool_params.setdefault("_runtime_run_id", str(_run.get("run_id") or ""))
             tool_id = self._tool_id_for_call(tool, manifest_tools)
             local_binding = None
@@ -594,7 +682,7 @@ class LabNodeExecutor:
             server = preset_config.get("server") or params.get("server")
             tool_name = preset_config.get("tool") or params.get("tool")
             if server and tool_name:
-                return [{"type": "builtin", "server": server, "tool": tool_name, "params": self._resolve_tool_params(params.get("tool_params") or {}, store), "enabled": True, "output": default_output}]
+                return [{"type": "builtin", "server": server, "tool": tool_name, "params": self._resolve_tool_params(params.get("tool_params") or {}, store, params.get("_structured_input_aliases")), "enabled": True, "output": default_output}]
         return []
 
     def _resolve_library_tool(self, run: dict, tool_id: str) -> dict | None:
@@ -969,7 +1057,7 @@ class LabNodeExecutor:
                 from core.llm import chat
                 from core.llm.config_manager import resolve_model
                 role_binding = next(
-                    (item for item in run.get("model_bindings", {}).get("items", []) if item.get("id") == model_role),
+                    (item for item in run.get("model_bindings", {}).get("items", []) if item.get("id") == f"node:{params.get('_node_id')}"),
                     {},
                 )
                 resolve_options = dict(

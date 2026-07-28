@@ -31,7 +31,7 @@ import { createPortCounts, getPortHandleId, type EdgePortAssignment, type PortCo
 import { CanvasAnnotationCard } from './CanvasAnnotationCard.tsx'
 import { buildClusterAwareLayout } from './clusterLayout.ts'
 import { EngineeringNodeCard } from './EngineeringNodeCard.tsx'
-import { buildEngineeringDataRelations, buildEngineeringNodeModels, engineeringControlHandleId, engineeringHandleId, type EngineeringDataRelation, type EngineeringEdgeVisibility, type EngineeringNodeRenderModel } from './engineeringNode.ts'
+import { buildEngineeringDataRelations, buildEngineeringNodeModels, engineeringControlHandleId, engineeringHandleId, isEngineeringResourceNode, type EngineeringDataRelation, type EngineeringEdgeVisibility, type EngineeringNodeRenderModel } from './engineeringNode.ts'
 import { buildOutcomeNodeModels, plainOutcomeFieldLabel, type OutcomeNodeRenderModel } from './flowNodeView.ts'
 
 type FlowGraphNode = Node<Record<string, unknown>>
@@ -540,7 +540,18 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
   const nodeViewMode: FlowNodeViewMode = compactStatic ? 'compact' : displayMode === 'engineering' ? 'engineering' : 'detailed'
   const expandedMainNodeIds = useMemo(() => new Set(nodeEditors.map((editor) => editor.nodeId)), [nodeEditors])
   const layoutViewMode = nodeViewMode
-  const layout = useMemo(() => buildBalancedLayout(renderGraph, { viewMode: layoutViewMode }), [layoutViewMode, renderGraph])
+  const layoutGraph = useMemo(() => displayMode === 'engineering'
+    ? {
+        ...renderGraph,
+        edges: [
+          ...renderGraph.edges,
+          ...visibleEngineeringRelations
+            .filter((relation) => relation.kind === 'dependency')
+            .map((relation) => ({ from: relation.from, to: relation.to, scope: 'engineering_layout' })),
+        ],
+      }
+    : renderGraph, [displayMode, renderGraph, visibleEngineeringRelations])
+  const layout = useMemo(() => buildBalancedLayout(layoutGraph, { viewMode: layoutViewMode }), [layoutGraph, layoutViewMode])
   const edgePortPlan = useMemo(() => {
     const counts = new Map<string, PortCounts>()
     const cursor = new Map<string, number>()
@@ -890,6 +901,8 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
   const buildLayoutFromNodes = useCallback((items: FlowGraphNode[]) => {
     const nextLayout: Record<string, { x: number; y: number }> = {}
     items.forEach((node) => {
+      const flowNode = node.data as unknown as FlowNode
+      if (isEngineeringResourceNode(flowNode)) return
       nextLayout[node.id] = {
         x: Math.round(node.position.x),
         y: Math.round(node.position.y),

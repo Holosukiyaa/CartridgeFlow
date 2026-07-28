@@ -1,4 +1,4 @@
-import type { FlowEdge, FlowFiles, FlowGraph, FlowNode } from '../../api.ts'
+import type { FlowEdge, FlowEngineeringRelation, FlowFiles, FlowGraph, FlowNode } from '../../api.ts'
 import { buildFlowNodeCardView, compactNodeValue } from './flowNodeView.ts'
 import { getProtocolEffect, getProtocolExecutor, getProtocolKind } from './nodeModel.ts'
 import type { NodeRunState } from './runState.ts'
@@ -55,6 +55,117 @@ export type EngineeringEdgeVisibility = {
   failure: boolean
 }
 
+const ENGINEERING_RESOURCE_PREFIX = '__engineering_resource__:'
+
+export function isEngineeringResourceNode(node: FlowNode) {
+  return node.scope === 'engineering_resource' || node.id.startsWith(ENGINEERING_RESOURCE_PREFIX)
+}
+
+function resourceNodeId(type: string, id: string) {
+  return `${ENGINEERING_RESOURCE_PREFIX}${encodeURIComponent(type)}:${encodeURIComponent(id)}`
+}
+
+function dependencyField(kind: string) {
+  if (kind === 'model_dependency') return 'model_role'
+  if (kind === 'component_dependency') return 'component_ref'
+  if (kind === 'mcp_dependency') return 'mcp_binding'
+  return 'allowed_tools'
+}
+
+function dependencyLabel(kind: string, id: string) {
+  if (kind === 'model_dependency') return `模型依赖：${id}`
+  if (kind === 'component_dependency') return `组件依赖：${id}`
+  if (kind === 'mcp_dependency') return `MCP 依赖：${id}`
+  return `工具依赖：${id}`
+}
+
+function mapAnalyzerRelation(relation: FlowEngineeringRelation): EngineeringDataRelation | null {
+  if (relation.kind === 'data') {
+    const from = relation.from?.node_id
+    const to = relation.to?.node_id
+    const fromField = relation.from?.port
+    const toField = relation.to?.port
+    if (!from || !to || !fromField || !toField) return null
+    return {
+      from,
+      to,
+      fromField,
+      toField,
+      label: `${fromField} -> ${toField}`,
+      expression: `${from}.${fromField} -> ${to}.${toField}`,
+      source: (relation.derived_from || []).join(', '),
+      kind: 'data',
+      type: relation.kind,
+    }
+  }
+
+  if (!relation.kind.endsWith('_dependency')) return null
+  const from = relation.from?.node_id
+  const targetType = relation.to?.type || relation.kind.replace(/_dependency$/, '')
+  const targetId = relation.to?.id
+  if (!from || !targetId) return null
+  return {
+    from,
+    to: resourceNodeId(targetType, targetId),
+    fromField: dependencyField(relation.kind),
+    toField: 'resource',
+    label: dependencyLabel(relation.kind, targetId),
+    expression: `${from} requires ${targetType}:${targetId}`,
+    source: (relation.derived_from || []).join(', '),
+    kind: 'dependency',
+    type: relation.kind,
+  }
+}
+
+function buildEngineeringResourceNodes(relations: FlowEngineeringRelation[]): FlowNode[] {
+  const resources = new Map<string, FlowNode>()
+  relations.forEach((relation) => {
+    if (!relation.kind.endsWith('_dependency')) return
+    const type = relation.to?.type || relation.kind.replace(/_dependency$/, '')
+    const id = relation.to?.id
+    if (!id) return
+    const nodeId = resourceNodeId(type, id)
+    if (resources.has(nodeId)) return
+    resources.set(nodeId, {
+      id: nodeId,
+      title: id,
+      display_name: id,
+      type: 'engineering_resource',
+      kind: 'resource',
+      executor: 'base',
+      effect: 'none',
+      scope: 'engineering_resource',
+      locked: true,
+      inputs: {
+        resource: {
+          required: true,
+          schema: { type: `${type}_reference` },
+        },
+      },
+      params: {
+        engineering_resource: true,
+        resource_type: type,
+        resource_id: id,
+      },
+      x: 0,
+      y: 0,
+    })
+  })
+  return [...resources.values()]
+}
+
+export function buildEngineeringProjection(graph: FlowGraph) {
+  const analyzerRelations = graph.engineering_relations || []
+  const authoritativeRelations = analyzerRelations.map(mapAnalyzerRelation).filter((relation): relation is EngineeringDataRelation => Boolean(relation))
+  if (!analyzerRelations.length) return { graph, relations: buildLegacyEngineeringDataRelations(graph), resourceCount: 0 }
+  const resourceNodes = buildEngineeringResourceNodes(analyzerRelations)
+  return {
+    graph: resourceNodes.length ? { ...graph, nodes: [...graph.nodes, ...resourceNodes] } : graph,
+    relations: authoritativeRelations,
+    resourceCount: resourceNodes.length,
+  }
+}
+
 function displayValue(value: unknown, fallback = '-') {
   if (value === undefined || value === null || value === '') return fallback
   if (typeof value === 'string') return value
@@ -109,6 +220,27 @@ function recordFields(value: unknown, tone: EngineeringFieldTone): EngineeringFi
     meta: valueType(item),
     tone,
   }))
+}
+
+function protocolPortFields(value: unknown, tone: 'input' | 'output'): EngineeringField[] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return []
+  return Object.entries(value as Record<string, unknown>).slice(0, 12).map(([key, descriptor]) => {
+    const item = descriptor && typeof descriptor === 'object' && !Array.isArray(descriptor)
+      ? descriptor as Record<string, any>
+      : {}
+    const schema = item.schema && typeof item.schema === 'object' ? item.schema : {}
+    const binding = item.binding && typeof item.binding === 'object' ? item.binding : {}
+    const target = item.target && typeof item.target === 'object' ? item.target : {}
+    const valueLabel = tone === 'input'
+      ? [schema.type || item.type || 'any', binding.node_id && binding.output ? `${binding.node_id}.${binding.output}` : ''].filter(Boolean).join(' <- ')
+      : [schema.type || item.type || 'any', target.key || target.path || ''].filter(Boolean).join(' -> ')
+    return {
+      key,
+      value: valueLabel,
+      meta: tone === 'input' ? item.required === true ? 'required' : binding.source || 'optional' : target.type || 'output',
+      tone,
+    }
+  })
 }
 
 function uniqueFields(fields: EngineeringField[]) {
@@ -195,7 +327,7 @@ export function engineeringControlHandleId(direction: 'source' | 'target') {
   return `engineering-control-${direction}`
 }
 
-export function buildEngineeringDataRelations(graph: FlowGraph): EngineeringDataRelation[] {
+function buildLegacyEngineeringDataRelations(graph: FlowGraph): EngineeringDataRelation[] {
   const outputs = new Map<string, Array<{ node: FlowNode; field: string }>>()
   graph.nodes.forEach((node) => declaredOutputFields(node).forEach((field) => {
     const key = field.toLowerCase()
@@ -237,6 +369,13 @@ export function buildEngineeringDataRelations(graph: FlowGraph): EngineeringData
   return relations
 }
 
+export function buildEngineeringDataRelations(graph: FlowGraph): EngineeringDataRelation[] {
+  if (graph.engineering_relations?.length) {
+    return graph.engineering_relations.map(mapAnalyzerRelation).filter((relation): relation is EngineeringDataRelation => Boolean(relation))
+  }
+  return buildLegacyEngineeringDataRelations(graph)
+}
+
 export function locateNodeSource(files: FlowFiles, nodeId: string) {
   const preferredKeys = ['root_flow', ...Object.keys(files).filter((key) => key !== 'root_flow')]
   for (const key of preferredKeys) {
@@ -273,7 +412,9 @@ function buildNodeSourceIndex(files: FlowFiles, nodes: FlowNode[]) {
     })
   }
   nodes.forEach((node) => {
-    if (!sourceByNode.has(node.id)) sourceByNode.set(node.id, { key: 'root_flow', path: 'root.flow.json', line: 1 })
+    if (!sourceByNode.has(node.id)) sourceByNode.set(node.id, isEngineeringResourceNode(node)
+      ? { key: 'analysis', path: 'Analyzer projection', line: 0 }
+      : { key: 'root_flow', path: 'root.flow.json', line: 1 })
   })
   return sourceByNode
 }
@@ -282,14 +423,17 @@ export function buildEngineeringSections(node: FlowNode, graph: FlowGraph, index
   const params = node.params || {}
   const incoming = indexedEdges?.incoming || graph.edges.filter((edge) => edge.to === node.id)
   const outgoing = indexedEdges?.outgoing || graph.edges.filter((edge) => edge.from === node.id)
-  const inputs: EngineeringField[] = [...schemaFields(node.input_schema, 'input')]
+  const inputs: EngineeringField[] = [
+    ...protocolPortFields(node.inputs, 'input'),
+    ...schemaFields(node.input_schema, 'input'),
+  ]
   recordFields(node.input_binding, 'input').forEach((field) => {
     if (!inputs.some((input) => input.key === field.key)) inputs.push({ ...field, meta: 'binding' })
   })
   const inputSource = node.source || params.source || params.input
   if (!inputs.length) incoming.slice(0, 6).forEach((edge) => addField(inputs, edge.label || 'request', edge.from, 'input', 'node ref'))
 
-  const outputs: EngineeringField[] = []
+  const outputs: EngineeringField[] = [...protocolPortFields(node.outputs, 'output')]
   const declaredOutputs = declaredOutputFields(node)
   declaredOutputs.forEach((name) => addField(outputs, name, outputContractType(node), 'output', node.primary_output === name ? 'primary' : 'output'))
   if (!outputs.length && node.output_contract) outputs.push(...schemaFields(node.output_contract, 'output'))
@@ -299,6 +443,7 @@ export function buildEngineeringSections(node: FlowNode, graph: FlowGraph, index
   addField(bindings, 'tool_binding', node.tool_binding, 'binding', 'tool')
   addField(bindings, 'allowed_tools', node.allowed_tools, 'binding', 'allowlist')
   addField(bindings, 'mcp_binding', node.mcp_binding, 'binding', 'mcp')
+  addField(bindings, 'component_ref', node.component_ref, 'binding', 'component')
 
   const execution: EngineeringField[] = []
   addField(execution, 'source', inputSource, 'neutral', node.input_kind || 'input')

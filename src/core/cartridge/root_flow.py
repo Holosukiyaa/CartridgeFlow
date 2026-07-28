@@ -1,4 +1,6 @@
 from datetime import datetime
+import json
+import re
 
 from core.runtime.state_machine import assert_transition
 
@@ -63,16 +65,35 @@ class RootFlowEngine:
     def next_state(self, state_name: str) -> str | None:
         return (self.states.get(state_name) or {}).get("next")
 
-    def next_states(self, state_name: str) -> list[str]:
+    def _is_v08(self) -> bool:
+        protocol = self.root_flow.get("protocol") if isinstance(self.root_flow.get("protocol"), dict) else {}
+        return protocol.get("id") == "CF-FARP" and str(protocol.get("version")) == "0.8"
+
+    def next_states(self, state_name: str, context: dict | None = None) -> list[str]:
         result = []
         next_state = self.next_state(state_name)
         if next_state:
             result.append(next_state)
-        for edge in self.root_flow.get("edges") or []:
+        edge_field = "control_edges" if self._is_v08() else "edges"
+        for edge in self.root_flow.get(edge_field) or []:
+            if not isinstance(edge, dict):
+                continue
+            kind = str(edge.get("kind") or ("control" if not self._is_v08() else ""))
+            if self._is_v08() and kind not in {"control", "branch"}:
+                continue
             source = edge.get("from") or edge.get("source")
             target = edge.get("to") or edge.get("target")
-            if source == state_name and target:
+            if source == state_name and target and (kind != "branch" or self._condition_matches(edge.get("condition"), context or {})):
                 result.append(target)
+        if self._is_v08():
+            routes = (self.states.get(state_name) or {}).get("routes")
+            if isinstance(routes, dict):
+                for route in routes.values():
+                    if not isinstance(route, dict):
+                        continue
+                    target = route.get("target")
+                    if target and self._condition_matches(route.get("condition"), context or {}):
+                        result.append(target)
         deduped = []
         seen = set()
         for item in result:
@@ -80,6 +101,43 @@ class RootFlowEngine:
                 seen.add(item)
                 deduped.append(item)
         return deduped
+
+    def _condition_matches(self, condition, context: dict) -> bool:
+        if isinstance(condition, dict):
+            source = str(condition.get("source") or "")
+            if source != "store":
+                return False
+            value = self._store_path(context, str(condition.get("key") or ""), str(condition.get("path") or ""))
+            operator = str(condition.get("operator") or "eq")
+            expected = condition.get("value")
+            if operator == "eq":
+                return value == expected
+            if operator == "ne":
+                return value != expected
+            if operator == "in" and isinstance(expected, list):
+                return value in expected
+            return False
+        if not isinstance(condition, str) or not condition.strip():
+            return False
+        match = re.fullmatch(r"store:([A-Za-z_][\w]*)(?:\.([A-Za-z_][\w.]*))?\s*(==|!=)\s*(.+)", condition.strip())
+        if not match:
+            return False
+        key, path, operator, raw_expected = match.groups()
+        try:
+            expected = json.loads(raw_expected)
+        except json.JSONDecodeError:
+            expected = raw_expected.strip().strip("'\"")
+        value = self._store_path(context, key, path or "")
+        return value == expected if operator == "==" else value != expected
+
+    def _store_path(self, context: dict, key: str, path: str):
+        store = context.get("store") if isinstance(context.get("store"), dict) else context
+        value = store.get(key) if isinstance(store, dict) else None
+        for part in [item for item in path.split(".") if item]:
+            if not isinstance(value, dict) or part not in value:
+                return None
+            value = value[part]
+        return value
 
     def _incoming_counts(self) -> dict[str, int]:
         incoming = {state_id: 0 for state_id in self.states}
@@ -91,7 +149,12 @@ class RootFlowEngine:
                 if key not in seen_edges:
                     seen_edges.add(key)
                     incoming[target_id] = incoming.get(target_id, 0) + 1
-        for edge in self.root_flow.get("edges") or []:
+        edge_field = "control_edges" if self._is_v08() else "edges"
+        for edge in self.root_flow.get(edge_field) or []:
+            if not isinstance(edge, dict):
+                continue
+            if self._is_v08() and edge.get("kind") not in {"control", "branch"}:
+                continue
             source = edge.get("from") or edge.get("source")
             target = edge.get("to") or edge.get("target")
             if source in self.states and target in self.states:
@@ -99,6 +162,8 @@ class RootFlowEngine:
                 if key not in seen_edges:
                     seen_edges.add(key)
                     incoming[target] = incoming.get(target, 0) + 1
+        if self._is_v08():
+            return {node_id: min(count, 1) for node_id, count in incoming.items()}
         return incoming
 
     def run_standard_flow(
@@ -157,7 +222,7 @@ class RootFlowEngine:
                 break
             self.complete(state_doc, state_name, "completed")
             state = self.states.get(state_name) or {}
-            next_states = [] if state.get("type") == "terminal" and state_name != start_state else self.next_states(state_name)
+            next_states = [] if state.get("type") == "terminal" and state_name != start_state else self.next_states(state_name, state_doc.get("context") or {})
             if state.get("type") == "terminal" and (state_name == "complete" or not next_states):
                 state_doc["status"] = "completed" if state_name == "complete" else state_name
                 state_doc["current_state"] = state_name

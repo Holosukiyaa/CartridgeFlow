@@ -76,6 +76,33 @@ function findRunResultHtml(runEvents: FlowEvent[]) {
   return ''
 }
 
+function primaryRunArtifact(run: RunResult) {
+  const artifacts = run.delivery?.artifacts?.length ? run.delivery.artifacts : run.artifacts || []
+  const priority = ['video', 'audio', 'image', 'html', 'markdown', 'json', 'text']
+  return artifacts
+    .filter((artifact) => artifact?.url || artifact?.name)
+    .slice()
+    .sort((left, right) => {
+      const leftRank = priority.indexOf(String(left.type || '').toLowerCase())
+      const rightRank = priority.indexOf(String(right.type || '').toLowerCase())
+      return (leftRank < 0 ? priority.length : leftRank) - (rightRank < 0 ? priority.length : rightRank)
+    })[0]
+}
+
+function openRunArtifact(run: RunResult) {
+  const artifact = primaryRunArtifact(run)
+  if (!artifact) return false
+  const url = artifact.url || `/api/cartridge-runs/${encodeURIComponent(run.run_id)}/artifacts/${encodeURIComponent(artifact.name)}/preview`
+  const link = document.createElement('a')
+  link.href = url
+  link.target = '_blank'
+  link.rel = 'noopener noreferrer'
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  return true
+}
+
 export default function FlowWorkbench({ flowId, onSwitchFlow }: {
   flowId: string
   onSwitchFlow: (flowId: string) => void
@@ -670,6 +697,7 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
                 }
               }}
               onOpenArtifacts={async (run) => {
+                if (openRunArtifact(run)) return
                 try {
                   const eventData = await fetchCartridgeRunEvents(run.run_id)
                   const html = findRunResultHtml(eventData.items || [])

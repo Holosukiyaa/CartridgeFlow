@@ -307,6 +307,10 @@ class DevFlowFilesPayload(BaseModel):
     files: dict = Field(default_factory=dict)
 
 
+class FlowAnalysisPayload(DevFlowFilesPayload):
+    target: str = "draft"
+
+
 class AIFlowSelection(BaseModel):
     node_ids: list[str] = Field(default_factory=list)
     edge_ids: list[str] = Field(default_factory=list)
@@ -1024,12 +1028,12 @@ def _flow_manifest_files(cartridge_id: str, incoming_files: dict | None = None) 
     return manifest, files
 
 
-def _compatibility_for_manifest(manifest: dict, root_flow: dict | None) -> dict:
+def _compatibility_for_manifest(manifest: dict, root_flow: dict | None, analysis_target: str = "dev") -> dict:
     base = load_base_implementation(ROOT)
-    return build_compatibility_report(base, manifest, root_flow or {}, ROOT)
+    return build_compatibility_report(base, manifest, root_flow or {}, ROOT, analysis_target=analysis_target)
 
 
-def _compatibility_for_cartridge(cartridge: dict) -> dict:
+def _compatibility_for_cartridge(cartridge: dict, analysis_target: str = "dev") -> dict:
     manifest = cartridge.get("manifest") or {}
     overlay_dirs = []
     if manifest.get("portable_dlc") and cartridge.get("package_path"):
@@ -1041,6 +1045,7 @@ def _compatibility_for_cartridge(cartridge: dict) -> dict:
         cartridge.get("root_flow") or {},
         ROOT,
         protocol_overlay_dirs=overlay_dirs,
+        analysis_target=analysis_target,
     )
 
 
@@ -1093,7 +1098,7 @@ def _release_preflight_for_cartridge(cartridge: dict) -> dict:
     from core.studio.resources import load_resources
 
     manifest = cartridge.get("manifest") or {}
-    compatibility = _compatibility_for_cartridge(cartridge)
+    compatibility = _compatibility_for_cartridge(cartridge, analysis_target="publish")
     certification = _certification_for_cartridge(cartridge)
     environment = EnvironmentChecker().check(manifest)
     dependencies = DependencyResolver().resolve(manifest, environment)
@@ -1427,7 +1432,7 @@ def package_cartridge(cartridge_id: str, payload: CartridgePackagePayload | None
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     try:
-        compatibility = _compatibility_for_cartridge(cartridge)
+        compatibility = _compatibility_for_cartridge(cartridge, analysis_target="package")
     except BaseManifestError as e:
         raise HTTPException(status_code=500, detail=str(e))
     package_mode = (payload.package_mode if payload else "dev") or "dev"
@@ -1476,6 +1481,9 @@ def package_cartridge(cartridge_id: str, payload: CartridgePackagePayload | None
             if item.is_file():
                 zf.write(item, item.relative_to(root).as_posix())
         zf.writestr("package.compatibility.json", _json.dumps(compatibility, ensure_ascii=False, indent=2))
+        flow_analysis = (compatibility.get("flow_contract") or {}).get("analysis")
+        if isinstance(flow_analysis, dict):
+            zf.writestr("package.flow-analysis.json", _json.dumps(flow_analysis, ensure_ascii=False, indent=2))
         zf.writestr("package.local-bindings.json", _json.dumps(binding_descriptor, ensure_ascii=False, indent=2))
         zf.writestr("package.portability.json", _json.dumps(portability, ensure_ascii=False, indent=2))
         zf.writestr("package.metadata.json", _json.dumps({
@@ -2019,6 +2027,22 @@ def list_lab_flow_mcp_tools(cartridge_id: str):
         raise HTTPException(status_code=404, detail=str(e))
 
 
+@app.get("/api/lab/flows/{cartridge_id}/resource-catalog")
+def get_lab_flow_resource_catalog(cartridge_id: str):
+    from core.studio.resource_catalog import build_flow_resource_catalog
+
+    try:
+        cartridge = registry.get_cartridge(cartridge_id)
+        return build_flow_resource_catalog(
+            ROOT,
+            cartridge.get("manifest") or {},
+            cartridge.get("root_flow") or {},
+            package_path=cartridge.get("package_path"),
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
 def _ensure_manifest_tool_editor_allowed(manifest: dict) -> None:
     if manifest.get("portable_dlc"):
         raise HTTPException(
@@ -2181,6 +2205,28 @@ def preview_lab_flow_graph(cartridge_id: str, payload: DevFlowFilesPayload):
             raise HTTPException(status_code=403, detail="Only dev flows are editable")
         preview_cartridge = dev_flow_manager.preview_graph(cartridge_id, payload.files)
         return {"graph": flow_graph_builder.build(preview_cartridge)}
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/lab/flows/{cartridge_id}/analyze")
+def analyze_lab_flow(cartridge_id: str, payload: FlowAnalysisPayload):
+    try:
+        cartridge = registry.get_cartridge(cartridge_id)
+        if not cartridge.get("editable"):
+            raise HTTPException(status_code=403, detail="Only dev flows are analyzable from the authoring API")
+        preview = dev_flow_manager.preview_graph(cartridge_id, payload.files)
+        from core.lab.flow_analyzer import ANALYSIS_TARGETS, analyze_flow
+        if payload.target not in ANALYSIS_TARGETS:
+            raise HTTPException(status_code=400, detail="target must be draft, dev, preview, production, package, or publish")
+        return analyze_flow(
+            preview.get("root_flow") or {},
+            preview,
+            target=payload.target,
+            base=load_base_implementation(ROOT),
+        )
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except ValueError as e:

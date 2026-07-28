@@ -8,9 +8,10 @@
 |---|---|
 | 第一次了解项目 | 根目录 `README.md` -> [项目分层](overview/PROJECT_STRUCTURE.md) -> [路线图](planning/ROADMAP.md) |
 | AI 接手或准备开发 | 根目录 `AGENT.md` -> [任务清单](planning/TODO.md) -> 与需求直接相关的源码；产品边界和里程碑再查 [路线图](planning/ROADMAP.md) |
-| 修改 Base、Flow 或运行时 | [当前 Base 0.2 契约](protocol/CARTRIDGEFLOW_BASE_CONTRACT_v0.2.md) -> [最新 CF-FARP 0.7 协议](protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.7.md) -> [机器 registry](../protocol/README.md) -> `src/core/protocol/` -> 对应 conformance 测试；修复现有运行时还要核对 v0.6 快照 |
+| 修改 Base、Flow 或运行时 | [当前 Base 0.2 契约](protocol/CARTRIDGEFLOW_BASE_CONTRACT_v0.2.md) -> [最新 CF-FARP 0.8 协议](protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.8.md) -> [机器 registry](../protocol/README.md) -> `src/core/protocol/` -> 对应 conformance 测试；修复现有运行时还要核对实际声明支持的 v0.6/v0.7 快照 |
 | 修改 Portable DLC | [Portable DLC 架构](architecture/PORTABLE_DLC_ARCHITECTURE.md) -> [协议治理](protocol/GOVERNANCE.md) |
-| 修改 Flow 节点主卡或详情信息 | [节点信息架构报告](architecture/FLOW_NODE_INFORMATION_ARCHITECTURE.md) -> [最新 CF-FARP 0.7 协议](protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.7.md) -> 对应节点视图代码 |
+| 修改 Flow 节点主卡或详情信息 | [节点信息架构报告](architecture/FLOW_NODE_INFORMATION_ARCHITECTURE.md) -> [最新 CF-FARP 0.8 协议](protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.8.md) -> 对应节点视图代码 |
+| 设计 Flow 创作、关系探测或强制检测 | [Flow 创作与分析架构](architecture/FLOW_AUTHORING_ANALYSIS_CONTRACT.md) -> [最新 CF-FARP 0.8 协议](protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.8.md) -> 协议校验、图构建与工作台关系代码 |
 | 修改 AI 管家交互 | [AI 管家交互模式](architecture/AI_STEWARD_INTERACTION_MODES.md) -> 工作台视图与结构化变更边界 |
 | 讨论企业版布局与旧系统接口接入 | [企业版管理器/运行器说明](architecture/ENTERPRISE_MANAGER_RUNNER_PLAIN_GUIDE.md) -> [官方接口接入验证卡带](architecture/OFFICIAL_INTERFACE_ONBOARDING_CARTRIDGE_ACTION_GUIDE.md) |
 | 设计 AI 视频日报参考流程 | [AI 视频日报卡带](architecture/AI_VIDEO_DAILY_CARTRIDGE.md) -> 当前卡带工作台能力边界 |
@@ -36,10 +37,12 @@ docs/
 - [逐文件清单](development/FILE_INVENTORY.md)：登记全部项目自有文件的用途，供维护时查阅。
 - [路线图](planning/ROADMAP.md)：长期产品边界、阶段里程碑和生产验收门槛。
 - [Base Contract 0.2](protocol/CARTRIDGEFLOW_BASE_CONTRACT_v0.2.md)：当前基座宿主契约。
-- [CF-FARP 0.7](protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.7.md)：最新 Flow 协议正文，定义卡带资产、交互节点和脚本安全边界。
-- [CF-FARP 0.6](protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.6.md)：当前参考底座仍在运行的上一版协议快照。
+- [CF-FARP 0.8](protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.8.md)：最新正式 Flow 协议正文，定义结构化创作事实、统一 Analyzer、工程关系、诊断门禁以及完整运行安全边界。
+- [CF-FARP 0.7](protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.7.md)：当前参考底座部分实现的上一版 Flow 协议快照。
+- [CF-FARP 0.6](protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.6.md)：当前参考底座仍保留 partial 支持的历史协议快照。
 - [Portable DLC 架构](architecture/PORTABLE_DLC_ARCHITECTURE.md)：基座与卡带私有能力的激活、隔离和所有权约束。
 - [Flow 节点信息架构](architecture/FLOW_NODE_INFORMATION_ARCHITECTURE.md)：逐类规定开始、结束和全部业务节点的主卡、运行态、详情子卡与禁止展示信息。
+- [Flow 创作与分析架构](architecture/FLOW_AUTHORING_ANALYSIS_CONTRACT.md)：规定业务流程、执行契约和工程关系三层边界，以及统一 Analyzer、强制检测与创作 AI 入口。
 - [AI 管家交互模式](architecture/AI_STEWARD_INTERACTION_MODES.md)：规定引导/委托双模式、工程视图指针与框选语义，以及 AI 修改权限边界。
 - [企业版管理器/运行器说明](architecture/ENTERPRISE_MANAGER_RUNNER_PLAIN_GUIDE.md)：用团队可共享的大白话解释统一管理器、分布式运行器和卡带的职责边界。
 - [官方接口接入验证卡带](architecture/OFFICIAL_INTERFACE_ONBOARDING_CARTRIDGE_ACTION_GUIDE.md)：定义最小接口探测、负责人确认、本地知识库、仿真报告和正式接入门槛。
@@ -52,8 +55,9 @@ docs/
 | 协议 | 基座声明 | 用途 |
 |---|---|---|
 | CARTRIDGEFLOW-BASE v0.2 | 当前实现契约 | 基座所有权、本机配置、恢复、扩展和卸载边界。 |
-| CF-FARP v0.7 | 未声明支持 | 最新规范；实现与 conformance 完成前禁止运行。 |
-| CF-FARP v0.6 | `partial` | 当前参考底座实际运行的协议。 |
+| CF-FARP v0.8 | partial | 最新正式规范；已支持结构化 I/O、typed control、Flow Analyzer、统一资源目录与严格运行门禁。 |
+| CF-FARP v0.7 | `partial` | 当前参考底座部分实现的协议。 |
+| CF-FARP v0.6 | `partial` | 当前参考底座部分实现的历史协议。 |
 | CF-FARP v0.1-v0.5 | `recognized` | 仅保留身份、迁移目标和历史测试；不可运行、不可认证。 |
 
 ### 历史快照

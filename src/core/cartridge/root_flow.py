@@ -65,27 +65,27 @@ class RootFlowEngine:
     def next_state(self, state_name: str) -> str | None:
         return (self.states.get(state_name) or {}).get("next")
 
-    def _is_v08(self) -> bool:
+    def _uses_typed_control_edges(self) -> bool:
         protocol = self.root_flow.get("protocol") if isinstance(self.root_flow.get("protocol"), dict) else {}
-        return protocol.get("id") == "CF-FARP" and str(protocol.get("version")) == "0.8"
+        return protocol.get("id") == "CF-FARP" and str(protocol.get("version")) in {"0.8", "0.9"}
 
     def next_states(self, state_name: str, context: dict | None = None) -> list[str]:
         result = []
         next_state = self.next_state(state_name)
         if next_state:
             result.append(next_state)
-        edge_field = "control_edges" if self._is_v08() else "edges"
+        edge_field = "control_edges" if self._uses_typed_control_edges() else "edges"
         for edge in self.root_flow.get(edge_field) or []:
             if not isinstance(edge, dict):
                 continue
-            kind = str(edge.get("kind") or ("control" if not self._is_v08() else ""))
-            if self._is_v08() and kind not in {"control", "branch"}:
+            kind = str(edge.get("kind") or ("control" if not self._uses_typed_control_edges() else ""))
+            if self._uses_typed_control_edges() and kind not in {"control", "branch"}:
                 continue
             source = edge.get("from") or edge.get("source")
             target = edge.get("to") or edge.get("target")
             if source == state_name and target and (kind != "branch" or self._condition_matches(edge.get("condition"), context or {})):
                 result.append(target)
-        if self._is_v08():
+        if self._uses_typed_control_edges():
             routes = (self.states.get(state_name) or {}).get("routes")
             if isinstance(routes, dict):
                 for route in routes.values():
@@ -149,11 +149,11 @@ class RootFlowEngine:
                 if key not in seen_edges:
                     seen_edges.add(key)
                     incoming[target_id] = incoming.get(target_id, 0) + 1
-        edge_field = "control_edges" if self._is_v08() else "edges"
+        edge_field = "control_edges" if self._uses_typed_control_edges() else "edges"
         for edge in self.root_flow.get(edge_field) or []:
             if not isinstance(edge, dict):
                 continue
-            if self._is_v08() and edge.get("kind") not in {"control", "branch"}:
+            if self._uses_typed_control_edges() and edge.get("kind") not in {"control", "branch"}:
                 continue
             source = edge.get("from") or edge.get("source")
             target = edge.get("to") or edge.get("target")
@@ -162,7 +162,7 @@ class RootFlowEngine:
                 if key not in seen_edges:
                     seen_edges.add(key)
                     incoming[target] = incoming.get(target, 0) + 1
-        if self._is_v08():
+        if self._uses_typed_control_edges():
             return {node_id: min(count, 1) for node_id, count in incoming.items()}
         return incoming
 

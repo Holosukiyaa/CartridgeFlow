@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from .release_catalog import ProtocolReleaseCatalog, load_protocol_release_catalog
+
 
 class ProtocolRegistryError(ValueError):
     pass
@@ -12,12 +14,16 @@ class ProtocolRegistry:
     def __init__(self, root: str | Path, overlay_dirs: list[str | Path] | None = None):
         self.root = Path(root)
         self.protocol_dir = self.root / "protocol"
+        self.base_dir = self.protocol_dir / "base"
+        self.vocabulary_dir = self.protocol_dir / "vocabulary"
+        self.tooling_dir = self.protocol_dir / "tooling"
         self.overlay_dirs = [Path(item) for item in (overlay_dirs or [])]
+        self.release_catalog: ProtocolReleaseCatalog = load_protocol_release_catalog(self.root)
         self.protocols = self._load_protocols()
         self.protocol_history = self._load_protocol_history()
         self.profiles = self._load_versioned_id_set("profiles", "profiles")
         self.capabilities = self._load_versioned_id_set("capabilities", "capabilities")
-        self.tool_packs = self._load_id_set("tool_packs.json", "tool_packs")
+        self.tool_packs = self._load_id_set(self.tooling_dir / "tool_packs.json", "tool_packs")
 
     def validate_base(self, base: dict) -> list[dict]:
         findings: list[dict] = []
@@ -33,23 +39,26 @@ class ProtocolRegistry:
         return findings
 
     def supports_protocol(self, protocol_id: str, version: str) -> bool:
-        key = (protocol_id, version)
-        return key in self.protocols and key not in self.protocol_history
+        if protocol_id == "CF-FARP":
+            return self.release_catalog.published(protocol_id, version)
+        return (protocol_id, version) in self.protocols
 
     def recognizes_protocol(self, protocol_id: str, version: str) -> bool:
-        return (protocol_id, version) in self.protocols or (protocol_id, version) in self.protocol_history
+        return self.release_catalog.recognizes(protocol_id, version) or (protocol_id, version) in self.protocols
 
     def protocol_lifecycle(self, protocol_id: str, version: str) -> dict | None:
-        return self.protocol_history.get((protocol_id, version))
+        return self.release_catalog.lifecycle(protocol_id, version)
 
     def _load_protocols(self) -> set[tuple[str, str]]:
-        result: set[tuple[str, str]] = set()
-        for protocol_dir in [self.protocol_dir, *self.overlay_dirs]:
+        result = {(item["id"], item["version"]) for item in self.release_catalog.releases}
+        for path in self.base_dir.glob("CARTRIDGEFLOW-BASE-*.json"):
+            data = self._read_json(path)
+            if data.get("id") and data.get("version"):
+                result.add((str(data["id"]), str(data["version"])))
+        for protocol_dir in self.overlay_dirs:
             if not protocol_dir.is_dir():
                 continue
             for path in protocol_dir.glob("*.json"):
-                if protocol_dir == self.protocol_dir and path.name in {"profiles.json", "capabilities.json", "tool_packs.json", "protocol_history.json"}:
-                    continue
                 data = self._read_json(path)
                 protocol_id = data.get("id")
                 version = data.get("version")
@@ -58,27 +67,17 @@ class ProtocolRegistry:
         return result
 
     def _load_protocol_history(self) -> dict[tuple[str, str], dict]:
-        path = self.protocol_dir / "protocol_history.json"
-        if not path.is_file():
-            return {}
-        data = self._read_json(path)
-        items = data.get("protocols")
-        if not isinstance(items, list):
-            raise ProtocolRegistryError("protocol/protocol_history.json.protocols must be an array")
-        result: dict[tuple[str, str], dict] = {}
-        for index, item in enumerate(items):
-            if not isinstance(item, dict) or not item.get("id") or not item.get("version"):
-                raise ProtocolRegistryError(f"protocol/protocol_history.json.protocols[{index}] requires id and version")
-            key = (str(item["id"]), str(item["version"]))
-            result[key] = item
-        return result
+        return {
+            (item["id"], item["version"]): self.release_catalog.lifecycle(item["id"], item["version"])
+            for item in self.release_catalog.releases
+            if item["lifecycle"] == "recognized_legacy"
+        }
 
-    def _load_id_set(self, filename: str, key: str) -> set[str]:
-        path = self.protocol_dir / filename
+    def _load_id_set(self, path: Path, key: str) -> set[str]:
         data = self._read_json(path)
         items = data.get(key)
         if not isinstance(items, list):
-            raise ProtocolRegistryError(f"protocol/{filename}.{key} must be an array")
+            raise ProtocolRegistryError(f"{path.relative_to(self.root)}.{key} must be an array")
         result: set[str] = set()
         for index, item in enumerate(items):
             if not isinstance(item, dict) or not isinstance(item.get("id"), str) or not item.get("id").strip():
@@ -89,9 +88,9 @@ class ProtocolRegistry:
     def _load_versioned_id_set(self, stem: str, key: str) -> set[str]:
         """Merge the base vocabulary with protocol-version vocabulary snapshots."""
         result: set[str] = set()
-        paths = sorted(self.protocol_dir.glob(f"{stem}*.json"))
+        paths = sorted(self.vocabulary_dir.glob(f"{stem}*.json"))
         if not paths:
-            raise ProtocolRegistryError(f"protocol registry file not found: {stem}.json")
+            raise ProtocolRegistryError(f"protocol vocabulary file not found: {stem}.json")
         for path in paths:
             data = self._read_json(path)
             items = data.get(key)

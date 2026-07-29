@@ -23,6 +23,11 @@
       "id": "CF-FARP",
       "version": "0.8",
       "status": "partial"
+    },
+    {
+      "id": "CF-FARP",
+      "version": "0.9",
+      "status": "partial"
     }
   ],
   "profiles": [
@@ -33,7 +38,8 @@
     "interactive_decision_runtime",
     "interaction_runtime",
     "portable_dlc_runtime",
-    "flow_analysis"
+    "flow_analysis",
+    "tool_transparency"
   ],
   "capabilities": [
     "manifest_load",
@@ -137,7 +143,21 @@
     "node_resource_binding_preflight",
     "explicit_node_model_binding",
     "silent_model_fallback_guard",
-    "authoring_model_scope_isolation"
+    "authoring_model_scope_isolation",
+    "mcp_node_source_format_v1",
+    "mcp_node_file_identity",
+    "mcp_source_static_parse",
+    "mcp_source_model_v1",
+    "compound_tool_operation_graph",
+    "tool_stage_trace_v1",
+    "tool_source_provenance",
+    "explicit_fallback_policy",
+    "host_capability_broker",
+    "opaque_tool_visibility_guard",
+    "mcp_graph_authoring_operations",
+    "mcp_source_digest_guard",
+    "portable_dlc_descriptor_v3",
+    "tool_resource_catalog_v2"
   ],
   "tool_packs": [
     "builtin.filesystem"

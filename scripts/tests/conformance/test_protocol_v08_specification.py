@@ -7,16 +7,16 @@ from core.protocol import ProtocolRegistry, build_compatibility_report, load_bas
 
 
 ROOT = Path(__file__).resolve().parents[3]
-DOCUMENT = ROOT / "docs/protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.8.md"
+DOCUMENT = ROOT / "docs/protocol/flow-authoring/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.8.md"
 
 
 class ProtocolV08SpecificationTests(unittest.TestCase):
     def test_registry_and_base_publish_v08_support(self):
-        registry_data = json.loads((ROOT / "protocol/CF-FARP-0.8.json").read_text(encoding="utf-8"))
+        registry_data = json.loads((ROOT / "protocol/releases/CF-FARP-0.8.json").read_text(encoding="utf-8"))
         self.assertEqual("0.8", registry_data["version"])
         self.assertEqual({"id": "CF-FARP", "version": "0.7"}, registry_data["supersedes"])
-        self.assertEqual("capabilities-0.8.json", registry_data["capabilities_file"])
-        self.assertEqual("profiles-0.8.json", registry_data["profiles_file"])
+        self.assertEqual("vocabulary/capabilities-0.8.json", registry_data["capabilities_file"])
+        self.assertEqual("vocabulary/profiles-0.8.json", registry_data["profiles_file"])
         self.assertEqual(DOCUMENT, ROOT / registry_data["document"])
 
         registry = ProtocolRegistry(ROOT)
@@ -61,7 +61,7 @@ class ProtocolV08SpecificationTests(unittest.TestCase):
 
     def test_v08_is_complete_standalone_and_has_valid_toc(self):
         text = DOCUMENT.read_text(encoding="utf-8")
-        v07 = (ROOT / "docs/protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.7.md").read_text(encoding="utf-8")
+        v07 = (ROOT / "docs/protocol/flow-authoring/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.7.md").read_text(encoding="utf-8")
         self.assertGreater(len(text.splitlines()), len(v07.splitlines()))
         for section in [
             "## 6. Manifest 契约",
@@ -107,11 +107,11 @@ class ProtocolV08SpecificationTests(unittest.TestCase):
         capability_block = re.search(r"```text\n(.*?)\n```", capability_section.group(1), re.DOTALL)
         self.assertIsNotNone(capability_block)
         documented = {item.strip() for item in capability_block.group(1).splitlines() if item.strip()}
-        capabilities = json.loads((ROOT / "protocol/capabilities-0.8.json").read_text(encoding="utf-8"))
+        capabilities = json.loads((ROOT / "protocol/vocabulary/capabilities-0.8.json").read_text(encoding="utf-8"))
         registered = {item["id"] for item in capabilities["capabilities"]}
         self.assertEqual(registered, documented)
 
-        profiles = json.loads((ROOT / "protocol/profiles-0.8.json").read_text(encoding="utf-8"))
+        profiles = json.loads((ROOT / "protocol/vocabulary/profiles-0.8.json").read_text(encoding="utf-8"))
         profile_ids = {item["id"] for item in profiles["profiles"]}
         self.assertIn("flow_analysis", profile_ids)
         self.assertEqual([], [item["profile"] for item in capabilities["capabilities"] if item["profile"] not in profile_ids])
@@ -133,11 +133,11 @@ class ProtocolV08SpecificationTests(unittest.TestCase):
             self.assertIn(term, text)
 
     def test_v07_published_files_are_not_rewritten_as_v08(self):
-        registry_data = json.loads((ROOT / "protocol/CF-FARP-0.7.json").read_text(encoding="utf-8"))
+        registry_data = json.loads((ROOT / "protocol/releases/CF-FARP-0.7.json").read_text(encoding="utf-8"))
         self.assertEqual("0.7", registry_data["version"])
         self.assertEqual(
             "# CartridgeFlow Flow Authoring Runtime Protocol v0.7",
-            (ROOT / "docs/protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.7.md")
+            (ROOT / "docs/protocol/flow-authoring/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.7.md")
             .read_text(encoding="utf-8")
             .splitlines()[0],
         )

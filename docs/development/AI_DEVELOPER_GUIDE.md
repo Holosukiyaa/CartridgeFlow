@@ -8,7 +8,7 @@
 
 1. 阅读根目录 `README.md`、`docs/planning/TODO.md` 和 `docs/planning/ROADMAP.md`。
 2. 阅读 `config/base/BASE_IMPLEMENTATION.json`，确认基座真实声明的协议、profile、capability 和 tool pack。
-3. 涉及宿主或流程语义时，完整阅读 Base v0.2 与最新 FARP v0.8；修改当前运行实现时还要核对 v0.6/v0.7 快照和 `BASE_IMPLEMENTATION.json`，不得把目标规范当作已实现事实。
+3. 涉及宿主或流程语义时，先读取 `protocol/catalog/release_manifest.json`，再完整阅读其中 current release 对应的 Base 与 FARP 正文；修改兼容路径时核对相应历史快照和 `BASE_IMPLEMENTATION.json`，不得把目标规范当作已实现事实。
 4. 涉及 DLC 时，阅读 `docs/architecture/PORTABLE_DLC_ARCHITECTURE.md` 和 `src/core/extensions/`。
 5. 检查 `git status --short`，保留用户已有改动。
 6. 先定位所有权边界，再决定修改核心还是卡带。
@@ -69,26 +69,17 @@ src/frontend/
 机器 registry：
 
 ```text
-protocol/CARTRIDGEFLOW-BASE-0.2.json
-protocol/CF-FARP-0.8.json
-protocol/capabilities-0.8.json
-protocol/profiles-0.8.json
-protocol/CF-FARP-0.7.json
-protocol/capabilities-0.7.json
-protocol/profiles-0.7.json
-protocol/CF-FARP-0.6.json
-protocol/capabilities.json
-protocol/profiles.json
-protocol/tool_packs.json
+protocol/base/CARTRIDGEFLOW-BASE-0.2.json
+protocol/catalog/release_manifest.json
+protocol/vocabulary/capabilities.json
+protocol/vocabulary/profiles.json
+protocol/tooling/tool_packs.json
 ```
 
 规范正文：
 
 ```text
-docs/protocol/CARTRIDGEFLOW_BASE_CONTRACT_v0.2.md
-docs/protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.8.md
-docs/protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.7.md
-docs/protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.6.md
+docs/protocol/base-contract/CARTRIDGEFLOW_BASE_CONTRACT_v0.2.md
 ```
 
 基座声明：
@@ -99,7 +90,7 @@ config/base/BASE_IMPLEMENTATION.json
 
 正文定义语义，registry 定义可发现身份，基座声明定义当前实现范围。三者不能互相冒充。
 
-v0.7 是最新目标规范，v0.6 是当前参考底座的实际运行协议。v0.7 交互节点、资产 Registry、descriptor v2 和脚本安全能力完成实现与 conformance 前，不能加入基座支持矩阵。
+`release_manifest.json` 指定唯一 current release 和 default_for_new_flows；当前为 v0.9。v0.6-v0.8 是兼容运行的 previous release，v0.1-v0.5 只识别并按 release manifest 的目标迁移。Base 支持状态必须以 `BASE_IMPLEMENTATION.json` 和 conformance 证据为准。
 
 ### 4.2 只读规则
 

@@ -10,6 +10,7 @@ app.title = "CartridgeFlowLite"
 
 _LITE_API_RULES = (
     re.compile(r"^/api/health$"),
+    re.compile(r"^/api/base$"),
     re.compile(r"^/api/uploads/file$"),
     re.compile(r"^/api/lab/flows(?:/.*)?$"),
     re.compile(r"^/api/llm/(?:providers(?:/.*)?|assignments|detect|test|import/opencode|config/export)$"),

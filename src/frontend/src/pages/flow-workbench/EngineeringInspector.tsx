@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Check, Clipboard, Code2, Database, GitCompareArrows, Lock, LockOpen, RotateCcw, Route, Save, Settings2, ShieldCheck, Unplug } from 'lucide-react'
-import type { FlowGraph, FlowNode } from '../../api.ts'
+import { Braces, Check, Clipboard, Code2, Database, FileCode2, GitCompareArrows, Lock, LockOpen, RotateCcw, Route, Save, Settings2, ShieldCheck, Unplug } from 'lucide-react'
+import type { FlowGraph, FlowNode, McpSourceResponse, StudioToolResource } from '../../api.ts'
 import { showToast } from '../../toast.tsx'
 import type { EngineeringNodeView, EngineeringSection } from './engineeringNode.ts'
 import type { NodeDraft } from './types.ts'
@@ -8,15 +8,21 @@ import type { NodeDraft } from './types.ts'
 type InspectorTab = 'overview' | 'schema' | 'bindings' | 'execution' | 'routes' | 'policies' | 'raw' | 'diff'
 
 const TABS: Array<{ id: InspectorTab; label: string }> = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'schema', label: 'Schema' },
-  { id: 'bindings', label: 'Bindings' },
-  { id: 'execution', label: 'Execution' },
-  { id: 'routes', label: 'Routes' },
-  { id: 'policies', label: 'Policies' },
-  { id: 'raw', label: 'Raw JSON' },
-  { id: 'diff', label: 'Diff' },
+  { id: 'overview', label: '概览' },
+  { id: 'schema', label: '数据结构' },
+  { id: 'bindings', label: '绑定' },
+  { id: 'execution', label: '执行' },
+  { id: 'routes', label: '流转' },
+  { id: 'policies', label: '策略' },
+  { id: 'raw', label: '原始 JSON' },
+  { id: 'diff', label: '变更对比' },
 ]
+
+const DRAFT_FIELD_LABELS: Partial<Record<keyof NodeDraft, string>> = {
+  title: '节点名称', displayName: '显示名称', description: '说明', action: '动作', type: '类型',
+  kind: '处理类别', executor: '执行器', effect: '副作用', next: '下一步', modelRole: '模型角色',
+  input: '输入', output: '输出',
+}
 
 const SECTION_ICONS = {
   inputs: Database,
@@ -73,7 +79,7 @@ function SectionTable({ section, nodeId, selectable, onFieldSelect }: {
             </div>
           ))}
         </div>
-      ) : <p className="cf-engineering-empty-inline">No declared fields</p>}
+      ) : <p className="cf-engineering-empty-inline">未声明字段</p>}
     </section>
   )
 }
@@ -88,7 +94,7 @@ function JsonSource({ value }: { value: string }) {
   )
 }
 
-export function EngineeringInspector({ node, graph, view, unlocked, canEdit, onToggleLock, draft, dirty, saving, onDraftChange, onResetDraft, onSaveDraft, stewardTool = 'none', onStewardFieldSelect }: {
+export function EngineeringInspector({ node, graph, view, unlocked, canEdit, onToggleLock, draft, dirty, saving, onDraftChange, onResetDraft, onSaveDraft, stewardTool = 'none', onStewardFieldSelect, mcpTool, mcpSource, mcpLoading = false, onOpenMcp, onOpenMcpSource }: {
   node: FlowNode | null
   graph: FlowGraph
   view: EngineeringNodeView | null
@@ -103,6 +109,11 @@ export function EngineeringInspector({ node, graph, view, unlocked, canEdit, onT
   onSaveDraft?: () => void
   stewardTool?: 'none' | 'pointer' | 'lasso'
   onStewardFieldSelect?: (fieldPath: string) => void
+  mcpTool?: StudioToolResource | null
+  mcpSource?: McpSourceResponse | null
+  mcpLoading?: boolean
+  onOpenMcp?: () => void
+  onOpenMcpSource?: () => void
 }) {
   const [tab, setTab] = useState<InspectorTab>('overview')
   useEffect(() => { setTab('overview') }, [node?.id])
@@ -173,24 +184,31 @@ export function EngineeringInspector({ node, graph, view, unlocked, canEdit, onT
           <section className="cf-engineering-overview">
             {unlocked && canEdit && draft && onDraftChange && (
               <section className="cf-engineering-direct-editor">
-                <header><Settings2 aria-hidden="true" /><strong>Edit node configuration</strong><span>{dirty ? 'Unsaved changes' : 'Saved'}</span></header>
+                <header><Settings2 aria-hidden="true" /><strong>编辑节点配置</strong><span>{dirty ? '有未保存的修改' : '已保存'}</span></header>
                 <div className="cf-engineering-direct-editor-grid">
                   {(['title', 'displayName', 'description', 'action', 'type', 'kind', 'executor', 'effect', 'next', 'modelRole', 'input', 'output'] as Array<keyof NodeDraft>).map((key) => {
                     const multiline = key === 'description'
-                    return <label key={String(key)} className={multiline ? 'wide' : undefined}><span>{String(key)}</span>{multiline ? <textarea value={String(draft[key] ?? '')} onChange={(event) => onDraftChange({ [key]: event.target.value } as Partial<NodeDraft>)} /> : <input value={String(draft[key] ?? '')} onChange={(event) => onDraftChange({ [key]: event.target.value } as Partial<NodeDraft>)} />}</label>
+                    return <label key={String(key)} className={multiline ? 'wide' : undefined}><span>{DRAFT_FIELD_LABELS[key] || String(key)}</span>{multiline ? <textarea value={String(draft[key] ?? '')} onChange={(event) => onDraftChange({ [key]: event.target.value } as Partial<NodeDraft>)} /> : <input value={String(draft[key] ?? '')} onChange={(event) => onDraftChange({ [key]: event.target.value } as Partial<NodeDraft>)} />}</label>
                   })}
                 </div>
                 <footer>
-                  <button type="button" disabled={!dirty || saving} onClick={onResetDraft}><RotateCcw aria-hidden="true" />Reset</button>
-                  <button type="button" className="primary" disabled={!dirty || saving} onClick={onSaveDraft}><Save aria-hidden="true" />{saving ? 'Saving...' : 'Save node'}</button>
+                  <button type="button" disabled={!dirty || saving} onClick={onResetDraft}><RotateCcw aria-hidden="true" />重置</button>
+                  <button type="button" className="primary" disabled={!dirty || saving} onClick={onSaveDraft}><Save aria-hidden="true" />{saving ? '保存中...' : '保存节点'}</button>
                 </footer>
               </section>
             )}
-            <div><span>Type</span><code>{node.type}</code></div>
-            <div><span>Kind</span><code>{view.semanticKind}</code></div>
-            <div><span>Action</span><code>{node.action || '-'}</code></div>
-            <div><span>Scope</span><code>{node.scope || 'root'}</code></div>
+            <div><span>类型</span><code>{node.type}</code></div>
+            <div><span>处理类别</span><code>{view.semanticKind}</code></div>
+            <div><span>动作</span><code>{node.action || '-'}</code></div>
+            <div><span>作用范围</span><code>{node.scope || 'root'}</code></div>
             <p>{view.description}</p>
+            {mcpTool && <section className="cf-engineering-mcp-summary">
+              <header><Braces aria-hidden="true" /><strong>MCP 内部流程</strong><code>{mcpTool.transparency || 'unknown'}</code></header>
+              <div><span>来源</span><code>{mcpSource?.path || mcpTool.implementation?.entry || mcpTool.source || '-'}</code></div>
+              <div><span>解析</span><code>{mcpLoading ? '解析中' : mcpSource?.source_model.ok ? '已解析' : mcpTool.parse_status === 'opaque' ? '不可解析' : mcpTool.parse_status || '未知'}</code></div>
+              <div><span>操作</span><code>{mcpSource?.source_model.operations.length ?? mcpTool.operation_count ?? 0}</code></div>
+              <footer><button type="button" onClick={onOpenMcp}><Braces aria-hidden="true" />展开流程</button><button type="button" onClick={onOpenMcpSource}><FileCode2 aria-hidden="true" />打开源码</button></footer>
+            </section>}
             {view.issues.length > 0 && <ul>{view.issues.map((issue) => <li className={issue.severity} key={issue.code}><b>{issue.code}</b>{issue.message}</li>)}</ul>}
           </section>
         )}

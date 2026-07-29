@@ -22,6 +22,7 @@ class LiteApiSurfaceTests(unittest.TestCase):
     def test_workbench_routes_are_available(self):
         allowed = [
             "/api/health",
+            "/api/base",
             "/api/lab/flows",
             "/api/lab/flows/dev.example/nodes",
             "/api/lab/flows/dev.example/test-run",
@@ -43,7 +44,6 @@ class LiteApiSurfaceTests(unittest.TestCase):
             "/docs",
             "/redoc",
             "/openapi.json",
-            "/api/base",
             "/api/studio/conformance",
             "/api/studio/todo",
             "/api/settings",
@@ -89,6 +89,13 @@ class LiteApiSurfaceTests(unittest.TestCase):
         self.assertEqual("nosniff", response.headers["x-content-type-options"])
         self.assertEqual("no-referrer", response.headers["referrer-policy"])
         self.assertIn("camera=()", response.headers["permissions-policy"])
+
+    def test_base_endpoint_distributes_protocol_release_catalog(self):
+        response = self.client.get("/api/base")
+        self.assertEqual(200, response.status_code)
+        catalog = response.json()["protocol_catalog"]
+        self.assertEqual("CF-FARP@0.9", catalog["default_for_new_flows"]["label"])
+        self.assertEqual("current", next(item["lifecycle"] for item in catalog["releases"] if item["version"] == "0.9"))
 
     def test_validation_errors_do_not_echo_api_keys(self):
         secret = "sk-security-regression-secret"

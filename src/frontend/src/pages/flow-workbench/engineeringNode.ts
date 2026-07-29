@@ -156,9 +156,11 @@ function buildEngineeringResourceNodes(relations: FlowEngineeringRelation[]): Fl
 
 export function buildEngineeringProjection(graph: FlowGraph) {
   const analyzerRelations = graph.engineering_relations || []
-  const authoritativeRelations = analyzerRelations.map(mapAnalyzerRelation).filter((relation): relation is EngineeringDataRelation => Boolean(relation))
+  // MCP implementation is disclosed on its business node, not as a second ID-only canvas node.
+  const canvasRelations = analyzerRelations.filter((relation) => relation.kind !== 'mcp_dependency')
+  const authoritativeRelations = canvasRelations.map(mapAnalyzerRelation).filter((relation): relation is EngineeringDataRelation => Boolean(relation))
   if (!analyzerRelations.length) return { graph, relations: buildLegacyEngineeringDataRelations(graph), resourceCount: 0 }
-  const resourceNodes = buildEngineeringResourceNodes(analyzerRelations)
+  const resourceNodes = buildEngineeringResourceNodes(canvasRelations)
   return {
     graph: resourceNodes.length ? { ...graph, nodes: [...graph.nodes, ...resourceNodes] } : graph,
     relations: authoritativeRelations,
@@ -465,12 +467,12 @@ export function buildEngineeringSections(node: FlowNode, graph: FlowGraph, index
   addField(policies, 'audit_log', node.audit_log, 'policy', 'boolean')
 
   return [
-    { id: 'inputs', label: 'Inputs', fields: uniqueFields(inputs) },
-    { id: 'outputs', label: 'Outputs', fields: uniqueFields(outputs) },
-    { id: 'bindings', label: 'Bindings', fields: uniqueFields(bindings) },
-    { id: 'execution', label: 'Execution', fields: uniqueFields(execution) },
-    { id: 'routes', label: 'Routes', fields: uniqueFields(routes) },
-    { id: 'policies', label: 'Policies', fields: uniqueFields(policies) },
+    { id: 'inputs', label: '输入', fields: uniqueFields(inputs) },
+    { id: 'outputs', label: '输出', fields: uniqueFields(outputs) },
+    { id: 'bindings', label: '绑定', fields: uniqueFields(bindings) },
+    { id: 'execution', label: '执行', fields: uniqueFields(execution) },
+    { id: 'routes', label: '流转', fields: uniqueFields(routes) },
+    { id: 'policies', label: '策略', fields: uniqueFields(policies) },
   ]
 }
 

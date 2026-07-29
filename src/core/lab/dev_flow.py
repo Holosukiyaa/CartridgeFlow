@@ -8,6 +8,7 @@ from core.cartridge.assets import ASSET_SCHEMA, COMPONENT_SCHEMA, sha256_bytes
 from core.cartridge.validator import ManifestValidator
 from core.cartridge.validator import ManifestValidationError
 from core.data_paths import DEV_CARTRIDGES_DIR
+from core.protocol import load_protocol_release_catalog
 
 
 class DevFlowManager:
@@ -21,6 +22,12 @@ class DevFlowManager:
 
     def __init__(self, root: str | Path):
         self.root = Path(root)
+        protocol_root = self.root if (self.root / "protocol" / "catalog" / "release_manifest.json").is_file() else Path(__file__).resolve().parents[3]
+        release_catalog = load_protocol_release_catalog(protocol_root)
+        self.default_protocol = release_catalog.data["default_for_new_flows"]
+        self.default_protocol_id = str(self.default_protocol["id"])
+        self.default_protocol_version = str(self.default_protocol["version"])
+        self.base_contract = release_catalog.data["base_contract"]
         self.dev_dir = self.root / DEV_CARTRIDGES_DIR
         self.validator = ManifestValidator()
         self.dev_dir.mkdir(parents=True, exist_ok=True)
@@ -178,10 +185,10 @@ class DevFlowManager:
             if state.get("type") == "terminal":
                 terminal_count += 1
         protocol = root_flow.get("protocol") if isinstance(root_flow.get("protocol"), dict) else {}
-        is_v08 = protocol.get("id") == "CF-FARP" and str(protocol.get("version")) == "0.8"
-        if is_v08 and root_flow.get("edges"):
-            errors.append("CF-FARP@0.8 root_flow.edges is legacy; use typed root_flow.control_edges")
-        edge_field = "control_edges" if is_v08 else "edges"
+        is_typed_protocol = protocol.get("id") == "CF-FARP" and str(protocol.get("version")) in {"0.8", "0.9"}
+        if is_typed_protocol and root_flow.get("edges"):
+            errors.append(f"CF-FARP@{protocol.get('version')} root_flow.edges is legacy; use typed root_flow.control_edges")
+        edge_field = "control_edges" if is_typed_protocol else "edges"
         edges = root_flow.get(edge_field) or []
         if edges and not isinstance(edges, list):
             errors.append(f"root_flow.{edge_field} must be an array")
@@ -190,7 +197,7 @@ class DevFlowManager:
                 if not isinstance(edge, dict):
                     errors.append(f"root_flow.{edge_field}[{index}] must be an object")
                     continue
-                if is_v08 and edge.get("kind") not in {"control", "branch", "action_route", "failure_route"}:
+                if is_typed_protocol and edge.get("kind") not in {"control", "branch", "action_route", "failure_route"}:
                     errors.append(f"root_flow.control_edges[{index}].kind is invalid")
                 source = edge.get("from") or edge.get("source")
                 target = edge.get("to") or edge.get("target")
@@ -220,11 +227,11 @@ class DevFlowManager:
             "root_flow": {"entry": "root.flow.json", "mode": "lifecycle", "required": True},
             "asset_registry": "assets/registry.json",
             "interaction_components": "assets/components.json",
-            "base_contract": {"id": "CARTRIDGEFLOW-BASE", "version": "0.2"},
+            "base_contract": dict(self.base_contract),
             "runtime_contract": {
-                "protocol": "CF-FARP",
-                "protocol_version": "0.7",
-                "required_profiles": ["runtime_core", "dynamic_decision_runtime", "interactive_decision_runtime", "interaction_runtime"],
+                "protocol": self.default_protocol_id,
+                "protocol_version": self.default_protocol_version,
+                "required_profiles": ["runtime_core", "flow_analysis", "tool_transparency", "dynamic_decision_runtime", "interactive_decision_runtime", "interaction_runtime"],
                 "recommended_profiles": ["testbench_core", "dev_authoring"],
                 "required_capabilities": [
                     "manifest_load",
@@ -232,6 +239,12 @@ class DevFlowManager:
                     "runtime_contract_parse",
                     "compatibility_report",
                     "root_flow_execution",
+                    "structured_io_contract",
+                    "explicit_input_binding",
+                    "typed_control_edges",
+                    "executable_topology_filter",
+                    "flow_analysis_report_v1",
+                    "analysis_report_freshness_guard",
                     "basic_node_execution",
                     "unified_process_node",
                     "process_node_kind_parse",
@@ -271,6 +284,13 @@ class DevFlowManager:
                     "side_effect_replay_guard",
                     "model_recipe_binding",
                     "delivery_primary_output_guard",
+                    "mcp_source_model_v1",
+                    "tool_source_provenance",
+                    "explicit_fallback_policy",
+                    "opaque_tool_visibility_guard",
+                    "mcp_source_digest_guard",
+                    "portable_dlc_descriptor_v3",
+                    "tool_resource_catalog_v2",
                 ],
                 "optional_capabilities": [
                     "artifact_preview",
@@ -282,7 +302,7 @@ class DevFlowManager:
                 "required_tools": [],
                 "optional_tools": [],
             },
-            "delivery_readiness": {"level": "dev", "certification_target": "CF-FARP@0.7", "notes": "Development flow generated by Flow Developer Lab."},
+            "delivery_readiness": {"level": "dev", "certification_target": f"{self.default_protocol_id}@{self.default_protocol_version}", "notes": "Development flow generated by Flow Developer Lab."},
             "runtime": {"type": "html_generator", "adapter": "builtin:html_generator"},
             "workspace": {"type": "none", "required": False, "open_policy": "manual"},
             "environment": {"os": ["windows", "macos", "linux"], "requires": []},
@@ -295,6 +315,7 @@ class DevFlowManager:
                     "type": "builtin",
                     "server": "filesystem",
                     "tool": "write_file",
+                    "transparency": "contract_only",
                     "description": "把 AI 处理节点产出的内容写入工作区内的指定文件。",
                     "default_params": {"path": "test_output/result.txt", "content": "store:analysis_result"},
                     "contract": {"side_effect": "writes_files"},
@@ -306,6 +327,7 @@ class DevFlowManager:
                     "type": "builtin",
                     "server": "filesystem",
                     "tool": "read_file",
+                    "transparency": "contract_only",
                     "description": "读取工作区内指定文件，并把内容写回 context.store。",
                     "default_params": {"path": "test_output/result.txt"},
                     "contract": {"side_effect": "none"},
@@ -330,7 +352,7 @@ class DevFlowManager:
             "name": f"{name or flow_id} Root Flow",
             "mode": "lifecycle",
             "cartridge_id": flow_id,
-            "protocol": {"id": "CF-FARP", "version": "0.7"},
+            "protocol": {"id": self.default_protocol_id, "version": self.default_protocol_version},
             "start": "start",
             "states": {
                 "start": {"type": "system", "title": "开始", "display_name": "开始", "action": "start", "locked": True, "next": "welcome"},
@@ -346,6 +368,8 @@ class DevFlowManager:
                     "interaction_mode": "display",
                     "component_ref": "welcome.panel",
                     "input_binding": {},
+                    "inputs": {},
+                    "outputs": {},
                     "params": {
                         "node_category": "interaction",
                         "preset": "display",
@@ -359,6 +383,10 @@ class DevFlowManager:
                 },
                 "complete": {"type": "terminal", "title": "完成", "display_name": "完成", "locked": True},
             },
+            "control_edges": [
+                {"kind": "control", "from": "start", "to": "welcome"},
+                {"kind": "control", "from": "welcome", "to": "complete"},
+            ],
         }
 
     def _asset_entry(self, asset_id: str, kind: str, path: str, media_type: str, content: bytes) -> dict:

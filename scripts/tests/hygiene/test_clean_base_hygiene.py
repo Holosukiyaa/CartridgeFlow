@@ -84,7 +84,7 @@ class CleanBaseHygieneTests(unittest.TestCase):
             ROOT / "docs" / "planning" / "ROADMAP.md",
             ROOT / "docs" / "planning" / "TODO.md",
             ROOT / "docs" / "planning" / "TODO_TEMPLATE.md",
-            ROOT / "docs" / "protocol" / "GOVERNANCE.md",
+            ROOT / "docs" / "protocol" / "governance" / "GOVERNANCE.md",
             ROOT / "protocol" / "README.md",
         )
 
@@ -128,7 +128,6 @@ class CleanBaseHygieneTests(unittest.TestCase):
             and "__pycache__" not in path.parts
         ]
         self.assertEqual([], unexpected)
-        self.assertEqual([], [path for path in scripts_root.rglob("__pycache__") if path.is_dir()])
         self.assertFalse((scripts_root / "skills").exists())
         self.assertTrue((ROOT / "docs" / "development" / "skills").is_dir())
 

@@ -15,6 +15,7 @@ ANALYSIS_TARGETS = {"draft", "dev", "preview", "production", "package", "publish
 CONTROL_KINDS = {"control", "branch", "action_route", "failure_route"}
 SIDE_EFFECTS = {"writes_files", "mutates_state", "external_side_effect"}
 SECRET_KEYS = {"api_key", "authorization", "credential", "headers", "key", "secret", "token"}
+TRANSPARENCY_LEVELS = {"atomic", "declared_graph", "contract_only", "opaque", "legacy_opaque"}
 
 
 def analyze_flow(
@@ -59,10 +60,10 @@ def analyze_flow(
         findings.append(finding)
 
     protocol = _protocol_identity(root_flow, manifest)
-    if protocol != ("CF-FARP", "0.8"):
+    if protocol[0] != "CF-FARP" or protocol[1] not in {"0.8", "0.9"}:
         add(
             "PROTOCOL_UNSUPPORTED",
-            f"Flow Analyzer v0.8 requires CF-FARP@0.8, got {protocol[0]}@{protocol[1]}.",
+            f"Flow Analyzer requires CF-FARP@0.8 or CF-FARP@0.9, got {protocol[0]}@{protocol[1]}.",
             stage="protocol_structure",
             path="protocol",
         )
@@ -134,6 +135,8 @@ def analyze_flow(
         for item in manifest.get("mcp_tools") or []
         if isinstance(item, dict) and item.get("id")
     }
+    if protocol == ("CF-FARP", "0.9"):
+        _validate_v09_tool_transparency(manifest, declared_tools, add)
     roles = {
         str(item.get("id"))
         for item in ((manifest.get("llm_recipe") or {}).get("roles") or [])
@@ -203,8 +206,12 @@ def analyze_flow(
                 add("MODEL_ROLE_UNDECLARED", f"Node {node_id} references undeclared model role {model_role}.", stage="resources", node_id=node_id, path=f"{node_path}.model_role")
         allowed_tools = _string_list(node.get("allowed_tools"))
         for tool_id in allowed_tools:
-            tool_kind = "mcp_dependency" if (declared_tools.get(tool_id) or {}).get("type") == "mcp" else "tool_dependency"
+            declared_tool = declared_tools.get(tool_id) or {}
+            tool_kind = "mcp_dependency" if declared_tool.get("type") in {"mcp", "cartridge_dlc", "local_resource", "remote_mcp"} else "tool_dependency"
             relations.append(_resource_relation(tool_kind, node_id, "tool", tool_id, f"{node_path}.allowed_tools"))
+            if protocol == ("CF-FARP", "0.9") and declared_tool:
+                transparency = str(declared_tool.get("transparency") or "legacy_opaque").strip()
+                relations.append(_resource_relation("tool_operation", node_id, "tool_transparency", transparency, f"manifest.mcp_tools.{tool_id}.transparency"))
             if tool_id not in declared_tools:
                 add("TOOL_UNDECLARED", f"Node {node_id} references undeclared tool {tool_id}.", stage="resources", node_id=node_id, path=f"{node_path}.allowed_tools")
         component_ref = str(node.get("component_ref") or "")
@@ -281,7 +288,7 @@ def analyze_flow(
         "schema": ANALYSIS_SCHEMA,
         "analysis_version": ANALYSIS_VERSION,
         "analysis_id": analysis_id,
-        "analyzer": {"implementation_id": "cartridgeflow.reference.flow-analyzer", "implementation_version": "0.8.0"},
+        "analyzer": {"implementation_id": "cartridgeflow.reference.flow-analyzer", "implementation_version": "0.9.0"},
         "protocol": {"id": protocol[0], "version": protocol[1]},
         "target": target,
         "source_digest": source_digest,
@@ -318,6 +325,73 @@ def build_source_digest(manifest: dict, root_flow: dict, base: dict | None = Non
     }
     encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
+
+
+def _validate_v09_tool_transparency(manifest: dict, declared_tools: dict[str, dict], add) -> None:
+    runtime = manifest.get("runtime_contract") if isinstance(manifest.get("runtime_contract"), dict) else {}
+    if "tool_transparency" not in (runtime.get("required_profiles") or []):
+        add(
+            "TOOL_TRANSPARENCY_PROFILE_MISSING",
+            "CF-FARP@0.9 cartridges must require the tool_transparency profile.",
+            stage="protocol_structure",
+            path="manifest.runtime_contract.required_profiles",
+        )
+    portable = manifest.get("portable_dlc") if isinstance(manifest.get("portable_dlc"), dict) else {}
+    if portable and portable.get("protocol") != "CF-FARP@0.9":
+        add(
+            "PORTABLE_DLC_PROTOCOL_MISMATCH",
+            "CF-FARP@0.9 portable DLC must declare protocol CF-FARP@0.9.",
+            stage="resources",
+            path="manifest.portable_dlc.protocol",
+        )
+    for tool_id, tool in declared_tools.items():
+        tool_type = str(tool.get("type") or "builtin").strip()
+        transparency = str(tool.get("transparency") or "").strip()
+        if not transparency:
+            add(
+                "TOOL_TRANSPARENCY_MISSING",
+                f"Tool {tool_id} must declare transparency for CF-FARP@0.9.",
+                stage="resources",
+                path=f"manifest.mcp_tools.{tool_id}.transparency",
+            )
+            continue
+        if transparency not in TRANSPARENCY_LEVELS:
+            add(
+                "TOOL_TRANSPARENCY_INVALID",
+                f"Tool {tool_id} declares unknown transparency level {transparency}.",
+                stage="resources",
+                path=f"manifest.mcp_tools.{tool_id}.transparency",
+            )
+            continue
+        if tool_type == "cartridge_dlc":
+            if not str(tool.get("node_id") or "").strip():
+                add(
+                    "MCP_NODE_ID_MISSING",
+                    f"Cartridge DLC tool {tool_id} must declare node_id.",
+                    stage="resources",
+                    path=f"manifest.mcp_tools.{tool_id}.node_id",
+                )
+            if transparency == "legacy_opaque":
+                add(
+                    "LEGACY_OPAQUE_V09_TOOL",
+                    f"Cartridge DLC tool {tool_id} cannot be legacy_opaque in a v0.9 cartridge.",
+                    stage="resources",
+                    path=f"manifest.mcp_tools.{tool_id}.transparency",
+                )
+            if transparency == "declared_graph" and not manifest.get("portable_dlc"):
+                add(
+                    "PORTABLE_DLC_DESCRIPTOR_MISSING",
+                    f"Declared graph tool {tool_id} requires manifest.portable_dlc.",
+                    stage="resources",
+                    path="manifest.portable_dlc",
+                )
+        if tool_type == "remote_mcp" and transparency not in {"contract_only", "opaque"}:
+            add(
+                "REMOTE_MCP_TRANSPARENCY_INVALID",
+                f"Remote MCP tool {tool_id} must use contract_only or opaque transparency.",
+                stage="resources",
+                path=f"manifest.mcp_tools.{tool_id}.transparency",
+            )
 
 
 def analyze_flow_structure(root_flow: dict) -> dict:
@@ -408,7 +482,7 @@ def _collect_control_edges(root_flow: dict, states: dict, add) -> list[dict]:
                 append("failure_route", node_id, str(target), f"states.{node_id}.failure_route", selector)
 
     if root_flow.get("edges"):
-        add("DERIVED_RELATION_IN_CONTROL_GRAPH", "v0.8 does not permit legacy root_flow.edges; migrate executable facts to control_edges.", stage="topology", path="edges")
+        add("DERIVED_RELATION_IN_CONTROL_GRAPH", "v0.8/v0.9 do not permit legacy root_flow.edges; migrate executable facts to control_edges.", stage="topology", path="edges")
     raw_edges = root_flow.get("control_edges") or []
     if not isinstance(raw_edges, list):
         add("CONTROL_EDGE_KIND_INVALID", "root_flow.control_edges must be an array.", stage="topology", path="control_edges")

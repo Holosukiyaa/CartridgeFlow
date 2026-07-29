@@ -23,7 +23,7 @@ class ProtocolV02RegistryTest(unittest.TestCase):
         self.assertNotIn(("CF-FARP", "0.2"), supported)
 
     def test_protocol_v02_capability_vocabulary_contains_layered_process_contract(self):
-        capabilities = json.loads((ROOT / "protocol" / "capabilities.json").read_text(encoding="utf-8"))
+        capabilities = json.loads((ROOT / "protocol" / "vocabulary" / "capabilities.json").read_text(encoding="utf-8"))
         ids = {
             str(item.get("id"))
             for item in capabilities.get("capabilities") or []

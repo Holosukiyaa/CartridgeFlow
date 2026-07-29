@@ -1,9 +1,9 @@
 # Flow 创作、执行契约与工程分析架构
 
-> 状态：架构决策已由 `CF-FARP@0.8` 正式版本化，待 Base 实现，供 Lite 工作台、AI 管家和 Flow Analyzer 使用
+> 状态：本文记录 v0.8 的架构决策；当前发布基线已升级到 `CF-FARP@0.9`，新增 MCP/DLC 透明执行语义以 v0.9 正文和 `protocol/catalog/release_manifest.json` 为准。
 > 日期：2026-07-28
-> 当前规范基线：`CARTRIDGEFLOW-BASE@0.2 + CF-FARP@0.8`；当前 Base 已声明 v0.8 partial 支持
-> 范围：记录业务流程、执行契约和工程关系三层边界的架构依据。规范性要求以 `docs/protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.8.md` 为准；本文没有改写 v0.7 快照。
+> 当前规范基线：`CARTRIDGEFLOW-BASE@0.2 + CF-FARP@0.9`；Base 对 v0.6-v0.9 的 partial 支持以 `config/base/BASE_IMPLEMENTATION.json` 为准。
+> 范围：记录业务流程、执行契约和工程关系三层边界的架构依据。规范性要求以 `docs/protocol/flow-authoring/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.8.md` 为准；本文没有改写 v0.7 快照。
 
 ## 1. 一句话结论
 

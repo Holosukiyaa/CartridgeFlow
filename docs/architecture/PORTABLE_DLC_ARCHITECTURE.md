@@ -2,7 +2,7 @@
 
 更新日期：2026-07-21
 
-本文记录 `CARTRIDGEFLOW-BASE@0.2 + CF-FARP@0.7` 的 Portable DLC 目标架构，包括激活链路、交互组件脚本隔离、资源所有权和不可破坏的实现边界。当前参考底座仍只实现 v0.6 partial；规范正文位于 `docs/protocol/CARTRIDGEFLOW_BASE_CONTRACT_v0.2.md` 和 `docs/protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.7.md`，本文不能替代协议。
+本文记录 Portable DLC 的 v0.7 架构来源，包括激活链路、交互组件脚本隔离、资源所有权和不可破坏的实现边界。当前发布基线为 `CARTRIDGEFLOW-BASE@0.2 + CF-FARP@0.9`；实际 Base 支持矩阵以 `protocol/catalog/release_manifest.json` 与 `config/base/BASE_IMPLEMENTATION.json` 为准，本文不能替代协议。
 
 ## 核心原则
 

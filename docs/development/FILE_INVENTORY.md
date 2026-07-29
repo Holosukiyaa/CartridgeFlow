@@ -24,12 +24,13 @@
 | `config/templates/llm/*.json` | 无密钥的模型连接与角色分配模板。 |
 | `config/templates/studio/*.json` | 无密钥的凭据与工具资源模板。 |
 | `config/README.md` | 配置区与本机数据边界说明。 |
-| `protocol/CF-FARP-0.1.json` 至 `CF-FARP-0.8.json` | Flow 协议机器快照；v0.8 是最新规范，旧版本用于支持、识别或迁移。 |
-| `protocol/CARTRIDGEFLOW-BASE-0.2.json` | 当前 Base Contract 机器清单。 |
-| `protocol/capabilities*.json` | 能力注册表与 0.7/0.8 版本化快照。 |
-| `protocol/profiles*.json` | Profile 注册表与 0.7/0.8 版本化快照。 |
-| `protocol/protocol_history.json` | 版本生命周期和迁移目标。 |
-| `protocol/tool_packs.json` | 工具包契约注册表。 |
+| `protocol/releases/CF-FARP-0.1.json` 至 `CF-FARP-0.9.json` | Flow 协议机器快照；v0.9 是最新规范，v0.8 是当前 Base 支持的上一版，旧版本用于支持、识别或迁移。 |
+| `protocol/base/CARTRIDGEFLOW-BASE-0.2.json` | 当前 Base Contract 机器清单。 |
+| `protocol/vocabulary/capabilities*.json` | 能力注册表与 0.7/0.8/0.9 版本化快照。 |
+| `protocol/vocabulary/profiles*.json` | Profile 注册表与 0.7/0.8/0.9 版本化快照。 |
+| `protocol/governance/` | 可变的协议治理说明和历史兼容镜像。 |
+| `protocol/catalog/release_manifest.json` | 协议发布的唯一生命周期、默认版本、迁移目标和快照路径来源。 |
+| `protocol/tooling/tool_packs.json` | 工具包契约注册表。 |
 | `protocol/README.md` | 机器协议目录说明。 |
 
 ## 后端入口
@@ -47,7 +48,7 @@
 | `src/core/local_config.py` | 本机配置加载、保存和脱敏。 |
 | `src/core/cartridge/` | 卡带发现、校验、权限、依赖、资产、根 Flow、执行和产物。 |
 | `src/core/conformance/reporting.py` | 汇总自动测试并生成能力证据报告。 |
-| `src/core/extensions/` | Portable DLC 描述、注册、沙箱渲染和隔离 Worker。 |
+| `src/core/extensions/` | Portable DLC 描述、注册、沙箱渲染、隔离 Worker、v0.9 MCP source model 静态解析与结构化 source editing。 |
 | `src/core/lab/dev_flow.py` | 开发 Flow 的创建、读取和保存。 |
 | `src/core/lab/graph.py` | Flow 图结构与编辑操作。 |
 | `src/core/lab/flow_analyzer.py` | 可达性、孤立节点和结构诊断。 |
@@ -57,7 +58,7 @@
 | `src/core/lab/mcp_slots.py` | Flow 工具槽位和启用清单。 |
 | `src/core/lab/builtin_mcp.py`、`mcp/` | 通用 MCP 与媒体/DLC 工具契约。 |
 | `src/core/llm/` | 模型配置、导入、检测、Provider、Responses API 和重试。 |
-| `src/core/protocol/` | Base 清单、能力注册、兼容报告、认证、决策信封和工具计划。 |
+| `src/core/protocol/` | Base 清单、发布清单加载、能力注册、兼容报告、认证、决策信封和工具计划。 |
 | `src/core/runtime/` | 状态机、错误、检查点、模型提示、Agent 协作和运行管理。 |
 | `src/core/studio/` | 系统环境、工具资源、外部适配、便携性、发布和卫生检查。 |
 | `src/core/workspace/host.py` | 卡带工作区宿主能力。 |
@@ -151,7 +152,10 @@
 | `docs/planning/ROADMAP.md` | 少量长期方向。 |
 | `docs/planning/TODO.md` | 当前高价值任务。 |
 | `docs/planning/TODO_TEMPLATE.md` | TODO 基础模板。 |
-| `docs/protocol/` | Base 与 CF-FARP 正文历史、治理规则。 |
+| `docs/protocol/README.md` | 协议文档导航与目录边界。 |
+| `docs/protocol/base-contract/` | Base Contract 的发布正文历史。 |
+| `docs/protocol/flow-authoring/` | CF-FARP Flow Authoring 协议的发布正文历史。 |
+| `docs/protocol/governance/` | 人类阅读的协议治理规则。 |
 
 ## 脚本与测试
 
@@ -159,6 +163,7 @@
 |---|---|
 | `scripts/bootstrap.ps1` | 使用系统 Python/Node 安装项目依赖，不下载运行时。 |
 | `scripts/launch.py` | 启动 Lite 后端和 Vite 工作台。 |
+| `scripts/audit_protocol_governance.py` | 全盘校验协议发布清单、历史镜像、快照、Base 声明、发放入口和文档基线。 |
 | `scripts/run_conformance.py` | 运行全量测试并写入 conformance 报告。 |
 | `scripts/tests/conformance/` | 当前协议、兼容性、能力和认证。 |
 | `scripts/tests/history/` | 历史协议识别与迁移规则快照。 |

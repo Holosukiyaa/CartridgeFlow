@@ -34,11 +34,11 @@ def now_iso() -> str:
 
 def _executable_edges(root_flow: dict) -> list[dict]:
     protocol = root_flow.get("protocol") if isinstance(root_flow.get("protocol"), dict) else {}
-    is_v08 = protocol.get("id") == "CF-FARP" and str(protocol.get("version")) == "0.8"
-    source = root_flow.get("control_edges") if is_v08 else root_flow.get("edges")
+    is_typed_protocol = protocol.get("id") == "CF-FARP" and str(protocol.get("version")) in {"0.8", "0.9"}
+    source = root_flow.get("control_edges") if is_typed_protocol else root_flow.get("edges")
     return [
         edge for edge in (source or [])
-        if isinstance(edge, dict) and (not is_v08 or edge.get("kind") in {"control", "branch", "action_route", "failure_route"})
+        if isinstance(edge, dict) and (not is_typed_protocol or edge.get("kind") in {"control", "branch", "action_route", "failure_route"})
     ]
 
 
@@ -106,12 +106,12 @@ class CartridgeRunner:
         source_root_flow = cartridge.get("root_flow") or {}
         runtime_contract = manifest.get("runtime_contract") if isinstance(manifest.get("runtime_contract"), dict) else {}
         flow_protocol = source_root_flow.get("protocol") if isinstance(source_root_flow.get("protocol"), dict) else {}
-        is_v08 = (
-            runtime_contract.get("protocol") == "CF-FARP" and str(runtime_contract.get("protocol_version")) == "0.8"
+        is_typed_protocol = (
+            runtime_contract.get("protocol") == "CF-FARP" and str(runtime_contract.get("protocol_version")) in {"0.8", "0.9"}
         ) or (
-            flow_protocol.get("id") == "CF-FARP" and str(flow_protocol.get("version")) == "0.8"
+            flow_protocol.get("id") == "CF-FARP" and str(flow_protocol.get("version")) in {"0.8", "0.9"}
         )
-        if is_v08:
+        if is_typed_protocol:
             from core.studio.resource_catalog import build_flow_resource_catalog
             resource_catalog = build_flow_resource_catalog(
                 self.root,
@@ -501,6 +501,7 @@ class CartridgeRunner:
                         }
                     event_type = "lab_node_failed"
                     event_msg = f"节点 {state_name_} 执行失败：{error_envelope['message']}"
+                self._append_operation_events(run_id, cartridge_id, state_name_, result)
                 self._append_event(run_id, cartridge_id, event_type, state_name_, event_msg, result)
             return _handle
 
@@ -609,6 +610,17 @@ class CartridgeRunner:
                 runtime["local_resource_id"] = item.get("resource_id")
             elif source == "cartridge_dlc":
                 runtime["type"] = "cartridge_dlc"
+            for field in (
+                "transparency",
+                "source_digest",
+                "implementation",
+                "parse_status",
+                "operation_count",
+                "broker_capabilities",
+                "operation_graph",
+            ):
+                if field in item:
+                    runtime[field] = deepcopy(item.get(field))
             result.append(runtime)
         return result
 
@@ -828,7 +840,7 @@ class CartridgeRunner:
         probe_edges: list[dict] = []
         seen_edges: set[tuple[str, str]] = set()
 
-        is_v08 = ((root_flow.get("protocol") or {}).get("id") == "CF-FARP" and str((root_flow.get("protocol") or {}).get("version")) == "0.8")
+        is_typed_protocol = ((root_flow.get("protocol") or {}).get("id") == "CF-FARP" and str((root_flow.get("protocol") or {}).get("version")) in {"0.8", "0.9"})
 
         def _keep_edge(source: str, target: str, original: dict | None = None) -> None:
             if source not in node_id_set or target not in node_id_set:
@@ -837,7 +849,7 @@ class CartridgeRunner:
             if key in seen_edges:
                 return
             seen_edges.add(key)
-            if is_v08:
+            if is_typed_protocol:
                 probe_edges.append({**(original or {}), "kind": (original or {}).get("kind") or "control", "from": source, "to": target, "scope": "probe"})
             else:
                 probe_edges.append({"from": source, "to": target, "scope": "probe"})
@@ -861,7 +873,7 @@ class CartridgeRunner:
 
         filtered["start"] = probe_range["start_node_id"]
         filtered["states"] = filtered_states
-        if is_v08:
+        if is_typed_protocol:
             filtered.pop("edges", None)
             filtered["control_edges"] = probe_edges
         else:
@@ -1584,6 +1596,7 @@ class CartridgeRunner:
                         }
                     event_type = "lab_node_failed"
                     event_msg = f"Node {state_name_} failed: {error_envelope['message']}"
+                self._append_operation_events(run_id, cartridge_id, state_name_, result)
                 self._append_event(run_id, cartridge_id, event_type, state_name_, event_msg, result)
             return _handle
 
@@ -2397,6 +2410,26 @@ class CartridgeRunner:
             f"Flow edge traversed: {source} -> {target}",
             {"from": source, "to": target, "reason": reason},
         )
+
+    def _append_operation_events(self, run_id: str, cartridge_id: str, state_name: str, result: dict) -> None:
+        events = result.get("operation_events") if isinstance(result, dict) else []
+        if not isinstance(events, list):
+            return
+        for item in events:
+            if not isinstance(item, dict):
+                continue
+            event_type = str(item.get("type") or "").strip()
+            operation_id = str(item.get("operation_id") or "").strip()
+            if not event_type or not operation_id:
+                continue
+            self._append_event(
+                run_id,
+                cartridge_id,
+                event_type,
+                state_name,
+                f"MCP operation {operation_id}: {event_type}",
+                item,
+            )
 
     def _read_json(self, path: Path) -> dict:
         with self._json_lock:

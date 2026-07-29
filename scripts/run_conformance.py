@@ -14,9 +14,11 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCE_ROOT = ROOT / "src"
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(SOURCE_ROOT))
+sys.path.insert(0, str(ROOT / "scripts"))
 
 from core.conformance import RecordingTestResult, build_conformance_report, write_conformance_report
 from core.data_paths import CONFORMANCE_REPORT
+from audit_protocol_governance import audit as audit_protocol_governance
 
 
 TEST_GROUPS = ("conformance", "runtime", "studio", "llm", "lite", "hygiene", "history")
@@ -37,6 +39,12 @@ def main() -> int:
     parser.add_argument("--output", default=CONFORMANCE_REPORT.as_posix())
     parser.add_argument("--quiet", action="store_true")
     args = parser.parse_args()
+
+    governance_errors = audit_protocol_governance(ROOT)
+    if governance_errors:
+        print("Protocol governance audit failed:")
+        print("\n".join(f"- {error}" for error in governance_errors))
+        return 1
 
     suite = discover_tests(args.pattern)
     runner = unittest.TextTestRunner(

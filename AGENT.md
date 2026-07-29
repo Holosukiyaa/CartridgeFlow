@@ -90,7 +90,8 @@ React 工作台
 5. 前端提交操作，后端和核心层负责真实状态与业务判定。
 6. 新增、删除或移动文件时同步更新 `docs/development/FILE_INVENTORY.md`。
 7. 修改公开语义时先更新协议版本；实现状态只以能力声明和测试证据为准。
-8. 保留用户已有改动，不顺手重构无关模块。
+8. 协议生命周期、默认新建版本、迁移目标和快照路径只从 `protocol/catalog/release_manifest.json` 读取；修改后必须运行 `python scripts/audit_protocol_governance.py`。
+9. 保留用户已有改动，不顺手重构无关模块。
 
 ## 常用命令
 

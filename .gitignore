@@ -28,6 +28,8 @@ node_modules/
 # Local state and generated output
 /.data/
 /.tools/
+/.agents/
+/skills-lock.json
 /test_output/
 /logs/
 /temp/

@@ -23,6 +23,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from core.cartridge import CartridgeRegistry, CartridgeRunner
+from core.cartridge.validator import ManifestValidationError
 from core.data_paths import (
     CARTRIDGE_DATA_DIR,
     CONFORMANCE_REPORT,
@@ -36,6 +37,9 @@ from core.data_paths import (
     ensure_data_layout,
 )
 from core.extensions import PortableDlcValidationError, load_portable_dlc_descriptor
+from core.extensions.descriptor import resolve_package_file
+from core.extensions.mcp_source_editor import McpSourceEditError, add_mcp_operation, edit_mcp_source_graph, update_descriptor_source_digest
+from core.extensions.mcp_source_parser import parse_mcp_python_file, parse_mcp_python_source
 from core.cartridge.artifacts import ArtifactManager
 from core.cartridge.assets import (
     CartridgeAssetError,
@@ -56,6 +60,7 @@ from core.protocol import (
     apply_protocol_certification_label,
     build_compatibility_report,
     build_protocol_certification_report,
+    load_protocol_release_catalog,
     load_base_implementation,
 )
 
@@ -165,6 +170,19 @@ async def request_validation_error_handler(request: Request, exc: RequestValidat
         cause_chain=[{"type": "RequestValidationError", "message": "Request payload validation failed"}],
     )
     return UTF8JSONResponse(status_code=422, content={"detail": safe_errors, "error_envelope": envelope})
+
+
+@app.exception_handler(ManifestValidationError)
+async def manifest_validation_error_handler(request: Request, exc: ManifestValidationError):
+    context = _request_error_context(request)
+    safe_detail = _redact_diagnostic_value(str(exc))
+    envelope = build_runtime_error(
+        "FLOW_CONTRACT_INVALID",
+        run_id=context["run_id"],
+        source=context["source"],
+        cause_chain=[{"type": "ManifestValidationError", "message": safe_detail}],
+    )
+    return UTF8JSONResponse(status_code=409, content={"detail": safe_detail, "error_envelope": envelope})
 
 
 @app.exception_handler(HTTPException)
@@ -488,6 +506,8 @@ class NodeUpdatePayload(BaseModel):
     params: dict | None = None
     model_role: str | None = None
     layout: dict | None = None
+    inputs: dict | None = None
+    outputs: dict | None = None
 
 
 class NodeCreatePayload(BaseModel):
@@ -525,6 +545,97 @@ class McpToolPayload(BaseModel):
     required: bool = False
     contract: dict = Field(default_factory=dict)
     enabled: bool = True
+
+
+class McpSourcePatchPayload(BaseModel):
+    expected_source_digest: str
+    graph: dict = Field(default_factory=dict)
+
+
+class McpOperationCreatePayload(BaseModel):
+    expected_source_digest: str
+    operation: dict = Field(default_factory=dict)
+
+
+class McpSourceReplacePayload(BaseModel):
+    expected_source_digest: str
+    source: str
+
+
+def _is_typed_root_flow(root_flow: dict) -> bool:
+    protocol = root_flow.get("protocol") if isinstance(root_flow.get("protocol"), dict) else {}
+    return protocol.get("id") == "CF-FARP" and str(protocol.get("version")) in {"0.8", "0.9"}
+
+
+def _edge_scope(edge: dict) -> str:
+    if edge.get("scope"):
+        return str(edge.get("scope") or "root")
+    kind = str(edge.get("kind") or "control")
+    return "root" if kind == "control" else kind
+
+
+def _stored_flow_edge(root_flow: dict, source: str, target: str, scope: str = "root", label: str | None = None) -> dict:
+    if _is_typed_root_flow(root_flow):
+        kind = "control" if scope == "root" else scope
+        item = {"kind": kind, "from": source, "to": target}
+        if scope != "root":
+            item["scope"] = scope
+    else:
+        item = {"from": source, "to": target, "scope": scope}
+    if label:
+        item["label"] = label
+    return item
+
+
+def _flow_edges(root_flow: dict) -> list[dict]:
+    field = "control_edges" if _is_typed_root_flow(root_flow) else "edges"
+    return [edge for edge in root_flow.get(field) or [] if isinstance(edge, dict)]
+
+
+def _write_flow_edges(root_flow: dict, edges: list[dict]) -> None:
+    seen = set()
+    normalized = []
+    for edge in edges:
+        source = str(edge.get("from") or edge.get("source") or "").strip()
+        target = str(edge.get("to") or edge.get("target") or "").strip()
+        if not source or not target or source == target:
+            continue
+        scope = _edge_scope(edge)
+        key = (scope, source, target)
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized.append(_stored_flow_edge(root_flow, source, target, scope, edge.get("label")))
+    if _is_typed_root_flow(root_flow):
+        root_flow["control_edges"] = normalized
+        root_flow.pop("edges", None)
+    else:
+        root_flow["edges"] = normalized
+
+
+def _sync_flow_edges_from_next(root_flow: dict, extra_edges: list[dict] | None = None) -> None:
+    states = root_flow.get("states") if isinstance(root_flow.get("states"), dict) else {}
+    edges = []
+    for source_id, source_state in states.items():
+        if not isinstance(source_state, dict):
+            continue
+        target_id = source_state.get("next")
+        if target_id in states:
+            edges.append({"from": source_id, "to": target_id, "scope": "root"})
+    for edge in extra_edges or []:
+        source = edge.get("from") or edge.get("source")
+        target = edge.get("to") or edge.get("target")
+        if source in states and target in states and _edge_scope(edge) != "root":
+            edges.append(edge)
+    _write_flow_edges(root_flow, edges)
+
+
+def _ensure_typed_node_contracts(root_flow: dict, state: dict) -> None:
+    if _is_typed_root_flow(root_flow) and state.get("type") == "process":
+        if not isinstance(state.get("inputs"), dict):
+            state["inputs"] = {}
+        if not isinstance(state.get("outputs"), dict):
+            state["outputs"] = {}
 
 
 class UploadTextPayload(BaseModel):
@@ -616,6 +727,7 @@ def health():
 def get_base_implementation():
     try:
         base = load_base_implementation(ROOT)
+        protocol_catalog = load_protocol_release_catalog(ROOT).public_payload()
         from core.conformance import load_latest_report
 
         report = load_latest_report(ROOT)
@@ -629,7 +741,7 @@ def get_base_implementation():
                     "capabilities": {key: report.get("capabilities", {}).get(key) for key in ("status", "declared", "counts")},
                 },
             }
-        return {"ok": True, "base": base}
+        return {"ok": True, "base": base, "protocol_catalog": protocol_catalog}
     except BaseManifestError as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -2112,6 +2224,168 @@ def list_lab_flow_mcp_tools(cartridge_id: str):
         raise HTTPException(status_code=404, detail=str(e))
 
 
+def _editable_mcp_source_context(cartridge_id: str, node_id: str) -> tuple[dict, dict, dict, Path, str, dict]:
+    try:
+        cartridge = registry.get_cartridge(cartridge_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    if not cartridge.get("editable"):
+        raise HTTPException(status_code=403, detail="Only dev flows can edit MCP source")
+    package_path = cartridge.get("package_path")
+    if not package_path:
+        raise HTTPException(status_code=409, detail={"code": "MCP_SOURCE_PACKAGE_REQUIRED", "message": "MCP source editing requires a package-backed dev flow"})
+    manifest, _files = _flow_manifest_files(cartridge_id)
+    if not isinstance(manifest.get("portable_dlc"), dict):
+        raise HTTPException(status_code=409, detail={"code": "MCP_DESCRIPTOR_REQUIRED", "message": "MCP source editing requires a declared Portable DLC descriptor"})
+    try:
+        descriptor = load_portable_dlc_descriptor(package_path, manifest)
+    except PortableDlcValidationError as exc:
+        raise HTTPException(status_code=409, detail={"code": "MCP_DESCRIPTOR_INVALID", "message": str(exc)})
+    tool = next(
+        (
+            item for item in descriptor.get("tools") or []
+            if isinstance(item, dict) and str(item.get("node_id") or "") == node_id
+        ),
+        None,
+    )
+    if not isinstance(tool, dict):
+        raise HTTPException(status_code=404, detail=f"MCP source node not found: {node_id}")
+    entry = str((tool.get("implementation") or {}).get("entry") or "").replace("\\", "/")
+    source_path = (Path(package_path).resolve() / entry).resolve()
+    package_root = Path(package_path).resolve()
+    if (source_path != package_root and package_root not in source_path.parents) or not source_path.is_file():
+        raise HTTPException(status_code=404, detail=f"MCP source file not found: {entry}")
+    source = source_path.read_text(encoding="utf-8")
+    source_model = parse_mcp_python_file(source_path, display_path=entry)
+    if not source_model.get("ok"):
+        raise HTTPException(status_code=409, detail={"code": "MCP_SOURCE_INVALID", "message": "MCP source does not pass the v0.9 static parser", "findings": source_model.get("findings") or []})
+    if source_model.get("node_id") != node_id:
+        raise HTTPException(status_code=409, detail={"code": "MCP_NODE_ID_MISMATCH", "message": "MCP source node_id does not match the requested node"})
+    return cartridge, manifest, descriptor, source_path, source, source_model
+
+
+def _persist_mcp_source_edit(
+    cartridge_id: str,
+    node_id: str,
+    manifest: dict,
+    package_path: str | Path,
+    source_path: Path,
+    source: str,
+    source_model: dict,
+) -> dict:
+    package_root = Path(package_path).resolve()
+    descriptor_ref = str((manifest.get("portable_dlc") or {}).get("descriptor") or "")
+    descriptor_path = resolve_package_file(package_root, descriptor_ref, "manifest.portable_dlc.descriptor")
+    manifest_path = package_root / "manifest.json"
+    if not manifest_path.is_file():
+        raise FileNotFoundError("MCP source editing requires a package manifest")
+
+    files = dev_flow_manager.read_files(cartridge_id)
+    previous_files = {
+        source_path: source_path.read_bytes(),
+        descriptor_path: descriptor_path.read_bytes(),
+        manifest_path: manifest_path.read_bytes(),
+    }
+    try:
+        _atomic_write_bytes(source_path, source.encode("utf-8"))
+        update_descriptor_source_digest(
+            package_path,
+            manifest,
+            node_id=node_id,
+            source_model=source_model,
+        )
+        result = _write_manifest_tools(cartridge_id, files, manifest)
+    except Exception:
+        rollback_errors = []
+        for path, content in previous_files.items():
+            try:
+                _atomic_write_bytes(path, content)
+            except OSError as rollback_error:
+                rollback_errors.append(f"{path.name}: {rollback_error}")
+        if rollback_errors:
+            raise RuntimeError("MCP source edit failed and rollback was incomplete: " + "; ".join(rollback_errors))
+        raise
+    return {
+        "status": "mcp_source_updated",
+        "source": source,
+        "source_model": source_model,
+        "source_digest": source_model.get("source_digest"),
+        **result,
+    }
+
+
+def _atomic_write_bytes(path: Path, content: bytes) -> None:
+    temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        temporary.write_bytes(content)
+        temporary.replace(path)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+
+
+@app.get("/api/lab/flows/{cartridge_id}/mcp-nodes/{node_id}/source-model")
+def get_lab_mcp_source_model(cartridge_id: str, node_id: str):
+    _cartridge, _manifest, _descriptor, _source_path, _source, source_model = _editable_mcp_source_context(cartridge_id, node_id)
+    return source_model
+
+
+@app.get("/api/lab/flows/{cartridge_id}/mcp-nodes/{node_id}/source")
+def get_lab_mcp_source(cartridge_id: str, node_id: str):
+    _cartridge, _manifest, _descriptor, source_path, source, source_model = _editable_mcp_source_context(cartridge_id, node_id)
+    return {
+        "node_id": node_id,
+        "path": (source_model.get("source") or {}).get("path") or source_path.name,
+        "source": source,
+        "source_digest": source_model.get("source_digest"),
+        "source_model": source_model,
+    }
+
+
+@app.put("/api/lab/flows/{cartridge_id}/mcp-nodes/{node_id}/source")
+def replace_lab_mcp_source(cartridge_id: str, node_id: str, payload: McpSourceReplacePayload):
+    cartridge, manifest, _descriptor, source_path, _source, current_model = _editable_mcp_source_context(cartridge_id, node_id)
+    if str(payload.expected_source_digest or "").strip().lower() != str(current_model.get("source_digest") or "").strip().lower():
+        raise HTTPException(status_code=409, detail={"code": "MCP_SOURCE_DIGEST_CONFLICT", "message": "MCP source changed since the editor loaded it"})
+    source = str(payload.source or "")
+    source_model = parse_mcp_python_source(source, display_path=str((current_model.get("source") or {}).get("path") or source_path.name))
+    if not source_model.get("ok"):
+        raise HTTPException(status_code=400, detail={"code": "MCP_SOURCE_EDIT_INVALID", "message": "Edited MCP source did not pass static validation", "findings": source_model.get("findings") or []})
+    if source_model.get("node_id") != node_id:
+        raise HTTPException(status_code=400, detail={"code": "MCP_NODE_ID_MISMATCH", "message": "Edited source must retain the MCP node identity"})
+    return _persist_mcp_source_edit(cartridge_id, node_id, manifest, cartridge.get("package_path"), source_path, source, source_model)
+
+
+@app.patch("/api/lab/flows/{cartridge_id}/mcp-nodes/{node_id}/operation-graph")
+def patch_lab_mcp_operation_graph(cartridge_id: str, node_id: str, payload: McpSourcePatchPayload):
+    cartridge, manifest, _descriptor, source_path, source, _source_model = _editable_mcp_source_context(cartridge_id, node_id)
+    try:
+        next_source, next_model = edit_mcp_source_graph(
+            source,
+            expected_source_digest=payload.expected_source_digest,
+            graph=payload.graph,
+        )
+        return _persist_mcp_source_edit(cartridge_id, node_id, manifest, cartridge.get("package_path"), source_path, next_source, next_model)
+    except McpSourceEditError as exc:
+        status = 409 if exc.code == "MCP_SOURCE_DIGEST_CONFLICT" else 400
+        raise HTTPException(status_code=status, detail={"code": exc.code, "message": str(exc)})
+
+
+@app.post("/api/lab/flows/{cartridge_id}/mcp-nodes/{node_id}/operations")
+def add_lab_mcp_operation(cartridge_id: str, node_id: str, payload: McpOperationCreatePayload):
+    cartridge, manifest, _descriptor, source_path, source, _source_model = _editable_mcp_source_context(cartridge_id, node_id)
+    try:
+        next_source, next_model = add_mcp_operation(
+            source,
+            expected_source_digest=payload.expected_source_digest,
+            operation=payload.operation,
+        )
+        return _persist_mcp_source_edit(cartridge_id, node_id, manifest, cartridge.get("package_path"), source_path, next_source, next_model)
+    except McpSourceEditError as exc:
+        status = 409 if exc.code in {"MCP_SOURCE_DIGEST_CONFLICT", "MCP_OPERATION_EXISTS"} else 400
+        raise HTTPException(status_code=status, detail={"code": exc.code, "message": str(exc)})
+
+
 @app.get("/api/lab/flows/{cartridge_id}/resource-catalog")
 def get_lab_flow_resource_catalog(cartridge_id: str):
     from core.studio.resource_catalog import build_flow_resource_catalog
@@ -2351,6 +2625,8 @@ def create_lab_flow_node(cartridge_id: str, payload: NodeCreatePayload):
             "interaction_mode": "display",
             "input_binding": {},
             "action_routes": {},
+            "inputs": {},
+            "outputs": {},
             "params": {"node_category": "interaction"},
         },
         "welcome": {
@@ -2361,6 +2637,8 @@ def create_lab_flow_node(cartridge_id: str, payload: NodeCreatePayload):
             "display": {"suffix": "展示", "label": "处理节点-展示"},
             "title": "UI 展示节点",
             "action": "show_ui",
+            "inputs": {},
+            "outputs": {},
             "params": {"node_category": "ui", "preset": "welcome", "preset_config": {"path": "assets/welcome.html", "format": "html", "output_name": "welcome_ui"}, "description": "展示欢迎页、结果页或 HTML/Markdown 界面。", "output": "welcome_ui"},
         },
         "prompt": {
@@ -2371,7 +2649,8 @@ def create_lab_flow_node(cartridge_id: str, payload: NodeCreatePayload):
             "display": {"suffix": "AI决策", "label": "处理节点-AI决策"},
             "title": "AI 决策节点",
             "action": "llm_prompt",
-            "model_role": "runtime",
+            "inputs": {},
+            "outputs": {},
             "params": {"system_prompt": "你是一个可靠的助手。", "prompt": "请根据用户输入完成任务。"},
         },
         "input": {
@@ -2385,6 +2664,8 @@ def create_lab_flow_node(cartridge_id: str, payload: NodeCreatePayload):
             "input_kind": "initial",
             "source": "user_form",
             "input_schema": "input.v1",
+            "inputs": {},
+            "outputs": {},
             "params": {"fields": [], "node_category": "input"},
         },
         "checkpoint": {
@@ -2396,6 +2677,8 @@ def create_lab_flow_node(cartridge_id: str, payload: NodeCreatePayload):
             "title": "人工确认",
             "action": "confirm_checkpoint",
             "output_contract": "gate_result.v1",
+            "inputs": {},
+            "outputs": {},
             "params": {"message": "请确认是否继续。", "node_category": "control"},
         },
         "runtime": {
@@ -2406,6 +2689,8 @@ def create_lab_flow_node(cartridge_id: str, payload: NodeCreatePayload):
             "display": {"suffix": "传递", "label": "处理节点-传递"},
             "title": "运行处理",
             "action": "pass_result",
+            "inputs": {},
+            "outputs": {},
             "params": {"node_category": "transfer"},
         },
         "remote_call": {
@@ -2422,6 +2707,8 @@ def create_lab_flow_node(cartridge_id: str, payload: NodeCreatePayload):
             "audit_log": True,
             "endpoint": "remote://pending",
             "timeout_ms": 120000,
+            "inputs": {},
+            "outputs": {},
             "params": {"node_category": "remote"},
         },
     }
@@ -2435,30 +2722,29 @@ def create_lab_flow_node(cartridge_id: str, payload: NodeCreatePayload):
     new_state["locked"] = False
     if payload.title:
         new_state["title"] = payload.title
+    _ensure_typed_node_contracts(root_flow, new_state)
     after_node_id = payload.after_node_id or root_flow.get("start")
-    edges = root_flow.setdefault("edges", [])
+    current_edges = _flow_edges(root_flow)
+    branch_edges = [edge for edge in current_edges if _edge_scope(edge) != "root"]
     if after_node_id and after_node_id in states:
         source_layout = states[after_node_id].get("layout") or {}
         source_x = int(source_layout.get("x", 80))
         source_y = int(source_layout.get("y", 120))
         if payload.insert_mode == "branch":
-            branch_count = sum(1 for edge in edges if (edge.get("from") or edge.get("source")) == after_node_id and (edge.get("scope") or "root") == "branch")
+            branch_count = sum(1 for edge in branch_edges if (edge.get("from") or edge.get("source")) == after_node_id and _edge_scope(edge) == "branch")
             direction = 1 if branch_count % 2 == 0 else -1
             lane = branch_count // 2 + 1
             new_state["layout"] = {"x": source_x + 300, "y": source_y + direction * lane * 150}
-            edges.append({"from": after_node_id, "to": node_id, "scope": "branch", "label": payload.title or "新分支"})
+            branch_edges.append({"from": after_node_id, "to": node_id, "scope": "branch", "label": payload.title or "新分支"})
         else:
             new_state.setdefault("layout", {"x": source_x + 300, "y": source_y})
             previous_next = states[after_node_id].get("next")
             new_state["next"] = previous_next
             states[after_node_id]["next"] = node_id
-            edges[:] = [edge for edge in edges if not ((edge.get("from") or edge.get("source")) == after_node_id and (edge.get("scope") or "root") == "root")]
-            edges.append({"from": after_node_id, "to": node_id, "scope": "root"})
-            if previous_next:
-                edges.append({"from": node_id, "to": previous_next, "scope": "root"})
     elif not root_flow.get("start"):
         root_flow["start"] = node_id
     states[node_id] = new_state
+    _sync_flow_edges_from_next(root_flow, branch_edges)
     files["root_flow"] = _json.dumps(root_flow, ensure_ascii=False, indent=2)
     dev_flow_manager.save_file(cartridge_id, "root_flow", files["root_flow"])
     validation = dev_flow_manager.validate_files(cartridge_id, files)
@@ -2487,12 +2773,12 @@ def delete_lab_flow_node(cartridge_id: str, node_id: str, payload: NodeDeletePay
         raise HTTPException(status_code=400, detail="Locked or start node cannot be deleted")
 
     deleted_next = state.get("next")
-    original_edges = root_flow.get("edges") or []
+    original_edges = _flow_edges(root_flow)
     branch_edges = []
     for edge in original_edges:
         source = edge.get("from") or edge.get("source")
         target = edge.get("to") or edge.get("target")
-        scope = edge.get("scope") or "root"
+        scope = _edge_scope(edge)
         if source == node_id or target == node_id:
             continue
         if scope != "root" and source in states and target in states:
@@ -2518,24 +2804,7 @@ def delete_lab_flow_node(cartridge_id: str, node_id: str, payload: NodeDeletePay
         if isinstance(anchor, dict) and anchor.get("type") == "node" and anchor.get("id") == node_id:
             annotation.pop("anchor", None)
 
-    cleaned_edges = []
-    seen = set()
-    for source_id, source_state in states.items():
-        target_id = source_state.get("next")
-        if target_id not in states:
-            continue
-        key = (source_id, target_id, "root")
-        if key in seen:
-            continue
-        seen.add(key)
-        cleaned_edges.append({"from": source_id, "to": target_id, "scope": "root"})
-    for edge in branch_edges:
-        key = (edge["from"], edge["to"], edge["scope"])
-        if key in seen:
-            continue
-        seen.add(key)
-        cleaned_edges.append(edge)
-    root_flow["edges"] = cleaned_edges
+    _sync_flow_edges_from_next(root_flow, branch_edges)
 
     files["root_flow"] = _json.dumps(root_flow, ensure_ascii=False, indent=2)
     dev_flow_manager.save_file(cartridge_id, "root_flow", files["root_flow"])
@@ -2603,6 +2872,8 @@ def update_lab_flow_node(cartridge_id: str, node_id: str, payload: NodeUpdatePay
         "params": payload.params,
         "model_role": payload.model_role,
         "layout": payload.layout,
+        "inputs": payload.inputs,
+        "outputs": payload.outputs,
     }
     provided_fields = payload.model_fields_set
     for key, value in updates.items():
@@ -2612,6 +2883,10 @@ def update_lab_flow_node(cartridge_id: str, node_id: str, payload: NodeUpdatePay
             state.pop(key, None)
         else:
             state[key] = value
+    _ensure_typed_node_contracts(root_flow, state)
+    if _is_typed_root_flow(root_flow):
+        branch_edges = [edge for edge in _flow_edges(root_flow) if _edge_scope(edge) != "root"]
+        _sync_flow_edges_from_next(root_flow, branch_edges)
 
     files["root_flow"] = _json.dumps(root_flow, ensure_ascii=False, indent=2)
     validation = dev_flow_manager.validate_files(cartridge_id, files)
@@ -2704,12 +2979,13 @@ def save_lab_flow_edges(cartridge_id: str, payload: EdgeSavePayload):
             normalized_edge["label"] = edge.get("label")
         normalized_edges.append(normalized_edge)
 
-    root_flow["edges"] = normalized_edges
     for state_id, state in states.items():
         if state_id in next_by_source:
             state["next"] = next_by_source[state_id]
         elif state.get("next") and state.get("next") in states:
             state.pop("next", None)
+        _ensure_typed_node_contracts(root_flow, state)
+    _write_flow_edges(root_flow, normalized_edges)
 
     files["root_flow"] = _json.dumps(root_flow, ensure_ascii=False, indent=2)
     dev_flow_manager.save_file(cartridge_id, "root_flow", files["root_flow"])

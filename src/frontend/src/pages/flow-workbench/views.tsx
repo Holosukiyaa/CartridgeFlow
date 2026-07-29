@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Box, Button } from '../../ui.tsx'
 import { AlertTriangle, Bot, Braces, ChevronDown, ChevronUp, ClipboardCopy, Copy, Download, FileOutput, History, PanelRight, Pause, PlayCircle, RefreshCw, Square, SquarePen, X } from 'lucide-react'
-import type { AIFlowSelection, AIFlowStewardContext, FlowAnnotation, FlowEdge, FlowEvent, FlowFiles, FlowGraph, FlowLabDetail, FlowNode, RunResult } from '../../api.ts'
+import { fetchFlowResourceCatalog, fetchMcpSource, type AIFlowSelection, type AIFlowStewardContext, type FlowAnnotation, type FlowEdge, type FlowEvent, type FlowFiles, type FlowGraph, type FlowLabDetail, type FlowNode, type McpSourceResponse, type RunResult, type StudioToolResource } from '../../api.ts'
 import type { CreateNodeHandler, DesignDisplayMode, GraphResult, NodeDraft } from './types.ts'
-import { FlowGraphView, type CanvasTool } from './FlowGraphView.tsx'
+import { FlowGraphView, type CanvasTool, type ProtocolDisplayInfo } from './FlowGraphView.tsx'
 import { NodeDetailCard } from './NodeDetailCard.tsx'
 import { BrandMark } from './BrandMark.tsx'
 import { NODE_DETAIL_SECTION_BY_ID, nodeDetailId, type NodeDetailSection, type OpenNodeDetail } from './nodeDetails.ts'
@@ -15,9 +15,11 @@ import { buildNodeAuthoringPath } from './nodeAuthoring.ts'
 import { EngineeringInspector } from './EngineeringInspector.tsx'
 import { buildEngineeringNodeModels, buildEngineeringProjection, type EngineeringEdgeVisibility } from './engineeringNode.ts'
 import { AIFlowStewardPanel } from './AIFlowStewardPanel.tsx'
+import { McpTransparencyOverlay } from './McpTransparencyOverlay.tsx'
 
 export function WorkbenchHeader({
   detail,
+  protocolInfo,
   cartridgeControls,
   runStatus,
   runBusy = false,
@@ -30,6 +32,7 @@ export function WorkbenchHeader({
   cloningToDev = false,
 }: {
   detail: FlowLabDetail
+  protocolInfo: ProtocolDisplayInfo
   cartridgeControls?: ReactNode
   runStatus?: string
   runBusy?: boolean
@@ -49,7 +52,7 @@ export function WorkbenchHeader({
       <div className="cf-workbench-brand">
         <BrandMark className="cf-workbench-brand-mark" />
         <strong>CARTRIDGE WORKSPACE <i>/</i> 卡带工作台</strong>
-        <div className="cf-workbench-protocol-tags" aria-label="协议支持"><span>基座协议 v0.7</span><span>Flow Graph v0.7</span><span>LLM Binding v0.7</span><span>MCP v0.7</span></div>
+        <div className="cf-workbench-protocol-tags" aria-label="协议支持"><span>基座目标 {protocolInfo.targetProtocolLabel}</span><span>当前卡带 {protocolInfo.currentProtocolLabel}</span><span>Flow Analyzer v0.9</span><span>资源目录 v0.9</span></div>
       </div>
       <div className="cf-workbench-header-spacer" />
       <div className="cf-workbench-actions">
@@ -85,6 +88,7 @@ export function DesignView({
   graph, editable, files, flowId, selectedNode, focusNodeId, openNodeEditors,
   onSelectNode, onGuideNodeEditor, onCloseNodeEditor, onToggleNodeEditorPin, onNodeEditorPositionChange, onCloseUnpinnedNodeEditors, onLayoutSave, autoLayoutOnMount, onAutoLayoutComplete, onEdgesSave, onAnnotationsSave, onCreateNode, onDeleteNode, onFilesChange, onSaved,
   modelPanel, toolPanel, packagePanel, cartridgePanel, runStatus, nodeRunStates, runEvents, runCompletionVisible, runCompletion, onDismissRunCompletion, onOpenRunLog, onOpenPendingInteraction,
+  protocolInfo,
 }: {
   graph: FlowGraph
   editable: boolean
@@ -112,6 +116,7 @@ export function DesignView({
   toolPanel?: ReactNode
   packagePanel?: ReactNode
   cartridgePanel?: ReactNode
+  protocolInfo: ProtocolDisplayInfo
   runStatus?: string
   nodeRunStates?: Map<string, NodeRunState>
   runEvents?: FlowEvent[]
@@ -128,6 +133,12 @@ export function DesignView({
   const [stewardRevision, setStewardRevision] = useState('')
   const [stewardSelection, setStewardSelection] = useState<AIFlowSelection>({ node_ids: [], edge_ids: [], field_paths: [] })
   const [engineeringUnlocked, setEngineeringUnlocked] = useState(false)
+  const [mcpTool, setMcpTool] = useState<StudioToolResource | null>(null)
+  const [mcpSource, setMcpSource] = useState<McpSourceResponse | null>(null)
+  const [mcpLoading, setMcpLoading] = useState(false)
+  const [mcpError, setMcpError] = useState('')
+  const [mcpOverlayOpen, setMcpOverlayOpen] = useState(false)
+  const [mcpOverlayTab, setMcpOverlayTab] = useState<'graph' | 'source'>('graph')
   const [edgeVisibility, setEdgeVisibility] = useState<EngineeringEdgeVisibility>({ control: true, data: true, dependency: true, branch: true, failure: true })
   const [nodeDrafts, setNodeDrafts] = useState<Record<string, NodeDraft>>({})
   const [savingNodeIds, setSavingNodeIds] = useState<Set<string>>(() => new Set())
@@ -265,6 +276,32 @@ export function DesignView({
     scope_policy: stewardTool === 'pointer' ? 'single_anchor' : 'selected_and_direct_edges',
   }), [displayMode, stewardRevision, stewardSelection, stewardTool])
   useEffect(() => { setEngineeringUnlocked(false) }, [engineering, selectedNode?.id])
+  useEffect(() => {
+    let active = true
+    const nodeId = selectedNode?.id
+    setMcpTool(null)
+    setMcpSource(null)
+    setMcpError('')
+    setMcpOverlayOpen(false)
+    if (!engineering || !nodeId) return () => { active = false }
+    void fetchFlowResourceCatalog(flowId).then(async (catalog) => {
+      const tool = catalog.tools.find((item) => item.node_references?.includes(nodeId) && (item.source === 'cartridge_dlc' || item.transparency)) || null
+      if (!active || !tool) return
+      setMcpTool(tool)
+      const sourceNodeId = String(tool.node_id || '').trim()
+      if (!sourceNodeId) return
+      setMcpLoading(true)
+      try {
+        const source = await fetchMcpSource(flowId, sourceNodeId)
+        if (active) setMcpSource(source)
+      } catch (error: any) {
+        if (active) setMcpError(error?.message || 'MCP 源码不可读取')
+      } finally {
+        if (active) setMcpLoading(false)
+      }
+    }).catch((error: any) => { if (active) setMcpError(error?.message || 'MCP 资源目录不可读取') })
+    return () => { active = false }
+  }, [engineering, flowId, selectedNode?.id])
   const canMutateGraph = editable
   const canEditSelectedNode = Boolean(editable && selectedNode && !selectedNode.locked && selectedNode.scope !== 'root')
   const visibleEngineeringRelations = useMemo(() => engineeringDataRelations.filter((relation) => (
@@ -330,6 +367,7 @@ export function DesignView({
           toolPanel={editable ? toolPanel : undefined}
           packagePanel={editable ? packagePanel : undefined}
           cartridgePanel={editable ? cartridgePanel : undefined}
+          protocolInfo={protocolInfo}
           nodeEditors={engineering ? emptyNodeEditors : nodeEditors}
           activeNodeEditorId={selectedNode?.id || null}
           onCloseNodeEditor={onCloseUnpinnedNodeEditors}
@@ -345,6 +383,7 @@ export function DesignView({
           onOpenRunLog={onOpenRunLog}
           onOpenPendingInteraction={onOpenPendingInteraction}
         />
+        {engineering && mcpOverlayOpen && mcpTool && <McpTransparencyOverlay flowId={flowId} tool={mcpTool} source={mcpSource} loading={mcpLoading} error={mcpError} initialTab={mcpOverlayTab} onClose={() => setMcpOverlayOpen(false)} onSaved={(result) => onFilesChange(result.files)} />}
         </Box>
       </div>
       {engineering && engineeringInspectorOpen && <EngineeringInspector
@@ -367,6 +406,11 @@ export function DesignView({
         onSaveDraft={() => selectedNode ? void persistNodeDraft(selectedNode) : undefined}
         stewardTool={stewardTool}
         onStewardFieldSelect={(fieldPath) => setStewardSelection({ node_ids: [selectedNode!.id], edge_ids: [], field_paths: [fieldPath] })}
+        mcpTool={mcpTool}
+        mcpSource={mcpSource}
+        mcpLoading={mcpLoading}
+        onOpenMcp={() => { setMcpOverlayTab('graph'); setMcpOverlayOpen(true) }}
+        onOpenMcpSource={() => { setMcpOverlayTab('source'); setMcpOverlayOpen(true) }}
       />}
       {stewardOpen && <AIFlowStewardPanel
         flowId={flowId}

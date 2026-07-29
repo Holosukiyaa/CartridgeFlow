@@ -460,6 +460,7 @@ class LabNodeExecutor:
             tools = self._build_preset_tools(params, preset_config, store, input_key, default_output)
 
         tool_results: list[dict] = []
+        operation_events: list[dict] = []
         strict_failed = False
         manifest_tools = {
             str(item.get("id")): item
@@ -478,6 +479,29 @@ class LabNodeExecutor:
             tool_params = self._resolve_tool_params(tool.get("params") or {}, store, params.get("_structured_input_aliases"))
             tool_params.setdefault("_runtime_run_id", str(_run.get("run_id") or ""))
             tool_id = self._tool_id_for_call(tool, manifest_tools)
+            manifest_tool = manifest_tools.get(tool_id) if tool_id else None
+            broker_audit = self._broker_audit_for_tool_call(_run, params.get("_node_id"), tool_id, manifest_tool, tool_params)
+            if not broker_audit["ok"]:
+                result = {
+                    "ok": False,
+                    "code": "HOST_CAPABILITY_BROKER_DENIED",
+                    "error": broker_audit["error"],
+                    "findings": broker_audit["findings"],
+                }
+                trace = self._operation_events_for_result(broker_audit, result)
+                operation_events.extend(trace)
+                tool_results.append({
+                    "server": server,
+                    "tool": tool_name,
+                    "mcp_tool_id": tool_id,
+                    "result": result,
+                    "attempts": [],
+                    "retry_blocked": None,
+                    "idempotent": False,
+                    "contract": self._contract_metadata({}),
+                    "operation_events": trace,
+                })
+                continue
             local_binding = None
             if tool_id:
                 try:
@@ -509,9 +533,12 @@ class LabNodeExecutor:
                     contract,
                     external_binding=local_binding,
                 )
+                trace = self._operation_events_for_result(broker_audit, result)
+                operation_events.extend(trace)
                 tool_results.append({
                     "server": server,
                     "tool": tool_name,
+                    "mcp_tool_id": tool_id,
                     "resource_role": local_binding.get("role") if local_binding else "",
                     "resource_id": local_binding.get("resource_id") if local_binding else "",
                     "result": result,
@@ -519,6 +546,7 @@ class LabNodeExecutor:
                     "retry_blocked": retry_blocked,
                     "idempotent": contract.get("idempotent") is True,
                     "contract": self._contract_metadata(contract),
+                    "operation_events": trace,
                 })
                 if tool.get("strict") and result.get("ok"):
                     if result.get("validation_ok") is False or result.get("asset_ok") is False:
@@ -537,9 +565,104 @@ class LabNodeExecutor:
             "input": input_key,
             "output": default_output,
             "tool_results": tool_results,
+            "operation_events": operation_events,
             "failed": failed,
             **({"retry_blocked": retry_blocked} if retry_blocked else {}),
         }
+
+    def _broker_audit_for_tool_call(
+        self,
+        run: dict,
+        node_id: str | None,
+        tool_id: str,
+        manifest_tool: dict | None,
+        params: dict,
+    ) -> dict:
+        runtime_contract = run.get("runtime_contract") if isinstance(run.get("runtime_contract"), dict) else {}
+        is_v09 = runtime_contract.get("protocol") == "CF-FARP" and str(runtime_contract.get("protocol_version")) == "0.9"
+        if not is_v09 or not isinstance(manifest_tool, dict):
+            return {"ok": True, "operations": [], "findings": [], "node_id": str(node_id or ""), "tool_id": str(tool_id or "")}
+
+        graph = manifest_tool.get("operation_graph") if isinstance(manifest_tool.get("operation_graph"), dict) else {}
+        operations = [item for item in graph.get("operations") or [] if isinstance(item, dict)]
+        transparency = str(manifest_tool.get("transparency") or "").strip()
+        findings = []
+        if transparency == "declared_graph" and not operations:
+            findings.append({
+                "severity": "blocker",
+                "code": "MCP_OPERATION_GRAPH_MISSING",
+                "message": f"v0.9 declared_graph tool has no operation graph: {tool_id}",
+            })
+
+        allowed_capabilities = {str(item).strip() for item in manifest_tool.get("broker_capabilities") or [] if str(item).strip()}
+        guarded_kinds = {"network", "file", "filesystem", "artifact", "secret", "subprocess"}
+        for operation in operations:
+            operation_id = str(operation.get("id") or "").strip()
+            capability = str(operation.get("capability") or "").strip()
+            kind = str(operation.get("kind") or "").strip()
+            if kind in guarded_kinds and not capability:
+                findings.append({
+                    "severity": "blocker",
+                    "code": "MCP_OPERATION_CAPABILITY_MISSING",
+                    "message": f"operation {operation_id} requires a broker capability",
+                    "operation_id": operation_id,
+                })
+            if capability and capability not in allowed_capabilities:
+                findings.append({
+                    "severity": "blocker",
+                    "code": "MCP_OPERATION_CAPABILITY_NOT_GRANTED",
+                    "message": f"operation {operation_id} capability is not granted: {capability}",
+                    "operation_id": operation_id,
+                    "capability": capability,
+                })
+
+        blockers = [item for item in findings if item.get("severity") == "blocker"]
+        return {
+            "ok": not blockers,
+            "error": blockers[0]["message"] if blockers else "",
+            "findings": findings,
+            "node_id": str(node_id or ""),
+            "tool_id": str(tool_id or ""),
+            "server": str(manifest_tool.get("server") or ""),
+            "tool": str(manifest_tool.get("tool") or ""),
+            "source_digest": str(manifest_tool.get("source_digest") or ""),
+            "operations": operations,
+            "params_keys": sorted(str(key) for key in params.keys()),
+        }
+
+    def _operation_events_for_result(self, broker_audit: dict, result: dict) -> list[dict]:
+        events: list[dict] = []
+        operations = broker_audit.get("operations") if isinstance(broker_audit, dict) else []
+        if not isinstance(operations, list) or not operations:
+            return events
+        failed = result.get("ok") is False
+        terminal_type = "tool_operation_failed" if failed else "tool_operation_completed"
+        for operation in operations:
+            if not isinstance(operation, dict):
+                continue
+            operation_id = str(operation.get("id") or "").strip()
+            if not operation_id:
+                continue
+            base = {
+                "node_id": str(broker_audit.get("node_id") or ""),
+                "tool_id": str(broker_audit.get("tool_id") or ""),
+                "server": str(broker_audit.get("server") or ""),
+                "tool": str(broker_audit.get("tool") or ""),
+                "operation_id": operation_id,
+                "operation_kind": str(operation.get("kind") or ""),
+                "source_digest": str(broker_audit.get("source_digest") or ""),
+            }
+            capability = str(operation.get("capability") or "").strip()
+            events.append({"type": "tool_operation_started", **base})
+            if capability:
+                events.append({"type": "capability_dependency", "capability": capability, "granted": broker_audit.get("ok") is True, **base})
+            events.append({
+                "type": terminal_type,
+                "ok": not failed,
+                **({"error_code": str(result.get("code") or ""), "error": str(result.get("error") or "")} if failed else {}),
+                **base,
+            })
+        return events
 
     def _tool_contract_for_call(self, run: dict, tool: dict) -> dict:
         tool_id = str(tool.get("mcp_tool_id") or tool.get("id") or "").strip()

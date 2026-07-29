@@ -3134,6 +3134,18 @@
 .cf-builtin-tool-detail p { margin: 5px 0; color: #52606e; font-size: 13px; }
 .cf-builtin-tool-detail code { color: #2f3c4b; font-size: 12px; }
 .cf-builtin-tool-detail span { display: block; margin-top: 9px; color: #76828e; font-size: 12px; }
+.cf-mcp-operation-graph { margin: 12px 0; padding: 12px; border: 1px solid #dce4e7; border-radius: 7px; background: #fff; }
+.cf-mcp-operation-graph header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.cf-mcp-operation-graph header b { margin: 0; font-size: 13px; color: #253241; }
+.cf-mcp-operation-graph header span { margin: 0; color: #6e7a84; font-size: 12px; }
+.cf-mcp-operation-rail { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px; }
+.cf-mcp-operation-node { min-width: 0; min-height: 118px; display: grid; align-content: start; gap: 6px; padding: 10px; border: 1px solid #e2e7ea; border-radius: 7px; background: #f9fbfb; }
+.cf-mcp-operation-node strong { min-width: 0; margin: 0; overflow-wrap: anywhere; color: #263443; font-size: 13px; }
+.cf-mcp-operation-node small { color: #63717c; font-size: 12px; }
+.cf-mcp-operation-node code { width: fit-content; max-width: 100%; padding: 3px 6px; border-radius: 5px; background: #eef6f3; color: #276354; overflow-wrap: anywhere; }
+.cf-mcp-operation-node em { width: fit-content; padding: 3px 6px; border-radius: 5px; background: #fff4eb; color: #a05224; font-size: 11px; font-style: normal; }
+.cf-mcp-operation-node span { min-width: 0; display: flex; align-items: center; gap: 5px; margin: 0; color: #697783; overflow-wrap: anywhere; }
+.cf-mcp-operation-node span svg { flex: 0 0 auto; width: 13px; height: 13px; }
 
 @media (max-width: 1350px) {
   .cf-canvas-tool-panel.resource-panel { width: min(620px, calc(100% - 88px)); height: calc(100% - 24px); }

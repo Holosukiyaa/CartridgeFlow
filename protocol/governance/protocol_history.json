@@ -20,21 +20,21 @@
       "version": "0.3",
       "status": "recognized",
       "migration_target": {"id": "CF-FARP", "version": "0.6"},
-      "document": "docs/protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.3.md"
+      "document": "docs/protocol/flow-authoring/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.3.md"
     },
     {
       "id": "CF-FARP",
       "version": "0.4",
       "status": "recognized",
       "migration_target": {"id": "CF-FARP", "version": "0.6"},
-      "document": "docs/protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.4.md"
+      "document": "docs/protocol/flow-authoring/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.4.md"
     },
     {
       "id": "CF-FARP",
       "version": "0.5",
       "status": "recognized",
       "migration_target": {"id": "CF-FARP", "version": "0.6"},
-      "document": "docs/protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.5.md"
+      "document": "docs/protocol/flow-authoring/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.5.md"
     }
   ]
 }

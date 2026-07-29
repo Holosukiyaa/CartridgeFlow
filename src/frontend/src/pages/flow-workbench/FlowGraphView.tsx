@@ -39,6 +39,18 @@ type FlowGraphEdge = Edge<Record<string, unknown>>
 type DataRelation = { from: string; to: string; key: string; kind?: 'data' | 'dependency'; label?: string; fromField?: string; toField?: string; expression?: string; source?: string }
 type RunEdgeStatus = 'visited' | 'active'
 export type CanvasTool = 'select' | 'connect' | 'steward-pointer' | 'steward-lasso'
+export type ProtocolDisplayInfo = {
+  baseContractLabel: string
+  targetProtocolLabel: string
+  currentProtocolLabel: string
+  currentProtocolStatus: string
+}
+const DEFAULT_PROTOCOL_DISPLAY: ProtocolDisplayInfo = {
+  baseContractLabel: 'Base Contract 未读取',
+  targetProtocolLabel: '协议发布清单未读取',
+  currentProtocolLabel: 'CF-FARP@unknown',
+  currentProtocolStatus: '当前卡带协议未读取',
+}
 type CanvasPanel = 'nodes' | 'notes' | 'models' | 'variables' | 'settings' | 'tools' | 'package' | 'base-info' | null
 
 type EngineeringNodeRenderContextValue = {
@@ -403,7 +415,7 @@ function buildRunEdgeStates(graphEdges: FlowEdge[], runEvents: FlowEvent[] = EMP
   return edgeStates
 }
 
-export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engineeringEdgeVisibility = { control: true, data: true, dependency: true, branch: true, failure: true }, engineeringDataRelations: providedEngineeringDataRelations, engineeringNodeModels: providedEngineeringNodeModels, selectedNode, focusNodeId, onSelectNode, onNodeEditorPositionChange, onLayoutSave, autoLayoutOnMount = false, onAutoLayoutComplete, onEdgesSave, onAnnotationsSave, onCreateNode, onDeleteNode, modelPanel, toolPanel, packagePanel, cartridgePanel, nodeEditors = [], activeNodeEditorId, onCloseNodeEditor, onCanvasToolChange, requestedCanvasTool, onStewardSelectionChange, compactStatic = false, readOnlyGraph = false, runStatus, nodeRunStates, runEvents, runCompletionVisible = false, runCompletion, onDismissRunCompletion, onOpenRunLog, onOpenPendingInteraction, testProbeState }: {
+export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engineeringEdgeVisibility = { control: true, data: true, dependency: true, branch: true, failure: true }, engineeringDataRelations: providedEngineeringDataRelations, engineeringNodeModels: providedEngineeringNodeModels, selectedNode, focusNodeId, onSelectNode, onNodeEditorPositionChange, onLayoutSave, autoLayoutOnMount = false, onAutoLayoutComplete, onEdgesSave, onAnnotationsSave, onCreateNode, onDeleteNode, modelPanel, toolPanel, packagePanel, cartridgePanel, protocolInfo = DEFAULT_PROTOCOL_DISPLAY, nodeEditors = [], activeNodeEditorId, onCloseNodeEditor, onCanvasToolChange, requestedCanvasTool, onStewardSelectionChange, compactStatic = false, readOnlyGraph = false, runStatus, nodeRunStates, runEvents, runCompletionVisible = false, runCompletion, onDismissRunCompletion, onOpenRunLog, onOpenPendingInteraction, testProbeState }: {
   graph: FlowGraph
   files?: FlowFiles
   displayMode?: DesignDisplayMode
@@ -425,6 +437,7 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
   toolPanel?: ReactNode
   packagePanel?: ReactNode
   cartridgePanel?: ReactNode
+  protocolInfo?: ProtocolDisplayInfo
   nodeEditors?: CanvasNodeEditor[]
   activeNodeEditorId?: string | null
   onCloseNodeEditor?: () => void
@@ -1939,7 +1952,7 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
             {canvasPanel === 'models' && <div className="cf-canvas-resource-content">{modelPanel}</div>}
             {canvasPanel === 'tools' && <div className="cf-canvas-tool-content">{toolPanel}</div>}
             {canvasPanel === 'package' && <div className="cf-canvas-resource-content">{packagePanel}</div>}
-            {canvasPanel === 'base-info' && <div className="cf-base-info-panel"><p>当前基座推荐使用 v0.7 协议族：</p><div><b>CartridgeFlow Protocol</b><span>v0.7 · 卡带清单与节点图</span></div><div><b>Flow Graph</b><span>v0.7 · 节点、连线、路由</span></div><div><b>LLM Binding</b><span>v0.7 · Flow 与节点级模型绑定</span></div><div><b>MCP Tool Binding</b><span>v0.7 · Flow 级工具隔离</span></div><div><b>Runtime</b><span>v0.7 · 交互暂停、恢复与产物交付</span></div></div>}
+            {canvasPanel === 'base-info' && <div className="cf-base-info-panel"><p>当前基座目标协议：{protocolInfo.baseContractLabel} + {protocolInfo.targetProtocolLabel}</p><div><b>当前卡带</b><span>{protocolInfo.currentProtocolLabel} · {protocolInfo.currentProtocolStatus}</span></div><div><b>流程结构（Flow Graph）</b><span>v0.9 · 结构化输入/输出、显式绑定、类型化控制连线</span></div><div><b>流程分析器（Flow Analyzer）</b><span>v0.9 · 源码指纹、规范化拓扑与分析结果</span></div><div><b>模型绑定（LLM Binding）</b><span>v0.9 · Flow 资源目录与节点级模型绑定</span></div><div><b>MCP 工具绑定</b><span>v0.9 · Flow 资源目录、来源追踪与运行前检查</span></div><div><b>运行时（Runtime）</b><span>v0.9（部分能力）· 交互暂停、恢复、产物交付与备用路径可见性</span></div></div>}
           </Panel>
         )}
         {!compactStatic && canvasPanel === 'nodes' && selectedLibraryCategory && selectedLibraryPreset && (

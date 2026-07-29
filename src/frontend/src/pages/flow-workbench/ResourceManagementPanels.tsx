@@ -25,16 +25,19 @@ import {
 import {
   createLlmProvider,
   createStudioCredential,
+  addMcpOperation,
   deleteLlmProvider,
   exportLlmConfig,
   fetchLlmAssignments,
   fetchFlowResourceCatalog,
+  fetchMcpSource,
   fetchStudioEnvironment,
   fetchStudioPackages,
   fetchStudioReleasePreflight,
   fetchStudioResources,
   importOpenCodeConfig,
   packageCartridge,
+  patchMcpOperationGraph,
   saveLlmAssignments,
   saveStudioResources,
   testLlmProvider,
@@ -43,6 +46,7 @@ import {
   type LlmAssignments,
   type LlmProvider,
   type McpTool,
+  type McpSourceResponse,
   type StudioResources,
   type StudioPackageItem,
   type StudioReleasePreflight,
@@ -467,7 +471,153 @@ function toFlowMcpTool(tool: StudioToolResource): McpTool {
     tool: tool.tool || tool.id,
     description: tool.description,
     enabled: tool.enabled !== false,
+    node_id: tool.node_id,
+    transparency: tool.transparency,
+    source_digest: tool.source_digest,
   }
+}
+
+function graphDraftFromSource(data: McpSourceResponse | null) {
+  const model = data?.source_model
+  return JSON.stringify({
+    operations: model?.operations || [],
+    edges: model?.edges || [],
+    fallbacks: model?.fallbacks || [],
+    capabilities: model?.capabilities || [],
+    inputs: model?.inputs || {},
+    outputs: model?.outputs || {},
+  }, null, 2)
+}
+
+function operationGraphForPreview(tool: StudioToolResource, data: McpSourceResponse | null) {
+  const model = data?.source_model
+  return {
+    operations: (model?.operations || tool.operation_graph?.operations || []).filter((item: any) => item && typeof item === 'object'),
+    edges: (model?.edges || tool.operation_graph?.edges || []).filter((item: any) => item && typeof item === 'object'),
+    fallbacks: (model?.fallbacks || tool.operation_graph?.fallbacks || []).filter((item: any) => item && typeof item === 'object'),
+  }
+}
+
+function McpOperationGraphPreview({ tool, data }: { tool: StudioToolResource; data: McpSourceResponse | null }) {
+  const graph = operationGraphForPreview(tool, data)
+  if (!graph.operations.length) return null
+  const fallbackByOperation = new Map<string, number>()
+  for (const item of graph.fallbacks) {
+    const from = String(item.from || '').trim()
+    if (from) fallbackByOperation.set(from, (fallbackByOperation.get(from) || 0) + 1)
+  }
+  return (
+    <div className="cf-mcp-operation-graph">
+      <header>
+        <b>内部流程</b>
+        <span>{graph.operations.length} 个操作 · {graph.edges.length} 条连线 · {graph.fallbacks.length} 条备用路径</span>
+      </header>
+      <div className="cf-mcp-operation-rail">
+        {graph.operations.map((operation: any, index: number) => {
+          const operationId = String(operation.id || `operation_${index + 1}`)
+          const next = graph.edges.filter((edge: any) => String(edge.from || '') === operationId).map((edge: any) => String(edge.to || '')).filter(Boolean)
+          const capability = String(operation.capability || '').trim()
+          return (
+            <div className="cf-mcp-operation-node" key={operationId}>
+              <strong>{operationId}</strong>
+              <small>{String(operation.kind || 'operation')}</small>
+              {capability && <code>{capability}</code>}
+              {fallbackByOperation.get(operationId) ? <em>{fallbackByOperation.get(operationId)} 条备用路径</em> : null}
+              {next.length > 0 && <span><ArrowRight />{next.join(', ')}</span>}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function McpSourceEditor({ flowId, tool, onSaved }: { flowId: string; tool: StudioToolResource; onSaved: () => Promise<void> }) {
+  const nodeId = String(tool.node_id || '').trim()
+  const [data, setData] = useState<McpSourceResponse | null>(null)
+  const [graphText, setGraphText] = useState('')
+  const [operationText, setOperationText] = useState('{\n  "id": "new_operation",\n  "kind": "transform"\n}')
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState<{ text: string; tone: 'neutral' | 'success' | 'error' } | null>(null)
+  if (tool.source !== 'cartridge_dlc' || !nodeId) return null
+
+  const load = async () => {
+    setBusy(true)
+    try {
+      const next = await fetchMcpSource(flowId, nodeId)
+      setData(next)
+      setGraphText(graphDraftFromSource(next))
+      setMessage(null)
+    } catch (error: any) {
+      setMessage({ text: error.message || 'MCP 源码加载失败', tone: 'error' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const saveGraph = async () => {
+    if (!data?.source_digest) return
+    setBusy(true)
+    try {
+      const graph = JSON.parse(graphText)
+      const result = await patchMcpOperationGraph(flowId, nodeId, data.source_digest, graph)
+      const next = { node_id: nodeId, path: data.path, source: result.source, source_digest: result.source_digest, source_model: result.source_model }
+      setData(next)
+      setGraphText(graphDraftFromSource(next))
+      await onSaved()
+      setMessage({ text: 'MCP 内部流程已保存，源码指纹已同步更新。', tone: 'success' })
+    } catch (error: any) {
+      setMessage({ text: error.message || 'MCP 内部流程保存失败', tone: 'error' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const createOperation = async () => {
+    if (!data?.source_digest) return
+    setBusy(true)
+    try {
+      const operation = JSON.parse(operationText)
+      const result = await addMcpOperation(flowId, nodeId, data.source_digest, operation)
+      const next = { node_id: nodeId, path: data.path, source: result.source, source_digest: result.source_digest, source_model: result.source_model }
+      setData(next)
+      setGraphText(graphDraftFromSource(next))
+      setOperationText('{\n  "id": "new_operation",\n  "kind": "transform"\n}')
+      await onSaved()
+      setMessage({ text: '已新增 MCP 操作，源码指纹已同步更新。', tone: 'success' })
+    } catch (error: any) {
+      setMessage({ text: error.message || '新增 MCP 操作失败', tone: 'error' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <section className="cf-builtin-tool-detail">
+      <b>MCP 源码与内部流程（v0.9）</b>
+      <p>透明度：<code>{tool.transparency || 'unknown'}</code> · 解析状态：<code>{tool.parse_status || 'unknown'}</code> · 操作数：<code>{tool.operation_count || 0}</code></p>
+      <McpOperationGraphPreview tool={tool} data={data} />
+      {!data ? (
+        <button type="button" disabled={busy} onClick={() => void load()}><FileJson />读取源码模型</button>
+      ) : (
+        <>
+          <p>源码位置：<code>{data.path}</code></p>
+          <p>源码指纹：<code>{data.source_digest}</code></p>
+          <label className="wide"><span>内部流程 JSON</span><textarea rows={10} value={graphText} onChange={(event) => setGraphText(event.target.value)} /></label>
+          <div className="cf-resource-card-actions">
+            <button type="button" disabled={busy} onClick={() => void load()}><RefreshCw />重新读取</button>
+            <button className="primary" type="button" disabled={busy} onClick={() => void saveGraph()}><Workflow />保存流程</button>
+          </div>
+          <label className="wide"><span>新增操作 JSON</span><textarea rows={4} value={operationText} onChange={(event) => setOperationText(event.target.value)} /></label>
+          <div className="cf-resource-card-actions">
+            <button type="button" disabled={busy} onClick={() => void createOperation()}><CirclePlus />新增操作</button>
+          </div>
+          <details><summary>源码预览</summary><pre>{data.source}</pre></details>
+        </>
+      )}
+      {message && <StatusMessage {...message} />}
+    </section>
+  )
 }
 
 export function ToolManagementPanel({ flowId, onFlowToolsChange }: { flowId: string; onFlowToolsChange?: (tools: McpTool[]) => void }) {
@@ -678,6 +828,7 @@ export function ToolManagementPanel({ flowId, onFlowToolsChange }: { flowId: str
                     <label className="wide"><span>说明</span><textarea rows={2} value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} /></label>
                   </div>
                 )}
+                <McpSourceEditor flowId={flowId} tool={tool} onSaved={reload} />
                 <div className="cf-resource-card-actions">
                   <button type="button" onClick={() => setMessage({ text: configured ? '本机连接字段与凭据检查通过。实际工具调用仍由运行节点触发。' : '连接配置不完整，请检查 Endpoint / 命令与凭据变量。', tone: configured ? 'success' : 'error' })}><Zap />检查配置</button>
                   {!tool.locked && tool.id !== '__new__' && <button className="danger" type="button" disabled={busy} onClick={() => void deleteTool(tool)}>删除工具</button>}

@@ -7,6 +7,7 @@ import {
   createFlowNode,
   deleteFlowNode,
   fetchLabFlow,
+  fetchBaseImplementation,
   fetchLabFlowFiles,
   fetchLabFlowRuns,
   fetchMcpTools,
@@ -21,6 +22,7 @@ import {
   type FlowAnnotation,
   type FlowFiles,
   type FlowLabDetail,
+  type ProtocolReleaseCatalog,
   type FlowNode,
   type McpTool,
   type RunResult,
@@ -51,6 +53,12 @@ type OptimisticRunTransition = {
   runId: string
   from: string
   to: string
+}
+
+function protocolLabel(runtimeContract?: any, rootProtocol?: any) {
+  const protocol = String(runtimeContract?.protocol || rootProtocol?.id || 'CF-FARP').trim()
+  const version = String(runtimeContract?.protocol_version || rootProtocol?.version || '').trim()
+  return version ? `${protocol}@${version}` : `${protocol}@unknown`
 }
 
 function resolveInteractionTransition(pendingInteraction: any, graph: FlowLabDetail['graph'], actionId: string): Omit<OptimisticRunTransition, 'runId'> | null {
@@ -131,6 +139,7 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
   const [runLog, setRunLog] = useState<{ run: RunResult; events: FlowEvent[] } | null>(null)
   const [runCompletionNotice, setRunCompletionNotice] = useState<{ runId: string; shownAt: number } | null>(null)
   const [resultModal, setResultModal] = useState<{ runId: string; html: string } | null>(null)
+  const [protocolCatalog, setProtocolCatalog] = useState<ProtocolReleaseCatalog | null>(null)
   const latestRun = runs[0]
   const pendingInteraction = latestRun?.status === 'paused_waiting_user' ? latestRun.pending_interaction : null
   const pendingInteractionId = String(pendingInteraction?.interaction_id || '')
@@ -175,6 +184,18 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
     }
     return [...merged.values()]
   }, [flowResourceTools, mcpTools])
+  const protocolInfo = useMemo(() => {
+    const currentProtocolLabel = protocolLabel(detail?.cartridge.runtime_contract, detail?.cartridge.root_flow?.protocol)
+    const target = protocolCatalog?.default_for_new_flows
+    const targetProtocolLabel = target?.label || '协议发布清单未读取'
+    const baseContract = protocolCatalog?.base_contract
+    return {
+      baseContractLabel: baseContract ? `${baseContract.id}@${baseContract.version}` : 'Base Contract 未读取',
+      targetProtocolLabel,
+      currentProtocolLabel,
+      currentProtocolStatus: currentProtocolLabel === targetProtocolLabel ? '当前发布协议' : '兼容运行协议',
+    }
+  }, [detail, protocolCatalog])
   const openRunLog = useCallback(async (run: RunResult) => {
     try {
       const [selectedRun, selectedEvents] = await Promise.all([
@@ -192,7 +213,8 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
     setError('')
     setRunCompletionNotice(null)
     try {
-      const data = await fetchLabFlow(flowId)
+      const [data, baseResponse] = await Promise.all([fetchLabFlow(flowId), fetchBaseImplementation()])
+      setProtocolCatalog(baseResponse.protocol_catalog || null)
       setDetail(data)
       setRuns(data.runs || [])
       setSelectedHistoryRunId(data.runs?.[0]?.run_id || '')
@@ -534,6 +556,7 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
       <Box className="cf-page-inner cf-workbench-inner">
         <WorkbenchHeader
           detail={detail}
+          protocolInfo={protocolInfo}
           cartridgeControls={<CartridgeWorkspaceControl current={detail.cartridge} onSwitchFlow={onSwitchFlow} onUpdated={load} />}
           runStatus={activeRuntimeRun?.status}
           runBusy={runControlBusy}
@@ -605,6 +628,7 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
         <div className="cf-workbench-design-shell">
             <DesignView
             graph={detail.graph}
+            protocolInfo={protocolInfo}
             editable={editable}
             files={files}
             flowId={flowId}

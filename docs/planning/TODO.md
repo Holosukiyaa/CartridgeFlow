@@ -1,9 +1,19 @@
 # CartridgeFlowLite TODO
 
+- `DEMO-001`: Create `dev.mcp-transparency-demo` with two parseable DLC MCP nodes to validate v0.9 multi-MCP source transparency.
+- `UI-003`: Remove user-facing MCP internal-ID resource nodes from the engineering canvas and localize the engineering-view guidance and headings to Chinese.
+
 > 当前目标：把完整版收敛为专注卡带开发的轻量工作台，只保留卡带设计、交互、模型与工具配置、真实运行、诊断和产物闭环。
 
 ## 当前任务
 
+- `UI-002`：在工程视图为可解析的 v0.9 DLC MCP 节点接入 source model，展示可展开的 operation graph、透明度/来源/运行信息和 Python 源码入口；opaque 与远程工具必须保留真实可见性状态。
+- `PROTO-013`：将 `protocol/` 根目录中的机器协议工件按 catalog、base、releases、vocabulary、tooling、governance 分类入目录；同步运行时加载器、发布清单、文档、测试与审计，使根目录不再平铺协议文件。
+- `PROTO-012`：整理 `docs/protocol/` 的平铺协议正文，按 Base Contract、Flow Authoring 发布文档和治理规则分类入目录；同步发布清单、文件索引、全部内部引用与治理审计，保持发布内容不变。
+- `PROTO-010`：建立统一协议发布清单与全盘治理审计，将协议生命周期、默认新建版本、历史迁移、快照路径和 Base 支持矩阵集中校验，并由 API 向工作台发放。
+- `PROTO-011`：整理协议目录，将可变治理镜像集中到 `protocol/governance/`，保持已发布快照与词表的稳定路径，并由全盘审计防止路径回退。
+- `UI-001`：修正工作台协议展示，把当前基座目标协议与当前卡带运行协议分开展示，避免旧 v0.7 文案误导。
+- `PROTO-009`：将 CF-FARP 协议升级到 v0.9，新增 MCP/DLC 透明执行、可编辑 operation graph、source model、descriptor v3 与 tool transparency 相关快照，保留 v0.8 只读语义。
 - `QA-001`：持续执行基础验证、协议/运行链测试、真实浏览器 E2E 与安全审计，修复证据充分的高、中优先级缺陷并完成两轮全量回归。
 - `LITE-032`：完善设计台真实运行闭环，包括运行前检查、输入、状态反馈、历史、日志与产物入口。
 - `LITE-033`：记录大型 Flow 画布性能瓶颈、分阶段优化方案与性能验收基准，供后续专项实施。

@@ -23,7 +23,7 @@
 
 ### 2.1 项目内部依据
 
-- [CF-FARP 0.7](../protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.7.md) 明确区分生命周期节点、能力节点和交互节点，并为每个 `kind` 规定不同契约。
+- [CF-FARP 0.7](../protocol/flow-authoring/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.7.md) 明确区分生命周期节点、能力节点和交互节点，并为每个 `kind` 规定不同契约。
 - [Flow 合同校验器](../../src/core/protocol/flow_contract.py) 会按节点类型检查输入来源、schema、Decision Consume、工具白名单、副作用、权限、失败策略、远程资源角色和 primary output。这些字段的重要性本来就不相等。
 - [节点执行器](../../src/core/lab/node_executor.py) 实际产生输入、输出、工具结果、Decision Envelope、Pending Interaction、错误和 Artifact 等运行证据。
 - [当前节点视图适配器](../../src/frontend/src/pages/flow-workbench/flowNodeView.ts) 只为每类节点挑了两个固定字段，无法表达协议阻断项、分支语义和运行结果。

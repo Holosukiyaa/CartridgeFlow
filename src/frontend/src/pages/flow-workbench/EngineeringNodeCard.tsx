@@ -48,7 +48,7 @@ export const EngineeringNodeCard = memo(function EngineeringNodeCard({
         <span className="cf-engineering-node-order">{node.scope === 'engineering_resource' ? 'R' : String(order).padStart(2, '0')}</span>
         <div>
           <strong title={node.display_name || node.title}>{node.display_name || node.title}</strong>
-          <small title={node.id}>{node.id} · {view.semanticKind}</small>
+          <small>{view.semanticKind}</small>
         </div>
         <span className={`cf-engineering-node-health ${view.configHealth}`} title={view.configHealthLabel}>
           {statusIcon}
@@ -77,13 +77,13 @@ export const EngineeringNodeCard = memo(function EngineeringNodeCard({
                 </div>
               )
             })}
-            {section.fields.length > visibleFields.length && <small className="cf-engineering-more">+{section.fields.length - visibleFields.length} fields</small>}
+            {section.fields.length > visibleFields.length && <small className="cf-engineering-more">另有 {section.fields.length - visibleFields.length} 个字段</small>}
           </section>
           )
         })}
       </div>
       <footer title={`${view.source.path}:${view.source.line}`}>
-        <span>Source</span><code>{view.source.path}:{view.source.line}</code>
+        <span>来源</span><code>{view.source.path}:{view.source.line}</code>
       </footer>
     </article>
   )

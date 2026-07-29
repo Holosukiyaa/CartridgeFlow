@@ -12,6 +12,7 @@ from core.studio.resources import load_resources
 
 
 CATALOG_SCHEMA = "cartridgeflow.flow_resource_catalog.v1"
+CATALOG_SCHEMA_V2 = "cartridgeflow.flow_resource_catalog.v2"
 TOOL_SOURCES = {"base_builtin", "local_resource", "cartridge_dlc"}
 AUTHORING_MODEL_ROLES = {"authoring", "mentor"}
 
@@ -28,6 +29,9 @@ def build_flow_resource_catalog(
     manifest = manifest if isinstance(manifest, dict) else {}
     root_flow = root_flow if isinstance(root_flow, dict) else {}
     cartridge_id = str(manifest.get("id") or "")
+    runtime_contract = manifest.get("runtime_contract") if isinstance(manifest.get("runtime_contract"), dict) else {}
+    protocol_version = str(runtime_contract.get("protocol_version") or "")
+    catalog_schema = CATALOG_SCHEMA_V2 if runtime_contract.get("protocol") == "CF-FARP" and protocol_version == "0.9" else CATALOG_SCHEMA
     resources = deepcopy(resources) if isinstance(resources, dict) else load_resources()
     selected_local = set(((resources.get("bindings") or {}).get("tools") or {}).get(cartridge_id) or [])
     manifest_tools = [item for item in manifest.get("mcp_tools") or [] if isinstance(item, dict) and item.get("id")]
@@ -156,7 +160,7 @@ def build_flow_resource_catalog(
 
     tools.sort(key=lambda item: (item["source"], item["id"], item["resource_id"]))
     return {
-        "schema": CATALOG_SCHEMA,
+        "schema": catalog_schema,
         "cartridge_id": cartridge_id,
         "tools": tools,
         "models": _model_catalog(manifest, root_flow),
@@ -188,6 +192,13 @@ def _catalog_tool(
     status = "ready" if available and flow_bound else "available" if available else "unavailable"
     if refs and not flow_bound:
         status = "unbound"
+    source_model = item.get("_source_model") if isinstance(item.get("_source_model"), dict) else {}
+    operation_graph = {
+        "operations": deepcopy(source_model.get("operations") or []),
+        "edges": deepcopy(source_model.get("edges") or []),
+        "fallbacks": deepcopy(source_model.get("fallbacks") or []),
+        "capabilities": list(source_model.get("capabilities") or []),
+    } if source_model else {}
     return {
         "id": tool_id,
         "resource_id": resource_id,
@@ -208,6 +219,14 @@ def _catalog_tool(
         "flow_binding": {"bound": flow_bound, "status": "bound" if flow_bound else "not_bound"},
         "node_references": refs,
         "status": status,
+        "transparency": str(item.get("transparency") or ("atomic" if source == "base_builtin" else "legacy_opaque")),
+        "node_id": str(item.get("node_id") or ""),
+        "implementation": deepcopy(item.get("implementation") if isinstance(item.get("implementation"), dict) else {}),
+        "source_digest": str(item.get("source_digest") or ""),
+        "parse_status": "parsed" if isinstance(item.get("_source_model"), dict) and item["_source_model"].get("ok") else "not_applicable" if source != "cartridge_dlc" else "opaque",
+        "operation_count": len((item.get("_source_model") or {}).get("operations") or []) if isinstance(item.get("_source_model"), dict) else 0,
+        "broker_capabilities": list((item.get("_source_model") or {}).get("capabilities") or []) if isinstance(item.get("_source_model"), dict) else [],
+        "operation_graph": operation_graph,
     }
 
 

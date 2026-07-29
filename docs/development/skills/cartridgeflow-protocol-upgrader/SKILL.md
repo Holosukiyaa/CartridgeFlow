@@ -11,7 +11,7 @@ Use this skill to make versioned protocol changes without silently breaking exis
 
 Before editing, read:
 
-- `docs/protocol/GOVERNANCE.md`
+- `docs/protocol/governance/GOVERNANCE.md`
 - The current source protocol files in `docs/protocol/`
 - The machine-readable registry in `protocol/`
 - `config/base/BASE_IMPLEMENTATION.json`
@@ -33,11 +33,11 @@ Use an in-place documentation patch only for spelling, clarification that does n
 ## Upgrade Workflow
 
 1. Preserve existing protocol meaning. Do not rewrite v0.1 to mean v0.2.
-2. Create a new source document, for example `CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.2.md`.
-3. Add a machine-readable protocol file, for example `protocol/CF-FARP-0.2.json`.
-4. Add new capability/profile vocabulary to `protocol/capabilities.json` and `protocol/profiles.json`.
+2. Create a new source document under `docs/protocol/flow-authoring/`, for example `CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.2.md`.
+3. Add a machine-readable protocol file under `protocol/releases/`, for example `protocol/releases/CF-FARP-0.2.json`.
+4. Add new capability/profile vocabulary to `protocol/vocabulary/capabilities.json` and `protocol/vocabulary/profiles.json`.
 5. Do not add the new protocol to `config/base/BASE_IMPLEMENTATION.json` until implementation and tests support it.
-6. Update `docs/protocol/GOVERNANCE.md` so future agents see the new protocol.
+6. Update `docs/protocol/governance/GOVERNANCE.md` so future agents see the new protocol.
 7. Add or update tests proving the registry, docs, and base support declarations are consistent.
 8. Only apply certification labels after the relevant certification report passes.
 

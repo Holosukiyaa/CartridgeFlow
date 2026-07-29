@@ -24,13 +24,13 @@ class ProtocolV04RegistryTest(unittest.TestCase):
         self.assertNotIn(("CF-FARP", "0.4"), supported)
 
     def test_protocol_v04_document_path_exists(self):
-        protocol = json.loads((ROOT / "protocol" / "CF-FARP-0.4.json").read_text(encoding="utf-8"))
+        protocol = json.loads((ROOT / "protocol" / "releases" / "CF-FARP-0.4.json").read_text(encoding="utf-8"))
         document = ROOT / protocol["document"]
         self.assertTrue(document.is_file(), protocol["document"])
         self.assertEqual(protocol["supersedes"], {"id": "CF-FARP", "version": "0.3"})
 
     def test_protocol_v04_documents_explicit_decision_consume(self):
-        protocol = json.loads((ROOT / "protocol" / "CF-FARP-0.4.json").read_text(encoding="utf-8"))
+        protocol = json.loads((ROOT / "protocol" / "releases" / "CF-FARP-0.4.json").read_text(encoding="utf-8"))
         text = (ROOT / protocol["document"]).read_text(encoding="utf-8")
 
         self.assertIn("## 23. decision_contract.consume", text)
@@ -38,7 +38,7 @@ class ProtocolV04RegistryTest(unittest.TestCase):
         self.assertIn("禁止通过隐式命名生成消费 key", text)
 
     def test_protocol_v04_is_complete_standalone_protocol_text(self):
-        protocol = json.loads((ROOT / "protocol" / "CF-FARP-0.4.json").read_text(encoding="utf-8"))
+        protocol = json.loads((ROOT / "protocol" / "releases" / "CF-FARP-0.4.json").read_text(encoding="utf-8"))
         text = (ROOT / protocol["document"]).read_text(encoding="utf-8")
 
         required_sections = [
@@ -64,7 +64,7 @@ class ProtocolV04RegistryTest(unittest.TestCase):
         self.assertIn("不再是 v0.3 的增量补丁", text)
 
     def test_protocol_v04_capability_vocabulary_contains_consume_contract(self):
-        capabilities = json.loads((ROOT / "protocol" / "capabilities.json").read_text(encoding="utf-8"))
+        capabilities = json.loads((ROOT / "protocol" / "vocabulary" / "capabilities.json").read_text(encoding="utf-8"))
         ids = {
             str(item.get("id"))
             for item in capabilities.get("capabilities") or []

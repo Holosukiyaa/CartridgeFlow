@@ -1,7 +1,7 @@
 # CartridgeFlow Roadmap
 
 > 这份文档只记录会改变产品能力边界的阶段目标，不记录日常修改和完成历史。
-> 目标协议基线：`CARTRIDGEFLOW-BASE@0.2`、`CF-FARP@0.8`；当前参考底座声明 `CF-FARP@0.6 partial`、`CF-FARP@0.7 partial` 与 `CF-FARP@0.8 partial`
+> 目标协议基线：`CARTRIDGEFLOW-BASE@0.2`、`CF-FARP@0.9`；当前参考底座声明 `CF-FARP@0.6 partial`、`CF-FARP@0.7 partial`、`CF-FARP@0.8 partial` 与 `CF-FARP@0.9 partial`。版本生命周期以 `protocol/catalog/release_manifest.json` 为准。
 > 更新日期：2026-07-28
 
 ## 1. 产品目标

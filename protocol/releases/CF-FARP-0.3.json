@@ -8,8 +8,8 @@
     "id": "CF-FARP",
     "version": "0.2"
   },
-  "profiles_file": "profiles.json",
-  "capabilities_file": "capabilities.json",
+  "profiles_file": "vocabulary/profiles.json",
+  "capabilities_file": "vocabulary/capabilities.json",
   "tool_packs_file": "tool_packs.json",
-  "document": "docs/protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.3.md"
+  "document": "docs/protocol/flow-authoring/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.3.md"
 }

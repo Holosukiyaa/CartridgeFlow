@@ -7,6 +7,8 @@ from copy import deepcopy
 from html.parser import HTMLParser
 from pathlib import Path
 
+from .mcp_source_parser import TRANSPARENCY_LEVELS, parse_mcp_python_file
+
 
 class PortableDlcValidationError(ValueError):
     pass
@@ -38,8 +40,8 @@ def load_portable_dlc_descriptor(package_path: str | Path, manifest: dict, *, ve
         raise PortableDlcValidationError("manifest.portable_dlc must be an object")
     runtime_contract = manifest.get("runtime_contract") if isinstance(manifest.get("runtime_contract"), dict) else {}
     runtime_version = str(runtime_contract.get("protocol_version") or "")
-    if runtime_contract.get("protocol") != "CF-FARP" or runtime_version not in {"0.6", "0.7", "0.8"}:
-        raise PortableDlcValidationError("portable DLC activation requires CF-FARP@0.6, CF-FARP@0.7, or CF-FARP@0.8")
+    if runtime_contract.get("protocol") != "CF-FARP" or runtime_version not in {"0.6", "0.7", "0.8", "0.9"}:
+        raise PortableDlcValidationError("portable DLC activation requires CF-FARP@0.6, CF-FARP@0.7, CF-FARP@0.8, or CF-FARP@0.9")
     expected_protocol = f"CF-FARP@{runtime_version}"
     if portable.get("protocol") != expected_protocol:
         raise PortableDlcValidationError(f"manifest.portable_dlc.protocol must match {expected_protocol}")
@@ -54,14 +56,22 @@ def load_portable_dlc_descriptor(package_path: str | Path, manifest: dict, *, ve
     if not isinstance(descriptor, dict):
         raise PortableDlcValidationError("portable DLC descriptor must be an object")
 
-    expected_schema = "cartridgeflow.portable_dlc.v2" if runtime_version in {"0.7", "0.8"} else "cartridgeflow.portable_dlc.v1"
+    expected_schema = (
+        "cartridgeflow.portable_dlc.v3"
+        if runtime_version == "0.9"
+        else "cartridgeflow.portable_dlc.v2"
+        if runtime_version in {"0.7", "0.8"}
+        else "cartridgeflow.portable_dlc.v1"
+    )
     _validate_identity(descriptor, manifest, expected_schema)
     _validate_entries(package_root, descriptor, runtime_version)
     _validate_tools(descriptor, manifest)
+    if runtime_version == "0.9":
+        _validate_v3_tools(package_root, descriptor, manifest)
     _validate_protocols(package_root, descriptor)
     _validate_resources(descriptor)
     _validate_files(package_root, descriptor, verify_hashes=verify_hashes)
-    if runtime_version in {"0.7", "0.8"}:
+    if runtime_version in {"0.7", "0.8", "0.9"} and descriptor.get("frontend") is not None:
         _validate_v2_frontend_closure(package_root, descriptor, manifest)
 
     result = deepcopy(descriptor)
@@ -86,7 +96,7 @@ def _validate_identity(descriptor: dict, manifest: dict, expected_schema: str) -
 
 def _validate_entries(package_root: Path, descriptor: dict, runtime_version: str) -> None:
     backend = descriptor.get("backend")
-    if backend is None and runtime_version == "0.7":
+    if backend is None and runtime_version in {"0.7", "0.9"}:
         backend = None
     elif not isinstance(backend, dict):
         raise PortableDlcValidationError("descriptor.backend must be an object")
@@ -157,6 +167,63 @@ def _validate_tools(descriptor: dict, manifest: dict) -> None:
         raise PortableDlcValidationError(f"descriptor tools must exactly match manifest tools; missing={missing}, extra={extra}")
 
 
+def _validate_v3_tools(package_root: Path, descriptor: dict, manifest: dict) -> None:
+    manifest_tools = {
+        (str(item.get("server") or ""), str(item.get("tool") or "")): item
+        for item in manifest.get("mcp_tools") or []
+        if isinstance(item, dict) and item.get("enabled", True)
+    }
+    node_ids: set[str] = set()
+    entries: set[str] = set()
+    for index, tool in enumerate(descriptor.get("tools") or []):
+        node_id = str(tool.get("node_id") or "").strip()
+        if not node_id or node_id in node_ids:
+            raise PortableDlcValidationError(f"descriptor.tools[{index}].node_id is missing or duplicated")
+        node_ids.add(node_id)
+
+        manifest_tool = manifest_tools.get((str(tool.get("server") or ""), str(tool.get("tool") or ""))) or {}
+        manifest_node_id = str(manifest_tool.get("node_id") or "").strip()
+        if manifest_node_id and manifest_node_id != node_id:
+            raise PortableDlcValidationError(f"descriptor tool node_id does not match manifest tool: {node_id}")
+
+        transparency = str(tool.get("transparency") or "").strip()
+        if transparency not in TRANSPARENCY_LEVELS:
+            raise PortableDlcValidationError(f"descriptor.tools[{index}].transparency is invalid")
+        if transparency == "legacy_opaque":
+            raise PortableDlcValidationError("descriptor v3 tools cannot be legacy_opaque")
+
+        implementation = tool.get("implementation")
+        if not isinstance(implementation, dict):
+            raise PortableDlcValidationError(f"descriptor.tools[{index}].implementation must be an object")
+        if implementation.get("language") != "python":
+            raise PortableDlcValidationError(f"descriptor.tools[{index}].implementation.language must be python")
+        if implementation.get("format") != "cartridgeflow.mcp_python.v1":
+            raise PortableDlcValidationError(f"descriptor.tools[{index}].implementation.format must be cartridgeflow.mcp_python.v1")
+        entry = str(implementation.get("entry") or "").strip().replace("\\", "/")
+        if not entry.startswith("dlc/mcp_nodes/") or not entry.endswith(".py"):
+            raise PortableDlcValidationError(f"descriptor.tools[{index}].implementation.entry must be under dlc/mcp_nodes/")
+        if entry in entries:
+            raise PortableDlcValidationError(f"duplicate descriptor implementation entry: {entry}")
+        entries.add(entry)
+
+        source_path = resolve_package_file(package_root, entry, f"descriptor.tools[{index}].implementation.entry")
+        if not source_path.is_file():
+            raise PortableDlcValidationError(f"descriptor implementation entry not found: {entry}")
+        source_model = parse_mcp_python_file(source_path, display_path=entry)
+        if not source_model.get("ok"):
+            codes = [str(item.get("code")) for item in source_model.get("findings") or []]
+            raise PortableDlcValidationError(f"descriptor tool source is not v0.9 transparent: {entry}; findings={codes}")
+        if source_model.get("node_id") != node_id:
+            raise PortableDlcValidationError(f"source MCP_NODE.node_id does not match descriptor node_id: {entry}")
+        if source_model.get("tool_identity") != f"{tool['server']}/{tool['tool']}":
+            raise PortableDlcValidationError(f"source MCP_NODE server/tool does not match descriptor tool: {entry}")
+
+        source_digest = str(tool.get("source_digest") or "").strip().lower()
+        if source_digest != source_model.get("source_digest"):
+            raise PortableDlcValidationError(f"descriptor.tools[{index}].source_digest does not match source model digest")
+        tool["_source_model"] = source_model
+
+
 def _validate_protocols(package_root: Path, descriptor: dict) -> None:
     protocols = descriptor.get("protocols", [])
     if not isinstance(protocols, list):
@@ -211,11 +278,11 @@ def _validate_files(package_root: Path, descriptor: dict, *, verify_hashes: bool
             raise PortableDlcValidationError(f"descriptor file not found: {relative}")
         if verify_hashes and sha256_file(target) != expected:
             raise PortableDlcValidationError(f"descriptor file hash mismatch: {relative}")
-        if descriptor.get("schema") == "cartridgeflow.portable_dlc.v2":
+        if descriptor.get("schema") in {"cartridgeflow.portable_dlc.v2", "cartridgeflow.portable_dlc.v3"}:
             media_type = str(item.get("media_type") or "").strip().lower()
             role = str(item.get("role") or "").strip()
             if not media_type or not role:
-                raise PortableDlcValidationError(f"descriptor.files[{index}] requires media_type and role in v2")
+                raise PortableDlcValidationError(f"descriptor.files[{index}] requires media_type and role in v2/v3")
 
 
 class _FrontendHtmlParser(HTMLParser):

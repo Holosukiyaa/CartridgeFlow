@@ -40,7 +40,7 @@ Unacceptable old-version edits:
 For `CF-FARP 0.x`, add:
 
 ```text
-docs/protocol/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.x.md
+docs/protocol/flow-authoring/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.x.md
 ```
 
 The document should include:
@@ -59,7 +59,7 @@ The document should include:
 Add:
 
 ```text
-protocol/CF-FARP-0.x.json
+protocol/releases/CF-FARP-0.x.json
 ```
 
 The file should include:
@@ -78,9 +78,9 @@ The file should include:
 Update only vocabulary files that are required:
 
 ```text
-protocol/profiles.json
-protocol/capabilities.json
-protocol/tool_packs.json
+protocol/vocabulary/profiles.json
+protocol/vocabulary/capabilities.json
+protocol/tooling/tool_packs.json
 ```
 
 Adding vocabulary does not mean the current base supports it.
@@ -125,7 +125,7 @@ Do not add implicit output-name-derived consume keys to older protocols.
 Update:
 
 ```text
-docs/protocol/GOVERNANCE.md
+docs/protocol/governance/GOVERNANCE.md
 AGENT.md
 ```
 
@@ -152,9 +152,9 @@ Prefer small conformance tests over broad integration tests for protocol registr
 Run at minimum:
 
 ```text
-python -m json.tool protocol/CF-FARP-0.x.json
-python -m json.tool protocol/profiles.json
-python -m json.tool protocol/capabilities.json
+python -m json.tool protocol/releases/CF-FARP-0.x.json
+python -m json.tool protocol/vocabulary/profiles.json
+python -m json.tool protocol/vocabulary/capabilities.json
 python scripts/run_conformance.py
 ```
 

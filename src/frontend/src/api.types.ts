@@ -332,11 +332,57 @@ export interface McpTool {
   required?: boolean
   contract?: Record<string, any>
   enabled?: boolean
+  node_id?: string
+  transparency?: string
+  source_digest?: string
+}
+
+export interface McpSourceModel {
+  schema: 'cartridgeflow.mcp_source_model.v1' | string
+  ok: boolean
+  node_id: string
+  tool_identity: string
+  format: string
+  source: { path: string; sha256: string; line_count: number }
+  operations: Array<Record<string, any> & { id: string }>
+  edges: Array<Record<string, any>>
+  fallbacks: Array<Record<string, any>>
+  inputs: Record<string, any>
+  outputs: Record<string, any>
+  capabilities: string[]
+  source_map: Record<string, any>
+  findings: Array<{ severity: string; code: string; message: string; line?: number }>
+  source_digest: string
+}
+
+export interface McpSourceResponse {
+  node_id: string
+  path: string
+  source: string
+  source_digest: string
+  source_model: McpSourceModel
+}
+
+export interface McpSourceEditResponse {
+  status: string
+  source: string
+  source_model: McpSourceModel
+  source_digest: string
+  files: FlowFiles
+  mcp_tools: McpTool[]
 }
 
 export interface BaseImplementationResponse {
   ok: boolean
   base: any
+  protocol_catalog?: ProtocolReleaseCatalog
+}
+
+export interface ProtocolReleaseCatalog {
+  schema: string
+  base_contract: { id: string; version: string }
+  default_for_new_flows: { id: string; version: string; label: string }
+  releases: Array<{ id: string; version: string; lifecycle: string; migration_target?: { id: string; version: string } }>
 }
 
 export interface StudioConformanceResponse {
@@ -543,6 +589,19 @@ export interface StudioToolResource {
   flow_binding?: { bound: boolean; status: string }
   manifest_requirement?: { declared: boolean; required: boolean }
   node_references?: string[]
+  transparency?: string
+  node_id?: string
+  implementation?: Record<string, any>
+  source_digest?: string
+  parse_status?: 'parsed' | 'opaque' | 'not_applicable' | string
+  operation_count?: number
+  broker_capabilities?: string[]
+  operation_graph?: {
+    operations?: Array<Record<string, any>>
+    edges?: Array<Record<string, any>>
+    fallbacks?: Array<Record<string, any>>
+    capabilities?: string[]
+  }
 }
 
 export interface StudioResources {

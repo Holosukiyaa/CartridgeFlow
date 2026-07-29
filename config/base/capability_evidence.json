@@ -73,6 +73,14 @@
       "failure_tests": ["test_resource_catalog_v08.ResourceCatalogV08Tests.test_referenced_local_tool_without_flow_binding_is_blocked", "test_resource_catalog_v08.ResourceCatalogV08Tests.test_authoring_role_cannot_enter_cartridge_recipe"],
       "ui": {"status": "visible", "entries": ["src/frontend/src/pages/flow-workbench/ResourceManagementPanels.tsx"]}
     },
+    "tool_transparency": {
+      "verification": "verified",
+      "implementation": ["src/core/extensions/mcp_source_parser.py#parse_mcp_python_source", "src/core/extensions/mcp_source_editor.py#edit_mcp_source_graph", "src/core/extensions/mcp_source_editor.py#add_mcp_operation", "src/core/extensions/descriptor.py#load_portable_dlc_descriptor", "src/core/lab/flow_analyzer.py#analyze_flow", "src/core/studio/resource_catalog.py#build_flow_resource_catalog", "src/core/lab/node_executor.py#LabNodeExecutor._broker_audit_for_tool_call", "src/core/cartridge/runner.py#CartridgeRunner._append_operation_events", "src/backend/main.py#patch_lab_mcp_operation_graph"],
+      "positive_tests": ["test_mcp_transparency_v09.McpTransparencyV09Tests.test_parser_extracts_source_model_without_importing_dlc", "test_mcp_transparency_v09.McpTransparencyV09Tests.test_descriptor_v3_validates_unique_source_entry_and_digest", "test_mcp_transparency_v09.McpTransparencyV09Tests.test_v09_operation_trace_uses_source_model_operation_identity", "test_mcp_source_editing_v09.McpSourceEditingV09Tests.test_operation_graph_edit_preserves_static_source_contract", "test_mcp_source_editing_v09.McpSourceEditingV09Tests.test_add_operation_updates_node_decorator_and_registry"],
+      "failure_tests": ["test_mcp_transparency_v09.McpTransparencyV09Tests.test_parser_rejects_direct_network_import_and_nonstandard_run", "test_mcp_transparency_v09.McpTransparencyV09Tests.test_descriptor_v3_rejects_stale_source_digest", "test_mcp_transparency_v09.McpTransparencyV09Tests.test_v09_broker_blocks_operation_without_declared_capability", "test_mcp_source_editing_v09.McpSourceEditingV09Tests.test_stale_digest_is_rejected"],
+      "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/flow-workbench/FlowGraphView.tsx", "src/frontend/src/pages/flow-workbench/ResourceManagementPanels.tsx"]},
+      "notes": "v0.9 static source model, descriptor v3 digest guard, structured MCP_NODE operation graph editing, Analyzer transparency findings, catalog projection, declared operation trace events and broker preflight for operation capabilities are implemented. OS-level sandboxing and deeper resource-target enforcement remain partial evidence."
+    },
     "data_chain": {
       "verification": "happy_path_only",
       "implementation": ["src/core/cartridge/runner.py#CartridgeRunner._summarize_data_chain", "src/core/lab/node_executor.py#LabNodeExecutor._record_missing"],
@@ -434,6 +442,20 @@
     "node_resource_binding_preflight": "flow_resource_catalog",
     "explicit_node_model_binding": "flow_resource_catalog",
     "silent_model_fallback_guard": "flow_resource_catalog",
-    "authoring_model_scope_isolation": "flow_resource_catalog"
+    "authoring_model_scope_isolation": "flow_resource_catalog",
+    "mcp_node_source_format_v1": "tool_transparency",
+    "mcp_node_file_identity": "tool_transparency",
+    "mcp_source_static_parse": "tool_transparency",
+    "mcp_source_model_v1": "tool_transparency",
+    "compound_tool_operation_graph": "tool_transparency",
+    "tool_stage_trace_v1": "tool_transparency",
+    "tool_source_provenance": "tool_transparency",
+    "explicit_fallback_policy": "tool_transparency",
+    "host_capability_broker": "tool_transparency",
+    "opaque_tool_visibility_guard": "tool_transparency",
+    "mcp_graph_authoring_operations": "tool_transparency",
+    "mcp_source_digest_guard": "tool_transparency",
+    "portable_dlc_descriptor_v3": "tool_transparency",
+    "tool_resource_catalog_v2": "tool_transparency"
   }
 }

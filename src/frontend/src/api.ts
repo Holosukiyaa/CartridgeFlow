@@ -1,7 +1,7 @@
 // API 工具：封装所有对后端的 fetch 调用，统一走 /api 前缀
 
 // 基础请求方法：所有 API 调用共用
-import type { RuntimeErrorEnvelope, CartridgeSummary, CartridgeDetail, RunResult, FlowGraph, FlowEdge, FlowAnnotation, FlowLabItem, FlowLabDetail, FlowEvent, TestProbeRange, FlowFiles, CartridgeAsset, InteractionComponent, CartridgeAssetsResponse, McpTool, BaseImplementationResponse, StudioConformanceResponse, StudioTodoResponse, CompatibilityReport, ProtocolCertificationReport, McpToolsResponse, ValidationResponse, NodeUpdateResult, NodeCreatePayload, LlmProvider, LlmAssignments, LlmConfigBundle, LlmDetectionResult, LlmTestResult, StudioResources, FlowResourceCatalog, StudioCredential, StudioEnvironmentSnapshot, StudioPackageItem, PortabilityReport, StudioReleasePreflight, AIFlowStewardContext, AIFlowStewardMessage, AIFlowStewardMode } from './api.types.ts'
+import type { RuntimeErrorEnvelope, CartridgeSummary, CartridgeDetail, RunResult, FlowGraph, FlowEdge, FlowAnnotation, FlowLabItem, FlowLabDetail, FlowEvent, TestProbeRange, FlowFiles, CartridgeAsset, InteractionComponent, CartridgeAssetsResponse, McpTool, McpSourceModel, McpSourceResponse, McpSourceEditResponse, BaseImplementationResponse, StudioConformanceResponse, StudioTodoResponse, CompatibilityReport, ProtocolCertificationReport, McpToolsResponse, ValidationResponse, NodeUpdateResult, NodeCreatePayload, LlmProvider, LlmAssignments, LlmConfigBundle, LlmDetectionResult, LlmTestResult, StudioResources, FlowResourceCatalog, StudioCredential, StudioEnvironmentSnapshot, StudioPackageItem, PortabilityReport, StudioReleasePreflight, AIFlowStewardContext, AIFlowStewardMessage, AIFlowStewardMode } from './api.types.ts'
 export type * from './api.types.ts'
 
 export class ApiError extends Error {
@@ -264,6 +264,30 @@ export const fetchMcpTools = (id: string) =>
 
 export const fetchFlowResourceCatalog = (id: string) =>
   api<FlowResourceCatalog>(`/api/lab/flows/${id}/resource-catalog`)
+
+export const fetchMcpSourceModel = (id: string, nodeId: string) =>
+  api<McpSourceModel>(`/api/lab/flows/${id}/mcp-nodes/${encodeURIComponent(nodeId)}/source-model`)
+
+export const fetchMcpSource = (id: string, nodeId: string) =>
+  api<McpSourceResponse>(`/api/lab/flows/${id}/mcp-nodes/${encodeURIComponent(nodeId)}/source`)
+
+export const replaceMcpSource = (id: string, nodeId: string, expectedSourceDigest: string, source: string) =>
+  api<McpSourceEditResponse>(`/api/lab/flows/${id}/mcp-nodes/${encodeURIComponent(nodeId)}/source`, {
+    method: 'PUT',
+    body: JSON.stringify({ expected_source_digest: expectedSourceDigest, source }),
+  })
+
+export const patchMcpOperationGraph = (id: string, nodeId: string, expectedSourceDigest: string, graph: Record<string, any>) =>
+  api<McpSourceEditResponse>(`/api/lab/flows/${id}/mcp-nodes/${encodeURIComponent(nodeId)}/operation-graph`, {
+    method: 'PATCH',
+    body: JSON.stringify({ expected_source_digest: expectedSourceDigest, graph }),
+  })
+
+export const addMcpOperation = (id: string, nodeId: string, expectedSourceDigest: string, operation: Record<string, any>) =>
+  api<McpSourceEditResponse>(`/api/lab/flows/${id}/mcp-nodes/${encodeURIComponent(nodeId)}/operations`, {
+    method: 'POST',
+    body: JSON.stringify({ expected_source_digest: expectedSourceDigest, operation }),
+  })
 
 export const createMcpTool = (id: string, tool: Partial<McpTool>) =>
   api<{ status: string; tool: McpTool; mcp_tools: McpTool[]; files: FlowFiles }>(`/api/lab/flows/${id}/mcp-tools`, {

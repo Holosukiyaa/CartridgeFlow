@@ -4,7 +4,7 @@
   "version": "0.1",
   "name": "CartridgeFlow Flow Authoring Runtime Protocol",
   "status": "draft",
-  "profiles_file": "profiles.json",
-  "capabilities_file": "capabilities.json",
+  "profiles_file": "vocabulary/profiles.json",
+  "capabilities_file": "vocabulary/capabilities.json",
   "tool_packs_file": "tool_packs.json"
 }

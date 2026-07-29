@@ -13,11 +13,12 @@ class BaseManifestConformanceTest(unittest.TestCase):
         self.assertEqual(base["implementation_id"], "cartridgeflow.reference-dev")
         self.assertEqual(base["supported_protocols"][0]["id"], "CF-FARP")
         self.assertEqual(
-            ["0.6", "0.7", "0.8"],
+            ["0.6", "0.7", "0.8", "0.9"],
             [item["version"] for item in base["supported_protocols"] if item["id"] == "CF-FARP"],
         )
         self.assertEqual({"id": "CARTRIDGEFLOW-BASE", "version": "0.2"}, base["base_contract"])
         self.assertIn("runtime_core", base["profiles"])
+        self.assertIn("tool_transparency", base["profiles"])
 
 
 if __name__ == "__main__":

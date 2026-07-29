@@ -81,7 +81,7 @@ function DetailedNodeContent({ node, order, view, runState }: Pick<FlowNodeCardP
       <section className="flow-node-outcome-band summary">
         <h4><GitBranch />做什么</h4>
         <p title={view.what}>{view.what}</p>
-        {view.primaryIssue && <small className={`flow-node-issue ${view.primaryIssue.severity}`} title={view.primaryIssue.message}>{view.primaryIssue.severity === 'blocker' ? '阻断' : '提醒'} · {view.primaryIssue.message}</small>}
+        {view.primaryIssue && <small className={`flow-node-issue ${view.primaryIssue.severity}`} title={view.primaryIssue.message}>{view.primaryIssue.origin === 'runtime_preflight' ? (view.primaryIssue.severity === 'blocker' ? '运行前阻断' : '运行前提醒') : '配置提示'} · {view.primaryIssue.message}</small>}
       </section>
       <section className="flow-node-outcome-band fields input-fields">
         <h4><FileCheck2 />输入什么</h4>

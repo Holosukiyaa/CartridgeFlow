@@ -130,8 +130,33 @@ export interface FlowGraph {
   edges: FlowEdge[]
   annotations?: FlowAnnotation[]
   sub_flows?: any[]
-  analysis?: Record<string, any>
+  analysis?: FlowAnalysisReport
   engineering_relations?: FlowEngineeringRelation[]
+}
+
+export interface FlowAnalysisFinding {
+  id?: string
+  severity: 'blocker' | 'warning' | 'info' | string
+  code: string
+  message: string
+  node_id?: string
+  path?: string
+  stage?: string
+}
+
+export interface FlowAnalysisReport {
+  schema?: string
+  target?: string
+  source_digest?: string
+  findings?: FlowAnalysisFinding[]
+  summary?: {
+    blockers?: number
+    warnings?: number
+    infos?: number
+    runnable?: boolean
+    packagable?: boolean
+    publishable?: boolean
+  }
 }
 
 export interface FlowEngineeringEndpoint {

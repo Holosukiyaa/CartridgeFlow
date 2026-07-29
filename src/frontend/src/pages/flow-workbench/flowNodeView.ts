@@ -1,4 +1,4 @@
-import type { FlowEdge, FlowGraph, FlowNode } from '../../api.ts'
+import type { FlowAnalysisFinding, FlowEdge, FlowGraph, FlowNode } from '../../api.ts'
 import { getNodeCategory, getProcessDisplayLabel, getProtocolEffect, getProtocolExecutor, getProtocolKind, isStartNode } from './nodeModel.ts'
 import type { NodeRunState } from './runState.ts'
 
@@ -71,6 +71,7 @@ export type NodeConfigIssue = {
   severity: 'blocker' | 'warning'
   code: string
   message: string
+  origin: 'runtime_preflight' | 'authoring_hint'
 }
 
 export type NodePresentationContext = {
@@ -78,6 +79,7 @@ export type NodePresentationContext = {
   outgoingNodes?: FlowNode[]
   incomingEdges?: FlowEdge[]
   outgoingEdges?: FlowEdge[]
+  analysisFindings?: FlowAnalysisFinding[]
 }
 
 const KIND_LABELS: Record<NodeSemanticKind, string> = {
@@ -259,9 +261,19 @@ function defaultPurpose(node: FlowNode, kind: NodeSemanticKind) {
 }
 
 function buildConfigIssues(node: FlowNode, kind: NodeSemanticKind, context: NodePresentationContext): NodeConfigIssue[] {
+  if (context.analysisFindings !== undefined) {
+    return context.analysisFindings
+      .filter((finding) => finding.severity === 'blocker' || finding.severity === 'warning')
+      .map((finding) => ({
+        severity: finding.severity === 'blocker' ? 'blocker' : 'warning',
+        code: finding.code,
+        message: finding.message,
+        origin: 'runtime_preflight',
+      }))
+  }
   const issues: NodeConfigIssue[] = []
-  const blocker = (code: string, message: string) => issues.push({ severity: 'blocker', code, message })
-  const warning = (code: string, message: string) => issues.push({ severity: 'warning', code, message })
+  const blocker = (code: string, message: string) => issues.push({ severity: 'warning', code, message, origin: 'authoring_hint' })
+  const warning = (code: string, message: string) => issues.push({ severity: 'warning', code, message, origin: 'authoring_hint' })
   const requireValue = (value: unknown, code: string, message: string) => { if (!configured(value)) blocker(code, message) }
   const input = readNodeValue(node, 'input', 'input_key')
   const output = readNodeValue(node, 'output', 'output_name', 'save_to')
@@ -279,7 +291,6 @@ function buildConfigIssues(node: FlowNode, kind: NodeSemanticKind, context: Node
       break
     case 'terminal':
       if (outgoingCount > 0 || configured(node.next)) blocker('terminal_has_next', '结束节点仍声明后续节点，流程无法正确收束。')
-      if (!configured(input) && !configured(node.primary_output)) warning('terminal_result_unspecified', '尚未声明最终结果来自哪个变量。')
       break
     case 'input':
       requireValue(node.input_kind || readNodeValue(node, 'input_kind'), 'input_kind_missing', '输入节点缺少 input_kind。')
@@ -717,19 +728,27 @@ export function buildOutcomeNodeModels(graph: FlowGraph, runStates?: Map<string,
       outgoingNodes: outgoingByNode.get(node.id),
       incomingEdges: incomingEdgesByNode.get(node.id),
       outgoingEdges: outgoingEdgesByNode.get(node.id),
+      analysisFindings: getNodePreflightIssues(graph, node.id),
     }),
   } satisfies OutcomeNodeRenderModel]))
+}
+
+export function getNodePreflightIssues(graph: FlowGraph, nodeId: string): FlowAnalysisFinding[] | undefined {
+  const findings = graph.analysis?.findings
+  if (!Array.isArray(findings)) return undefined
+  return findings.filter((finding) => finding?.node_id === nodeId)
 }
 
 export function buildNodeDetailFacts(node: FlowNode, section: string, options: {
   edges?: FlowEdge[]
   runState?: NodeRunState
   runEvents?: Array<{ type?: string; message?: string; data?: AnyRecord }>
+  analysisFindings?: FlowAnalysisFinding[]
 } = {}): { title: string; description: string; fields: FlowNodeField[] } {
   const edges = options.edges || []
   const incomingEdges = edges.filter((edge) => edge.to === node.id)
   const outgoingEdges = edges.filter((edge) => edge.from === node.id)
-  const context: NodePresentationContext = { incomingEdges, outgoingEdges }
+  const context: NodePresentationContext = { incomingEdges, outgoingEdges, analysisFindings: options.analysisFindings }
   const view = buildFlowNodeCardView(node, options.runState, context)
   const input = readNodeValue(node, 'input', 'input_key', 'source')
   const output = readNodeValue(node, 'output', 'output_name', 'save_to', 'primary_output')

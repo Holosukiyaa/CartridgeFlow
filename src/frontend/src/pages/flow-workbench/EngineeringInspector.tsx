@@ -209,7 +209,7 @@ export function EngineeringInspector({ node, graph, view, unlocked, canEdit, onT
               <div><span>操作</span><code>{mcpSource?.source_model.operations.length ?? mcpTool.operation_count ?? 0}</code></div>
               <footer><button type="button" onClick={onOpenMcp}><Braces aria-hidden="true" />展开流程</button><button type="button" onClick={onOpenMcpSource}><FileCode2 aria-hidden="true" />打开源码</button></footer>
             </section>}
-            {view.issues.length > 0 && <ul>{view.issues.map((issue) => <li className={issue.severity} key={issue.code}><b>{issue.code}</b>{issue.message}</li>)}</ul>}
+            {view.issues.length > 0 && <ul>{view.issues.map((issue) => <li className={issue.severity} key={issue.code}><b>{issue.origin === 'runtime_preflight' ? '运行前检查' : '配置提示'} · {issue.code}</b>{issue.message}</li>)}</ul>}
           </section>
         )}
 

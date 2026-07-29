@@ -5,6 +5,7 @@ import { fetchFlowResourceCatalog, fetchMcpSource, type AIFlowSelection, type AI
 import type { CreateNodeHandler, DesignDisplayMode, GraphResult, NodeDraft } from './types.ts'
 import { FlowGraphView, type CanvasTool, type ProtocolDisplayInfo } from './FlowGraphView.tsx'
 import { NodeDetailCard } from './NodeDetailCard.tsx'
+import { getNodePreflightIssues } from './flowNodeView.ts'
 import { BrandMark } from './BrandMark.tsx'
 import { NODE_DETAIL_SECTION_BY_ID, nodeDetailId, type NodeDetailSection, type OpenNodeDetail } from './nodeDetails.ts'
 import type { NodeRunState } from './runState.ts'
@@ -245,6 +246,7 @@ export function DesignView({
         pinned={editor.pinned}
         runState={nodeRunStates?.get(node.id)}
         runEvents={nodeEvents}
+        analysisFindings={getNodePreflightIssues(graph, node.id)}
         editable={editable && !node.locked && node.scope !== 'root' && editor.section !== 'runtime'}
         draft={nodeDrafts[node.id] || makeNodeDraft(node)}
         dirty={Boolean(nodeDrafts[node.id] && JSON.stringify(nodeDrafts[node.id]) !== JSON.stringify(makeNodeDraft(node)))}

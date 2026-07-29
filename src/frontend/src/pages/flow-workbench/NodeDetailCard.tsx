@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { Activity, ArrowDownToLine, ArrowUpFromLine, Boxes, Bot, ChevronRight, GripHorizontal, PackageCheck, Pin, PinOff, PlugZap, RotateCcw, Route, Save, ShieldCheck, SlidersHorizontal, X } from 'lucide-react'
-import type { FlowEdge, FlowEvent, FlowFiles, FlowNode } from '../../api.ts'
+import type { FlowAnalysisFinding, FlowEdge, FlowEvent, FlowFiles, FlowNode } from '../../api.ts'
 import { buildNodeDetailFacts, resolveNodeSemanticKind } from './flowNodeView.ts'
 import { CATEGORY_BY_ID, NODE_CATEGORIES, getNodeCategory, getNodePalette, getPreset, getPresets, getProcessDisplayLabel, getProtocolDefaults } from './nodeModel.ts'
 import { NODE_DETAIL_SECTION_BY_ID, type NodeDetailSection } from './nodeDetails.ts'
@@ -278,7 +278,7 @@ function SectionEditor({ section, draft, files, flowId, node, graphNodes, onFile
   )
 }
 
-export function NodeDetailCard({ node, section, graphNodes, graphEdges, files, flowId, pinned, runState, runEvents = [], editable = false, draft, dirty = false, saving = false, authoringPath, onFilesChange, onDraftChange, onReset, onSave, onContinue, onSaveAndContinue, onTogglePin, onClose }: {
+export function NodeDetailCard({ node, section, graphNodes, graphEdges, files, flowId, pinned, runState, runEvents = [], analysisFindings, editable = false, draft, dirty = false, saving = false, authoringPath, onFilesChange, onDraftChange, onReset, onSave, onContinue, onSaveAndContinue, onTogglePin, onClose }: {
   node: FlowNode
   section: NodeDetailSection
   graphNodes: FlowNode[]
@@ -288,6 +288,7 @@ export function NodeDetailCard({ node, section, graphNodes, graphEdges, files, f
   pinned: boolean
   runState?: NodeRunState
   runEvents?: FlowEvent[]
+  analysisFindings?: FlowAnalysisFinding[]
   editable?: boolean
   draft: NodeDraft
   dirty?: boolean
@@ -306,7 +307,7 @@ export function NodeDetailCard({ node, section, graphNodes, graphEdges, files, f
   const palette = getNodePalette(node)
   const semanticKind = resolveNodeSemanticKind(node)
   const meta = NODE_DETAIL_SECTION_BY_ID.get(section)!
-  const details = useMemo(() => buildNodeDetailFacts(node, section, { edges: graphEdges, runState, runEvents }), [graphEdges, node, runEvents, runState, section])
+  const details = useMemo(() => buildNodeDetailFacts(node, section, { edges: graphEdges, runState, runEvents, analysisFindings }), [analysisFindings, graphEdges, node, runEvents, runState, section])
   const displayLabel = getProcessDisplayLabel(node) || category.label
   const sectionEditable = editable && section !== 'runtime'
   const authoringIndex = authoringPath?.steps.findIndex((item) => item.section === section) ?? -1

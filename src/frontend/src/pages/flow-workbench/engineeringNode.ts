@@ -1,5 +1,5 @@
 import type { FlowEdge, FlowEngineeringRelation, FlowFiles, FlowGraph, FlowNode } from '../../api.ts'
-import { buildFlowNodeCardView, compactNodeValue } from './flowNodeView.ts'
+import { buildFlowNodeCardView, compactNodeValue, getNodePreflightIssues } from './flowNodeView.ts'
 import { getProtocolEffect, getProtocolExecutor, getProtocolKind } from './nodeModel.ts'
 import type { NodeRunState } from './runState.ts'
 
@@ -479,7 +479,7 @@ export function buildEngineeringSections(node: FlowNode, graph: FlowGraph, index
 export function buildEngineeringNodeView(node: FlowNode, graph: FlowGraph, files: FlowFiles, runState?: NodeRunState) {
   const incomingEdges: FlowEdge[] = graph.edges.filter((edge) => edge.to === node.id)
   const outgoingEdges: FlowEdge[] = graph.edges.filter((edge) => edge.from === node.id)
-  return buildEngineeringNodeViewFromParts(node, graph, runState, incomingEdges, outgoingEdges, locateNodeSource(files, node.id))
+  return buildEngineeringNodeViewFromParts(node, graph, runState, incomingEdges, outgoingEdges, locateNodeSource(files, node.id), getNodePreflightIssues(graph, node.id))
 }
 
 function buildEngineeringNodeViewFromParts(
@@ -489,8 +489,9 @@ function buildEngineeringNodeViewFromParts(
   incomingEdges: FlowEdge[],
   outgoingEdges: FlowEdge[],
   source: EngineeringNodeSource,
+  analysisFindings = getNodePreflightIssues(graph, node.id),
 ) {
-  const presentation = buildFlowNodeCardView(node, runState, { incomingEdges, outgoingEdges })
+  const presentation = buildFlowNodeCardView(node, runState, { incomingEdges, outgoingEdges, analysisFindings })
   return {
     ...presentation,
     sections: buildEngineeringSections(node, graph, { incoming: incomingEdges, outgoing: outgoingEdges }),
@@ -538,6 +539,7 @@ export function buildEngineeringNodeModels(
         incomingByNode.get(node.id) || [],
         outgoingByNode.get(node.id) || [],
         sourceByNode.get(node.id)!,
+        getNodePreflightIssues(graph, node.id),
       ),
       connectedFields: new Set([...connectedInputs, ...connectedOutputs]),
       connectedInputs,

@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 from core.protocol import ProtocolRegistry, build_compatibility_report, load_base_implementation
+from core.lab.graph import FlowGraphBuilder
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -151,6 +152,45 @@ class ProtocolV09SpecificationTests(unittest.TestCase):
                 {"kind": "control", "from": "work", "to": "complete"},
             ],
             root_flow["control_edges"],
+        )
+
+    def test_graph_preflight_matches_dev_runtime_and_allows_outputless_terminal(self):
+        manifest = {
+            "id": "test.v09.outputless-terminal",
+            "version": "0.0.1",
+            "base_contract": {"id": "CARTRIDGEFLOW-BASE", "version": "0.2"},
+            "runtime_contract": {
+                "protocol": "CF-FARP",
+                "protocol_version": "0.9",
+                "required_profiles": ["runtime_core", "flow_analysis", "tool_transparency"],
+                "recommended_profiles": [],
+                "required_capabilities": ["root_flow_execution", "flow_analysis_report_v1", "mcp_source_model_v1"],
+                "optional_capabilities": [],
+                "required_tools": [],
+                "optional_tools": [],
+            },
+            "asset_registry": "assets/registry.json",
+            "delivery_readiness": {"level": "dev"},
+            "mcp_tools": [],
+        }
+        root_flow = {
+            "protocol": {"id": "CF-FARP", "version": "0.9"},
+            "start": "start",
+            "states": {
+                "start": {"type": "system", "next": "complete"},
+                "complete": {"type": "terminal"},
+            },
+        }
+        graph = FlowGraphBuilder().build({**manifest, "root_flow": root_flow})
+        base = load_base_implementation(ROOT)
+        runtime = build_compatibility_report(base, manifest, root_flow, ROOT, analysis_target="dev")
+
+        self.assertEqual("dev", graph["analysis"]["target"])
+        self.assertTrue(graph["analysis"]["summary"]["runnable"], graph["analysis"]["findings"])
+        self.assertTrue(runtime["ok"], runtime["findings"])
+        self.assertEqual(
+            graph["analysis"]["findings"],
+            runtime["flow_contract"]["analysis"]["findings"],
         )
 
 

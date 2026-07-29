@@ -97,7 +97,7 @@ class FlowGraphBuilder:
         }
         if is_typed_protocol:
             from core.lab.flow_analyzer import analyze_flow
-            analysis = analyze_flow(root_flow, cartridge, target="draft")
+            analysis = analyze_flow(root_flow, cartridge, target="dev")
             graph["analysis"] = analysis
             graph["engineering_relations"] = analysis.get("relations") or []
         return graph

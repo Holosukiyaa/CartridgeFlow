@@ -511,8 +511,10 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
       const node = finalResult.graph.nodes.find((item) => item.id === updated.node_id)
       if (node) selectNode(node)
       showToast({ title: `${category.shortLabel}节点已新增`, type: 'success' })
+      return node
     } catch (e: any) {
       showToast({ title: '新增失败', description: e.message, type: 'error' })
+      return undefined
     }
   }, [availableMcpTools, files, flowId, selectNode, updateGraphResult])
 

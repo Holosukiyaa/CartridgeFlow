@@ -28,27 +28,25 @@ def load_env():
             print("  [警告] .env 文件被占用，跳过加载。")
 
 
-def free_port(port: int):
+def require_port_available(port: int):
     try:
-        subprocess.run(
-            [
-                "powershell",
-                "-NoProfile",
-                "-Command",
-                f"(Get-NetTCPConnection -LocalPort {port} -ErrorAction SilentlyContinue).OwningProcess | Sort -Unique | ForEach-Object {{ Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }}",
-            ],
-            capture_output=True,
-        )
-        print(f"  [清理] 已释放端口 {port}")
-        time.sleep(0.5)
-    except Exception as e:
-        print(f"  [警告] 释放端口 {port} 失败: {e}")
+        active = socket.create_connection(("127.0.0.1", port), timeout=0.2)
+    except OSError:
+        active = None
+    if active is not None:
+        active.close()
+        raise SystemExit(f"Port {port} is already in use. Stop that service or choose another port.")
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            probe.bind(("127.0.0.1", port))
+    except OSError as exc:
+        raise SystemExit(f"Port {port} is already in use. Stop that service or choose another port.") from exc
 
 
 load_env()
 
-free_port(8765)
-free_port(5173)
+require_port_available(8765)
+require_port_available(5173)
 
 if not os.path.exists(os.path.join(FRONTEND_DIR, "node_modules")):
     print("[0/2] 安装前端依赖...")
@@ -62,7 +60,7 @@ backend = subprocess.Popen(
         "uvicorn",
         "backend.lite_main:app",
         "--host",
-        "0.0.0.0",
+        "127.0.0.1",
         "--port",
         "8765",
         "--log-level",

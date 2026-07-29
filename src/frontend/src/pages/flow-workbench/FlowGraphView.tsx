@@ -189,6 +189,7 @@ const NODE_TEMPLATE_MIME = 'application/x-cf-node-template'
 const NODE_EDITOR_GAP = 140
 const NODE_EDITOR_SLOT_WIDTH = 410
 const NODE_EDITOR_SLOT_HEIGHT = 340
+const NODE_DROP_GAP = 48
 
 function getGraphNodeSize(node: FlowGraphNode) {
   const styleWidth = typeof node.style?.width === 'number' ? node.style.width : 0
@@ -197,6 +198,44 @@ function getGraphNodeSize(node: FlowGraphNode) {
     width: node.width || node.measured?.width || styleWidth || FLOW_NODE_DIMENSIONS.detailed.width,
     height: node.height || node.measured?.height || styleHeight || FLOW_NODE_DIMENSIONS.detailed.height,
   }
+}
+
+function findAvailableNodeDropPosition(
+  requested: { x: number; y: number },
+  nodes: FlowGraphNode[],
+  viewMode: FlowNodeViewMode,
+) {
+  const targetSize = FLOW_NODE_DIMENSIONS[viewMode]
+  const collides = (position: { x: number; y: number }) => nodes.some((node) => {
+    const size = getGraphNodeSize(node)
+    return position.x < node.position.x + size.width + NODE_DROP_GAP
+      && position.x + targetSize.width + NODE_DROP_GAP > node.position.x
+      && position.y < node.position.y + size.height + NODE_DROP_GAP
+      && position.y + targetSize.height + NODE_DROP_GAP > node.position.y
+  })
+
+  if (!collides(requested)) return requested
+
+  const xStep = targetSize.width + NODE_DROP_GAP
+  const yStep = targetSize.height + NODE_DROP_GAP
+  for (let ring = 1; ring <= 24; ring += 1) {
+    const candidates = [
+      { x: requested.x, y: requested.y + ring * yStep },
+      { x: requested.x + ring * xStep, y: requested.y },
+      { x: requested.x - ring * xStep, y: requested.y },
+      { x: requested.x, y: requested.y - ring * yStep },
+      { x: requested.x + ring * xStep, y: requested.y + ring * yStep },
+      { x: requested.x - ring * xStep, y: requested.y + ring * yStep },
+    ]
+    const available = candidates.find((candidate) => candidate.x >= 0 && candidate.y >= 0 && !collides(candidate))
+    if (available) return available
+  }
+
+  const bottom = nodes.reduce((value, node) => {
+    const size = getGraphNodeSize(node)
+    return Math.max(value, node.position.y + size.height)
+  }, requested.y)
+  return { x: Math.max(0, requested.x), y: bottom + NODE_DROP_GAP }
 }
 
 function resolveEditorSide(node: FlowGraphNode, position: NodeEditorPosition, width: number, height: number): NodeEditorSide {
@@ -734,6 +773,7 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
 
   const [nodes, setNodes] = useState<FlowGraphNode[]>(initialNodes)
   const [edges, setEdges] = useState<FlowGraphEdge[]>(initialEdges)
+  const pendingCreatedNodeFocusRef = useRef<string | null>(null)
   const focusCanvasNode = useCallback((nodeId: string) => {
     if (!flowInstance) return
     const target = flowInstance.getNode(nodeId)
@@ -961,6 +1001,19 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
     const maxY = Math.max(...rectangles.map((rect) => rect.y + rect.height))
     fitBoundsIntoCanvas({ x: minX, y: minY, width: maxX - minX, height: maxY - minY }, duration)
   }, [fitBoundsIntoCanvas, nodeEditorPlacements, nodes])
+
+  useEffect(() => {
+    const nodeId = pendingCreatedNodeFocusRef.current
+    if (!nodeId) return
+    const target = nodes.find((node) => node.id === nodeId)
+    if (!target) return
+    pendingCreatedNodeFocusRef.current = null
+    const frame = window.requestAnimationFrame(() => {
+      const size = getGraphNodeSize(target)
+      fitBoundsIntoCanvas({ ...target.position, ...size }, 250)
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [fitBoundsIntoCanvas, nodes])
 
   const handleFlowInit = useCallback((instance: ReactFlowInstance) => {
     setFlowInstance(instance)
@@ -1337,16 +1390,20 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
     try {
       const template = JSON.parse(raw) as { categoryId: NodeCategoryId; presetId?: string; presetConfig?: Record<string, string> }
       const position = flowInstance.screenToFlowPosition({ x: event.clientX, y: event.clientY })
-      await onCreateNode(selectedNode, template.categoryId, 'insert', {
+      const safePosition = findAvailableNodeDropPosition(position, flowInstance.getNodes() as FlowGraphNode[], nodeViewMode)
+      const createdNode = await onCreateNode(selectedNode, template.categoryId, 'insert', {
         presetId: template.presetId,
         presetConfig: template.presetConfig || {},
-        position,
+        position: safePosition,
       })
+      if (createdNode && (safePosition.x !== position.x || safePosition.y !== position.y)) {
+        pendingCreatedNodeFocusRef.current = createdNode.id
+      }
       setSelectedLibraryCategoryId(null)
     } catch (error: any) {
       showToast({ title: '节点拖放失败', description: error?.message || '节点模板数据无效', type: 'error' })
     }
-  }, [flowInstance, onCreateNode, selectedNode])
+  }, [flowInstance, nodeViewMode, onCreateNode, selectedNode])
 
   const handleCanvasDrop = useCallback(async (event: React.DragEvent) => {
     if (event.dataTransfer.getData('application/x-cf-steward-tool') === 'pointer') {

@@ -28,8 +28,12 @@ _REMOVED_WORKBENCH_PATHS = (
     "/certification",
 )
 
+_HIDDEN_FRAMEWORK_PATHS = {"/docs", "/redoc", "/openapi.json"}
+
 
 def is_lite_api_allowed(path: str) -> bool:
+    if path in _HIDDEN_FRAMEWORK_PATHS:
+        return False
     if not path.startswith("/api/"):
         return True
     if path.startswith("/api/lab/flows/") and any(fragment in path for fragment in _REMOVED_WORKBENCH_PATHS):

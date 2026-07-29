@@ -92,7 +92,7 @@ export type CreateNodeHandler = (
   categoryId: NodeCategoryId,
   insertMode: 'insert' | 'branch',
   options?: CreateNodeOptions,
-) => Promise<void>
+) => Promise<FlowNode | undefined>
 
 export type WorkbenchDetailProps = {
   detail: FlowLabDetail

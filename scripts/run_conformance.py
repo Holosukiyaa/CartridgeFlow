@@ -19,7 +19,7 @@ from core.conformance import RecordingTestResult, build_conformance_report, writ
 from core.data_paths import CONFORMANCE_REPORT
 
 
-TEST_GROUPS = ("conformance", "runtime", "studio", "llm", "hygiene", "history")
+TEST_GROUPS = ("conformance", "runtime", "studio", "llm", "lite", "hygiene", "history")
 
 
 def discover_tests(pattern: str) -> unittest.TestSuite:

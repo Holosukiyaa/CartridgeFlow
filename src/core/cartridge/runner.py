@@ -952,7 +952,7 @@ class CartridgeRunner:
                 self._artifact_type_for_path(resolved),
                 self._mime_type_for_path(resolved),
             )
-            artifact["display_path"] = snapshot_path.resolve().relative_to(root).as_posix()
+            artifact["display_path"] = f"artifacts/{name}"
             artifact["source"] = {
                 **(artifact.get("source") or {}),
                 "node_id": state_name,

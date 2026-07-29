@@ -20,11 +20,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from core.cartridge import CartridgeRegistry, CartridgeRunner
 from core.data_paths import (
     CARTRIDGE_DATA_DIR,
     CONFORMANCE_REPORT,
+    DATA_ROOT,
     ERROR_REPORTS_DIR,
     IMPORTS_DIR,
     INSTALLED_CARTRIDGES_DIR,
@@ -60,13 +62,35 @@ from core.protocol import (
 ensure_data_layout(ROOT)
 PRODUCT_VERSION = (ROOT / "VERSION").read_text(encoding="utf-8").strip().removeprefix("CartridgeFlowLite-").removeprefix("CartridgeFlow-")
 
+MAX_UPLOAD_TEXT_BYTES = 16 * 1024 * 1024
+MAX_CARTRIDGE_ARCHIVE_BYTES = 128 * 1024 * 1024
+MAX_CARTRIDGE_ARCHIVE_MEMBERS = 4096
+MAX_CARTRIDGE_MEMBER_BYTES = 256 * 1024 * 1024
+MAX_CARTRIDGE_TOTAL_UNCOMPRESSED_BYTES = 512 * 1024 * 1024
+
+
+def _public_data_path(path: str | Path) -> str:
+    """Expose stable logical data paths without leaking a relocated host path."""
+    data_root = (ROOT / DATA_ROOT).resolve()
+    relative = Path(path).resolve().relative_to(data_root)
+    return (Path(".data") / relative).as_posix()
+
 
 class UTF8JSONResponse(JSONResponse):
     media_type = "application/json; charset=utf-8"
 
 
 app = FastAPI(title="CartridgeFlow", version=PRODUCT_VERSION, default_response_class=UTF8JSONResponse)
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Accept", "Content-Type"],
+)
+app.add_middleware(
+    TrustedHostMiddleware,
+    allowed_hosts=["127.0.0.1", "localhost", "[::1]", "testserver"],
+)
 
 
 def _request_error_context(request: Request) -> dict:
@@ -133,27 +157,29 @@ async def runtime_failure_handler(request: Request, exc: RuntimeFailure):
 @app.exception_handler(RequestValidationError)
 async def request_validation_error_handler(request: Request, exc: RequestValidationError):
     context = _request_error_context(request)
+    safe_errors = _redact_diagnostic_value(exc.errors())
     envelope = build_runtime_error(
         "REQUEST_INVALID",
         run_id=context["run_id"],
         source=context["source"],
-        cause_chain=[{"type": "RequestValidationError", "message": str(exc)}],
+        cause_chain=[{"type": "RequestValidationError", "message": "Request payload validation failed"}],
     )
-    return UTF8JSONResponse(status_code=422, content={"detail": exc.errors(), "error_envelope": envelope})
+    return UTF8JSONResponse(status_code=422, content={"detail": safe_errors, "error_envelope": envelope})
 
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
     context = _request_error_context(request)
     compatibility_blocked = isinstance(exc.detail, dict) and exc.detail.get("error") == "compatibility_blocked"
+    safe_detail = _redact_diagnostic_value(exc.detail)
     envelope = build_runtime_error(
         "FLOW_CONTRACT_INVALID" if compatibility_blocked else _http_error_code(exc.status_code, request.url.path),
         run_id=context["run_id"],
         source=context["source"],
-        cause_chain=[{"type": "HTTPException", "message": str(exc.detail)}],
+        cause_chain=[{"type": "HTTPException", "message": str(safe_detail)}],
         context={"status_code": exc.status_code},
     )
-    return UTF8JSONResponse(status_code=exc.status_code, content={"detail": exc.detail, "error_envelope": envelope})
+    return UTF8JSONResponse(status_code=exc.status_code, content={"detail": safe_detail, "error_envelope": envelope})
 
 
 @app.exception_handler(Exception)
@@ -188,6 +214,20 @@ async def add_utf8_charset(request, call_next):
     )
     if needs_charset and "charset=" not in lower_content_type:
         response.headers["content-type"] = f"{content_type}; charset=utf-8"
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault(
+        "Permissions-Policy",
+        "camera=(), microphone=(), geolocation=(), display-capture=(), payment=(), usb=(), serial=(), hid=()",
+    )
+    if lower_content_type.startswith("text/html"):
+        response.headers.setdefault(
+            "Content-Security-Policy",
+            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; "
+            "frame-src 'self' http://127.0.0.1:* http://localhost:*; object-src 'none'; "
+            "base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+        )
     return response
 
 registry = CartridgeRegistry(ROOT)
@@ -498,6 +538,45 @@ class CartridgeImportPayload(BaseModel):
     install_mode: str = "keep_existing"
 
 
+def _validate_cartridge_archive_members(members, extract_dir: Path) -> None:
+    import stat as _stat
+
+    if len(members) > MAX_CARTRIDGE_ARCHIVE_MEMBERS:
+        raise HTTPException(status_code=413, detail="Cartridge zip contains too many files")
+    extract_root = extract_dir.resolve()
+    total_size = 0
+    seen_targets: set[str] = set()
+    for member in members:
+        member_name = (member.filename or "").replace("\\", "/")
+        parts = member_name.split("/")
+        if (
+            not member_name
+            or member_name.startswith("/")
+            or ":" in member_name
+            or any(part in {".", ".."} for part in parts)
+        ):
+            raise HTTPException(status_code=400, detail=f"Invalid zip path: {member.filename}")
+        if member.flag_bits & 0x1:
+            raise HTTPException(status_code=400, detail=f"Encrypted zip member is not supported: {member.filename}")
+        file_type = (member.external_attr >> 16) & 0o170000
+        if file_type == _stat.S_IFLNK:
+            raise HTTPException(status_code=400, detail=f"Symbolic links are not allowed in cartridge packages: {member.filename}")
+        target = (extract_dir / member_name).resolve()
+        if target != extract_root and extract_root not in target.parents:
+            raise HTTPException(status_code=400, detail=f"Unsafe zip path: {member.filename}")
+        target_key = str(target).casefold()
+        if target_key in seen_targets:
+            raise HTTPException(status_code=400, detail=f"Duplicate zip path: {member.filename}")
+        seen_targets.add(target_key)
+        if member.is_dir():
+            continue
+        if member.file_size > MAX_CARTRIDGE_MEMBER_BYTES:
+            raise HTTPException(status_code=413, detail=f"Cartridge zip member is too large: {member.filename}")
+        total_size += max(0, int(member.file_size))
+        if total_size > MAX_CARTRIDGE_TOTAL_UNCOMPRESSED_BYTES:
+            raise HTTPException(status_code=413, detail="Cartridge zip expands beyond the allowed size")
+
+
 class CartridgePackagePayload(BaseModel):
     package_mode: str = "dev"
 
@@ -507,6 +586,10 @@ def upload_file(payload: UploadTextPayload):
     import re as _re
     import uuid as _uuid
 
+    text = payload.content or ""
+    encoded_size = len(text.encode("utf-8"))
+    if encoded_size > MAX_UPLOAD_TEXT_BYTES:
+        raise HTTPException(status_code=413, detail="Uploaded text exceeds 16 MiB")
     upload_dir = ROOT / UPLOADS_DIR
     upload_dir.mkdir(parents=True, exist_ok=True)
     original_name = Path(payload.filename or "upload.txt").name
@@ -515,13 +598,12 @@ def upload_file(payload: UploadTextPayload):
     stem = Path(safe_name).stem or "upload"
     target_name = f"{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{_uuid.uuid4().hex[:8]}_{stem}{suffix}"
     target = upload_dir / target_name
-    text = payload.content or ""
     target.write_text(text, encoding="utf-8")
     return {
         "ok": True,
         "filename": original_name,
-        "path": target.relative_to(ROOT).as_posix(),
-        "size": len(text),
+        "path": _public_data_path(target),
+        "size": encoded_size,
     }
 
 
@@ -1294,19 +1376,24 @@ def import_cartridge(payload: CartridgeImportPayload):
     if install_mode not in {"keep_existing", "replace"}:
         raise HTTPException(status_code=400, detail="install_mode must be keep_existing or replace")
 
+    encoded_archive = payload.content_base64 or ""
+    max_base64_chars = ((MAX_CARTRIDGE_ARCHIVE_BYTES + 2) // 3) * 4
+    if len(encoded_archive) > max_base64_chars:
+        raise HTTPException(status_code=413, detail="Cartridge package exceeds 128 MiB")
     try:
-        archive_bytes = _base64.b64decode(payload.content_base64 or "", validate=True)
+        archive_bytes = _base64.b64decode(encoded_archive, validate=True)
     except (_binascii.Error, ValueError):
         raise HTTPException(status_code=400, detail="Invalid base64 cartridge content")
     if not archive_bytes:
         raise HTTPException(status_code=400, detail="Cartridge package is empty")
+    if len(archive_bytes) > MAX_CARTRIDGE_ARCHIVE_BYTES:
+        raise HTTPException(status_code=413, detail="Cartridge package exceeds 128 MiB")
 
     tmp_root = ROOT / IMPORTS_DIR
     tmp_dir = tmp_root / f"import_{_uuid.uuid4().hex}"
     extract_dir = tmp_dir / "package"
     installed_root = ROOT / INSTALLED_CARTRIDGES_DIR
     extract_root_resolved = extract_dir.resolve()
-
     try:
         extract_dir.mkdir(parents=True, exist_ok=True)
         try:
@@ -1317,13 +1404,7 @@ def import_cartridge(payload: CartridgeImportPayload):
                 members = zf.infolist()
                 if not members:
                     raise HTTPException(status_code=400, detail="Cartridge zip is empty")
-                for member in members:
-                    member_name = (member.filename or "").replace("\\", "/")
-                    if not member_name or member_name.startswith("/") or ":" in member_name:
-                        raise HTTPException(status_code=400, detail=f"Invalid zip path: {member.filename}")
-                    target = (extract_dir / member_name).resolve()
-                    if target != extract_root_resolved and extract_root_resolved not in target.parents:
-                        raise HTTPException(status_code=400, detail=f"Unsafe zip path: {member.filename}")
+                _validate_cartridge_archive_members(members, extract_dir)
                 zf.extractall(extract_dir)
         except _zipfile.BadZipFile:
             raise HTTPException(status_code=400, detail="Invalid cartridge zip")
@@ -1368,7 +1449,7 @@ def import_cartridge(payload: CartridgeImportPayload):
         return {
             "ok": True,
             "cartridge": cartridge,
-            "installed_path": str(target_dir),
+            "installed_path": _public_data_path(target_dir),
             "replaced": replaced,
         }
     finally:
@@ -1532,7 +1613,11 @@ def serve_cartridge_dlc_frontend(cartridge_id: str):
     target = (Path(cartridge["package_path"]) / entry).resolve()
     response = FileResponse(target, media_type="text/html")
     # GLTF/VRM loaders materialize embedded textures as blob URLs inside the isolated iframe.
-    response.headers["Content-Security-Policy"] = "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' blob:;"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; "
+        "img-src 'self' data: blob:; connect-src 'self' blob:; object-src 'none'; "
+        "base-uri 'none'; form-action 'none'; frame-ancestors 'self'"
+    )
     response.headers["Cache-Control"] = "no-store"
     return response
 
@@ -3135,22 +3220,21 @@ def preview_cartridge_run_artifact(run_id: str, artifact_path: str):
     if not raw_path:
         raise HTTPException(status_code=404, detail="Artifact file not found")
 
-    artifact_file = Path(raw_path)
-    if not artifact_file.is_absolute():
-        artifact_file = ROOT / artifact_file
-
     try:
-        artifact_file = artifact_file.resolve()
-        root = ROOT.resolve()
-        if artifact_file != root and root not in artifact_file.parents:
-            raise HTTPException(status_code=400, detail="Invalid artifact path")
-    except OSError as e:
+        artifact_file = artifact_manager.resolve_artifact_record_path(run, artifact)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid artifact path")
+    except (FileNotFoundError, OSError) as e:
         raise HTTPException(status_code=404, detail=str(e))
 
-    if not artifact_file.is_file():
-        raise HTTPException(status_code=404, detail="Artifact file not found")
-
-    return FileResponse(artifact_file)
+    response = FileResponse(artifact_file)
+    response.headers["Content-Security-Policy"] = (
+        "sandbox; default-src 'none'; script-src 'none'; connect-src 'none'; "
+        "img-src 'self' data: blob:; style-src 'unsafe-inline'; font-src 'self' data:; "
+        "object-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'"
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @app.get("/api/cartridge-runs/{run_id}/delivery")
@@ -3272,7 +3356,14 @@ def serve_artifact_file(run_id: str, filename: str):
         if artifact.get("name") == filename:
             mime_type = artifact.get("mime_type")
             break
-    return FileResponse(path, media_type=mime_type)
+    response = FileResponse(path, media_type=mime_type)
+    response.headers["Content-Security-Policy"] = (
+        "sandbox; default-src 'none'; script-src 'none'; connect-src 'none'; "
+        "img-src 'self' data: blob:; style-src 'unsafe-inline'; font-src 'self' data:; "
+        "object-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'"
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @app.get("/packages/{filename}")

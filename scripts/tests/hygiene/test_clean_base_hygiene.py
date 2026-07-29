@@ -1,7 +1,9 @@
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from core.cartridge.registry import CartridgeRegistry
 from core.data_paths import (
@@ -16,6 +18,7 @@ from core.data_paths import (
     STUDIO_CREDENTIALS_FILE,
     STUDIO_RESOURCES_FILE,
     WORKERS_DIR,
+    configured_data_root,
     ensure_data_layout,
 )
 from core.lab.dev_flow import DevFlowManager
@@ -26,6 +29,15 @@ ROOT = Path(__file__).resolve().parents[3]
 
 
 class CleanBaseHygieneTests(unittest.TestCase):
+    def test_data_root_can_be_relocated_as_one_unified_tree(self):
+        with tempfile.TemporaryDirectory() as temp_dir, patch.dict(
+            os.environ, {"CARTRIDGEFLOW_DATA_ROOT": temp_dir}, clear=False,
+        ):
+            self.assertEqual(Path(temp_dir), configured_data_root())
+
+        with patch.dict(os.environ, {"CARTRIDGEFLOW_DATA_ROOT": ""}, clear=False):
+            self.assertEqual(Path(".data"), configured_data_root())
+
     def test_config_templates_are_safe_and_local_state_is_ignored(self):
         template_paths = [
             ROOT / "config" / "templates" / "llm" / "providers.json",

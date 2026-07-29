@@ -1,5 +1,4 @@
-import { useEffect, useState } from 'react'
-import { Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom'
+import { useCallback, useEffect, useState } from 'react'
 import { Box, Button, Spinner, Text } from './ui.tsx'
 import { fetchLabFlows, type FlowLabItem } from './api.ts'
 import FlowWorkbench from './pages/FlowWorkbench.tsx'
@@ -9,16 +8,25 @@ function cartridgePath(flowId: string) {
   return `/cartridges/${encodeURIComponent(flowId)}/design`
 }
 
-function CartridgeWorkbenchRoute() {
-  const navigate = useNavigate()
-  const { flowId = '', workspaceMode = 'design' } = useParams()
+type Navigate = (path: string, options?: { replace?: boolean }) => void
+
+function Redirect({ to, navigate }: { to: string; navigate: Navigate }) {
+  useEffect(() => navigate(to, { replace: true }), [navigate, to])
+  return null
+}
+
+function CartridgeWorkbenchRoute({ flowId, workspaceMode, navigate }: {
+  flowId: string
+  workspaceMode: string
+  navigate: Navigate
+}) {
 
   useEffect(() => {
     if (flowId) localStorage.setItem('cf.lite.recent_cartridge', flowId)
   }, [flowId])
 
-  if (!flowId) return <Navigate to="/" replace />
-  if (workspaceMode !== 'design') return <Navigate to={cartridgePath(flowId)} replace />
+  if (!flowId) return <Redirect to="/" navigate={navigate} />
+  if (workspaceMode !== 'design') return <Redirect to={cartridgePath(flowId)} navigate={navigate} />
 
   return (
     <FlowWorkbench
@@ -28,8 +36,7 @@ function CartridgeWorkbenchRoute() {
   )
 }
 
-function WorkbenchEntryRoute() {
-  const navigate = useNavigate()
+function WorkbenchEntryRoute({ navigate }: { navigate: Navigate }) {
   const [items, setItems] = useState<FlowLabItem[] | null>(null)
   const [error, setError] = useState('')
 
@@ -53,29 +60,45 @@ function WorkbenchEntryRoute() {
 
   const recentId = localStorage.getItem('cf.lite.recent_cartridge')
   const target = items.find((item) => item.id === recentId) || items.find((item) => item.editable) || items[0]
-  return <Navigate to={cartridgePath(target.id)} replace />
-}
-
-function LegacyWorkbenchRedirect() {
-  const { flowId = '' } = useParams()
-  if (!flowId) return <Navigate to="/" replace />
-  return <Navigate to={cartridgePath(flowId)} replace />
+  return <Redirect to={cartridgePath(target.id)} navigate={navigate} />
 }
 
 export default function App() {
+  const [pathname, setPathname] = useState(() => window.location.pathname)
+  const navigate = useCallback<Navigate>((path, options) => {
+    if (options?.replace) window.history.replaceState(null, '', path)
+    else window.history.pushState(null, '', path)
+    setPathname(window.location.pathname)
+  }, [])
+
+  useEffect(() => {
+    const onPopState = () => setPathname(window.location.pathname)
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [])
+
+  let segments: string[] = []
+  try {
+    segments = pathname.split('/').filter(Boolean).map((segment) => decodeURIComponent(segment))
+  } catch {
+    segments = []
+  }
+
+  let route: React.ReactNode
+  if (segments.length === 0 || (segments.length === 1 && segments[0] === 'cartridges')) {
+    route = <WorkbenchEntryRoute navigate={navigate} />
+  } else if (segments[0] === 'cartridges' && segments.length >= 2 && segments.length <= 3) {
+    route = <CartridgeWorkbenchRoute flowId={segments[1]} workspaceMode={segments[2] || 'design'} navigate={navigate} />
+  } else if (segments[0] === 'projects' && segments.length >= 2 && segments.length <= 3) {
+    route = <Redirect to={cartridgePath(segments[1])} navigate={navigate} />
+  } else {
+    route = <Redirect to="/" navigate={navigate} />
+  }
+
   return (
     <Box minH="100vh" className="cf-lite-shell">
       <main className="cf-main cf-lite-main">
-        <Routes>
-          <Route path="/" element={<WorkbenchEntryRoute />} />
-          <Route path="/cartridges" element={<WorkbenchEntryRoute />} />
-          <Route path="/cartridges/:flowId" element={<CartridgeWorkbenchRoute />} />
-          <Route path="/cartridges/:flowId/:workspaceMode" element={<CartridgeWorkbenchRoute />} />
-          <Route path="/projects" element={<Navigate to="/" replace />} />
-          <Route path="/projects/:flowId" element={<LegacyWorkbenchRedirect />} />
-          <Route path="/projects/:flowId/:workspaceMode" element={<LegacyWorkbenchRedirect />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+        {route}
       </main>
     </Box>
   )

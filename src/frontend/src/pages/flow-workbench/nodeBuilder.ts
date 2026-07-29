@@ -337,9 +337,10 @@ export function buildProtocolPatch(categoryId: NodeCategoryId, presetId: string,
     failure_policy: failurePolicy,
     permission,
     audit_log: Boolean(auditLog),
-    endpoint: firstText(draftNode.endpoint, draftNode.params?.endpoint, presetConfig.endpoint, presetConfig.service, presetConfig.server, categoryId === 'remote' ? 'remote://pending' : ''),
+    endpoint: categoryId === 'remote'
+      ? firstText(draftNode.endpoint, draftNode.params?.endpoint, presetConfig.endpoint, presetConfig.service, presetConfig.server, 'remote://pending')
+      : undefined,
     timeout_ms: Number(draftNode.timeout_ms || draftNode.timeoutMs || presetConfig.timeout_ms || presetConfig.timeoutMs || (categoryId === 'remote' ? 120000 : 0)) || undefined,
   }
 }
-
 

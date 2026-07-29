@@ -618,7 +618,7 @@ export function buildProtocolNodePayload(draft: NodeDraft, category: NodeCategor
     failure_policy: draft.failurePolicy || defaults.failurePolicy || null,
     permission: draft.permission || defaults.permission || null,
     audit_log: draft.auditLog || defaults.auditLog || null,
-    endpoint: draft.endpoint || null,
+    endpoint: category.id === 'remote' ? draft.endpoint || null : null,
     timeout_ms: draft.timeoutMs ? Number(draft.timeoutMs) : null,
   }
 }

@@ -5,6 +5,8 @@ from __future__ import annotations
 from copy import deepcopy
 from pathlib import Path
 
+from core.data_paths import DATA_ROOT, UPLOADS_DIR
+
 
 FILESYSTEM_DESCRIPTIONS = {
     "read_file": {"description": "Read UTF-8 text from one or more workspace files.", "params": {"path": "Workspace-relative path, comma or newline separated."}},
@@ -74,9 +76,24 @@ class BuiltinMcpRegistry:
 
         register_package_dlc(self, self._package_path, self._manifest)
 
-    def _safe_path(self, path_str: str) -> Path:
-        source = Path(str(path_str or ""))
-        candidate = source.resolve() if source.is_absolute() else (self._workspace_root / source).resolve()
+    def _safe_path(self, path_str: str, *, allow_uploaded_file: bool = False) -> Path:
+        raw = str(path_str or "").replace("\\", "/")
+        source = Path(raw)
+        logical_parts = [part for part in source.parts if part not in {"", "."}]
+        if logical_parts and logical_parts[0] == ".data":
+            candidate = (self._workspace_root / DATA_ROOT / Path(*logical_parts[1:])).resolve()
+        else:
+            candidate = source.resolve() if source.is_absolute() else (self._workspace_root / source).resolve()
+
+        data_root = (self._workspace_root / DATA_ROOT).resolve()
+        default_data_root = (self._workspace_root / ".data").resolve()
+        upload_root = (self._workspace_root / UPLOADS_DIR).resolve()
+        inside_data = any(candidate == root or root in candidate.parents for root in {data_root, default_data_root})
+        inside_uploads = candidate != upload_root and upload_root in candidate.parents
+        if inside_data:
+            if allow_uploaded_file and inside_uploads:
+                return candidate
+            raise PermissionError("Path is inside the protected CartridgeFlow data directory")
         if candidate != self._workspace_root and self._workspace_root not in candidate.parents:
             raise PermissionError(f"Path escapes workspace: {path_str}")
         return candidate
@@ -91,7 +108,7 @@ class BuiltinMcpRegistry:
                 chunks = []
                 total = 0
                 for item in items:
-                    target = self._safe_path(item)
+                    target = self._safe_path(item, allow_uploaded_file=True)
                     if not target.is_file():
                         return {"ok": False, "error": f"File not found: {item}"}
                     content = target.read_text(encoding="utf-8", errors="replace")
@@ -143,7 +160,7 @@ class BuiltinMcpRegistry:
             if not raw:
                 return {"ok": False, "error": "path is required"}
             try:
-                target = self._safe_path(raw)
+                target = self._safe_path(raw, allow_uploaded_file=True)
                 return {"ok": True, "path": str(target), "exists": target.exists(), "is_file": target.is_file(), "is_dir": target.is_dir()}
             except Exception as exc:
                 return {"ok": False, "error": str(exc)}

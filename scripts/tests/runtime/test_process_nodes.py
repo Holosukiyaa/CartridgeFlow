@@ -1,8 +1,14 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
+from core.cartridge import artifacts as artifacts_module
+from core.cartridge.artifacts import ArtifactManager
 from core.cartridge.node_normalizer import normalize_runtime_node
+from core.cartridge.runner import CartridgeRunner
+from core.lab import builtin_mcp as builtin_mcp_module
+from core.lab.builtin_mcp import BuiltinMcpRegistry
 from core.lab.node_executor import LabNodeExecutor
 from core.protocol import build_v06_flow_contract_report
 
@@ -142,6 +148,64 @@ class ProcessNodeContractTests(unittest.TestCase):
 
 
 class ProcessNodeExecutionTests(unittest.TestCase):
+    def test_builtin_filesystem_protects_private_data_and_reads_explicit_upload(self):
+        with tempfile.TemporaryDirectory(prefix="cartridgeflow-workspace-") as workspace_dir, tempfile.TemporaryDirectory(
+            prefix="cartridgeflow-data-",
+        ) as data_dir:
+            workspace = Path(workspace_dir)
+            data_root = Path(data_dir)
+            upload_root = data_root / "temp" / "uploads"
+            secret = data_root / "user" / "config" / "llm" / "providers.json"
+            legacy_secret = workspace / ".data" / "user" / "config" / "llm" / "providers.json"
+            uploaded = upload_root / "upload-token.txt"
+            secret.parent.mkdir(parents=True)
+            legacy_secret.parent.mkdir(parents=True)
+            upload_root.mkdir(parents=True)
+            secret.write_text('{"api_key":"must-not-leak"}', encoding="utf-8")
+            legacy_secret.write_text('{"api_key":"legacy-must-not-leak"}', encoding="utf-8")
+            uploaded.write_text("explicit upload", encoding="utf-8")
+
+            with patch.object(builtin_mcp_module, "DATA_ROOT", data_root), patch.object(
+                builtin_mcp_module, "UPLOADS_DIR", upload_root,
+            ):
+                registry = BuiltinMcpRegistry(workspace)
+                denied_read = registry.call("filesystem", "read_file", {"path": ".data/user/config/llm/providers.json"})
+                denied_legacy_absolute = registry.call("filesystem", "read_file", {"path": str(legacy_secret)})
+                denied_write = registry.call("filesystem", "write_file", {"path": ".data/user/config/overwrite.json", "content": "bad"})
+                denied_list = registry.call("filesystem", "list_dir", {"path": ".data/temp/uploads"})
+                allowed_read = registry.call("filesystem", "read_file", {"path": ".data/temp/uploads/upload-token.txt"})
+
+            self.assertFalse(denied_read["ok"])
+            self.assertFalse(denied_legacy_absolute["ok"])
+            self.assertFalse(denied_write["ok"])
+            self.assertFalse(denied_list["ok"])
+            self.assertNotIn("must-not-leak", str(denied_read))
+            self.assertTrue(allowed_read["ok"])
+            self.assertEqual("explicit upload", allowed_read["content"])
+
+    def test_artifacts_are_scoped_to_the_current_run_with_external_data_root(self):
+        with tempfile.TemporaryDirectory(prefix="cartridgeflow-workspace-") as workspace_dir, tempfile.TemporaryDirectory(
+            prefix="cartridgeflow-data-",
+        ) as data_dir:
+            workspace = Path(workspace_dir)
+            runs_dir = Path(data_dir) / "runtime" / "runs"
+            run = {"run_id": "run_scoped", "runtime": {"type": "none"}, "artifacts": []}
+            run_dir = runs_dir / run["run_id"]
+            manager = ArtifactManager(workspace)
+
+            with patch.object(artifacts_module, "RUNS_DIR", runs_dir):
+                artifact = manager.create_text_artifact(run, run_dir, "artifact_1", "result.txt", "safe")
+                run["artifacts"] = [artifact]
+                self.assertEqual("safe", manager.resolve_artifact_path(run, "result.txt").read_text(encoding="utf-8"))
+
+                unrelated = workspace / "README.md"
+                unrelated.write_text("private project content", encoding="utf-8")
+                forged = {"name": "README.md", "path": str(unrelated)}
+                with self.assertRaisesRegex(ValueError, "Invalid artifact path"):
+                    manager.resolve_artifact_record_path(run, forged)
+                with self.assertRaisesRegex(ValueError, "Invalid run id"):
+                    manager.resolve_artifact_record_path({**run, "run_id": "run_scoped/../other"}, artifact)
+
     def test_top_level_llm_instructions_are_preserved_for_runtime(self):
         state = {
             "type": "process",
@@ -316,6 +380,133 @@ class ProcessNodeExecutionTests(unittest.TestCase):
             self.assertTrue(target.is_file())
             self.assertEqual("tool plan ok", target.read_text(encoding="utf-8"))
             self.assertIn("write_result", state_doc["context"]["store"])
+
+    def test_deterministic_cartridge_runs_input_decision_tool_delivery_and_artifact_history(self):
+        manifest = {
+            **current_manifest(),
+            "id": "test.deterministic.chain",
+            "runtime_contract": {"protocol": "CF-FARP", "protocol_version": "0.8"},
+            "inputs": [{"id": "request", "type": "text", "required": True}],
+            "llm_recipe": {"schema": "cartridgeflow.llm_recipe.v1", "roles": []},
+            "mcp_tools": [{
+                "id": "write_artifact",
+                "type": "builtin",
+                "server": "filesystem",
+                "tool": "write_file",
+                "enabled": True,
+                "contract": {
+                    "idempotent": True,
+                    "side_effect": "writes_run_artifacts",
+                    "retry_policy": {"max_attempts": 1},
+                },
+            }],
+            "delivery": {"type": "summary_with_artifacts", "primary_output": "delivery"},
+        }
+        decision_contract = {
+            "schema": "decision_envelope.v1",
+            "allowed_statuses": ["resolved", "needs_user_input", "blocked"],
+            "on_needs_user_input": "pause",
+            "interaction": {
+                "store_key": "decision_reply",
+                "input_schema": {"type": "object"},
+                "resume_policy": "resume_same_node",
+            },
+            "consume": {
+                "mode": "payload_path",
+                "path": "payload.decision",
+                "as": "decision_payload",
+                "required": True,
+                "on_missing": "fail_closed",
+            },
+        }
+        flow = {
+            "schema_version": "1.0",
+            "id": "test.deterministic.chain.root",
+            "protocol": {"id": "CF-FARP", "version": "0.8"},
+            "start": "start",
+            "states": {
+                "start": {"type": "system", "next": "collect"},
+                "collect": {
+                    "type": "process", "kind": "input", "executor": "user", "effect": "writes_store",
+                    "input_kind": "initial", "source": "user_form", "input_schema": {"fields": ["request"]},
+                    "output": "brief", "next": "prepare",
+                },
+                "prepare": {
+                    "type": "process", "kind": "transfer", "executor": "deterministic", "effect": "writes_store",
+                    "input": "brief", "output": "prepared", "next": "decide",
+                },
+                "decide": {
+                    "type": "process", "kind": "decision", "executor": "llm", "effect": "none",
+                    "input": "prepared", "output": "decision", "output_contract": "decision_envelope.v1",
+                    "decision_test_mode": "mock_resolved", "decision_contract": decision_contract, "next": "write",
+                },
+                "write": {
+                    "type": "process", "kind": "mcp_execute", "executor": "mcp", "effect": "writes_artifacts",
+                    "action": "tool_call", "input": "decision_payload", "output": "write_result",
+                    "tool_binding": "write_artifact", "allowed_tools": ["write_artifact"],
+                    "mcp_binding": {"mode": "execute", "allowed_tools": ["write_artifact"]},
+                    "failure_policy": "fail_closed", "permission": "write_run_artifacts", "audit_log": True,
+                    "tools": [{
+                        "type": "builtin", "server": "filesystem", "tool": "write_file",
+                        "mcp_tool_id": "write_artifact", "output": "write_result",
+                        "params": {"path": "outputs/final.json", "content": "store:decision_payload"},
+                    }],
+                    "next": "store_delivery",
+                },
+                "store_delivery": {
+                    "type": "process", "kind": "delivery", "executor": "deterministic", "effect": "writes_store",
+                    "input": "write_result", "output": "delivery", "primary_output": "delivery", "next": "delivery",
+                },
+                "delivery": {"type": "system", "next": "complete"},
+                "complete": {"type": "terminal"},
+            },
+        }
+
+        class Registry:
+            def get_cartridge(self, cartridge_id):
+                if cartridge_id != manifest["id"]:
+                    raise FileNotFoundError(cartridge_id)
+                return {
+                    "id": manifest["id"],
+                    "manifest": manifest,
+                    "root_flow": flow,
+                    "package_path": str(ROOT),
+                }
+
+        with tempfile.TemporaryDirectory(prefix="cartridgeflow-deterministic-chain-") as temp_dir:
+            runner = CartridgeRunner(Path(temp_dir), Registry())
+            runner.build_compatibility_report = lambda *args, **kwargs: {
+                "ok": True, "status": "compatible", "legacy": False,
+                "base": {}, "protocol": {}, "summary": {}, "findings": [],
+            }
+
+            run = runner.create_run(
+                manifest["id"],
+                {"request": "produce a deterministic artifact"},
+                run_id="run_deterministic_chain",
+                test_mode={"decision": "mock_resolved"},
+            )
+
+            self.assertEqual("completed", run["status"], run)
+            self.assertEqual("complete", run["current_state"])
+            self.assertEqual("mock_resolved", run["test_mode"]["decision"])
+            self.assertEqual(1, len(run["artifacts"]))
+            artifact = run["artifacts"][0]
+            self.assertEqual("write", artifact["source"]["node_id"])
+            artifact_path = runner.artifact_manager.resolve_artifact_path(run, artifact["name"])
+            self.assertTrue(artifact_path.is_file())
+            self.assertIn('"mock": true', artifact_path.read_text(encoding="utf-8"))
+            self.assertEqual([artifact], run["delivery"]["artifacts"])
+            self.assertEqual(artifact["url"], run["delivery"]["actions"][0]["url"])
+
+            stored_run = runner.get_run(run["run_id"])
+            self.assertEqual("completed", stored_run["status"])
+            self.assertIn(run["run_id"], [item["run_id"] for item in runner.list_runs()])
+            events = runner.get_events(run["run_id"])
+            self.assertIn("run_completed", [event["type"] for event in events])
+            tool_event = next(event for event in events if event["type"] == "lab_node_executed" and event["state"] == "write")
+            self.assertEqual("tool_call", tool_event["data"]["action"])
+            self.assertTrue(tool_event["data"]["tool_results"][0]["result"]["ok"])
 
 
 if __name__ == "__main__":

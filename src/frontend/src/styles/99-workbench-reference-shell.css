@@ -2646,6 +2646,47 @@
   .cf-run-log-dialog { width: min(900px, calc(100vw - 48px)); height: min(620px, calc(100vh - 48px)); }
 }
 
+@media (max-width: 700px) {
+  .cf-workbench-page .cf-workbench-header {
+    gap: 6px;
+    padding-inline: 10px !important;
+  }
+  .cf-workbench-brand {
+    grid-template-columns: 38px;
+    width: 38px;
+    column-gap: 0;
+  }
+  .cf-workbench-brand > strong,
+  .cf-workbench-brand > .cf-workbench-protocol-tags,
+  .cf-workbench-header-spacer { display: none; }
+  .cf-workbench-page .cf-workbench-actions {
+    flex: 1 1 auto;
+    justify-content: flex-start;
+    gap: 6px !important;
+  }
+  .cf-workbench-page .cf-workbench-mode-switch { gap: 6px; }
+  .cf-workbench-page .cf-workbench-mode-switch > button,
+  .cf-workbench-page .cf-workbench-runtime-controls button {
+    width: 40px;
+    min-width: 40px;
+    padding-inline: 0 !important;
+    font-size: 0 !important;
+  }
+  .cf-workbench-page .cf-workbench-cartridge-control,
+  .cf-workbench-page .cf-workbench-current-trigger {
+    width: 40px;
+    min-width: 40px;
+    max-width: 40px;
+  }
+  .cf-workbench-current-trigger {
+    justify-content: center;
+    padding-inline: 7px;
+  }
+  .cf-workbench-current-trigger b,
+  .cf-workbench-current-trigger > span:not(.cf-workbench-live-dot) { display: none; }
+  .cf-workbench-current-trigger > svg { margin-left: 0; }
+}
+
 /* Flow-scoped model and tool management */
 .cf-canvas-tool-panel.resource-panel {
   width: min(680px, calc(100% - 104px));

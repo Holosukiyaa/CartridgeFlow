@@ -200,6 +200,12 @@ async def _call_http(
                     status_code=response.status_code,
                 )
             content_type = str(response.headers.get("content-type") or "").lower()
+            if not response.content:
+                raise ExternalAdapterFailure(
+                    "tool_empty_response",
+                    "Remote HTTP returned an empty response",
+                    status_code=response.status_code,
+                )
             if "json" in content_type:
                 try:
                     content = response.json()
@@ -207,6 +213,12 @@ async def _call_http(
                     raise ExternalAdapterFailure("tool_invalid_response", "Remote HTTP returned invalid JSON") from exc
             else:
                 content = response.text
+            if content is None or content == "" or content == [] or content == {}:
+                raise ExternalAdapterFailure(
+                    "tool_empty_response",
+                    "Remote HTTP returned empty data",
+                    status_code=response.status_code,
+                )
             return {
                 "ok": True,
                 "content": content,

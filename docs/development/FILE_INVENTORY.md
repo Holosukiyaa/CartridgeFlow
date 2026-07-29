@@ -145,6 +145,7 @@
 | `docs/development/AI_DEVELOPER_GUIDE.md` | 深层架构与验收参考。 |
 | `docs/development/FLOW_GRAPH_PERFORMANCE_OPTIMIZATION.md` | 大型 Flow 画布的性能瓶颈、分阶段优化方案、基准与行为回归要求。 |
 | `docs/development/README.md` | 开发维护区说明。 |
+| `docs/development/SECURITY_AUDIT_2026-07-28.md` | Python、FastAPI、React、DLC/MCP、文件路径、内容隔离和依赖的安全审计与整改记录。 |
 | `docs/development/skills/` | 可选协议升级 AI Skill。 |
 | `docs/overview/PROJECT_STRUCTURE.md` | 项目分层和数据流。 |
 | `docs/planning/ROADMAP.md` | 少量长期方向。 |

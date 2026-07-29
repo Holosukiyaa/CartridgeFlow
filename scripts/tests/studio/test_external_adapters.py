@@ -25,6 +25,10 @@ class _AdapterHandler(BaseHTTPRequestHandler):
     requests = []
 
     def do_GET(self):
+        if self.path == "/empty":
+            self.send_response(204)
+            self.end_headers()
+            return
         if self.path == "/openapi.json":
             self._json({
                 "openapi": "3.1.0",
@@ -150,6 +154,20 @@ class ExternalAdapterTests(unittest.TestCase):
         self.assertNotIn(base_url, missing_auth["error"])
         self.assertEqual("tool_timeout", timed_out["code"])
         self.assertTrue(timed_out["retryable"])
+
+    def test_remote_http_empty_response_is_not_success(self):
+        with _http_fixture() as base_url:
+            result = execute_external_tool(
+                _binding("remote_api", endpoint=f"{base_url}/empty", http_method="GET"),
+                "fixture",
+                "empty",
+                {"_runtime_run_id": "run_empty"},
+                {"timeout_ms": 1_000},
+            )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual("tool_empty_response", result["code"])
+        self.assertNotIn(base_url, result["error"])
 
     def test_cli_adapter_uses_json_stdio_and_local_environment(self):
         script = textwrap.dedent("""

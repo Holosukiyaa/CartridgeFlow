@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 
-DATA_ROOT = Path(".data")
+def configured_data_root() -> Path:
+    value = os.environ.get("CARTRIDGEFLOW_DATA_ROOT", "").strip()
+    return Path(value).expanduser() if value else Path(".data")
+
+
+DATA_ROOT = configured_data_root()
 
 USER_DATA_ROOT = DATA_ROOT / "user"
 USER_CONFIG_DIR = USER_DATA_ROOT / "config"

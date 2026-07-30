@@ -1,0 +1,16 @@
+{
+  "schema_version": "0.1",
+  "capabilities": [
+    {"id": "execution_plan_v1_authoring", "profile": "execution_plan_authoring"},
+    {"id": "execution_plan_sequence_contract", "profile": "execution_plan_authoring"},
+    {"id": "execution_plan_fork_contract", "profile": "execution_plan_authoring"},
+    {"id": "execution_plan_join_all_contract", "profile": "execution_plan_authoring"},
+    {"id": "execution_plan_join_any_contract", "profile": "execution_plan_authoring"},
+    {"id": "execution_plan_join_keyed_contract", "profile": "execution_plan_authoring"},
+    {"id": "execution_plan_loop_contract", "profile": "execution_plan_authoring"},
+    {"id": "execution_plan_batch_contract", "profile": "execution_plan_authoring"},
+    {"id": "execution_plan_wait_contract", "profile": "execution_plan_authoring"},
+    {"id": "execution_plan_failure_contract", "profile": "execution_plan_authoring"},
+    {"id": "execution_plan_static_conformance", "profile": "execution_plan_authoring"}
+  ]
+}

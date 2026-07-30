@@ -35,6 +35,15 @@
       "status": "recognized",
       "migration_target": {"id": "CF-FARP", "version": "0.6"},
       "document": "docs/protocol/flow-authoring/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.5.md"
+    },
+    {
+      "id": "CF-FARP",
+      "version": "1.0",
+      "status": "draft",
+      "implementation_status": "unsupported",
+      "migration_target": {"id": "CF-FARP", "version": "0.9"},
+      "document": "docs/protocol/flow-authoring/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v1.0.md",
+      "note": "Draft ExecutionPlan authoring contract. It is recognized only so Base rejects it with a stable unsupported-protocol result; it is not a runtime release."
     }
   ]
 }

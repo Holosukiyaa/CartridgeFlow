@@ -177,12 +177,101 @@ def build_v09_flow_contract_report(
     }
 
 
+def build_v10_flow_contract_report(root_flow: dict | None, manifest: dict | None = None) -> dict:
+    """Validate the draft CF-FARP@1.0 authoring contract without implying runtime support."""
+    findings = validate_v10_flow_contract(root_flow, manifest)
+    counts = summarize_findings(findings)
+    return {
+        "ok": counts["blocker"] == 0,
+        "status": "draft" if counts["blocker"] == 0 else "blocked",
+        "protocol": "CF-FARP@1.0",
+        "implementation_status": "unsupported",
+        "summary": counts,
+        "findings": findings,
+    }
+
+
 def validate_v08_flow_contract(root_flow: dict | None, manifest: dict | None = None) -> list[dict]:
     return build_v08_flow_contract_report(root_flow, manifest).get("findings") or []
 
 
 def validate_v09_flow_contract(root_flow: dict | None, manifest: dict | None = None) -> list[dict]:
     return build_v09_flow_contract_report(root_flow, manifest).get("findings") or []
+
+
+def validate_v10_flow_contract(root_flow: dict | None, manifest: dict | None = None) -> list[dict]:
+    """Validate CF-FARP@1.0 ExecutionPlan authoring facts.
+
+    This intentionally has no dependency on the current graph analyzer or runtime.
+    The v1.0 registry remains draft and the Base remains unsupported; this validator
+    only freezes the plan shape that a future token runner must consume.
+    """
+    del manifest
+    findings: list[dict] = []
+    root_flow = root_flow if isinstance(root_flow, dict) else {}
+
+    if not _root_flow_declares_version(root_flow, "1.0"):
+        findings.append(_finding(
+            "blocker",
+            "v10_root_flow_protocol_missing",
+            "root flow must declare protocol CF-FARP@1.0.",
+        ))
+
+    states = root_flow.get("states")
+    if not isinstance(states, dict) or not states:
+        return findings + [_finding("blocker", "v10_invalid_states", "root_flow.states must be a non-empty object.")]
+
+    findings.extend(_validate_v10_legacy_topology(root_flow, states))
+    execution_plan = root_flow.get("execution_plan")
+    if not isinstance(execution_plan, dict):
+        return findings + [_finding(
+            "blocker",
+            "v10_execution_plan_missing",
+            "CF-FARP@1.0 requires root_flow.execution_plan.",
+        )]
+    if execution_plan.get("schema") != "cartridgeflow.execution_plan.v1":
+        findings.append(_finding(
+            "blocker",
+            "v10_execution_plan_schema_invalid",
+            "execution_plan.schema must be cartridgeflow.execution_plan.v1.",
+        ))
+
+    entry = str(execution_plan.get("entry") or "").strip()
+    if not entry or entry not in states:
+        findings.append(_finding(
+            "blocker",
+            "v10_execution_plan_entry_invalid",
+            "execution_plan.entry must name a declared state.",
+        ))
+
+    edges = execution_plan.get("edges")
+    if not isinstance(edges, list):
+        return findings + [_finding(
+            "blocker",
+            "v10_execution_plan_edges_invalid",
+            "execution_plan.edges must be an array.",
+        )]
+
+    edge_ids: set[str] = set()
+    parsed_edges: list[dict] = []
+    for index, edge in enumerate(edges):
+        parsed = _validate_v10_edge(edge, index, states, findings)
+        if not parsed:
+            continue
+        edge_id = parsed["id"]
+        if edge_id in edge_ids:
+            findings.append(_edge_finding(
+                "blocker",
+                "v10_execution_edge_id_duplicate",
+                edge_id,
+                "execution plan edge ids must be unique.",
+            ))
+            continue
+        edge_ids.add(edge_id)
+        parsed_edges.append(parsed)
+
+    findings.extend(_validate_v10_execution_topology(parsed_edges, states))
+    return findings
 
 
 def validate_v02_flow_contract(root_flow: dict | None, manifest: dict | None = None) -> list[dict]:
@@ -970,3 +1059,515 @@ def _finding(severity: str, code: str, message: str) -> dict:
 
 def _node_finding(severity: str, code: str, node_id: str, message: str) -> dict:
     return {"severity": severity, "code": code, "node_id": node_id, "message": message}
+
+
+V10_EXECUTION_EDGE_KINDS = {"sequence", "fork", "join", "loop", "batch", "wait", "failure"}
+V10_JOIN_MODES = {"all", "any", "keyed"}
+V10_WAIT_MODES = {"duration", "signal", "condition"}
+V10_FAILURE_CAUSES = {"cancelled", "exception", "resource", "retry_exhausted", "timeout", "validation"}
+
+
+def _validate_v10_legacy_topology(root_flow: dict, states: dict) -> list[dict]:
+    findings: list[dict] = []
+    control_edges = root_flow.get("control_edges")
+    if control_edges:
+        findings.append(_finding(
+            "blocker",
+            "v10_legacy_control_edges_forbidden",
+            "CF-FARP@1.0 requires executable edges in execution_plan.edges, not control_edges.",
+        ))
+        findings.extend(_validate_v10_legacy_edge_kinds(control_edges))
+    for edge in root_flow.get("edges") or []:
+        if isinstance(edge, dict) and edge.get("kind") == "action_route":
+            findings.append(_finding(
+                "blocker",
+                "v10_legacy_action_route_forbidden",
+                "legacy action_route edges must be expressed as explicit ExecutionPlan edges.",
+            ))
+        elif isinstance(edge, dict) and edge.get("kind") == "failure_route":
+            findings.append(_finding(
+                "blocker",
+                "v10_legacy_failure_route_forbidden",
+                "legacy failure_route edges must be expressed as explicit failure edges.",
+            ))
+        elif isinstance(edge, dict) and edge.get("executable") is False:
+            findings.append(_finding(
+                "blocker",
+                "v10_visible_non_executable_edge",
+                "A visible edge marked executable=false cannot appear in a CF-FARP@1.0 flow.",
+            ))
+        else:
+            findings.append(_finding(
+                "blocker",
+                "v10_legacy_edges_forbidden",
+                "CF-FARP@1.0 requires executable edges in execution_plan.edges, not root_flow.edges.",
+            ))
+    for node_id, node in states.items():
+        if not isinstance(node, dict):
+            findings.append(_node_finding("blocker", "v10_node_not_object", str(node_id), "node must be an object."))
+            continue
+        if node.get("next"):
+            findings.append(_node_finding(
+                "blocker",
+                "v10_implicit_sequence_forbidden",
+                str(node_id),
+                "node.next is not an executable CF-FARP@1.0 sequence edge.",
+            ))
+        if node.get("action_route") or node.get("action_routes"):
+            findings.append(_node_finding(
+                "blocker",
+                "v10_legacy_action_route_forbidden",
+                str(node_id),
+                "legacy action_route/action_routes must be expressed as explicit ExecutionPlan edges.",
+            ))
+        if node.get("failure_route"):
+            findings.append(_node_finding(
+                "blocker",
+                "v10_legacy_failure_route_forbidden",
+                str(node_id),
+                "legacy failure_route must be expressed as an explicit failure edge.",
+            ))
+    return findings
+
+
+def _validate_v10_legacy_edge_kinds(edges) -> list[dict]:
+    if not isinstance(edges, list):
+        return []
+    findings: list[dict] = []
+    for edge in edges:
+        if not isinstance(edge, dict):
+            continue
+        if edge.get("kind") == "action_route":
+            findings.append(_finding(
+                "blocker",
+                "v10_legacy_action_route_forbidden",
+                "legacy action_route edges must be expressed as explicit ExecutionPlan edges.",
+            ))
+        elif edge.get("kind") == "failure_route":
+            findings.append(_finding(
+                "blocker",
+                "v10_legacy_failure_route_forbidden",
+                "legacy failure_route edges must be expressed as explicit failure edges.",
+            ))
+        elif edge.get("executable") is False:
+            findings.append(_finding(
+                "blocker",
+                "v10_visible_non_executable_edge",
+                "A visible edge marked executable=false cannot appear in a CF-FARP@1.0 flow.",
+            ))
+    return findings
+
+
+def _validate_v10_edge(edge, index: int, states: dict, findings: list[dict]) -> dict | None:
+    if not isinstance(edge, dict):
+        findings.append(_finding("blocker", "v10_execution_edge_not_object", f"execution_plan.edges[{index}] must be an object."))
+        return None
+
+    edge_id = str(edge.get("id") or "").strip()
+    if not edge_id:
+        findings.append(_finding("blocker", "v10_execution_edge_id_missing", f"execution_plan.edges[{index}].id is required."))
+        return None
+    kind = str(edge.get("kind") or "").strip()
+    if kind not in V10_EXECUTION_EDGE_KINDS:
+        findings.append(_edge_finding(
+            "blocker",
+            "v10_execution_edge_kind_invalid",
+            edge_id,
+            f"execution edge kind must be one of {sorted(V10_EXECUTION_EDGE_KINDS)}.",
+        ))
+        return None
+    if edge.get("executable") is False:
+        findings.append(_edge_finding(
+            "blocker",
+            "v10_visible_non_executable_edge",
+            edge_id,
+            "ExecutionPlan edges are executable declarations and cannot be marked executable=false.",
+        ))
+
+    source = str(edge.get("from") or "").strip()
+    target = str(edge.get("to") or "").strip()
+    if not source or not target:
+        findings.append(_edge_finding(
+            "blocker",
+            "v10_execution_edge_endpoint_missing",
+            edge_id,
+            "execution edge must declare non-empty from and to state ids.",
+        ))
+    elif source not in states or target not in states:
+        findings.append(_edge_finding(
+            "blocker",
+            "v10_execution_edge_endpoint_unknown",
+            edge_id,
+            "execution edge endpoints must name declared states.",
+        ))
+
+    parsed = {"id": edge_id, "kind": kind, "from": source, "to": target, "raw": edge}
+    if kind == "fork":
+        _validate_v10_fork_edge(parsed, findings)
+    elif kind == "join":
+        _validate_v10_join_edge(parsed, findings)
+    elif kind == "loop":
+        _validate_v10_loop_edge(parsed, states, findings)
+    elif kind == "batch":
+        _validate_v10_batch_edge(parsed, findings)
+    elif kind == "wait":
+        _validate_v10_wait_edge(parsed, findings)
+    elif kind == "failure":
+        _validate_v10_failure_edge(parsed, findings)
+    return parsed
+
+
+def _validate_v10_fork_edge(edge: dict, findings: list[dict]) -> None:
+    fork = _v10_mapping(edge["raw"].get("fork"))
+    fork_id = _v10_string(fork.get("id"))
+    branch = _v10_string(fork.get("branch"))
+    edge["fork_id"] = fork_id
+    edge["branch"] = branch
+    if not fork_id or not branch:
+        findings.append(_edge_finding(
+            "blocker",
+            "v10_fork_contract_invalid",
+            edge["id"],
+            "fork edges require fork.id and fork.branch.",
+        ))
+
+
+def _validate_v10_join_edge(edge: dict, findings: list[dict]) -> None:
+    join = _v10_mapping(edge["raw"].get("join"))
+    join_id = _v10_string(join.get("id"))
+    mode = _v10_string(join.get("mode"))
+    branch = _v10_string(join.get("branch"))
+    branches = _v10_string_list(join.get("branches"))
+    edge.update({
+        "join_id": join_id,
+        "join_mode": mode,
+        "branch": branch,
+        "join_branches": branches,
+        "key_ref": _v10_string(join.get("key_ref")),
+        "remaining": _v10_string(join.get("remaining")),
+    })
+    if not join_id or mode not in V10_JOIN_MODES or not branch:
+        findings.append(_edge_finding(
+            "blocker",
+            "v10_join_contract_invalid",
+            edge["id"],
+            "join edges require join.id, join.mode=all|any|keyed, and join.branch.",
+        ))
+    if not branches:
+        findings.append(_edge_finding(
+            "blocker",
+            "v10_join_branches_missing",
+            edge["id"],
+            "join.edges must declare the complete finite join.branches set.",
+        ))
+    if mode == "keyed" and not edge["key_ref"]:
+        findings.append(_edge_finding(
+            "blocker",
+            "v10_keyed_join_key_missing",
+            edge["id"],
+            "keyed joins require a non-empty join.key_ref value reference.",
+        ))
+    if mode == "any" and edge["remaining"] not in {"cancel", "drain"}:
+        findings.append(_edge_finding(
+            "blocker",
+            "v10_any_join_remaining_policy_missing",
+            edge["id"],
+            "any joins require join.remaining=cancel|drain.",
+        ))
+    if mode != "any" and edge["remaining"]:
+        findings.append(_edge_finding(
+            "blocker",
+            "v10_join_remaining_policy_invalid",
+            edge["id"],
+            "join.remaining is only valid for mode=any.",
+        ))
+
+
+def _validate_v10_loop_edge(edge: dict, states: dict, findings: list[dict]) -> None:
+    loop = _v10_mapping(edge["raw"].get("loop"))
+    loop_id = _v10_string(loop.get("id"))
+    maximum = loop.get("max_iterations")
+    condition = _v10_string(loop.get("continue_when"))
+    exit_to = _v10_string(loop.get("exit_to"))
+    edge["loop_id"] = loop_id
+    if not loop_id or not _v10_positive_int(maximum) or not condition or not exit_to:
+        findings.append(_edge_finding(
+            "blocker",
+            "v10_loop_contract_invalid",
+            edge["id"],
+            "loop edges require loop.id, a positive integer max_iterations, continue_when, and exit_to.",
+        ))
+    if exit_to and exit_to not in states:
+        findings.append(_edge_finding(
+            "blocker",
+            "v10_loop_exit_unknown",
+            edge["id"],
+            "loop.exit_to must name a declared state.",
+        ))
+
+
+def _validate_v10_batch_edge(edge: dict, findings: list[dict]) -> None:
+    batch = _v10_mapping(edge["raw"].get("batch"))
+    batch_id = _v10_string(batch.get("id"))
+    items_ref = _v10_string(batch.get("items_ref"))
+    size = batch.get("size")
+    concurrency = batch.get("max_concurrency")
+    ordering = _v10_string(batch.get("ordering"))
+    if not batch_id or not items_ref or not _v10_positive_int(size) or not _v10_positive_int(concurrency) or ordering not in {"preserve", "unordered"}:
+        findings.append(_edge_finding(
+            "blocker",
+            "v10_batch_contract_invalid",
+            edge["id"],
+            "batch edges require id, items_ref, positive size, positive max_concurrency, and ordering=preserve|unordered.",
+        ))
+    elif concurrency > size:
+        findings.append(_edge_finding(
+            "blocker",
+            "v10_batch_concurrency_invalid",
+            edge["id"],
+            "batch.max_concurrency cannot exceed batch.size.",
+        ))
+
+
+def _validate_v10_wait_edge(edge: dict, findings: list[dict]) -> None:
+    wait = _v10_mapping(edge["raw"].get("wait"))
+    wait_id = _v10_string(wait.get("id"))
+    mode = _v10_string(wait.get("mode"))
+    timeout_ms = wait.get("timeout_ms")
+    resume_key = _v10_string(wait.get("resume_key"))
+    edge["wait_mode"] = mode
+    if not wait_id or mode not in V10_WAIT_MODES or not _v10_positive_int(timeout_ms) or not _valid_store_key(resume_key):
+        findings.append(_edge_finding(
+            "blocker",
+            "v10_wait_contract_invalid",
+            edge["id"],
+            "wait edges require id, mode, positive timeout_ms, and a valid resume_key.",
+        ))
+    if mode == "duration" and not _v10_positive_int(wait.get("duration_ms")):
+        findings.append(_edge_finding("blocker", "v10_wait_duration_missing", edge["id"], "duration waits require positive duration_ms."))
+    if mode == "signal" and not _v10_string(wait.get("signal")):
+        findings.append(_edge_finding("blocker", "v10_wait_signal_missing", edge["id"], "signal waits require signal."))
+    if mode == "condition" and not _v10_string(wait.get("condition_ref")):
+        findings.append(_edge_finding("blocker", "v10_wait_condition_missing", edge["id"], "condition waits require condition_ref."))
+
+
+def _validate_v10_failure_edge(edge: dict, findings: list[dict]) -> None:
+    failure = _v10_mapping(edge["raw"].get("failure"))
+    failure_id = _v10_string(failure.get("id"))
+    causes = _v10_string_list(failure.get("causes"))
+    edge["failure_causes"] = causes
+    if not failure_id or not causes or len(causes) != len(set(causes)) or any(cause not in V10_FAILURE_CAUSES for cause in causes):
+        findings.append(_edge_finding(
+            "blocker",
+            "v10_failure_contract_invalid",
+            edge["id"],
+            "failure edges require id and unique causes from the CF-FARP@1.0 failure vocabulary.",
+        ))
+
+
+def _validate_v10_execution_topology(edges: list[dict], states: dict) -> list[dict]:
+    findings: list[dict] = []
+    successful = [edge for edge in edges if edge["kind"] != "failure" and edge["from"] and edge["to"]]
+    by_source: dict[str, list[dict]] = {}
+    incoming: dict[str, list[dict]] = {}
+    for edge in successful:
+        by_source.setdefault(edge["from"], []).append(edge)
+        incoming.setdefault(edge["to"], []).append(edge)
+
+    for source, outgoing in by_source.items():
+        kinds = {edge["kind"] for edge in outgoing}
+        if "fork" in kinds and kinds != {"fork"}:
+            findings.append(_finding(
+                "blocker",
+                "v10_fork_mixed_outgoing_forbidden",
+                f"state {source} must use only fork edges for a fork transition.",
+            ))
+        elif "fork" not in kinds and len(outgoing) > 1:
+            findings.append(_finding(
+                "blocker",
+                "v10_ambiguous_successor_forbidden",
+                f"state {source} has multiple non-fork executable successors.",
+            ))
+
+    loop_sources = {edge["from"] for edge in successful if edge["kind"] == "loop"}
+    for target, target_edges in incoming.items():
+        if target in loop_sources:
+            continue
+        if len(target_edges) > 1 and any(edge["kind"] != "join" for edge in target_edges):
+            findings.append(_finding(
+                "blocker",
+                "v10_implicit_join_forbidden",
+                f"state {target} has multiple incoming tokens without one explicit join declaration.",
+            ))
+
+    findings.extend(_validate_v10_fork_groups([edge for edge in edges if edge["kind"] == "fork"]))
+    findings.extend(_validate_v10_join_groups([edge for edge in edges if edge["kind"] == "join"]))
+    findings.extend(_validate_v10_failure_exits(edges, states))
+    if _v10_has_cycle(successful):
+        findings.append(_finding(
+            "blocker",
+            "v10_implicit_cycle_forbidden",
+            "every execution-plan cycle must contain an explicit bounded loop edge.",
+        ))
+    return findings
+
+
+def _validate_v10_fork_groups(edges: list[dict]) -> list[dict]:
+    findings: list[dict] = []
+    groups: dict[str, list[dict]] = {}
+    for edge in edges:
+        groups.setdefault(edge.get("fork_id") or f"__invalid__:{edge['id']}", []).append(edge)
+    for fork_id, group in groups.items():
+        sources = {edge["from"] for edge in group}
+        branches = [edge.get("branch") for edge in group]
+        if not fork_id or fork_id.startswith("__invalid__") or len(group) < 2 or len(sources) != 1 or not all(branches) or len(set(branches)) != len(branches):
+            findings.append(_finding(
+                "blocker",
+                "v10_fork_group_invalid",
+                f"fork {fork_id} must have at least two uniquely named branches from one state.",
+            ))
+    return findings
+
+
+def _validate_v10_join_groups(edges: list[dict]) -> list[dict]:
+    findings: list[dict] = []
+    groups: dict[tuple[str, str], list[dict]] = {}
+    id_targets: dict[str, set[str]] = {}
+    for edge in edges:
+        join_id = edge.get("join_id") or f"__invalid__:{edge['id']}"
+        groups.setdefault((edge["to"], join_id), []).append(edge)
+        id_targets.setdefault(join_id, set()).add(edge["to"])
+    for join_id, targets in id_targets.items():
+        if not join_id.startswith("__invalid__") and len(targets) != 1:
+            findings.append(_finding(
+                "blocker",
+                "v10_join_target_ambiguous",
+                f"join {join_id} must have exactly one output state.",
+            ))
+    for (target, join_id), group in groups.items():
+        modes = {edge.get("join_mode") for edge in group}
+        branches = [edge.get("branch") for edge in group]
+        declared_branch_sets = {tuple(edge.get("join_branches") or []) for edge in group}
+        valid_branches = all(branches) and len(set(branches)) == len(branches)
+        actual_branches = set(branches)
+        declared_matches = (
+            len(declared_branch_sets) == 1
+            and bool(declared_branch_sets)
+            and set(next(iter(declared_branch_sets))) == actual_branches
+            and len(next(iter(declared_branch_sets))) == len(actual_branches)
+        )
+        if len(group) < 2 or len(modes) != 1 or not valid_branches or not declared_matches:
+            findings.append(_finding(
+                "blocker",
+                "v10_join_group_invalid",
+                f"join {join_id} into {target} must have two or more unique branches matching one complete join.branches set.",
+            ))
+            continue
+        mode = next(iter(modes))
+        if mode == "keyed" and len({edge.get("key_ref") for edge in group}) != 1:
+            findings.append(_finding(
+                "blocker",
+                "v10_keyed_join_key_inconsistent",
+                f"keyed join {join_id} must use one key_ref for every branch.",
+            ))
+        if mode == "any" and len({edge.get("remaining") for edge in group}) != 1:
+            findings.append(_finding(
+                "blocker",
+                "v10_any_join_remaining_policy_inconsistent",
+                f"any join {join_id} must use one remaining policy for every branch.",
+            ))
+    return findings
+
+
+def _validate_v10_failure_exits(edges: list[dict], states: dict) -> list[dict]:
+    findings: list[dict] = []
+    causes_by_source: dict[str, set[str]] = {}
+    for edge in edges:
+        if edge["kind"] != "failure" or not edge["from"]:
+            continue
+        causes = set(edge.get("failure_causes") or [])
+        existing = causes_by_source.setdefault(edge["from"], set())
+        overlap = existing & causes
+        if overlap:
+            findings.append(_edge_finding(
+                "blocker",
+                "v10_failure_cause_ambiguous",
+                edge["id"],
+                f"failure causes already have an exit from {edge['from']}: {sorted(overlap)}.",
+            ))
+        existing.update(causes)
+    for node_id, node in states.items():
+        if _v10_node_may_fail(node) and not causes_by_source.get(str(node_id)):
+            findings.append(_node_finding(
+                "blocker",
+                "v10_failure_exit_missing",
+                str(node_id),
+                "executable action nodes require at least one declared failure edge.",
+            ))
+    for edge in edges:
+        if edge["kind"] == "wait" and "timeout" not in causes_by_source.get(edge["from"], set()):
+            findings.append(_edge_finding(
+                "blocker",
+                "v10_wait_timeout_failure_missing",
+                edge["id"],
+                "wait.timeout_ms requires an explicit failure edge for cause=timeout from the wait source.",
+            ))
+    return findings
+
+
+def _v10_node_may_fail(node) -> bool:
+    if not isinstance(node, dict):
+        return False
+    execution = _v10_mapping(node.get("execution"))
+    if execution.get("may_fail") is True:
+        return True
+    if str(node.get("type") or "") in {"action", "process"}:
+        return True
+    return str(_contract_field(node, "effect") or "") in SIDE_EFFECT_EFFECTS
+
+
+def _v10_has_cycle(edges: list[dict]) -> bool:
+    """A loop edge is the only sanctioned way to close a cycle."""
+    adjacency: dict[str, list[str]] = {}
+    for edge in edges:
+        if edge["kind"] == "loop":
+            continue
+        adjacency.setdefault(edge["from"], []).append(edge["to"])
+    active: set[str] = set()
+    visited: set[str] = set()
+
+    def visit(node_id: str) -> bool:
+        if node_id in active:
+            return True
+        if node_id in visited:
+            return False
+        visited.add(node_id)
+        active.add(node_id)
+        if any(visit(target) for target in adjacency.get(node_id, [])):
+            return True
+        active.remove(node_id)
+        return False
+
+    return any(visit(node_id) for node_id in adjacency)
+
+
+def _v10_mapping(value) -> dict:
+    return value if isinstance(value, dict) else {}
+
+
+def _v10_string(value) -> str:
+    return str(value or "").strip()
+
+
+def _v10_string_list(value) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip() for item in value if str(item).strip()]
+
+
+def _v10_positive_int(value) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
+
+
+def _edge_finding(severity: str, code: str, edge_id: str, message: str) -> dict:
+    return {"severity": severity, "code": code, "edge_id": edge_id, "message": message}

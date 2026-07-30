@@ -1,5 +1,17 @@
 # CartridgeFlow Protocol Documents Agent Note
 
+## CF-FARP@1.0 Draft Boundary
+
+`CF-FARP@1.0` is a draft ExecutionPlan authoring contract and is currently
+`unsupported` by every Base declaration. It freezes explicit sequence, fork,
+join, loop, batch, wait, and failure facts only; it does not imply a token runner,
+v1.0 compatibility dispatch, persisted resume, or certification evidence. The
+release manifest records it in the existing recognized-but-not-executable lifecycle
+bucket so compatibility returns `recognized_unsupported_protocol` with a v0.9
+migration target. This is not a support or historical-release claim. The default
+for new flows remains `CF-FARP@0.9`; do not add v1.0 to Base support until runner,
+compatibility, complete conformance, and certification evidence all exist.
+
 本文是协议入口说明，不是协议正文。
 
 > 文档状态：当前协议治理规则。它约束协议修改和 Flow 编写，但不是协议正文。

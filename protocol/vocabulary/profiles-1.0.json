@@ -1,0 +1,9 @@
+{
+  "schema_version": "0.1",
+  "profiles": [
+    {
+      "id": "execution_plan_authoring",
+      "description": "Draft-only authoring validation for the explicit CF-FARP@1.0 ExecutionPlan contract. It does not claim token-runner, compatibility, or certification support."
+    }
+  ]
+}

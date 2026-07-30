@@ -10,7 +10,7 @@
 
 ## P0 - 编排语义基线
 
-- [ ] `ORCH-001` 固化 `ExecutionPlan v1`：定义 `sequence`、`fork`、`join(all/any/keyed)`、`loop`、`batch`、`wait` 和 `failure` 的可执行语义，清理当前画布、协议分析和运行器之间不一致的 `action_route`、`failure_route`、循环与合流行为；验收见 [n8n 编排取经与差异化报告](../architecture/N8N_ORCHESTRATION_BENCHMARK_REPORT.md)。
+- [x] `ORCH-001` 固化 `ExecutionPlan v1`：定义 `sequence`、`fork`、`join(all/any/keyed)`、`loop`、`batch`、`wait` 和 `failure` 的可执行语义，清理当前画布、协议分析和运行器之间不一致的 `action_route`、`failure_route`、循环与合流行为；协议、确定性编译、Token 运行器及工程视图投影已完成。`CF-FARP@1.0` 仍为 draft/unsupported，工程投影不等同于运行支持；验收见 [n8n 编排取经与差异化报告](../architecture/N8N_ORCHESTRATION_BENCHMARK_REPORT.md)。
 
 ## P1 - 当前主线
 

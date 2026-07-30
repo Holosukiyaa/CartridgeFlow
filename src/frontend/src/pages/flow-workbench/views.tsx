@@ -21,7 +21,7 @@ import { McpTransparencyOverlay } from './McpTransparencyOverlay.tsx'
 type ExecutionPlanAnalysis = NonNullable<FlowGraph['analysis']> & {
   protocol?: { id?: string; version?: string }
   relations?: FlowEngineeringRelation[]
-  execution_plan?: { status?: 'compiled' | 'rejected' | string; plan_id?: string; edge_count?: number }
+  execution_plan?: { status?: 'compiled' | 'rejected' | string; runtime_status?: 'supported' | 'unsupported' | string; plan_id?: string; edge_count?: number }
 }
 
 function isExecutionPlanV1(files: FlowFiles, graph: FlowGraph) {
@@ -437,7 +437,7 @@ export function DesignView({
               <label key={kind}><input type="checkbox" checked={edgeVisibility[kind]} onChange={() => setEdgeVisibility((current) => ({ ...current, [kind]: !current[kind] }))} /><i className={kind} />{label}</label>
             ))}
             <b>{graph.nodes.length} 节点 · {engineeringProjection.resourceCount} 资源 · {engineeringProjection.controlEdgeCount} 控制 · {engineeringRelationCounts.data} 数据 · {engineeringRelationCounts.dependency} 依赖</b>
-            {executionPlanV1 && <span>{executionPlanAnalysis?.execution_plan?.status === 'compiled' ? `ExecutionPlan 已编译 · ${executionPlanAnalysis.execution_plan.edge_count || 0} 条计划边` : 'ExecutionPlan 未编译 · 旧连线不会显示为运行路线'}</span>}
+            {executionPlanV1 && <span>{executionPlanAnalysis?.execution_plan?.status === 'compiled' ? executionPlanAnalysis.execution_plan.runtime_status === 'supported' ? `ExecutionPlan 已编译 · ${executionPlanAnalysis.execution_plan.edge_count || 0} 条计划边` : `ExecutionPlan 已编译，仅工程投影 · 当前 Base 尚未支持运行` : 'ExecutionPlan 未编译 · 旧连线不会显示为运行路线'}</span>}
           </div>}
           <div className="cf-design-panel-toggles">
             {engineering && <button type="button" className={engineeringInspectorOpen ? 'active' : ''} onClick={() => setEngineeringInspectorOpen((current) => !current)} title={engineeringInspectorOpen ? '收起节点详情' : '展开节点详情'} aria-pressed={engineeringInspectorOpen}><PanelRight aria-hidden="true" /><span>详情</span></button>}

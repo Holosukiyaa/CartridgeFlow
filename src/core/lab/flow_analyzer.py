@@ -369,6 +369,9 @@ def _analyze_v10_execution_plan(root_flow: dict, manifest: dict, *, target: str,
         }
         for relation in relations
     ]
+    runtime_supported = _v10_base_runtime_supported(base)
+    findings = [] if runtime_supported else [_v10_runtime_unsupported_finding(base)]
+    counts = _finding_counts(findings)
     return {
         "schema": ANALYSIS_SCHEMA,
         "analysis_version": ANALYSIS_VERSION,
@@ -379,9 +382,10 @@ def _analyze_v10_execution_plan(root_flow: dict, manifest: dict, *, target: str,
         "source_digest": source_digest,
         "normalized_topology": {"start": plan["entry"], "control_edges": topology},
         "relations": relations,
-        "findings": [],
+        "findings": findings,
         "execution_plan": {
             "status": "compiled",
+            "runtime_status": "supported" if runtime_supported else "unsupported",
             "schema": plan["schema"],
             "plan_id": plan["plan_id"],
             "plan_digest": plan["plan_digest"],
@@ -389,8 +393,39 @@ def _analyze_v10_execution_plan(root_flow: dict, manifest: dict, *, target: str,
             "entry": plan["entry"],
             "edge_count": len(plan["edges"]),
         },
-        "coverage": {"complete": True, "stages": ["protocol_structure", "execution_plan"]},
-        "summary": {"blockers": 0, "warnings": 0, "infos": 0, "runnable": True, "packagable": target in {"package", "publish"}, "publishable": target == "publish"},
+        "coverage": {"complete": runtime_supported, "stages": ["protocol_structure", "execution_plan", "runtime_support"]},
+        "summary": {
+            "blockers": counts["blocker"],
+            "warnings": counts["warning"],
+            "infos": counts["info"],
+            "runnable": runtime_supported,
+            "packagable": runtime_supported and target in {"package", "publish"},
+            "publishable": runtime_supported and target == "publish",
+        },
+    }
+
+
+def _v10_base_runtime_supported(base: dict) -> bool:
+    """Base support is the only authority that can open v1.0 runtime gates."""
+    supported = base.get("supported_protocols") if isinstance(base.get("supported_protocols"), list) else []
+    return any(
+        isinstance(item, dict)
+        and item.get("id") == "CF-FARP"
+        and str(item.get("version")) == "1.0"
+        and item.get("status") in {"partial", "supported"}
+        for item in supported
+    )
+
+
+def _v10_runtime_unsupported_finding(base: dict) -> dict:
+    implementation_id = str(base.get("implementation_id") or "当前 Base")
+    return {
+        "id": "finding:v10_base_runtime_unsupported:flow:base.supported_protocols",
+        "severity": "blocker",
+        "code": "v10_base_runtime_unsupported",
+        "stage": "runtime_support",
+        "path": "base.supported_protocols",
+        "message": f"{implementation_id} 尚未声明 CF-FARP@1.0 运行时支持；ExecutionPlan 仅可用于工程投影，不能运行、打包或发布。",
     }
 
 

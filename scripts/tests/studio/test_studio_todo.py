@@ -46,7 +46,7 @@ class StudioTodoTests(unittest.TestCase):
         todo = parse_todo_markdown(todo_text)
 
         self.assertLessEqual(todo["open"], 12)
-        self.assertEqual(todo["total"], todo["open"])
+        self.assertEqual(todo["total"], todo["open"] + todo["completed"])
         task_ids = [item["id"] for item in todo["items"]]
         self.assertEqual(len(task_ids), len(set(task_ids)))
 

@@ -24,6 +24,7 @@ class LiteApiSurfaceTests(unittest.TestCase):
             "/api/health",
             "/api/base",
             "/api/lab/flows",
+            "/api/lab/flows/simulations/authoring",
             "/api/lab/flows/dev.example/nodes",
             "/api/lab/flows/dev.example/test-run",
             "/api/llm/providers",

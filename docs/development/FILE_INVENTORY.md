@@ -144,13 +144,15 @@
 | `docs/architecture/FLOW_AUTHORING_ANALYSIS_CONTRACT.md` | Flow 业务流程、执行契约、工程关系三层边界，以及统一分析、强制检测和创作 AI 入口。 |
 | `docs/architecture/PORTABLE_DLC_ARCHITECTURE.md` | DLC 所有权、安全和宿主边界。 |
 | `docs/development/AI_DEVELOPER_GUIDE.md` | 深层架构与验收参考。 |
+| `docs/development/WORKER_COLLABORATION_GUIDE.md` | 面向操作者的 worker 协作、基线、启动、报告与验收使用指南。 |
 | `docs/development/FLOW_GRAPH_PERFORMANCE_OPTIMIZATION.md` | 大型 Flow 画布的性能瓶颈、分阶段优化方案、基准与行为回归要求。 |
 | `docs/development/README.md` | 开发维护区说明。 |
 | `docs/development/SECURITY_AUDIT_2026-07-28.md` | Python、FastAPI、React、DLC/MCP、文件路径、内容隔离和依赖的安全审计与整改记录。 |
-| `docs/development/skills/` | 可选协议升级 AI Skill。 |
+| `docs/development/skills/` | 可选协议升级与 Flow 创作 AI Skill；`cartridgeflow-flow-author` 内含真实工作台创作仿真和目标卡带预检脚本。 |
 | `docs/overview/PROJECT_STRUCTURE.md` | 项目分层和数据流。 |
 | `docs/planning/ROADMAP.md` | 少量长期方向。 |
 | `docs/planning/TODO.md` | 当前高价值任务。 |
+| `docs/planning/ENGINEERING_VIEW_RESOURCE_TASK_BRIEF.md` | 工程视图资源化表达、外部 MCP 连接详情、资源节点与自适应布局的实施任务书。 |
 | `docs/planning/TODO_TEMPLATE.md` | TODO 基础模板。 |
 | `docs/protocol/README.md` | 协议文档导航与目录边界。 |
 | `docs/protocol/base-contract/` | Base Contract 的发布正文历史。 |

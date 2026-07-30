@@ -351,6 +351,10 @@ class DevFlowCreate(BaseModel):
     description: str = ""
 
 
+class AuthoringSimulationPayload(BaseModel):
+    keep_temporary_cartridge: bool = False
+
+
 class CartridgeCloneToDevPayload(BaseModel):
     new_id: str
     name: str = ""
@@ -1939,6 +1943,62 @@ def create_lab_flow(payload: DevFlowCreate):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return result
+
+
+@app.post("/api/lab/flows/simulations/authoring")
+def simulate_lab_flow_authoring(payload: AuthoringSimulationPayload = AuthoringSimulationPayload()):
+    """Exercise the same create/edit/validate services used by the workbench without user data."""
+    cartridge_id = f"dev.authoring-simulation-{uuid.uuid4().hex[:10]}"
+    steps: list[dict] = []
+    created = False
+    try:
+        create_lab_flow(DevFlowCreate(
+            flow_id=cartridge_id,
+            name="流程创作仿真",
+            description="由创作技能发起的隔离工作台仿真。",
+        ))
+        created = True
+        steps.append({"action": "创建开发卡带", "ok": True})
+
+        node_result = create_lab_flow_node(cartridge_id, NodeCreatePayload(
+            template_id="runtime",
+            node_id="organize_result",
+            title="整理结果",
+            after_node_id="welcome",
+        ))
+        steps.append({"action": "在画布创建业务节点", "ok": node_result.get("status") == "node_created"})
+
+        layout_result = save_lab_flow_layout(cartridge_id, LayoutSavePayload(layout={
+            "organize_result": {"x": 860, "y": 120},
+        }))
+        steps.append({"action": "保存画布布局", "ok": layout_result.get("status") == "layout_saved"})
+
+        validation = validate_lab_flow(cartridge_id, DevFlowFilesPayload())
+        steps.append({"action": "流程验证", "ok": bool(validation.get("valid")), "errors": validation.get("errors") or []})
+
+        compatibility = get_lab_flow_compatibility(cartridge_id, DevFlowFilesPayload())
+        steps.append({"action": "运行兼容性检查", "ok": bool(compatibility.get("ok")), "findings": compatibility.get("findings") or []})
+
+        catalog = get_lab_flow_resource_catalog(cartridge_id)
+        steps.append({"action": "读取资源目录", "ok": isinstance(catalog.get("tools"), list), "findings": catalog.get("findings") or []})
+    except HTTPException as exc:
+        steps.append({"action": "工作台服务调用", "ok": False, "error": exc.detail})
+    except Exception as exc:  # Preserve unexpected implementation failures for the skill caller.
+        steps.append({"action": "工作台服务调用", "ok": False, "error": str(exc)})
+    finally:
+        if created and not payload.keep_temporary_cartridge:
+            try:
+                delete_lab_flow(cartridge_id)
+                steps.append({"action": "清理临时卡带", "ok": True})
+            except Exception as exc:
+                steps.append({"action": "清理临时卡带", "ok": False, "error": str(exc)})
+
+    return {
+        "ok": bool(steps) and all(step.get("ok") for step in steps),
+        "simulation_id": cartridge_id,
+        "temporary_cartridge_retained": bool(created and payload.keep_temporary_cartridge),
+        "steps": steps,
+    }
 
 
 def _open_directory(path: Path) -> None:

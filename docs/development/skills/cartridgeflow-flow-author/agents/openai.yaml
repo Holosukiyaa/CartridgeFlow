@@ -1,0 +1,4 @@
+interface:
+  display_name: "CartridgeFlow 流程创作"
+  short_description: "用中文优先的方式创建并验证合规 Flow。"
+  default_prompt: "使用 $cartridgeflow-flow-author 创建或修改一个 CartridgeFlow 开发流程；先运行真实创作仿真，再开始编辑。"

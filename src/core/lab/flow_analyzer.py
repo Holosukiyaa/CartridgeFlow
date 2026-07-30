@@ -8,6 +8,8 @@ import re
 from collections import defaultdict
 from copy import deepcopy
 
+from core.orchestration import ExecutionPlanCompileError, compile_execution_plan
+
 
 ANALYSIS_SCHEMA = "cartridgeflow.flow_analysis.v1"
 ANALYSIS_VERSION = "flow-analysis.v1"
@@ -60,6 +62,8 @@ def analyze_flow(
         findings.append(finding)
 
     protocol = _protocol_identity(root_flow, manifest)
+    if protocol == ("CF-FARP", "1.0"):
+        return _analyze_v10_execution_plan(root_flow, manifest, target=target, base=base)
     if protocol[0] != "CF-FARP" or protocol[1] not in {"0.8", "0.9"}:
         add(
             "PROTOCOL_UNSUPPORTED",
@@ -308,6 +312,260 @@ def analyze_flow(
             "publishable": complete and counts["blocker"] == 0 and counts["warning"] == 0 and target == "publish",
         },
     }
+
+
+def _analyze_v10_execution_plan(root_flow: dict, manifest: dict, *, target: str, base: dict) -> dict:
+    """Project only compiler-approved CF-FARP@1.0 transitions for consumers.
+
+    The v1.0 contract deliberately makes ``execution_plan.edges`` the only
+    source of executable topology.  Keeping this boundary here prevents the
+    analyzer and every consumer of its relations from accidentally treating a
+    legacy canvas relation as a runner transition.
+    """
+    source_digest = build_source_digest(manifest, root_flow, base)
+    analysis_id = f"analysis:{source_digest.split(':', 1)[-1][:24]}"
+    try:
+        plan = compile_execution_plan(root_flow)
+    except ExecutionPlanCompileError as error:
+        findings = _v10_compile_findings(error.findings, root_flow)
+        counts = _finding_counts(findings)
+        return {
+            "schema": ANALYSIS_SCHEMA,
+            "analysis_version": ANALYSIS_VERSION,
+            "analysis_id": analysis_id,
+            "analyzer": {"implementation_id": "cartridgeflow.reference.flow-analyzer", "implementation_version": "1.0.0"},
+            "protocol": {"id": "CF-FARP", "version": "1.0"},
+            "target": target,
+            "source_digest": source_digest,
+            "normalized_topology": {"start": _v10_entry(root_flow), "control_edges": []},
+            "relations": [],
+            "findings": findings,
+            "execution_plan": {
+                "status": "rejected",
+                "compiler": {"id": "cartridgeflow.execution-plan-compiler", "version": "1.0.0"},
+                "diagnostic_code": error.code,
+                "edge_count": 0,
+            },
+            "coverage": {"complete": False, "stages": ["protocol_structure", "execution_plan"]},
+            "summary": {
+                "blockers": counts["blocker"],
+                "warnings": counts["warning"],
+                "infos": counts["info"],
+                "runnable": False,
+                "packagable": False,
+                "publishable": False,
+            },
+        }
+
+    relations = _v10_plan_relations(plan, root_flow)
+    topology = [
+        {
+            "id": relation["plan_edge_id"],
+            "kind": relation["plan_edge_kind"],
+            "from": relation["from"]["node_id"],
+            "to": relation["to"]["node_id"],
+            "derived_from": relation["derived_from"],
+            "plan_transition": relation["plan_transition"],
+        }
+        for relation in relations
+    ]
+    return {
+        "schema": ANALYSIS_SCHEMA,
+        "analysis_version": ANALYSIS_VERSION,
+        "analysis_id": analysis_id,
+        "analyzer": {"implementation_id": "cartridgeflow.reference.flow-analyzer", "implementation_version": "1.0.0"},
+        "protocol": {"id": "CF-FARP", "version": "1.0"},
+        "target": target,
+        "source_digest": source_digest,
+        "normalized_topology": {"start": plan["entry"], "control_edges": topology},
+        "relations": relations,
+        "findings": [],
+        "execution_plan": {
+            "status": "compiled",
+            "schema": plan["schema"],
+            "plan_id": plan["plan_id"],
+            "plan_digest": plan["plan_digest"],
+            "source_digest": plan["source_digest"],
+            "entry": plan["entry"],
+            "edge_count": len(plan["edges"]),
+        },
+        "coverage": {"complete": True, "stages": ["protocol_structure", "execution_plan"]},
+        "summary": {"blockers": 0, "warnings": 0, "infos": 0, "runnable": True, "packagable": target in {"package", "publish"}, "publishable": target == "publish"},
+    }
+
+
+def _v10_plan_relations(plan: dict, root_flow: dict) -> list[dict]:
+    raw_edges = _v10_raw_edges(root_flow)
+    raw_path_by_id = {
+        str(edge.get("id") or "").strip(): f"execution_plan.edges.{index}"
+        for index, edge in enumerate(raw_edges)
+        if isinstance(edge, dict) and str(edge.get("id") or "").strip()
+    }
+    relations: list[dict] = []
+    for edge in plan["edges"]:
+        edge_id = edge["id"]
+        derived_from = [raw_path_by_id.get(edge_id, "execution_plan.edges")]
+        relations.append(_v10_plan_relation(
+            edge,
+            relation_id=f"relation:plan:{edge_id}",
+            target=edge["to"],
+            derived_from=derived_from,
+        ))
+        if edge["kind"] == "loop":
+            exit_to = str((edge.get("loop") or {}).get("exit_to") or "").strip()
+            if exit_to:
+                relations.append(_v10_plan_relation(
+                    edge,
+                    relation_id=f"relation:plan:{edge_id}:exit",
+                    target=exit_to,
+                    derived_from=derived_from,
+                    transition="loop_exit",
+                ))
+    return relations
+
+
+def _v10_plan_relation(edge: dict, *, relation_id: str, target: str, derived_from: list[str], transition: str = "transition") -> dict:
+    return {
+        "id": relation_id,
+        "kind": "execution_plan_edge",
+        "from": {"type": "node", "node_id": edge["from"]},
+        "to": {"type": "node", "node_id": target},
+        "derived_from": derived_from,
+        "confidence": "deterministic",
+        "runtime_effect": True,
+        "executable": True,
+        "plan_edge_id": edge["id"],
+        "plan_edge_kind": edge["kind"],
+        "plan_transition": transition,
+    }
+
+
+def _v10_compile_findings(compiler_findings: tuple[dict, ...], root_flow: dict) -> list[dict]:
+    findings: list[dict] = []
+    for index, raw in enumerate(compiler_findings):
+        finding = dict(raw)
+        code = str(finding.get("code") or "execution_plan_contract_invalid")
+        edge_id = str(finding.get("edge_id") or "").strip()
+        node_id = str(finding.get("node_id") or "").strip()
+        path = _v10_finding_path(root_flow, code, edge_id, index)
+        if not node_id:
+            node_id = _v10_finding_node(root_flow, code, edge_id)
+        item = {
+            "id": f"finding:{code}:{edge_id or node_id or 'flow'}:{path}",
+            "severity": str(finding.get("severity") or "blocker"),
+            "code": code,
+            "stage": "execution_plan",
+            "message": _v10_diagnostic_message(code, edge_id, node_id),
+            "path": path,
+        }
+        if node_id:
+            item["node_id"] = node_id
+        if edge_id:
+            item["edge_id"] = edge_id
+        findings.append(item)
+    if findings:
+        return _dedupe_by_id(findings)
+    return [{
+        "id": "finding:execution_plan_contract_invalid:flow:execution_plan",
+        "severity": "blocker",
+        "code": "execution_plan_contract_invalid",
+        "stage": "execution_plan",
+        "message": "执行计划无法编译，未生成任何可执行路线。请补全 CF-FARP@1.0 的 execution_plan 声明后重新分析。",
+        "path": "execution_plan",
+    }]
+
+
+def _v10_finding_path(root_flow: dict, code: str, edge_id: str, index: int) -> str:
+    if edge_id:
+        for edge_index, edge in enumerate(_v10_raw_edges(root_flow)):
+            if isinstance(edge, dict) and str(edge.get("id") or "").strip() == edge_id:
+                return f"execution_plan.edges.{edge_index}"
+    if code == "v10_legacy_control_edges_forbidden":
+        return "control_edges"
+    if code == "v10_legacy_edges_forbidden":
+        return "edges"
+    if code in {"v10_legacy_action_route_forbidden", "v10_legacy_failure_route_forbidden", "v10_implicit_sequence_forbidden"}:
+        return "states"
+    if code == "v10_implicit_join_forbidden":
+        return "execution_plan.edges"
+    return "execution_plan" if index == 0 else f"execution_plan.findings.{index}"
+
+
+def _v10_finding_node(root_flow: dict, code: str, edge_id: str) -> str:
+    if edge_id:
+        for edge in _v10_raw_edges(root_flow):
+            if isinstance(edge, dict) and str(edge.get("id") or "").strip() == edge_id:
+                return str(edge.get("from") or "").strip()
+    states = root_flow.get("states") if isinstance(root_flow.get("states"), dict) else {}
+    if code == "v10_implicit_join_forbidden":
+        incoming: dict[str, int] = defaultdict(int)
+        for edge in _v10_raw_edges(root_flow):
+            if isinstance(edge, dict) and str(edge.get("kind") or "") != "failure":
+                target = str(edge.get("to") or "").strip()
+                if target:
+                    incoming[target] += 1
+        return next((node_id for node_id, count in sorted(incoming.items()) if count > 1), "")
+    for node_id, node in states.items():
+        if not isinstance(node, dict):
+            continue
+        if code == "v10_implicit_sequence_forbidden" and node.get("next"):
+            return str(node_id)
+        if code == "v10_legacy_action_route_forbidden" and (node.get("action_route") or node.get("action_routes")):
+            return str(node_id)
+        if code == "v10_legacy_failure_route_forbidden" and node.get("failure_route"):
+            return str(node_id)
+    return ""
+
+
+def _v10_diagnostic_message(code: str, edge_id: str, node_id: str) -> str:
+    edge = f"计划边“{edge_id}”" if edge_id else "该关系"
+    node = f"节点“{node_id}”" if node_id else "该流程"
+    if code == "v10_legacy_action_route_forbidden":
+        return f"{node} 使用了旧 action_route/action_routes；它在 CF-FARP@1.0 中没有执行语义，已不作为运行路线。请改为 execution_plan.edges 中带稳定 id 的 sequence、fork 或其他受支持计划边。"
+    if code == "v10_legacy_failure_route_forbidden":
+        return f"{node} 使用了旧 failure_route；它在 CF-FARP@1.0 中没有执行语义，已不作为运行路线。请声明带 failure.id 与 causes 的 failure 计划边。"
+    if code in {"v10_legacy_edges_forbidden", "v10_legacy_control_edges_forbidden"}:
+        return "检测到旧版画布连线；它们不能驱动 CF-FARP@1.0 执行，已不作为运行路线。请将关系迁移到 execution_plan.edges，并为每条边声明稳定 id。"
+    if code == "v10_implicit_sequence_forbidden":
+        return f"{node} 使用 node.next 推导下一步；该隐式路线不可执行。请删除 next，并在 execution_plan.edges 中声明 sequence 计划边。"
+    if code == "v10_visible_non_executable_edge":
+        return f"{edge} 被标记为不可执行；CF-FARP@1.0 不允许把装饰线伪装成计划边。请删除该线，或声明完整且可执行的计划边。"
+    if code == "v10_implicit_join_forbidden":
+        return f"{node} 存在未声明的隐式合流；多个 token 不能靠画布位置自动合并。请为每条入边声明同一 join.id、完整 branches 和 join 模式。"
+    if code in {"v10_execution_plan_missing", "v10_execution_plan_schema_invalid"}:
+        return "缺少有效的 execution_plan；当前没有可执行路线。请声明 execution_plan.schema、entry 和 edges 后重新分析。"
+    if code.startswith("v10_fork"):
+        return f"{edge} 的 fork 声明不完整或不一致，无法编译。请使用同一 fork.id、同一来源及至少两个唯一 branch。"
+    if code.startswith("v10_join") or code.startswith("v10_any_join") or code.startswith("v10_keyed_join"):
+        return f"{edge} 的 join 声明不完整或不一致，无法编译。请补全统一的 join.id、mode、branches，并按模式声明 remaining 或 key_ref。"
+    if code.startswith("v10_loop") or code == "v10_implicit_cycle_forbidden":
+        return f"{edge} 的循环没有可验证的有界语义，无法执行。请声明正整数 max_iterations、continue_when 和有效 exit_to，并避免普通边闭环。"
+    if code.startswith("v10_batch"):
+        return f"{edge} 的批处理参数无法编译。请补全 batch.id、items_ref、size、max_concurrency 和 ordering。"
+    if code.startswith("v10_wait"):
+        return f"{edge} 的等待或超时失败出口不完整，无法执行。请补全 wait 配置，并声明包含 timeout cause 的 failure 计划边。"
+    if code.startswith("v10_failure"):
+        return f"{edge} 缺少可执行的失败处理。请声明带稳定 failure.id 和合法 causes 的 failure 计划边。"
+    if code.startswith("v10_execution_edge"):
+        return f"{edge} 的标识、种类或端点不符合执行计划要求，无法编译。请使用受支持 kind，并指向已声明的状态。"
+    if code == "v10_ambiguous_successor_forbidden":
+        return f"{node} 有多条未声明 fork 的成功路线，执行器无法猜测选择规则。请改为一个成功计划边，或使用完整 fork 组。"
+    return f"{edge} 不符合 CF-FARP@1.0 执行计划约束，无法编译或执行。请根据诊断代码“{code}”补全显式计划语义。"
+
+
+def _v10_raw_edges(root_flow: dict) -> list:
+    plan = root_flow.get("execution_plan") if isinstance(root_flow.get("execution_plan"), dict) else {}
+    edges = plan.get("edges")
+    return edges if isinstance(edges, list) else []
+
+
+def _v10_entry(root_flow: dict) -> str:
+    plan = root_flow.get("execution_plan") if isinstance(root_flow.get("execution_plan"), dict) else {}
+    return str(plan.get("entry") or "").strip()
+
+
+def _finding_counts(findings: list[dict]) -> dict[str, int]:
+    return {severity: sum(1 for item in findings if item.get("severity") == severity) for severity in ("blocker", "warning", "info")}
 
 
 def build_source_digest(manifest: dict, root_flow: dict, base: dict | None = None) -> str:

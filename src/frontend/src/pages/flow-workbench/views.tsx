@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Box, Button } from '../../ui.tsx'
 import { AlertTriangle, Bot, Braces, ChevronDown, ChevronUp, ClipboardCopy, Copy, Download, FileOutput, History, PanelRight, Pause, PlayCircle, RefreshCw, Square, SquarePen, X } from 'lucide-react'
-import { fetchFlowResourceCatalog, fetchMcpSource, type AIFlowSelection, type AIFlowStewardContext, type FlowAnnotation, type FlowEdge, type FlowEvent, type FlowFiles, type FlowGraph, type FlowLabDetail, type FlowNode, type McpSourceResponse, type RunResult, type StudioToolResource } from '../../api.ts'
+import { fetchFlowResourceCatalog, fetchMcpSource, type AIFlowSelection, type AIFlowStewardContext, type FlowAnnotation, type FlowEdge, type FlowEngineeringRelation, type FlowEvent, type FlowFiles, type FlowGraph, type FlowLabDetail, type FlowNode, type McpSourceResponse, type RunResult, type StudioToolResource } from '../../api.ts'
 import type { CreateNodeHandler, DesignDisplayMode, GraphResult, NodeDraft } from './types.ts'
 import { FlowGraphView, type CanvasTool, type ProtocolDisplayInfo } from './FlowGraphView.tsx'
 import { NodeDetailCard } from './NodeDetailCard.tsx'
@@ -17,6 +17,23 @@ import { EngineeringInspector } from './EngineeringInspector.tsx'
 import { buildEngineeringNodeModels, buildEngineeringProjection, isEngineeringResourceNode, type EngineeringEdgeVisibility } from './engineeringNode.ts'
 import { AIFlowStewardPanel } from './AIFlowStewardPanel.tsx'
 import { McpTransparencyOverlay } from './McpTransparencyOverlay.tsx'
+
+type ExecutionPlanAnalysis = NonNullable<FlowGraph['analysis']> & {
+  protocol?: { id?: string; version?: string }
+  relations?: FlowEngineeringRelation[]
+  execution_plan?: { status?: 'compiled' | 'rejected' | string; plan_id?: string; edge_count?: number }
+}
+
+function isExecutionPlanV1(files: FlowFiles, graph: FlowGraph) {
+  const embedded = graph.analysis as ExecutionPlanAnalysis | undefined
+  if (embedded?.protocol?.id === 'CF-FARP' && embedded.protocol.version === '1.0') return true
+  try {
+    const rootFlow = JSON.parse(files.root_flow || '{}')
+    return rootFlow?.protocol?.id === 'CF-FARP' && String(rootFlow?.protocol?.version || '') === '1.0'
+  } catch {
+    return false
+  }
+}
 
 export function WorkbenchHeader({
   detail,
@@ -146,7 +163,40 @@ export function DesignView({
   const [edgeVisibility, setEdgeVisibility] = useState<EngineeringEdgeVisibility>({ control: true, data: true, dependency: true, branch: true, failure: true })
   const [nodeDrafts, setNodeDrafts] = useState<Record<string, NodeDraft>>({})
   const [savingNodeIds, setSavingNodeIds] = useState<Set<string>>(() => new Set())
-  const engineeringProjection = useMemo(() => buildEngineeringProjection(graph), [graph])
+  const executionPlanV1 = useMemo(() => isExecutionPlanV1(files, graph), [files, graph])
+  const [executionPlanAnalysis, setExecutionPlanAnalysis] = useState<ExecutionPlanAnalysis | null>(null)
+  useEffect(() => {
+    let active = true
+    setExecutionPlanAnalysis(null)
+    if (!executionPlanV1 || !editable) return () => { active = false }
+    void fetch(`/api/lab/flows/${encodeURIComponent(flowId)}/analyze`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ files, target: 'dev' }),
+    }).then(async (response) => {
+      if (!response.ok) throw new Error(await response.text())
+      return response.json() as Promise<ExecutionPlanAnalysis>
+    }).then((report) => {
+      if (active && report?.protocol?.id === 'CF-FARP' && report.protocol.version === '1.0') setExecutionPlanAnalysis(report)
+    }).catch(() => {
+      // A missing analysis result must leave the v1.0 canvas without runnable lines.
+    })
+    return () => { active = false }
+  }, [editable, executionPlanV1, files, flowId])
+  const planAwareGraph = useMemo(() => {
+    const analysis = executionPlanAnalysis || graph.analysis as ExecutionPlanAnalysis | undefined
+    if (!analysis) return graph
+    return {
+      ...graph,
+      analysis,
+      engineering_relations: analysis.relations || graph.engineering_relations,
+    }
+  }, [executionPlanAnalysis, graph])
+  const engineeringProjection = useMemo(
+    () => buildEngineeringProjection(planAwareGraph, { executionPlanV1 }),
+    [executionPlanV1, planAwareGraph],
+  )
   const engineeringGraph = useMemo(() => {
     if (!engineeringResourceLayout || Object.keys(engineeringResourceLayout).length === 0) return engineeringProjection.graph
     return {
@@ -326,7 +376,7 @@ export function DesignView({
     }).catch((error: any) => { if (active) setMcpError(error?.message || 'MCP 资源目录不可读取') })
     return () => { active = false }
   }, [engineering, flowId, selectedNode?.id, selectedNode?.scope, selectedNode?.params?.resource_id])
-  const canMutateGraph = editable
+  const canMutateGraph = editable && !executionPlanV1
   const canEditSelectedNode = Boolean(editable && selectedNode && !selectedNode.locked && selectedNode.scope !== 'root')
   const visibleEngineeringRelations = useMemo(() => engineeringDataRelations.filter((relation) => (
     relation.kind === 'dependency' ? edgeVisibility.dependency : edgeVisibility.data
@@ -335,7 +385,7 @@ export function DesignView({
     () => engineering ? buildEngineeringNodeModels(engineeringGraph, files, nodeRunStates, visibleEngineeringRelations) : new Map(),
     [engineering, engineeringGraph, files, nodeRunStates, visibleEngineeringRelations],
   )
-  const canvasGraph = engineering ? engineeringGraph : graph
+  const canvasGraph = executionPlanV1 || engineering ? engineeringGraph : graph
   const persistBusinessLayout = useCallback(async (layout: Record<string, { x: number; y: number }>) => {
     const businessNodeIds = new Set(graph.nodes.map((node) => node.id))
     const filtered = Object.fromEntries(Object.entries(layout).filter(([nodeId]) => businessNodeIds.has(nodeId)))
@@ -386,7 +436,8 @@ export function DesignView({
             ] as Array<[keyof EngineeringEdgeVisibility, string]>).map(([kind, label]) => (
               <label key={kind}><input type="checkbox" checked={edgeVisibility[kind]} onChange={() => setEdgeVisibility((current) => ({ ...current, [kind]: !current[kind] }))} /><i className={kind} />{label}</label>
             ))}
-            <b>{graph.nodes.length} 节点 · {engineeringProjection.resourceCount} 资源 · {graph.edges.length} 控制 · {engineeringRelationCounts.data} 数据 · {engineeringRelationCounts.dependency} 依赖</b>
+            <b>{graph.nodes.length} 节点 · {engineeringProjection.resourceCount} 资源 · {engineeringProjection.controlEdgeCount} 控制 · {engineeringRelationCounts.data} 数据 · {engineeringRelationCounts.dependency} 依赖</b>
+            {executionPlanV1 && <span>{executionPlanAnalysis?.execution_plan?.status === 'compiled' ? `ExecutionPlan 已编译 · ${executionPlanAnalysis.execution_plan.edge_count || 0} 条计划边` : 'ExecutionPlan 未编译 · 旧连线不会显示为运行路线'}</span>}
           </div>}
           <div className="cf-design-panel-toggles">
             {engineering && <button type="button" className={engineeringInspectorOpen ? 'active' : ''} onClick={() => setEngineeringInspectorOpen((current) => !current)} title={engineeringInspectorOpen ? '收起节点详情' : '展开节点详情'} aria-pressed={engineeringInspectorOpen}><PanelRight aria-hidden="true" /><span>详情</span></button>}
@@ -437,7 +488,7 @@ export function DesignView({
       </div>
       {engineering && engineeringInspectorOpen && <EngineeringInspector
         node={selectedNode}
-        graph={graph}
+        graph={engineeringGraph}
         view={selectedNode ? engineeringNodeModels.get(selectedNode.id)?.view || null : null}
         unlocked={engineeringUnlocked}
         canEdit={canEditSelectedNode}

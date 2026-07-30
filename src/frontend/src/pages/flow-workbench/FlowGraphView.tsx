@@ -729,6 +729,10 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
     const controlEdges = visibleGraphEdges.map((edge, index) => {
       const branch = edge.scope === 'branch'
       const edgeLabel = String(edge.label || '').trim()
+      const planEdge = edge as FlowEdge & { plan_edge_id?: string; plan_edge_kind?: string; plan_transition?: string }
+      const planEdgeId = String(planEdge.plan_edge_id || '').trim()
+      const planEdgeKind = String(planEdge.plan_edge_kind || '').trim()
+      const planTransition = String(planEdge.plan_transition || '').trim()
       const failureRoute = edge.scope === 'failure' || /fail|error|异常|失败/i.test(edgeLabel)
       const runEdgeStatus = runEdgeStates.get(`${edge.from}->${edge.to}`)
       const isRunActive = runEdgeStatus === 'active'
@@ -747,7 +751,7 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
       const targetPoint = layout[edge.to]
       const loopY = sourcePoint && targetPoint ? Math.min(sourcePoint.y, targetPoint.y) - 72 - lane * 42 : undefined
       return {
-        id: `edge-${index}-${edge.from}-${edge.to}`,
+        id: planEdgeId ? `plan-edge-${planEdgeId}-${planTransition || 'transition'}-${edge.from}-${edge.to}` : `edge-${index}-${edge.from}-${edge.to}`,
         source: edge.from,
         target: edge.to,
         sourceHandle: displayMode === 'engineering' ? engineeringControlHandleId('source') : getPortHandleId('source', ports.sourceSide, ports.sourceIndex),
@@ -758,7 +762,16 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
         animated: isRunActive,
         type: 'default',
         label: displayMode === 'engineering' ? edgeLabel || (failureRoute ? '失败处理' : branch ? '条件分支' : undefined) : branch ? edgeLabel || '分支' : undefined,
-        data: { scope: edge.scope || 'root', label: edge.label || '', lane, loopY, runEdgeStatus: runEdgeStatus || '' },
+        data: {
+          scope: edge.scope || 'root',
+          label: edge.label || '',
+          lane,
+          loopY,
+          runEdgeStatus: runEdgeStatus || '',
+          planEdgeId,
+          planEdgeKind,
+          planTransition,
+        },
         zIndex: isRunActive ? 3 : isRunVisited ? 2 : 0,
         style: {
           stroke: isRunActive ? '#d05b2f' : normalStroke,

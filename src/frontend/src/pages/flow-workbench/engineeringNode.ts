@@ -68,6 +68,17 @@ export type EngineeringEdgeVisibility = {
   failure: boolean
 }
 
+type ExecutionPlanRelation = FlowEngineeringRelation & {
+  executable?: boolean
+  plan_edge_id?: string
+  plan_edge_kind?: string
+  plan_transition?: string
+}
+
+export type EngineeringProjectionOptions = {
+  executionPlanV1?: boolean
+}
+
 const ENGINEERING_RESOURCE_PREFIX = '__engineering_resource__:'
 
 export function isEngineeringResourceNode(node: FlowNode) {
@@ -276,15 +287,55 @@ function buildEngineeringResourceNodes(relations: FlowEngineeringRelation[]): Fl
   return [...resources.values()]
 }
 
-export function buildEngineeringProjection(graph: FlowGraph) {
+function planEdgeScope(kind: string) {
+  if (kind === 'failure') return 'failure'
+  if (kind === 'fork') return 'branch'
+  return 'root'
+}
+
+function planEdgeKindLabel(kind: string, transition: string) {
+  if (transition === 'loop_exit') return '循环退出'
+  return ({ sequence: '顺序', fork: '并行分叉', join: '合流', loop: '循环', batch: '批处理', wait: '等待', failure: '失败处理' } as Record<string, string>)[kind] || kind
+}
+
+function buildExecutionPlanEdges(relations: FlowEngineeringRelation[]): FlowEdge[] {
+  return relations.flatMap((source) => {
+    const relation = source as ExecutionPlanRelation
+    const from = relation.from?.node_id
+    const to = relation.to?.node_id
+    const planEdgeId = String(relation.plan_edge_id || '').trim()
+    const planEdgeKind = String(relation.plan_edge_kind || '').trim()
+    const transition = String(relation.plan_transition || 'transition').trim()
+    if (relation.kind !== 'execution_plan_edge' || relation.runtime_effect !== true || relation.executable !== true || !from || !to || !planEdgeId || !planEdgeKind) return []
+    return [{
+      from,
+      to,
+      scope: planEdgeScope(planEdgeKind),
+      label: `计划边 ${planEdgeId} · ${planEdgeKindLabel(planEdgeKind, transition)}`,
+      plan_edge_id: planEdgeId,
+      plan_edge_kind: planEdgeKind,
+      plan_transition: transition,
+    } as FlowEdge]
+  })
+}
+
+export function buildEngineeringProjection(graph: FlowGraph, options: EngineeringProjectionOptions = {}) {
   const analyzerRelations = graph.engineering_relations || []
   const authoritativeRelations = analyzerRelations.map(mapAnalyzerRelation).filter((relation): relation is EngineeringDataRelation => Boolean(relation))
-  if (!analyzerRelations.length) return { graph, relations: buildLegacyEngineeringDataRelations(graph), resourceCount: 0 }
+  const executionPlanEdges = options.executionPlanV1 ? buildExecutionPlanEdges(analyzerRelations) : null
+  const projectedGraph = executionPlanEdges ? { ...graph, edges: executionPlanEdges } : graph
+  if (!analyzerRelations.length) return {
+    graph: projectedGraph,
+    relations: options.executionPlanV1 ? [] : buildLegacyEngineeringDataRelations(graph),
+    resourceCount: 0,
+    controlEdgeCount: executionPlanEdges?.length || 0,
+  }
   const resourceNodes = buildEngineeringResourceNodes(analyzerRelations)
   return {
-    graph: resourceNodes.length ? { ...graph, nodes: [...graph.nodes, ...resourceNodes] } : graph,
+    graph: resourceNodes.length ? { ...projectedGraph, nodes: [...projectedGraph.nodes, ...resourceNodes] } : projectedGraph,
     relations: authoritativeRelations,
     resourceCount: resourceNodes.length,
+    controlEdgeCount: executionPlanEdges?.length ?? projectedGraph.edges.length,
   }
 }
 

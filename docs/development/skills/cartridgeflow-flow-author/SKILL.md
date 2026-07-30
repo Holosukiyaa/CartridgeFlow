@@ -1,11 +1,18 @@
 ---
 name: cartridgeflow-flow-author
-description: Create, extend, or repair editable CartridgeFlow development cartridges and root flows. Use when a user asks Codex to turn a business goal into a CartridgeFlow Flow, add process nodes, configure typed data contracts, bind models or MCP/DLC tools, or make a Flow pass v0.9 validation without repeated trial-and-error.
+description: Create, extend, or repair editable CartridgeFlow development cartridges and root flows. Use when a user asks Codex to turn a business goal into a CartridgeFlow Flow, add process nodes, configure typed data contracts, bind models or MCP/DLC tools, or make a Flow pass the current executable CF-FARP@1.0 validation without repeated trial-and-error.
+metadata:
+  version: "1.2.0"
+  protocol_alignment:
+    label: "cf-farp-1-0-authoring-verified"
+    protocol: "CF-FARP@1.0"
+    scope: "skill workflow"
+    evidence: "workbench simulation, v1 conformance, package preflight, and protocol governance audit"
 ---
 
 # CartridgeFlow Flow Author
 
-Create the smallest executable Flow that satisfies the user's business goal and the current CF-FARP contract. Prefer Chinese titles, display names, cartridge names, and user-facing descriptions; retain original text only for code symbols, protocol values, field keys, paths, and external tool parameters.
+Create the smallest executable Flow that satisfies the user's business goal and the current executable CF-FARP contract. The verified authoring baseline is `CARTRIDGEFLOW-BASE@0.2 + CF-FARP@1.0`. Prefer Chinese titles, display names, cartridge names, and user-facing descriptions; retain original text only for code symbols, protocol values, field keys, paths, and external tool parameters.
 
 ## Required Reads
 
@@ -14,20 +21,22 @@ Read before editing:
 - `AGENT.md`
 - `references/authoring-checklist.md`
 - `protocol/catalog/release_manifest.json`
+- `docs/protocol/governance/GOVERNANCE.md`
 
-Read `docs/protocol/flow-authoring/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.9.md` when creating a typed v0.9 Flow or a DLC MCP tool.
+Read `docs/protocol/flow-authoring/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v1.0.md` before creating or modifying a v1 Flow or a DLC MCP tool. Read the document path named by the release catalog rather than guessing a version.
 
 ## Workflow
 
-1. Run the authoring simulation before changing a user cartridge. Fix the workbench service when this fails; never turn a known platform error into a user instruction.
+1. Run the authoring simulation before changing a user cartridge. Fix the workbench service when this fails; never turn a known platform error into a user instruction. When using an isolated service, pass both `-FrontendUrl` and `-ApiUrl` explicitly.
 2. Identify whether the request creates a new development cartridge, changes an existing business flow, or adds a resource-backed node.
 3. For a new cartridge, use the workbench/API creation path so the asset registry and component files are generated. Do not hand-create a package skeleton.
-4. Model business steps as `states` and typed `control_edges`. Keep system start and terminal nodes locked.
-5. For every `type: process` node in a v0.9 Flow, declare `inputs` and `outputs`; every input needs `required` and exactly one `schema` or `schema_ref`; every output needs a schema and a `store` or `artifact` target.
+4. Model business steps as `states` and `execution_plan.edges`; never create `next`, `control_edges`, action routes, or visual-only executable edges in a v1 Flow. Keep start and terminal nodes locked.
+5. For every `type: process` node in a v1 Flow, declare `inputs`, `outputs`, and an explicit `failure` edge when it may fail; every input needs `required` and exactly one `schema` or `schema_ref`; every output needs a schema and a `store` or `artifact` target.
 6. Bind a tool by its manifest tool ID in `allowed_tools`. For a transparent DLC MCP tool, keep the user-facing business node separate from its internal source model; do not add an ID-only business node.
 7. Add models, permissions, failure policies, replay policies, and delivery fields only when the selected node effect requires them. Never invent a successful fallback for a missing external capability.
 8. Run package preflight after each meaningful edit. Resolve blockers before adding more nodes.
-9. Run the relevant build and conformance commands before handing off.
+9. Apply a cartridge protocol certification label only through the certification API after its report passes. The skill's `cf-farp-1-0-authoring-verified` metadata proves this workflow was checked; it is not a cartridge certification label.
+10. Run the relevant build and conformance commands before handing off.
 
 ## Workbench Simulation
 

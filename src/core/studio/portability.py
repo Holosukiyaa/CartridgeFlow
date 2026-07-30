@@ -57,7 +57,7 @@ def build_portability_report(
     _record_core_file(root, root_ref, "flow", portable, missing)
 
     protocol = manifest.get("runtime_contract") if isinstance(manifest.get("runtime_contract"), dict) else {}
-    if protocol.get("protocol") == "CF-FARP" and str(protocol.get("protocol_version")) in {"0.7", "0.8", "0.9"}:
+    if protocol.get("protocol") == "CF-FARP" and str(protocol.get("protocol_version")) in {"0.7", "0.8", "0.9", "1.0"}:
         try:
             bundle = load_asset_bundle(root, manifest, include_content=False)
             for asset in bundle.get("assets") or []:

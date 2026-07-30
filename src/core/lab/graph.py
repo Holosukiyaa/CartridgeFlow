@@ -72,7 +72,8 @@ class FlowGraphBuilder:
             edges.extend(self._answer_route_edges(state_id, state))
         protocol = root_flow.get("protocol") if isinstance(root_flow.get("protocol"), dict) else {}
         is_typed_protocol = protocol.get("id") == "CF-FARP" and str(protocol.get("version")) in {"0.8", "0.9"}
-        raw_edges = root_flow.get("control_edges") if is_typed_protocol else root_flow.get("edges")
+        is_v10 = protocol.get("id") == "CF-FARP" and str(protocol.get("version")) == "1.0"
+        raw_edges = root_flow.get("control_edges") if is_typed_protocol else [] if is_v10 else root_flow.get("edges")
         for edge in raw_edges or []:
             if not isinstance(edge, dict) or (is_typed_protocol and edge.get("kind") not in {"control", "branch", "action_route", "failure_route"}):
                 continue
@@ -95,7 +96,7 @@ class FlowGraphBuilder:
             ],
             "sub_flows": [],
         }
-        if is_typed_protocol:
+        if is_typed_protocol or is_v10:
             from core.lab.flow_analyzer import analyze_flow
             analysis = analyze_flow(root_flow, cartridge, target="dev")
             graph["analysis"] = analysis

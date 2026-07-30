@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from .capability_registry import ProtocolRegistry
-from .flow_contract import build_v02_flow_contract_report, build_v03_flow_contract_report, build_v04_flow_contract_report, build_v05_flow_contract_report, build_v06_flow_contract_report, build_v07_flow_contract_report, build_v08_flow_contract_report, build_v09_flow_contract_report
+from .flow_contract import build_v02_flow_contract_report, build_v03_flow_contract_report, build_v04_flow_contract_report, build_v05_flow_contract_report, build_v06_flow_contract_report, build_v07_flow_contract_report, build_v08_flow_contract_report, build_v09_flow_contract_report, build_v10_flow_contract_report
 from .report import report_status, summarize_findings
 
 
@@ -75,7 +75,7 @@ def build_compatibility_report(
     implementation_base_id = str(implementation_base_contract.get("id") or "")
     implementation_base_version = str(implementation_base_contract.get("version") or "")
     base_contract_supported = True
-    if protocol_id == "CF-FARP" and protocol_version in {"0.6", "0.7", "0.8", "0.9"}:
+    if protocol_id == "CF-FARP" and protocol_version in {"0.6", "0.7", "0.8", "0.9", "1.0"}:
         base_contract_supported = bool(
             required_base_id
             and required_base_version
@@ -199,6 +199,9 @@ def build_compatibility_report(
         findings.extend(flow_contract.get("findings") or [])
     elif (protocol_id, protocol_version) in base_protocols and protocol_id == "CF-FARP" and protocol_version == "0.9":
         flow_contract = build_v09_flow_contract_report(root_flow, manifest, target=analysis_target, base=base)
+        findings.extend(flow_contract.get("findings") or [])
+    elif (protocol_id, protocol_version) in base_protocols and protocol_id == "CF-FARP" and protocol_version == "1.0":
+        flow_contract = build_v10_flow_contract_report(root_flow, manifest)
         findings.extend(flow_contract.get("findings") or [])
 
     delivery = manifest.get("delivery_readiness")

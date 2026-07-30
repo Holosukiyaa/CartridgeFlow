@@ -178,14 +178,14 @@ def build_v09_flow_contract_report(
 
 
 def build_v10_flow_contract_report(root_flow: dict | None, manifest: dict | None = None) -> dict:
-    """Validate the draft CF-FARP@1.0 authoring contract without implying runtime support."""
+    """验证可执行的 CF-FARP@1.0 编排契约。"""
     findings = validate_v10_flow_contract(root_flow, manifest)
     counts = summarize_findings(findings)
     return {
         "ok": counts["blocker"] == 0,
-        "status": "draft" if counts["blocker"] == 0 else "blocked",
+        "status": "compatible" if counts["blocker"] == 0 else "blocked",
         "protocol": "CF-FARP@1.0",
-        "implementation_status": "unsupported",
+        "implementation_status": "supported",
         "summary": counts,
         "findings": findings,
     }
@@ -202,9 +202,8 @@ def validate_v09_flow_contract(root_flow: dict | None, manifest: dict | None = N
 def validate_v10_flow_contract(root_flow: dict | None, manifest: dict | None = None) -> list[dict]:
     """Validate CF-FARP@1.0 ExecutionPlan authoring facts.
 
-    This intentionally has no dependency on the current graph analyzer or runtime.
-    The v1.0 registry remains draft and the Base remains unsupported; this validator
-    only freezes the plan shape that a future token runner must consume.
+    它只验证作者声明本身，不执行节点业务代码。编译器、运行器、分析器和
+    认证层都必须消费同一份已验证的执行计划。
     """
     del manifest
     findings: list[dict] = []

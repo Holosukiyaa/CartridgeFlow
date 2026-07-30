@@ -140,7 +140,7 @@ def analyze_flow(
         if isinstance(item, dict) and item.get("id")
     }
     if protocol == ("CF-FARP", "0.9"):
-        _validate_v09_tool_transparency(manifest, declared_tools, add)
+        _validate_tool_transparency(manifest, declared_tools, add, protocol_version="0.9")
     roles = {
         str(item.get("id"))
         for item in ((manifest.get("llm_recipe") or {}).get("roles") or [])
@@ -371,6 +371,26 @@ def _analyze_v10_execution_plan(root_flow: dict, manifest: dict, *, target: str,
     ]
     runtime_supported = _v10_base_runtime_supported(base)
     findings = [] if runtime_supported else [_v10_runtime_unsupported_finding(base)]
+
+    def add(code: str, message: str, *, stage: str, path: str | None = None, severity: str = "blocker", **extra) -> None:
+        finding = {
+            "id": f"finding:{code}:flow:{path or ''}",
+            "severity": severity,
+            "code": code,
+            "stage": stage,
+            "message": message,
+            **extra,
+        }
+        if path:
+            finding["path"] = path
+        findings.append(finding)
+
+    declared_tools = {
+        str(tool.get("id")): tool
+        for tool in manifest.get("mcp_tools") or []
+        if isinstance(tool, dict) and str(tool.get("id") or "").strip()
+    }
+    _validate_tool_transparency(manifest, declared_tools, add, protocol_version="1.0")
     counts = _finding_counts(findings)
     return {
         "schema": ANALYSIS_SCHEMA,
@@ -620,20 +640,20 @@ def build_source_digest(manifest: dict, root_flow: dict, base: dict | None = Non
     return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
 
 
-def _validate_v09_tool_transparency(manifest: dict, declared_tools: dict[str, dict], add) -> None:
+def _validate_tool_transparency(manifest: dict, declared_tools: dict[str, dict], add, *, protocol_version: str) -> None:
     runtime = manifest.get("runtime_contract") if isinstance(manifest.get("runtime_contract"), dict) else {}
     if "tool_transparency" not in (runtime.get("required_profiles") or []):
         add(
             "TOOL_TRANSPARENCY_PROFILE_MISSING",
-            "CF-FARP@0.9 cartridges must require the tool_transparency profile.",
+            f"CF-FARP@{protocol_version} cartridges must require the tool_transparency profile.",
             stage="protocol_structure",
             path="manifest.runtime_contract.required_profiles",
         )
     portable = manifest.get("portable_dlc") if isinstance(manifest.get("portable_dlc"), dict) else {}
-    if portable and portable.get("protocol") != "CF-FARP@0.9":
+    if portable and portable.get("protocol") != f"CF-FARP@{protocol_version}":
         add(
             "PORTABLE_DLC_PROTOCOL_MISMATCH",
-            "CF-FARP@0.9 portable DLC must declare protocol CF-FARP@0.9.",
+            f"CF-FARP@{protocol_version} portable DLC must declare protocol CF-FARP@{protocol_version}.",
             stage="resources",
             path="manifest.portable_dlc.protocol",
         )
@@ -643,7 +663,7 @@ def _validate_v09_tool_transparency(manifest: dict, declared_tools: dict[str, di
         if not transparency:
             add(
                 "TOOL_TRANSPARENCY_MISSING",
-                f"Tool {tool_id} must declare transparency for CF-FARP@0.9.",
+                f"Tool {tool_id} must declare transparency for CF-FARP@{protocol_version}.",
                 stage="resources",
                 path=f"manifest.mcp_tools.{tool_id}.transparency",
             )
@@ -667,7 +687,7 @@ def _validate_v09_tool_transparency(manifest: dict, declared_tools: dict[str, di
             if transparency == "legacy_opaque":
                 add(
                     "LEGACY_OPAQUE_V09_TOOL",
-                    f"Cartridge DLC tool {tool_id} cannot be legacy_opaque in a v0.9 cartridge.",
+                    f"Cartridge DLC tool {tool_id} cannot be legacy_opaque in a CF-FARP@{protocol_version} cartridge.",
                     stage="resources",
                     path=f"manifest.mcp_tools.{tool_id}.transparency",
                 )

@@ -1,8 +1,8 @@
-# Portable DLC Architecture
+﻿# Portable DLC Architecture
 
 更新日期：2026-07-21
 
-本文记录 Portable DLC 的 v0.7 架构来源，包括激活链路、交互组件脚本隔离、资源所有权和不可破坏的实现边界。当前发布基线为 `CARTRIDGEFLOW-BASE@0.2 + CF-FARP@0.9`；实际 Base 支持矩阵以 `protocol/catalog/release_manifest.json` 与 `config/base/BASE_IMPLEMENTATION.json` 为准，本文不能替代协议。
+本文记录 Portable DLC 的 v0.7 架构来源，包括激活链路、交互组件脚本隔离、资源所有权和不可破坏的实现边界。当前发布基线为 `CARTRIDGEFLOW-BASE@0.2 + CF-FARP@1.0`；实际 Base 支持矩阵以 `protocol/catalog/release_manifest.json` 与 `config/base/BASE_IMPLEMENTATION.json` 为准，本文不能替代协议。
 
 ## 核心原则
 

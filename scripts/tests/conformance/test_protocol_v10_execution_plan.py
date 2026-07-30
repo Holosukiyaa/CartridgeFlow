@@ -31,30 +31,37 @@ class ProtocolV10ExecutionPlanTests(unittest.TestCase):
     def assert_valid(self, root_flow):
         report = build_v10_flow_contract_report(root_flow)
         self.assertTrue(report["ok"], report["findings"])
-        self.assertEqual("draft", report["status"])
-        self.assertEqual("unsupported", report["implementation_status"])
+        self.assertEqual("compatible", report["status"])
+        self.assertEqual("supported", report["implementation_status"])
 
-    def test_registry_is_draft_recognized_and_base_is_unsupported(self):
+    def test_registry_is_current_and_base_supports_execution(self):
         catalog = load_protocol_release_catalog(ROOT)
         release = catalog.get("CF-FARP", "1.0")
-        self.assertEqual("recognized_legacy", release["lifecycle"])
-        self.assertEqual("draft", release["status"])
-        self.assertEqual("unsupported", release["implementation_status"])
-        self.assertEqual({"id": "CF-FARP", "version": "0.9"}, catalog.data["default_for_new_flows"])
+        self.assertEqual("current", release["lifecycle"])
+        self.assertEqual("active", release["status"])
+        self.assertEqual("supported", release["implementation_status"])
+        self.assertEqual({"id": "CF-FARP", "version": "1.0"}, catalog.data["default_for_new_flows"])
 
         registry = ProtocolRegistry(ROOT)
         self.assertTrue(registry.recognizes_protocol("CF-FARP", "1.0"))
-        self.assertFalse(registry.supports_protocol("CF-FARP", "1.0"))
+        self.assertTrue(registry.supports_protocol("CF-FARP", "1.0"))
         base = load_base_implementation(ROOT)
-        self.assertNotIn(("CF-FARP", "1.0"), {(item["id"], item["version"]) for item in base["supported_protocols"]})
+        self.assertIn(("CF-FARP", "1.0"), {(item["id"], item["version"]) for item in base["supported_protocols"]})
 
         report = build_compatibility_report(
             base,
-            {"runtime_contract": {"protocol": "CF-FARP", "protocol_version": "1.0"}},
-            {},
+            {
+                "base_contract": base["base_contract"],
+                "runtime_contract": {"protocol": "CF-FARP", "protocol_version": "1.0"},
+                "delivery_readiness": {"level": "dev"},
+            },
+            flow(
+                {"start": {"type": "control"}, "done": {"type": "terminal"}},
+                [{"id": "start_done", "kind": "sequence", "from": "start", "to": "done"}],
+            ),
             project_root=ROOT,
         )
-        self.assertIn("recognized_unsupported_protocol", {finding["code"] for finding in report["findings"]})
+        self.assertTrue(report["ok"], report["findings"])
 
     def test_sequence_has_positive_and_negative_conformance(self):
         valid = flow(
@@ -191,15 +198,18 @@ class ProtocolV10ExecutionPlanTests(unittest.TestCase):
         )
         self.assertIn("v10_visible_non_executable_edge", codes(visible_edge))
 
-    def test_registry_document_and_vocabulary_are_draft_only(self):
+    def test_registry_document_and_vocabulary_are_current_and_standalone(self):
         registry_data = json.loads((ROOT / "protocol/releases/CF-FARP-1.0.json").read_text(encoding="utf-8"))
-        self.assertEqual("draft", registry_data["status"])
-        self.assertEqual("unsupported", registry_data["implementation_status"])
-        self.assertEqual({"id": "CF-FARP", "version": "0.9"}, registry_data["extends"])
-        self.assertIn("ExecutionPlan", DOCUMENT.read_text(encoding="utf-8"))
-        self.assertIn("n8n", DOCUMENT.read_text(encoding="utf-8"))
+        self.assertEqual("active", registry_data["status"])
+        self.assertEqual("supported", registry_data["implementation_status"])
+        self.assertEqual({"id": "CF-FARP", "version": "0.9"}, registry_data["supersedes"])
+        document = DOCUMENT.read_text(encoding="utf-8")
+        self.assertIn("执行计划", document)
+        self.assertIn("独立", document)
+        self.assertIn("第一部分：基础流程、运行、资源与交付合同", document)
         capabilities = json.loads((ROOT / "protocol/vocabulary/capabilities-1.0.json").read_text(encoding="utf-8"))
         self.assertIn("execution_plan_failure_contract", {item["id"] for item in capabilities["capabilities"]})
+        self.assertIn("execution_plan_runtime", {item["profile"] for item in capabilities["capabilities"]})
 
     @staticmethod
     def _join_flow(mode, *, remaining=None, key_ref=None):

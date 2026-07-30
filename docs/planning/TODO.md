@@ -10,7 +10,10 @@
 
 ## P0 - 编排语义基线
 
-- [x] `ORCH-001` 固化 `ExecutionPlan v1`：定义 `sequence`、`fork`、`join(all/any/keyed)`、`loop`、`batch`、`wait` 和 `failure` 的可执行语义，清理当前画布、协议分析和运行器之间不一致的 `action_route`、`failure_route`、循环与合流行为；协议、确定性编译、Token 运行器及工程视图投影已完成。`CF-FARP@1.0` 仍为 draft/unsupported，工程投影不等同于运行支持；验收见 [n8n 编排取经与差异化报告](../architecture/N8N_ORCHESTRATION_BENCHMARK_REPORT.md)。
+- [x] `FARP-100` 将 `CF-FARP@1.0` 升级为独立、全中文、可运行且可认证的当前协议：正文完整覆盖 v0.8 基础合同、v0.9 透明执行合同和 1.0 执行计划合同；词表、Base、兼容性、认证、默认新建 Flow、Token Runner、持久化恢复、工程投影与发布门禁均已接入，并由全量 conformance 与协议治理审计验证。
+- [ ] `DEFERRED-AI-VIDEO-RUNTIME` 在 `FARP-100` 完成后继续：同一张开发台创建的 AI 视频日报卡带，使用多个模型 API 与多个 MCP 节点，经 CF-CRE 打包后由非 Python 的最小运行台桥接程序加载、解析、绑定和执行。不得把业务卡带、发行包和运行台样例拆成互不一致的 Demo。
+
+- [x] `ORCH-001` 固化 `ExecutionPlan v1`：定义 `sequence`、`fork`、`join(all/any/keyed)`、`loop`、`batch`、`wait` 和 `failure` 的可执行语义，清理当前画布、协议分析和运行器之间不一致的 `action_route`、`failure_route`、循环与合流行为；协议、确定性编译、Token 运行器、工程视图投影、兼容性与认证已完成，`CF-FARP@1.0` 为当前受支持协议；验收见 [n8n 编排取经与差异化报告](../architecture/N8N_ORCHESTRATION_BENCHMARK_REPORT.md)。
 
 ## P1 - 当前主线
 

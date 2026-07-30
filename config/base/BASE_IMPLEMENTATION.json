@@ -30,6 +30,11 @@
       "status": "partial"
     },
     {
+      "id": "CF-FARP",
+      "version": "1.0",
+      "status": "supported"
+    },
+    {
       "id": "CF-CRE",
       "version": "1",
       "status": "partial"
@@ -44,7 +49,8 @@
     "interaction_runtime",
     "portable_dlc_runtime",
     "flow_analysis",
-    "tool_transparency"
+    "tool_transparency",
+    "execution_plan_runtime"
   ],
   "capabilities": [
     "manifest_load",
@@ -170,7 +176,24 @@
     "release_envelope_digest_validation_v1",
     "release_envelope_signature_metadata_v1",
     "release_envelope_builder_v1",
-    "release_envelope_archive_reader_v1"
+    "release_envelope_archive_reader_v1",
+    "execution_plan_v1_authoring",
+    "execution_plan_static_conformance",
+    "execution_plan_compile",
+    "execution_plan_sequence_contract",
+    "execution_plan_fork_contract",
+    "execution_plan_join_all_contract",
+    "execution_plan_join_any_contract",
+    "execution_plan_join_keyed_contract",
+    "execution_plan_loop_contract",
+    "execution_plan_batch_contract",
+    "execution_plan_wait_contract",
+    "execution_plan_failure_contract",
+    "execution_plan_token_ledger",
+    "execution_plan_join_runtime",
+    "execution_plan_wait_resume",
+    "execution_plan_cancellation",
+    "execution_plan_source_digest_guard"
   ],
   "tool_packs": [
     "builtin.filesystem"

@@ -157,16 +157,16 @@ def audit(root: Path = ROOT) -> list[str]:
         _require_text(root / document, "release_manifest.json", errors)
 
     baseline_headers = {
-        "docs/README.md": "CF-FARP 0.9",
-        "docs/protocol/governance/GOVERNANCE.md": "CF-FARP@0.9",
-        "docs/planning/ROADMAP.md": "CF-FARP@0.9",
-        "docs/architecture/FLOW_AUTHORING_ANALYSIS_CONTRACT.md": "CF-FARP@0.9",
-        "docs/architecture/PORTABLE_DLC_ARCHITECTURE.md": "CF-FARP@0.9",
+        "docs/README.md": "CF-FARP 1.0",
+        "docs/protocol/governance/GOVERNANCE.md": "CF-FARP@1.0",
+        "docs/planning/ROADMAP.md": "CF-FARP@1.0",
+        "docs/architecture/FLOW_AUTHORING_ANALYSIS_CONTRACT.md": "CF-FARP@1.0",
+        "docs/architecture/PORTABLE_DLC_ARCHITECTURE.md": "CF-FARP@1.0",
     }
     for document, marker in baseline_headers.items():
         header = "\n".join((root / document).read_text(encoding="utf-8").splitlines()[:24])
         if marker not in header:
-            errors.append(f"{document} must present the v0.9 release baseline in its header")
+            errors.append(f"{document} must present the v1.0 release baseline in its header")
 
     stale_phrases = ("最新 FARP v0.8", "v0.7 是最新目标规范", "目标协议基线：`CARTRIDGEFLOW-BASE@0.2`、`CF-FARP@0.8`")
     for path in (root / "docs").rglob("*.md"):

@@ -1,16 +1,11 @@
-# CartridgeFlow Protocol Documents Agent Note
+﻿# CartridgeFlow Protocol Documents Agent Note
 
-## CF-FARP@1.0 Draft Boundary
+## CF-FARP@1.0 当前边界
 
-`CF-FARP@1.0` is a draft ExecutionPlan authoring contract and is currently
-`unsupported` by every Base declaration. It freezes explicit sequence, fork,
-join, loop, batch, wait, and failure facts only; it does not imply a token runner,
-v1.0 compatibility dispatch, persisted resume, or certification evidence. The
-release manifest records it in the existing recognized-but-not-executable lifecycle
-bucket so compatibility returns `recognized_unsupported_protocol` with a v0.9
-migration target. This is not a support or historical-release claim. The default
-for new flows remains `CF-FARP@0.9`; do not add v1.0 to Base support until runner,
-compatibility, complete conformance, and certification evidence all exist.
+`CF-FARP@1.0` 是当前正式且受支持的执行计划协议。Base 已声明令牌运行、
+兼容性分派、持久化恢复、透明工具门禁与认证所需证据；默认新建流程使用 1.0。
+历史版本只能通过其自身契约运行，任何升级都必须显式完成并重新校验，不能由
+保存、打开或运行操作静默触发。
 
 本文是协议入口说明，不是协议正文。
 
@@ -18,20 +13,20 @@ compatibility, complete conformance, and certification evidence all exist.
 
 ## 当前基准
 
-新协议设计和新卡带目标默认使用 `CARTRIDGEFLOW-BASE@0.2 + CF-FARP@0.9`：
+新协议设计和新卡带目标默认使用 `CARTRIDGEFLOW-BASE@0.2 + CF-FARP@1.0`：
 
 ```text
 docs/protocol/base-contract/CARTRIDGEFLOW_BASE_CONTRACT_v0.2.md
-docs/protocol/flow-authoring/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.9.md
+docs/protocol/flow-authoring/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v1.0.md
 protocol/base/CARTRIDGEFLOW-BASE-0.2.json
 protocol/releases/CF-FARP-0.9.json
 ```
 
-Base v0.2 与 FARP v0.9 都是完整独立协议。阅读或实现目标版本不得依赖历史正文，也不得依赖任意领域伴随协议。Base Contract 约束宿主边界，CF-FARP 约束 Flow 创作、静态分析、运行语义与 MCP/DLC 透明执行，两者版本不要求相同。
+Base v0.2 与 FARP v1.0 都是完整独立协议。阅读或实现目标版本不得依赖历史正文，也不得依赖任意领域伴随协议。Base Contract 约束宿主边界，CF-FARP 约束 Flow 创作、静态分析、运行语义与 MCP/DLC 透明执行，两者版本不要求相同。
 
 ## 版本支持策略
 
-最新正式规范是 `CF-FARP@0.9`。当前参考基座声明 `CF-FARP@0.6 partial`、`CF-FARP@0.7 partial`、`CF-FARP@0.8 partial` 与 `CF-FARP@0.9 partial`。v0.9 当前覆盖静态 parser、descriptor v3、source digest guard、结构化 source editing、Analyzer 透明度 finding、资源目录 v2 投影、declared operation trace events 与 operation capability broker preflight；OS 级 sandbox 与更细粒度资源目标 enforcement 仍按 partial evidence 管理。v0.8 已实现 Analyzer、typed control filtering、结构化 I/O、统一 Flow 资源目录、目标门禁、失败路径和 conformance 证据；`CF-FARP@0.1` 至 `0.5` 继续处于 `recognized` 状态。
+最新正式规范是 `CF-FARP@1.0`。当前参考基座声明 `CF-FARP@0.6 partial`、`CF-FARP@0.7 partial`、`CF-FARP@0.8 partial` 与 `CF-FARP@1.0 partial`。v1.0 当前覆盖静态 parser、descriptor v3、source digest guard、结构化 source editing、Analyzer 透明度 finding、资源目录 v2 投影、declared operation trace events 与 operation capability broker preflight；OS 级 sandbox 与更细粒度资源目标 enforcement 仍按 partial evidence 管理。v0.8 已实现 Analyzer、typed control filtering、结构化 I/O、统一 Flow 资源目录、目标门禁、失败路径和 conformance 证据；`CF-FARP@0.1` 至 `0.5` 继续处于 `recognized` 状态。
 
 版本判断必须经过三层：
 
@@ -45,11 +40,11 @@ Base v0.2 与 FARP v0.9 都是完整独立协议。阅读或实现目标版本�
 
 核心不承诺永久保留旧 validator、adapter 或 DLC 激活路径。旧正文和 registry 快照在独立只读归档建立之前保留为发布证据；归档必须保存稳定地址、SHA-256 和迁移说明。完成归档后，仓库可移除旧正文和旧 registry，只保留轻量历史索引。
 
-## v0.9 重点
+## v1.0 重点
 
-- v0.9 不改写 v0.8，旧 DLC/MCP 工具必须诚实标记为 `legacy_opaque`。
+- v1.0 不改写 v0.8，旧 DLC/MCP 工具必须诚实标记为 `legacy_opaque`。
 - 画布拥有 MCP/DLC 复合工具的业务编排；Python 只实现原子 operation。
-- 每个 v0.9 MCP 画布节点对应唯一 `dlc/mcp_nodes/<node_id>.py` 入口文件。
+- 每个 v1.0 MCP 画布节点对应唯一 `dlc/mcp_nodes/<node_id>.py` 入口文件。
 - 展开图、`cartridgeflow.mcp_source_model.v1` 和 operation runtime trace 使用同一稳定 operation id。
 - Base 后端静态解析源码，不 import、不执行 DLC；前端只消费 source model 和 source map。
 - 网络、文件、Artifact、secret 和子进程通过 Base broker 调用，不允许 DLC 直接绕过透明契约。

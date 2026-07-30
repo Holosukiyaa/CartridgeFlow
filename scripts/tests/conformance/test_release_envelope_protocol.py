@@ -111,7 +111,7 @@ class ReleaseEnvelopeProtocolTests(unittest.TestCase):
         release = catalog.default_release_envelope()
         self.assertEqual(("CF-CRE", "1"), (release["id"], release["version"]))
         self.assertEqual("partial", release["implementation_status"])
-        self.assertEqual({"id": "CF-FARP", "version": "0.9"}, catalog.data["default_for_new_flows"])
+        self.assertEqual({"id": "CF-FARP", "version": "1.0"}, catalog.data["default_for_new_flows"])
         self.assertEqual("CF-CRE", catalog.public_payload()["release_envelopes"]["default_for_new_releases"]["id"])
         base = load_base_implementation(ROOT)
         self.assertIn(("CF-CRE", "1"), {(item["id"], item["version"]) for item in base["supported_protocols"]})

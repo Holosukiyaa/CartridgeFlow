@@ -140,8 +140,8 @@ class LiteApiSurfaceTests(unittest.TestCase):
         response = self.client.get("/api/base")
         self.assertEqual(200, response.status_code)
         catalog = response.json()["protocol_catalog"]
-        self.assertEqual("CF-FARP@0.9", catalog["default_for_new_flows"]["label"])
-        self.assertEqual("current", next(item["lifecycle"] for item in catalog["releases"] if item["version"] == "0.9"))
+        self.assertEqual("CF-FARP@1.0", catalog["default_for_new_flows"]["label"])
+        self.assertEqual("current", next(item["lifecycle"] for item in catalog["releases"] if item["version"] == "1.0"))
 
     def test_validation_errors_do_not_echo_api_keys(self):
         secret = "sk-security-regression-secret"

@@ -116,14 +116,16 @@ class DevFlowManager:
                 errors.extend(str(e).split("; "))
         if root_flow:
             self._validate_root_flow(root_flow, errors, warnings)
-            try:
-                from core.lab.flow_analyzer import analyze_flow_structure
-                structure = analyze_flow_structure(root_flow)
-                for finding in structure.get("findings") or []:
-                    if finding.get("severity") == "warning":
-                        warnings.append(f"isolated node: {finding.get('node')} - {finding.get('detail')}")
-            except Exception as e:
-                warnings.append(f"flow structure analysis skipped: {e}")
+            protocol = root_flow.get("protocol") if isinstance(root_flow.get("protocol"), dict) else {}
+            if not (protocol.get("id") == "CF-FARP" and str(protocol.get("version")) == "1.0"):
+                try:
+                    from core.lab.flow_analyzer import analyze_flow_structure
+                    structure = analyze_flow_structure(root_flow)
+                    for finding in structure.get("findings") or []:
+                        if finding.get("severity") == "warning":
+                            warnings.append(f"isolated node: {finding.get('node')} - {finding.get('detail')}")
+                except Exception as e:
+                    warnings.append(f"flow structure analysis skipped: {e}")
         return {
             "valid": not errors,
             "errors": errors,
@@ -185,6 +187,12 @@ class DevFlowManager:
             if state.get("type") == "terminal":
                 terminal_count += 1
         protocol = root_flow.get("protocol") if isinstance(root_flow.get("protocol"), dict) else {}
+        if protocol.get("id") == "CF-FARP" and str(protocol.get("version")) == "1.0":
+            from core.protocol.flow_contract import validate_v10_flow_contract
+            for finding in validate_v10_flow_contract(root_flow):
+                if finding.get("severity") == "blocker":
+                    errors.append(f"{finding.get('code')}: {finding.get('message')}")
+            return
         is_typed_protocol = protocol.get("id") == "CF-FARP" and str(protocol.get("version")) in {"0.8", "0.9"}
         if is_typed_protocol and root_flow.get("edges"):
             errors.append(f"CF-FARP@{protocol.get('version')} root_flow.edges is legacy; use typed root_flow.control_edges")
@@ -231,7 +239,7 @@ class DevFlowManager:
             "runtime_contract": {
                 "protocol": self.default_protocol_id,
                 "protocol_version": self.default_protocol_version,
-                "required_profiles": ["runtime_core", "flow_analysis", "tool_transparency", "dynamic_decision_runtime", "interactive_decision_runtime", "interaction_runtime"],
+                "required_profiles": ["runtime_core", "flow_analysis", "tool_transparency", "execution_plan_runtime", "dynamic_decision_runtime", "interactive_decision_runtime", "interaction_runtime"],
                 "recommended_profiles": ["testbench_core", "dev_authoring"],
                 "required_capabilities": [
                     "manifest_load",
@@ -291,6 +299,23 @@ class DevFlowManager:
                     "mcp_source_digest_guard",
                     "portable_dlc_descriptor_v3",
                     "tool_resource_catalog_v2",
+                    "execution_plan_v1_authoring",
+                    "execution_plan_static_conformance",
+                    "execution_plan_compile",
+                    "execution_plan_sequence_contract",
+                    "execution_plan_fork_contract",
+                    "execution_plan_join_all_contract",
+                    "execution_plan_join_any_contract",
+                    "execution_plan_join_keyed_contract",
+                    "execution_plan_loop_contract",
+                    "execution_plan_batch_contract",
+                    "execution_plan_wait_contract",
+                    "execution_plan_failure_contract",
+                    "execution_plan_token_ledger",
+                    "execution_plan_join_runtime",
+                    "execution_plan_wait_resume",
+                    "execution_plan_cancellation",
+                    "execution_plan_source_digest_guard",
                 ],
                 "optional_capabilities": [
                     "artifact_preview",
@@ -346,6 +371,25 @@ class DevFlowManager:
         }
 
     def _root_flow_template(self, flow_id: str, name: str) -> dict:
+        if self.default_protocol_id == "CF-FARP" and self.default_protocol_version == "1.0":
+            return {
+                "schema_version": "1.0",
+                "id": f"{flow_id}.root",
+                "name": f"{name or flow_id} 根流程",
+                "mode": "lifecycle",
+                "cartridge_id": flow_id,
+                "protocol": {"id": "CF-FARP", "version": "1.0"},
+                "start": "start",
+                "states": {
+                    "start": {"type": "control", "title": "开始", "display_name": "开始", "locked": True},
+                    "complete": {"type": "terminal", "title": "完成", "display_name": "完成", "locked": True}
+                },
+                "execution_plan": {
+                    "schema": "cartridgeflow.execution_plan.v1",
+                    "entry": "start",
+                    "edges": [{"id": "start_complete", "kind": "sequence", "from": "start", "to": "complete"}]
+                }
+            }
         return {
             "schema_version": "1.0",
             "id": f"{flow_id}.root",

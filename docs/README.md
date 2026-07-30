@@ -1,4 +1,4 @@
-# CartridgeFlow 文档入口
+﻿# CartridgeFlow 文档入口
 
 这里是项目文档的唯一总入口。第一次接手项目时，不需要把所有文档从头读一遍，先按下面的阅读路径找到与当前工作有关的内容。
 
@@ -8,12 +8,12 @@
 |---|---|
 | 第一次了解项目 | 根目录 `README.md` -> [项目分层](overview/PROJECT_STRUCTURE.md) -> [路线图](planning/ROADMAP.md) |
 | AI 接手或准备开发 | 根目录 `AGENT.md` -> [任务清单](planning/TODO.md) -> 与需求直接相关的源码；产品边界和里程碑再查 [路线图](planning/ROADMAP.md) |
-| 修改 Base、Flow 或运行时 | [当前 Base 0.2 契约](protocol/base-contract/CARTRIDGEFLOW_BASE_CONTRACT_v0.2.md) -> [当前 CF-FARP 0.9 协议](protocol/flow-authoring/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.9.md) -> [发布清单](../protocol/catalog/release_manifest.json) -> `src/core/protocol/` -> 对应 conformance 测试；兼容修复还要核对对应历史快照 |
+| 修改 Base、Flow 或运行时 | [当前 Base 0.2 契约](protocol/base-contract/CARTRIDGEFLOW_BASE_CONTRACT_v0.2.md) -> [当前 CF-FARP 1.0 协议](protocol/flow-authoring/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v1.0.md) -> [发布清单](../protocol/catalog/release_manifest.json) -> `src/core/protocol/` -> 对应 conformance 测试；兼容修复还要核对对应历史快照 |
 | 修改卡带发行协议或发行包验证器 | [CF-CRE@1 发行协议](protocol/release-envelope/CARTRIDGEFLOW_RELEASE_ENVELOPE_PROTOCOL_v1.md) -> [个人运行台发行与安装架构](architecture/PERSONAL_RUNTIME_DISTRIBUTION_ARCHITECTURE.md) -> [发布清单](../protocol/catalog/release_manifest.json) -> `src/core/protocol/release_envelope.py` -> 对应一致性测试 |
 | 修改 Portable DLC | [Portable DLC 架构](architecture/PORTABLE_DLC_ARCHITECTURE.md) -> [协议治理](protocol/governance/GOVERNANCE.md) |
 | 设计个人运行台卡带打包、安装、市场分发或版本升级 | [个人运行台发行与安装架构](architecture/PERSONAL_RUNTIME_DISTRIBUTION_ARCHITECTURE.md) -> 当前协议、打包/导入代码与对应测试 |
-| 修改 Flow 节点主卡或详情信息 | [节点信息架构报告](architecture/FLOW_NODE_INFORMATION_ARCHITECTURE.md) -> [当前 CF-FARP 0.9 协议](protocol/flow-authoring/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.9.md) -> 对应节点视图代码 |
-| 设计 Flow 创作、关系探测或强制检测 | [Flow 创作与分析架构](architecture/FLOW_AUTHORING_ANALYSIS_CONTRACT.md) -> [当前 CF-FARP 0.9 协议](protocol/flow-authoring/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.9.md) -> 协议校验、图构建与工作台关系代码 |
+| 修改 Flow 节点主卡或详情信息 | [节点信息架构报告](architecture/FLOW_NODE_INFORMATION_ARCHITECTURE.md) -> [当前 CF-FARP 1.0 协议](protocol/flow-authoring/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v1.0.md) -> 对应节点视图代码 |
+| 设计 Flow 创作、关系探测或强制检测 | [Flow 创作与分析架构](architecture/FLOW_AUTHORING_ANALYSIS_CONTRACT.md) -> [当前 CF-FARP 1.0 协议](protocol/flow-authoring/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v1.0.md) -> 协议校验、图构建与工作台关系代码 |
 | 改进执行编排、循环、合流、子 Flow 或测试夹具 | [n8n 编排取经与差异化报告](architecture/N8N_ORCHESTRATION_BENCHMARK_REPORT.md) -> [编排执行任务书](planning/ORCHESTRATION_EXECUTION_TASK_BRIEF.md) -> [Flow 创作与分析架构](architecture/FLOW_AUTHORING_ANALYSIS_CONTRACT.md) -> 当前协议与运行时测试 |
 | 修改 AI 管家交互 | [AI 管家交互模式](architecture/AI_STEWARD_INTERACTION_MODES.md) -> 工作台视图与结构化变更边界 |
 | 设计 AI 视频日报参考流程 | [AI 视频日报卡带](architecture/AI_VIDEO_DAILY_CARTRIDGE.md) -> 当前卡带工作台能力边界 |
@@ -38,7 +38,7 @@ docs/
 - [逐文件清单](development/FILE_INVENTORY.md)：登记全部项目自有文件的用途，供维护时查阅。
 - [路线图](planning/ROADMAP.md)：长期产品边界、阶段里程碑和生产验收门槛。
 - [Base Contract 0.2](protocol/base-contract/CARTRIDGEFLOW_BASE_CONTRACT_v0.2.md)：当前基座宿主契约。
-- [CF-FARP 0.9](protocol/flow-authoring/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.9.md)：当前正式 Flow 协议正文，新增 MCP/DLC 透明执行与 source model。
+- [CF-FARP 1.0](protocol/flow-authoring/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v1.0.md)：当前正式 Flow 协议正文，新增 MCP/DLC 透明执行与 source model。
 - [CF-FARP 0.8](protocol/flow-authoring/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.8.md)：兼容运行的上一版协议快照。
 - [CF-CRE 1](protocol/release-envelope/CARTRIDGEFLOW_RELEASE_ENVELOPE_PROTOCOL_v1.md)：个人运行台卡带发行包的身份、公开合同、完整性和签名元数据协议；当前支持候选包构建和静态归档验证，状态为 `partial` 草案。
 - [发布清单](../protocol/catalog/release_manifest.json)：版本生命周期、默认新建版本和迁移目标的唯一来源。
@@ -57,7 +57,7 @@ docs/
 | 协议 | 基座声明 | 用途 |
 |---|---|---|
 | CARTRIDGEFLOW-BASE v0.2 | 当前实现契约 | 基座所有权、本机配置、恢复、扩展和卸载边界。 |
-| CF-FARP v0.9 | partial | 当前正式规范；已支持 MCP/DLC 透明执行、source model 与 v3 descriptor。 |
+| CF-FARP v1.0 | partial | 当前正式规范；已支持 MCP/DLC 透明执行、source model 与 v3 descriptor。 |
 | CF-FARP v0.8 | `partial` | 兼容运行的上一版协议。 |
 | CF-FARP v0.7 / v0.6 | `partial` | 仍受 Base 支持的历史兼容协议。 |
 | CF-FARP v0.1-v0.5 | `recognized` | 仅保留身份、迁移目标和历史测试；不可运行、不可认证。 |

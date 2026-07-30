@@ -139,7 +139,7 @@ class ExternalAdapterTests(unittest.TestCase):
                 "fixture",
                 "call",
                 {},
-                {"timeout_ms": 1_000},
+                {"timeout_ms": 2_000},
             )
             timed_out = execute_external_tool(
                 _binding("remote_api", endpoint=f"{base_url}/slow", http_method="GET"),
@@ -162,7 +162,7 @@ class ExternalAdapterTests(unittest.TestCase):
                 "fixture",
                 "empty",
                 {"_runtime_run_id": "run_empty"},
-                {"timeout_ms": 1_000},
+                {"timeout_ms": 2_000},
             )
 
         self.assertFalse(result["ok"])

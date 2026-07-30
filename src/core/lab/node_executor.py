@@ -579,8 +579,8 @@ class LabNodeExecutor:
         params: dict,
     ) -> dict:
         runtime_contract = run.get("runtime_contract") if isinstance(run.get("runtime_contract"), dict) else {}
-        is_v09 = runtime_contract.get("protocol") == "CF-FARP" and str(runtime_contract.get("protocol_version")) == "0.9"
-        if not is_v09 or not isinstance(manifest_tool, dict):
+        is_transparent_protocol = runtime_contract.get("protocol") == "CF-FARP" and str(runtime_contract.get("protocol_version")) in {"0.9", "1.0"}
+        if not is_transparent_protocol or not isinstance(manifest_tool, dict):
             return {"ok": True, "operations": [], "findings": [], "node_id": str(node_id or ""), "tool_id": str(tool_id or "")}
 
         graph = manifest_tool.get("operation_graph") if isinstance(manifest_tool.get("operation_graph"), dict) else {}
@@ -591,7 +591,7 @@ class LabNodeExecutor:
             findings.append({
                 "severity": "blocker",
                 "code": "MCP_OPERATION_GRAPH_MISSING",
-                "message": f"v0.9 declared_graph tool has no operation graph: {tool_id}",
+                "message": f"CF-FARP@{runtime_contract.get('protocol_version')} declared_graph tool has no operation graph: {tool_id}",
             })
 
         allowed_capabilities = {str(item).strip() for item in manifest_tool.get("broker_capabilities") or [] if str(item).strip()}

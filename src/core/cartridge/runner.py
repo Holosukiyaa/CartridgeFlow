@@ -35,7 +35,7 @@ def now_iso() -> str:
 
 def _executable_edges(root_flow: dict) -> list[dict]:
     protocol = root_flow.get("protocol") if isinstance(root_flow.get("protocol"), dict) else {}
-    is_typed_protocol = protocol.get("id") == "CF-FARP" and str(protocol.get("version")) in {"0.8", "0.9"}
+    is_typed_protocol = protocol.get("id") == "CF-FARP" and str(protocol.get("version")) in {"0.8", "0.9", "1.0"}
     source = root_flow.get("control_edges") if is_typed_protocol else root_flow.get("edges")
     return [
         edge for edge in (source or [])
@@ -108,9 +108,9 @@ class CartridgeRunner:
         runtime_contract = manifest.get("runtime_contract") if isinstance(manifest.get("runtime_contract"), dict) else {}
         flow_protocol = source_root_flow.get("protocol") if isinstance(source_root_flow.get("protocol"), dict) else {}
         is_typed_protocol = (
-            runtime_contract.get("protocol") == "CF-FARP" and str(runtime_contract.get("protocol_version")) in {"0.8", "0.9"}
+            runtime_contract.get("protocol") == "CF-FARP" and str(runtime_contract.get("protocol_version")) in {"0.8", "0.9", "1.0"}
         ) or (
-            flow_protocol.get("id") == "CF-FARP" and str(flow_protocol.get("version")) in {"0.8", "0.9"}
+            flow_protocol.get("id") == "CF-FARP" and str(flow_protocol.get("version")) in {"0.8", "0.9", "1.0"}
         )
         if is_typed_protocol:
             from core.studio.resource_catalog import build_flow_resource_catalog
@@ -937,7 +937,7 @@ class CartridgeRunner:
         probe_edges: list[dict] = []
         seen_edges: set[tuple[str, str]] = set()
 
-        is_typed_protocol = ((root_flow.get("protocol") or {}).get("id") == "CF-FARP" and str((root_flow.get("protocol") or {}).get("version")) in {"0.8", "0.9"})
+        is_typed_protocol = ((root_flow.get("protocol") or {}).get("id") == "CF-FARP" and str((root_flow.get("protocol") or {}).get("version")) in {"0.8", "0.9", "1.0"})
 
         def _keep_edge(source: str, target: str, original: dict | None = None) -> None:
             if source not in node_id_set or target not in node_id_set:

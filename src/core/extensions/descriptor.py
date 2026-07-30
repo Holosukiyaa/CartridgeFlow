@@ -40,8 +40,8 @@ def load_portable_dlc_descriptor(package_path: str | Path, manifest: dict, *, ve
         raise PortableDlcValidationError("manifest.portable_dlc must be an object")
     runtime_contract = manifest.get("runtime_contract") if isinstance(manifest.get("runtime_contract"), dict) else {}
     runtime_version = str(runtime_contract.get("protocol_version") or "")
-    if runtime_contract.get("protocol") != "CF-FARP" or runtime_version not in {"0.6", "0.7", "0.8", "0.9"}:
-        raise PortableDlcValidationError("portable DLC activation requires CF-FARP@0.6, CF-FARP@0.7, CF-FARP@0.8, or CF-FARP@0.9")
+    if runtime_contract.get("protocol") != "CF-FARP" or runtime_version not in {"0.6", "0.7", "0.8", "0.9", "1.0"}:
+        raise PortableDlcValidationError("portable DLC activation requires CF-FARP@0.6, CF-FARP@0.7, CF-FARP@0.8, CF-FARP@0.9, or CF-FARP@1.0")
     expected_protocol = f"CF-FARP@{runtime_version}"
     if portable.get("protocol") != expected_protocol:
         raise PortableDlcValidationError(f"manifest.portable_dlc.protocol must match {expected_protocol}")
@@ -58,7 +58,7 @@ def load_portable_dlc_descriptor(package_path: str | Path, manifest: dict, *, ve
 
     expected_schema = (
         "cartridgeflow.portable_dlc.v3"
-        if runtime_version == "0.9"
+        if runtime_version in {"0.9", "1.0"}
         else "cartridgeflow.portable_dlc.v2"
         if runtime_version in {"0.7", "0.8"}
         else "cartridgeflow.portable_dlc.v1"
@@ -66,12 +66,12 @@ def load_portable_dlc_descriptor(package_path: str | Path, manifest: dict, *, ve
     _validate_identity(descriptor, manifest, expected_schema)
     _validate_entries(package_root, descriptor, runtime_version)
     _validate_tools(descriptor, manifest)
-    if runtime_version == "0.9":
+    if runtime_version in {"0.9", "1.0"}:
         _validate_v3_tools(package_root, descriptor, manifest)
     _validate_protocols(package_root, descriptor)
     _validate_resources(descriptor)
     _validate_files(package_root, descriptor, verify_hashes=verify_hashes)
-    if runtime_version in {"0.7", "0.8", "0.9"} and descriptor.get("frontend") is not None:
+    if runtime_version in {"0.7", "0.8", "0.9", "1.0"} and descriptor.get("frontend") is not None:
         _validate_v2_frontend_closure(package_root, descriptor, manifest)
 
     result = deepcopy(descriptor)

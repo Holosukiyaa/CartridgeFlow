@@ -181,14 +181,24 @@ async def _call_http(
                 tool_name,
                 params,
             )
-            response = await client.request(
+            async with client.stream(
                 method,
                 url,
                 params=query or None,
                 headers=request_headers or None,
                 json=None if body is _NO_BODY else body,
-            )
-            if len(response.content) > MAX_RESPONSE_BYTES:
+            ) as response:
+                # These status codes cannot carry a useful tool result. Classify
+                # them from headers so a malformed keep-alive response cannot be
+                # turned into a misleading timeout while reading its body.
+                if response.status_code in {204, 205, 304}:
+                    raise ExternalAdapterFailure(
+                        "tool_empty_response",
+                        "Remote HTTP returned an empty response",
+                        status_code=response.status_code,
+                    )
+                content_bytes = await response.aread()
+            if len(content_bytes) > MAX_RESPONSE_BYTES:
                 raise ExternalAdapterFailure("tool_output_too_large", "Remote HTTP response exceeded 4 MiB")
             if response.status_code >= 400:
                 code = "permission_denied" if response.status_code in {401, 403} else "remote_http_error"
@@ -200,7 +210,7 @@ async def _call_http(
                     status_code=response.status_code,
                 )
             content_type = str(response.headers.get("content-type") or "").lower()
-            if not response.content:
+            if not content_bytes:
                 raise ExternalAdapterFailure(
                     "tool_empty_response",
                     "Remote HTTP returned an empty response",

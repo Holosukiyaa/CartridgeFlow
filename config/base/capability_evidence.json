@@ -339,6 +339,14 @@
       "failure_tests": ["test_runtime_recovery.RuntimeRecoveryTests.test_missing_delivery_output_fails_closed"],
       "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/flow-workbench/TestBenchView.tsx"]}
     },
+    "execution_plan_runtime": {
+      "verification": "verified",
+      "implementation": ["src/core/protocol/flow_contract.py#validate_v10_flow_contract", "src/core/orchestration/execution_plan.py#compile_execution_plan", "src/core/cartridge/root_flow.py#RootFlowEngine.run_execution_plan", "src/core/cartridge/runner.py#CartridgeRunner.resume_execution_wait"],
+      "positive_tests": ["test_execution_plan_compiler.ExecutionPlanCompilerTests.test_compiles_every_v1_relation_with_stable_identity_and_digests", "test_execution_token_runner.ExecutionTokenRunnerTests.test_fork_all_join_emits_exactly_one_aggregate_token", "test_execution_token_runner.ExecutionTokenRunnerTests.test_wait_resume_keeps_the_source_token_and_trace_deterministic"],
+      "failure_tests": ["test_execution_plan_compiler.ExecutionPlanCompilerTests.test_invalid_contract_has_a_stable_machine_readable_compile_error", "test_execution_token_runner.ExecutionTokenRunnerTests.test_side_effect_token_recovery_requires_confirmation_without_replay"],
+      "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/flow-workbench/FlowGraphView.tsx"]},
+      "notes": "覆盖显式计划校验、稳定编译摘要、分叉汇合、等待恢复、取消和副作用恢复保护；所有执行关系均由 execution_plan.edges 声明。"
+    },
     "release_envelope": {
       "verification": "verified",
       "implementation": ["src/core/protocol/release_envelope.py#validate_release_envelope", "src/core/protocol/release_builder.py#build_release_archive", "src/core/protocol/release_builder.py#inspect_release_archive"],
@@ -472,6 +480,23 @@
     "release_envelope_digest_validation_v1": "release_envelope",
     "release_envelope_signature_metadata_v1": "release_envelope",
     "release_envelope_builder_v1": "release_envelope",
-    "release_envelope_archive_reader_v1": "release_envelope"
+    "release_envelope_archive_reader_v1": "release_envelope",
+    "execution_plan_v1_authoring": "execution_plan_runtime",
+    "execution_plan_static_conformance": "execution_plan_runtime",
+    "execution_plan_compile": "execution_plan_runtime",
+    "execution_plan_sequence_contract": "execution_plan_runtime",
+    "execution_plan_fork_contract": "execution_plan_runtime",
+    "execution_plan_join_all_contract": "execution_plan_runtime",
+    "execution_plan_join_any_contract": "execution_plan_runtime",
+    "execution_plan_join_keyed_contract": "execution_plan_runtime",
+    "execution_plan_loop_contract": "execution_plan_runtime",
+    "execution_plan_batch_contract": "execution_plan_runtime",
+    "execution_plan_wait_contract": "execution_plan_runtime",
+    "execution_plan_failure_contract": "execution_plan_runtime",
+    "execution_plan_token_ledger": "execution_plan_runtime",
+    "execution_plan_join_runtime": "execution_plan_runtime",
+    "execution_plan_wait_resume": "execution_plan_runtime",
+    "execution_plan_cancellation": "execution_plan_runtime",
+    "execution_plan_source_digest_guard": "execution_plan_runtime"
   }
 }

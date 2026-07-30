@@ -1,4 +1,4 @@
 interface:
-  display_name: "CartridgeFlow 流程创作"
-  short_description: "用中文优先的方式创建并验证合规 Flow。"
-  default_prompt: "使用 $cartridgeflow-flow-author 创建或修改一个 CartridgeFlow 开发流程；先运行真实创作仿真，再开始编辑。"
+  display_name: "流程创作（CF-FARP@1.0）"
+  short_description: "已认证的中文优先 Flow 创作与校验。"
+  default_prompt: "使用 $cartridgeflow-flow-author 按当前 CF-FARP@1.0 创建或修改 CartridgeFlow 开发流程；先运行真实创作仿真，再开始编辑。"

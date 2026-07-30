@@ -85,11 +85,12 @@ class ManifestValidator:
         is_v07 = runtime_protocol.get("protocol") == "CF-FARP" and runtime_protocol.get("protocol_version") == "0.7"
         is_v08 = runtime_protocol.get("protocol") == "CF-FARP" and runtime_protocol.get("protocol_version") == "0.8"
         is_v09 = runtime_protocol.get("protocol") == "CF-FARP" and runtime_protocol.get("protocol_version") == "0.9"
-        is_typed_protocol = is_v08 or is_v09
+        is_v10 = runtime_protocol.get("protocol") == "CF-FARP" and runtime_protocol.get("protocol_version") == "1.0"
+        is_typed_protocol = is_v08 or is_v09 or is_v10
         if is_v06 or is_v07 or is_typed_protocol:
             base_contract = manifest.get("base_contract")
             if not isinstance(base_contract, dict) or base_contract.get("id") != "CARTRIDGEFLOW-BASE" or not base_contract.get("version"):
-                errors.append(f"CF-FARP@{'0.9' if is_v09 else '0.8' if is_v08 else '0.7' if is_v07 else '0.6'} requires manifest.base_contract with id CARTRIDGEFLOW-BASE and a version")
+                errors.append(f"CF-FARP@{'1.0' if is_v10 else '0.9' if is_v09 else '0.8' if is_v08 else '0.7' if is_v07 else '0.6'} requires manifest.base_contract with id CARTRIDGEFLOW-BASE and a version")
         if is_typed_protocol:
             required_profiles = {str(item) for item in runtime_protocol.get("required_profiles") or [] if isinstance(item, str)}
             required_capabilities = {str(item) for item in runtime_protocol.get("required_capabilities") or [] if isinstance(item, str)}
@@ -103,7 +104,7 @@ class ManifestValidator:
                 "flow_analysis_report_v1",
                 "analysis_report_freshness_guard",
             }
-            if is_v09:
+            if is_v09 or is_v10:
                 minimum_profiles.add("tool_transparency")
                 minimum_capabilities.update({
                     "mcp_source_model_v1",
@@ -114,10 +115,22 @@ class ManifestValidator:
                     "portable_dlc_descriptor_v3",
                     "tool_resource_catalog_v2",
                 })
+            if is_v10:
+                minimum_profiles.add("execution_plan_runtime")
+                minimum_capabilities.update({
+                    "execution_plan_v1_authoring",
+                    "execution_plan_static_conformance",
+                    "execution_plan_compile",
+                    "execution_plan_token_ledger",
+                    "execution_plan_join_runtime",
+                    "execution_plan_wait_resume",
+                    "execution_plan_cancellation",
+                    "execution_plan_source_digest_guard",
+                })
             for item in sorted(minimum_profiles - required_profiles):
-                errors.append(f"CF-FARP@{'0.9' if is_v09 else '0.8'} requires runtime_contract.required_profiles to include {item}")
+                errors.append(f"CF-FARP@{'1.0' if is_v10 else '0.9' if is_v09 else '0.8'} requires runtime_contract.required_profiles to include {item}")
             for item in sorted(minimum_capabilities - required_capabilities):
-                errors.append(f"CF-FARP@{'0.9' if is_v09 else '0.8'} requires runtime_contract.required_capabilities to include {item}")
+                errors.append(f"CF-FARP@{'1.0' if is_v10 else '0.9' if is_v09 else '0.8'} requires runtime_contract.required_capabilities to include {item}")
 
         protocol_extensions = manifest.get("protocol_extensions", [])
         if not isinstance(protocol_extensions, list):
@@ -287,10 +300,10 @@ class ManifestValidator:
                         errors.append(f"manifest.mcp_tools[{i}].resource_role is required for external tools")
                     elif resource_role and resource_role not in resource_roles:
                         errors.append(f"manifest.mcp_tools[{i}].resource_role must reference resource_requirements")
-                    if is_v09 and tool_type == "cartridge_dlc":
+                    if (is_v09 or is_v10) and tool_type == "cartridge_dlc":
                         transparency = str(tool.get("transparency") or "").strip()
                         if transparency not in {"declared_graph", "source_model"}:
-                            errors.append(f"CF-FARP@0.9 requires manifest.mcp_tools[{i}].transparency for cartridge_dlc tools")
+                            errors.append(f"CF-FARP@{'1.0' if is_v10 else '0.9'} requires manifest.mcp_tools[{i}].transparency for cartridge_dlc tools")
                 contract = tool.get("contract")
                 if contract is not None:
                     if not isinstance(contract, dict):
@@ -319,7 +332,7 @@ class ManifestValidator:
         if is_v07 or is_typed_protocol:
             asset_registry = manifest.get("asset_registry")
             if not isinstance(asset_registry, str) or not asset_registry.strip():
-                errors.append(f"CF-FARP@{'0.9' if is_v09 else '0.8' if is_v08 else '0.7'} requires manifest.asset_registry")
+                errors.append(f"CF-FARP@{'1.0' if is_v10 else '0.9' if is_v09 else '0.8' if is_v08 else '0.7'} requires manifest.asset_registry")
             else:
                 try:
                     bundle = load_asset_bundle(package_path, manifest)
@@ -331,7 +344,9 @@ class ManifestValidator:
                             errors.append(f"{finding.get('code')}: {finding.get('node')}: {finding.get('message')}")
                     if is_typed_protocol:
                         from core.lab.flow_analyzer import analyze_flow
-                        analysis = analyze_flow(root_flow, manifest, target="package")
+                        from core.protocol import load_base_implementation
+                        base_root = Path(__file__).resolve().parents[3]
+                        analysis = analyze_flow(root_flow, manifest, target="package", base=load_base_implementation(base_root))
                         for finding in analysis.get("findings") or []:
                             if finding.get("severity") == "blocker":
                                 errors.append(f"{finding.get('code')}: {finding.get('node_id') or 'flow'}: {finding.get('message')}")

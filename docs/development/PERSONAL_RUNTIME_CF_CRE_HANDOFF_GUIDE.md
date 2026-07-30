@@ -35,6 +35,23 @@ python scripts\demo_cf_cre_runtime_handoff.py `
 
 运行台应只用 `public_contracts.experience` 渲染输入和公开阶段，只用 `public_contracts.delivery` 渲染交付承诺。不要向产品界面泄露 `payload/root.flow.json`、MCP、端点、凭据、提示词、节点、Store 或检查点。
 
+### 独立个人运行台 Demo
+
+仓库提供了一个可执行的端到端演示，用来验证候选 ZIP 不经开发台 HTTP API、也不读取开发卡带目录，仍能在新的本地主机目录安装并生成交付产物：
+
+```powershell
+Set-Location -LiteralPath "C:\_HOLOLAB\code\CF WS\CartridgeFlow"
+python scripts\demo_personal_runtime.py `
+  --archive ".data\demo\dev.cre-release-demo-0.0.1.cf-release.zip" `
+  --host-root ".data\demo\personal-runtime-host" `
+  --title "独立运行台日报" `
+  --description "不经过开发台服务直接生成的交付。"
+```
+
+该脚本会将 Base 与协议快照放入独立主机根目录，仅从 ZIP 的 `payload/` 建立按发布者、卡带、版本和 digest 分层的不可变副本；随后建立 Demo 活动记录、执行卡带，并在该主机自己的 `.data/runtime/runs/` 下生成产物。它不启动开发台 API，也不复制 `.data/user/dev_cartridges/`。
+
+这是一条回归演示链路，不能作为生产安装器或 CF-CRE 完整支持的依据：它没有 Ed25519 验签和信任库、升级/回滚、市场来源、资源绑定向导或对外部 MCP 的授权。正式运行台在这些能力到位前，仍必须停在 `validated_pending_install`。
+
 ## 运行台后续接口
 
 未来安装器应在 Archive Reader 成功之后，以如下状态机继续，而不是跳过暂存：

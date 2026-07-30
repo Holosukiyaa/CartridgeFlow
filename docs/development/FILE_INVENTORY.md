@@ -174,6 +174,7 @@
 | `scripts/tests/conformance/test_release_envelope_protocol.py` | CF-CRE@1 机器快照、有效发行物、公开泄露与摘要/未列文件拒绝的 conformance。 |
 | `scripts/tests/conformance/test_release_builder.py` | CF-CRE 候选包真实构建、归档暂存验证、重复路径和非便携源文件拒绝。 |
 | `scripts/demo_cf_cre_runtime_handoff.py` | 从开发卡带构建真实 CF-CRE 候选包并输出运行台暂存验证结果的可执行 demo。 |
+| `scripts/demo_personal_runtime.py` | 独立个人运行台 Demo：安全读取 CF-CRE 候选 ZIP、隔离安装并执行生成真实产物。 |
 | `scripts/tests/history/` | 历史协议识别与迁移规则快照。 |
 | `scripts/tests/hygiene/` | 仓库、配置、数据和发布卫生。 |
 | `scripts/tests/lite/` | Lite API 白名单。 |

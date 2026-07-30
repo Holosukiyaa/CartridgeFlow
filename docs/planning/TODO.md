@@ -2,6 +2,7 @@
 
 - `DEMO-001`: Create `dev.mcp-transparency-demo` with two parseable DLC MCP nodes to validate v0.9 multi-MCP source transparency.
 - `UI-003`: Remove user-facing MCP internal-ID resource nodes from the engineering canvas and localize the engineering-view guidance and headings to Chinese.
+- `REL-005`: Publish CartridgeFlow v0.5.3 with the completed v0.9 MCP transparency and engineering-view improvements.
 
 > 当前目标：把完整版收敛为专注卡带开发的轻量工作台，只保留卡带设计、交互、模型与工具配置、真实运行、诊断和产物闭环。
 

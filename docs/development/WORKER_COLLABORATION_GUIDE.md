@@ -27,7 +27,7 @@ git log -1 --oneline
 git worktree list
 ```
 
-只有主仓库没有未提交改动、前置 worker 已验收并合入基线时，才启动依赖它的下一位 worker。`ORCH-001` 的 worker 101 已合入；现在可启动 worker 102。worker 103 与 104 必须等 102 合并。
+只有主仓库没有未提交改动、前置 worker 已验收并合入基线时，才启动依赖它的下一位 worker。`ORCH-001` 的 worker 101、102 已合入；worker 103 与 104 可以并行，但必须先等待主仓库恢复为干净基线。
 
 ## 当前启动命令
 

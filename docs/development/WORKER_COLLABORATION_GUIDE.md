@@ -27,7 +27,7 @@ git log -1 --oneline
 git worktree list
 ```
 
-只有主仓库没有未提交改动、前置 worker 已被验收并由用户批准合并时，才启动依赖它的下一位 worker。`ORCH-001` 现在只能启动 worker 101；worker 102 必须等 101 合并，worker 103 与 104 必须等 102 合并。
+只有主仓库没有未提交改动、前置 worker 已验收并合入基线时，才启动依赖它的下一位 worker。`ORCH-001` 的 worker 101 已合入；现在可启动 worker 102。worker 103 与 104 必须等 102 合并。
 
 ## 当前启动命令
 
@@ -35,7 +35,7 @@ git worktree list
 
 ## 交付、验收与合并
 
-worker 完成后，把完整的 `Worker Delivery Report` 发给 mentor。报告缺少完整 SHA、测试结果或范围确认时不能验收。mentor 会核对提交基线、文件所有权、测试证据和真实失败语义；只有用户明确批准后才合并进 `main`。
+worker 完成后，把完整的 `Worker Delivery Report` 发给 mentor。报告缺少完整 SHA、测试结果或范围确认时不能验收。mentor 会核对提交基线、文件所有权、测试证据和真实失败语义；验收通过且无冲突、失败证据或重大未决风险时，mentor 自动合并进 `main`。
 
 不要把“构建通过”当成编排语义通过：ORCH-001 的验收还需要正反 conformance 用例，证明隐式合流、未声明循环、不可执行可视边和不安全重放都被拒绝。
 

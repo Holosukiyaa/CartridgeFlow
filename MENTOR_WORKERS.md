@@ -7,11 +7,11 @@ Mentor: Codex mentor-orchestrator
 
 ## Delivery Plan
 
-Deliver `ENG-021` with parallel lanes. Establish a clean baseline containing the current planning work before creating worktrees; the root worktree is currently dirty and new worktrees otherwise start from `758cf3f` without that work.
+Deliver `ENG-021` with parallel lanes. Current baseline is `a2a78a3`; it contains accepted worker-001 and worker-003 changes. The root worktree must remain clean before creating worker-002 or worker-004 worktrees.
 
-1. Start `worker-001-resource-contracts` and `worker-003-engineering-canvas` at the same time. Their allowed write paths do not overlap.
-2. `worker-002-external-mcp-detail` starts when worker 001's accepted backend contract is in its base branch.
-3. `worker-004-engineering-integration` starts when workers 001, 002, and 003 are accepted and present in its base branch. It owns only the integration seam and final E2E evidence.
+1. `worker-001-resource-contracts` and `worker-003-engineering-canvas` have been accepted and merged.
+2. `worker-002-external-mcp-detail` may now start from `a2a78a3`.
+3. `worker-004-engineering-integration` starts when worker-002 is accepted and merged. It owns only the integration seam and final E2E evidence.
 
 No worker may merge another worker branch. The user explicitly approves any merge or rebase used to prepare the next worker's base branch.
 
@@ -73,3 +73,4 @@ No worker may merge another worker branch. The user explicitly approves any merg
 | 2026-07-30 Asia/Shanghai | User approved merge; cherry-picked worker-001 into `main` as `8194f73` without conflicts. |
 | 2026-07-30 Asia/Shanghai | Accepted worker-003 commit `6fa5a0b`; it remains unmerged pending explicit user approval. |
 | 2026-07-30 Asia/Shanghai | User approved merge; cherry-picked worker-003 into `main` as `786bbde` without conflicts. |
+| 2026-07-30 Asia/Shanghai | Upgraded collaboration guidance: worker prompts now carry their own scope and fixed report contract; all completion worktrees are cleaned only after accepted merge and final delivery verification. |

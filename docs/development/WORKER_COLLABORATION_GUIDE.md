@@ -1,193 +1,109 @@
 # Worker 协作使用指南
 
-这份指南用于执行当前 `ENG-021` 工程视图任务。你不需要同时操作三个 worker，也不需要理解 Git worktree 的实现细节。
+本指南面向需要手动启动多个 Codex worker 的操作者。它解决三件事：每个 worker 在独立目录工作、依赖任务不抢跑、每份交付都有统一可验收的报告。
 
-核心规则有两条：**只让没有文件所有权冲突的 worker 并行；有依赖的 worker 必须等待前序提交验收。**
+当前任务分工、分支和验收状态以仓库根目录的 [MENTOR_WORKERS.md](../../MENTOR_WORKERS.md) 为准；worker 本身不依赖阅读该文件，启动提示词会内嵌其完整范围和交付格式。
 
-当前的完整任务分工、允许修改的文件和原始提示词保存在仓库根目录的 [MENTOR_WORKERS.md](../../MENTOR_WORKERS.md)。
+## 使用目录
 
-## 先理解三个名称
-
-| 名称 | 你可以把它理解为 | 当前作用 |
-| --- | --- | --- |
-| 基线 | 所有 worker 共同的起点 | 必须是一个 Git 提交，不能只是未保存的本地改动 |
-| worker | 一位只处理特定范围的开发者 | 在独立目录和独立分支中工作，不会直接污染主目录 |
-| worker 报告 | 开发者的交付单 | 包含提交号、修改文件、测试结果和风险 |
-
-## 当前执行顺序
+你可以在任意 PowerShell 目录粘贴本指南中的命令。每段命令都会先切换到项目根目录：
 
 ```text
-整理并提交基线
-    ├── worker-001-resource-contracts（后端契约）
-    └── worker-003-engineering-canvas（画布视觉）
-worker-001 验收并合入后
-    ↓
-worker-002-external-mcp-detail（可与仍在工作的 003 并行）
-                 ↓ 001、002、003 三条交付均验收并合入
-        worker-004-engineering-integration（接线与浏览器验收）
+C:\_HOLOLAB\code\CF WS\CartridgeFlow
 ```
 
-可以并行的只有 worker 001 与 worker 003：一个改后端契约，一个改画布视觉，文件不会冲突。worker 002 依赖 001 的后端契约；worker 004 用于最后接线，依赖前三位。
+worker 的独立目录位于项目同级目录，例如：
 
-## 第 0 步：建立基线
-
-在 PowerShell 中进入项目目录：
-
-```powershell
-cd "C:\_HOLOLAB\code\CF WS\CartridgeFlow"
-git status
-git diff
+```text
+C:\_HOLOLAB\code\CF WS\CartridgeFlow-worker-002-external-mcp-detail
 ```
 
-当前主目录已有未提交改动。请先检查这些内容，确认哪些应成为本轮开发共同起点，再由你创建一个基线提交。
+不要手动在 worker 目录和主目录之间切换来执行命令，也不要在两个目录修改同一份产品文件。
 
-不要使用 `git add .`，因为它可能把不相关的本地文件也带入提交。基线完成后再次运行：
+## 开始前检查
+
+先确认当前基线干净。下面的命令可从任何位置运行：
 
 ```powershell
+Set-Location -LiteralPath "C:\_HOLOLAB\code\CF WS\CartridgeFlow"
 git status
 git log -1 --oneline
+git worktree list
 ```
 
-预期结果：`git status` 显示工作区干净，最后一条提交就是本轮 worker 的共同起点。
+只有在 `git status` 干净、前置 worker 已验收并合入基线时，才能启动依赖它的下一位 worker。当前 `ENG-021` 中，worker-002 依赖已合入的 worker-001；worker-004 还必须等待 001、002、003 都合入。
 
-## 第 1 步：启动 worker 001
+## 启动 Worker
 
-它只处理后端：外部 MCP 的连接详情、脱敏、资源目录和接口。它不会修改画布。
+每次启动都采用同一结构：先切换根目录、创建同级 worktree、把范围和报告格式写入提示词、再用绝对 worktree 路径启动。不要在提示词中要求 worker 阅读 `MENTOR_WORKERS.md`。
 
-### 1. 创建它的独立目录
+以下是当前可启动的 worker-002 示例。它的后端契约已在基线中：
 
 ```powershell
-git -C "C:\_HOLOLAB\code\CF WS\CartridgeFlow" worktree add "..\CartridgeFlow-worker-001-resource-contracts" -b "workers/worker-001-resource-contracts"
-```
-
-成功后，旁边会出现一个新目录：
-
-```text
-C:\_HOLOLAB\code\CF WS\CartridgeFlow-worker-001-resource-contracts
-```
-
-### 2. 启动它
-
-在主项目目录执行以下命令：
-
-```powershell
-$prompt = @'
-实现 ENG-021 的后端资源契约部分。先阅读 AGENT.md、MENTOR_WORKERS.md 与 docs/planning/ENGINEERING_VIEW_RESOURCE_TASK_BRIEF.md。为资源目录提供三种 MCP 呈现模式：本地可解析、本地外部连接器、不可审计。外部连接器必须投影连接身份、server/tool、脱敏端点或配置引用、认证引用状态、权限、参数/输出 schema、超时、重试、幂等性、透明度、连接/运行健康与不可读取原因；绝不向前端输出密钥、token、Authorization、原始敏感 URL 或请求头。实现稳定的资源详情/连通性检查 API 与错误语义，并保持未绑定外部连接器真实失败，不制造模拟成功。只写登记表允许路径，补齐相关测试，提交仅限本任务。报告 changed files、commit SHA、tests、known risks。
-'@
-codex -C "..\CartridgeFlow-worker-001-resource-contracts" $prompt
-```
-
-运行后，可以立刻并行启动 worker 003；不要启动 worker 002 或 004。
-
-## 第 2 步：把报告交回审查
-
-worker 完成时，应提供这四项：
-
-```text
-Changed files:
-Commit SHA:
-Tests:
-Known risks:
-```
-
-把完整报告发给 mentor。此时不需要你自己合并分支，也不要删除 worktree。审查通过后，`MENTOR_WORKERS.md` 会把该 worker 从 `planned` 更新为 `review` 或 `accepted`。
-
-只有在明确接受并将提交纳入下一轮基线后，才进入下一位 worker。
-
-## 第 3 步：并行启动 worker 003
-
-它只处理画布外观和节点布局：资源卡、类别标识、拖动行为和自适应尺寸，不修改后端、详情模板或 API 类型。它可以与 worker 001 同时运行。
-
-按下文“worker 003 启动命令”执行。
-
-## 第 4 步：启动 worker 002
-
-前提：worker 001 已接受，且其提交已进入当前基线。
-
-它只处理 MCP 详情界面：
-
-- 本地 DLC MCP：源码和内部流程；
-- 外部 MCP：连接详情和调用契约；
-- 不可审计 MCP：已知信息和不可观测原因。
-
-它不修改后端和画布。按下文“worker 002 启动命令”执行。启动前先确认：
-
-```powershell
-git -C "C:\_HOLOLAB\code\CF WS\CartridgeFlow" status
-git -C "C:\_HOLOLAB\code\CF WS\CartridgeFlow" log -1 --oneline
-```
-
-## 第 5 步：启动 worker 004
-
-前提：workers 001、002、003 都已接受，且三者提交已进入当前基线。
-
-它只负责最后接线：把已验收的后端契约、MCP 详情模板和画布行为接入同一工作台，保存资源位置，并完成浏览器回归。
-
-按下文“worker 004 启动命令”执行。
-
-## worker 003 启动命令
-
-worker 003 可以与 worker 001 同时启动：
-
-```powershell
-git -C "C:\_HOLOLAB\code\CF WS\CartridgeFlow" worktree add "..\CartridgeFlow-worker-003-engineering-canvas" -b "workers/worker-003-engineering-canvas"
+Set-Location -LiteralPath "C:\_HOLOLAB\code\CF WS\CartridgeFlow"
+$worktree = "C:\_HOLOLAB\code\CF WS\CartridgeFlow-worker-002-external-mcp-detail"
+git worktree add $worktree -b "workers/worker-002-external-mcp-detail"
 
 $prompt = @'
-实现 ENG-021 的工程画布视觉部分。先阅读 AGENT.md、MENTOR_WORKERS.md 与任务书。只修改登记表允许的画布文件。实现资源专用卡片、UI 资源预览、节点中文类别标识和低饱和类别色、资源拖动行为与按内容自适应卡片尺寸。资源依赖边不能进入 Root Flow 控制流。不要修改 API、后端、views.tsx 或 MCP 详情模板；资源位置持久化由最终集成 worker 接入。补齐组件和布局测试，提交仅限本任务。报告 changed files、commit SHA、tests、known risks。
+你是 worker-002-external-mcp-detail。
+
+目标：为 ENG-021 实现按 MCP 呈现模式区分的前端详情模板。
+允许修改：src/frontend/src/api.ts、src/frontend/src/api.types.ts、src/frontend/src/pages/flow-workbench/EngineeringInspector.tsx、src/frontend/src/pages/flow-workbench/McpTransparencyOverlay.tsx、同目录新增详情模板组件，以及直接覆盖这些组件的前端测试。
+禁止修改：src/core/**、src/backend/**、FlowGraphView.tsx、engineeringNode.ts、views.tsx、共享 CSS、docs/**、MENTOR_WORKERS.md。
+依赖：worker-001 的资源目录、资源详情与连通性 API 已合入当前基线；直接消费该契约，不要修改它。
+验收：本地可解析 DLC MCP 保留源码、操作图和指纹编辑入口；外部 MCP 显示“连接详情、调用契约、运行轨迹”，且不显示源码入口；不可审计 MCP 仅显示已知契约和不可观测原因；所有用户可见文案使用中文；前端测试和生产构建通过。
+
+先阅读 AGENT.md、任务书 docs/planning/ENGINEERING_VIEW_RESOURCE_TASK_BRIEF.md，以及你将修改的源码。只在允许路径内工作，保留真实失败状态，不制造模拟成功。完成后只提交本任务的改动。
+
+## Worker Delivery Report
+Changed files: <one path per line>
+Commit SHA: <full SHA>
+Tests: <command and result per line>
+Known risks: <none or concrete risks>
+Scope confirmation: <confirm no excluded paths changed>
 '@
-codex -C "..\CartridgeFlow-worker-003-engineering-canvas" $prompt
+codex -C $worktree $prompt
 ```
 
-## worker 002 启动命令
-
-只有在 worker 001 已验收并进入基线后运行：
+若 `git worktree add` 报分支或目录已存在，不要改名重试。运行下面命令并把完整输出交给 mentor：
 
 ```powershell
-git -C "C:\_HOLOLAB\code\CF WS\CartridgeFlow" worktree add "..\CartridgeFlow-worker-002-external-mcp-detail" -b "workers/worker-002-external-mcp-detail"
-
-$prompt = @'
-实现 ENG-021 的 MCP 详情模板部分。先阅读 AGENT.md、MENTOR_WORKERS.md 与任务书，并基于已合入的 worker-001 资源/API 契约工作。保留本地可解析 DLC MCP 的源码、操作图、指纹编辑入口；为外部 MCP 创建“连接详情、调用契约、运行轨迹”模板；不可审计 MCP 只显示已知契约和不可观测原因。外部 MCP 不显示“打开源码”或空白源码编辑器，入口文案为“查看连接详情”。所有可见文案中文化。只写登记表允许路径，运行前端相关测试和构建，提交仅限本任务。报告 changed files、commit SHA、tests、known risks。
-'@
-codex -C "..\CartridgeFlow-worker-002-external-mcp-detail" $prompt
+Set-Location -LiteralPath "C:\_HOLOLAB\code\CF WS\CartridgeFlow"
+git worktree list
+git branch --list "workers/worker-002-external-mcp-detail"
 ```
 
-## worker 004 启动命令
+## 交付与验收
 
-只有在 workers 001、002、003 都已验收并进入基线后运行：
+worker 完成后，把它的 `Worker Delivery Report` 原样交给 mentor。没有完整 SHA、测试结果或范围确认的报告不能验收。
+
+mentor 会检查提交基线、允许路径、测试、真实错误语义和已知风险；只有用户明确批准后才会将 worker 提交合入 `main`。已合入不等于全部工作完成，仍需等待依赖链和最终集成验证。
+
+## 全部完成后的清理
+
+所有 worker 均已验收并合入、最终集成测试通过、登记表没有 `planned`、`running` 或 `review` 状态后，mentor 会清理 worktree。清理前必须逐个确认：
+
+1. `git worktree list` 中的路径就是要移除的 worker 目录。
+2. 对应 worktree 没有未提交改动。
+3. 对应提交已经在最终基线中。
+
+确认后执行的命令形态如下；通常由 mentor 执行，不需要你提前运行：
 
 ```powershell
-git -C "C:\_HOLOLAB\code\CF WS\CartridgeFlow" worktree add "..\CartridgeFlow-worker-004-engineering-integration" -b "workers/worker-004-engineering-integration"
-
-$prompt = @'
-实现 ENG-021 的最终集成部分。先阅读 AGENT.md、MENTOR_WORKERS.md 与任务书，并确认 workers 001、002、003 的已验收提交均已在当前基线。只修改登记表允许路径。把后端资源详情、MCP 详情模板和画布行为接入工程工作台；使用已提供的工程布局契约持久化资源位置；完成外部 MCP 连接详情、本地 DLC 源码入口、资源拖拽持久化和 100%/125% 视口的 Playwright 回归。不要修改后端、API 类型、详情组件或节点卡片实现。更新文件清单，提交仅限本任务。报告 changed files、commit SHA、tests、known risks。
-'@
-codex -C "..\CartridgeFlow-worker-004-engineering-integration" $prompt
+Set-Location -LiteralPath "C:\_HOLOLAB\code\CF WS\CartridgeFlow"
+$worktree = "C:\_HOLOLAB\code\CF WS\CartridgeFlow-worker-002-external-mcp-detail"
+git -C $worktree status --short
+git branch --contains <accepted-commit-sha>
+git worktree remove $worktree
+git branch -d "workers/worker-002-external-mcp-detail"
 ```
 
-## 发生问题时怎么做
+若 worktree 仍有改动、提交未合入或任务未验收，mentor 不会删除它，而会报告阻塞原因。
 
-| 现象 | 处理方式 |
-| --- | --- |
-| `worktree add` 提示分支已存在 | 不要换名字重试。把报错和 `git worktree list` 发给 mentor。 |
-| worker 修改了禁止路径 | 不接受该提交，要求 worker 收缩范围或重新拆分。 |
-| worker 没有 commit SHA | 不能进入下一步，要求其提交并重新报告。 |
-| 测试失败 | 先让当前 worker 在自己的范围内修复；不能把问题推给下一位 worker。 |
-| 不确定是否该合并 | 停在当前步骤，把报告发给 mentor 审查。 |
-| 主目录又出现新改动 | 不要启动新 worker。先决定这些改动是否应进入新的基线。 |
+## 固定规则
 
-## 不要做的事
-
-- 不要同时启动具有依赖关系的 worker；当前只允许 001 与 003 并行。
-- 不要在主目录和 worker 目录里修改同一份产品文件。
-- 不要用 `git reset --hard`、`git checkout --` 清理改动。
-- 不要在没有审查报告的情况下假设 worker 已完成。
-- 不要把真实密钥、token、请求头或本地凭证发给 worker。
-
-## 你现在该做什么
-
-现在只做两件事：
-
-1. 在主目录运行 `git status` 和 `git diff`，整理本轮共同基线。
-2. 基线提交完成后，同时启动 `worker-001-resource-contracts` 和 `worker-003-engineering-canvas`。
-
-启动后，把两位 worker 的最终报告发回来，再决定后续验收和合入。
+- 只有没有文件所有权冲突的 worker 才能并行。
+- 有依赖关系的 worker 必须等待前序提交验收并进入基线。
+- 不使用 `git reset --hard`、`git checkout --` 或强制删除 worktree。
+- 不把密钥、token、请求头或本地凭据写进提示词、提交或报告。
+- 主目录出现新的未提交改动时，先决定它是否应成为新基线，再启动后续 worker。

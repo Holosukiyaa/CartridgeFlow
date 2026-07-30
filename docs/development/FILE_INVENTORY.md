@@ -141,7 +141,7 @@
 | `docs/architecture/FLOW_NODE_INFORMATION_ARCHITECTURE.md` | 各节点主卡和详情信息架构。 |
 | `docs/architecture/FLOW_AUTHORING_ANALYSIS_CONTRACT.md` | Flow 业务流程、执行契约、工程关系三层边界，以及统一分析、强制检测和创作 AI 入口。 |
 | `docs/architecture/PORTABLE_DLC_ARCHITECTURE.md` | DLC 所有权、安全和宿主边界。 |
-| `docs/development/WORKER_COLLABORATION_GUIDE.md` | 面向操作者的 worker 协作、基线、启动、报告与验收使用指南。 |
+| `docs/development/WORKER_COLLABORATION_GUIDE.md` | 面向操作者的 worker 协作目录、可直接粘贴的启动命令、固定交付报告、验收与受控清理指南。 |
 | `docs/development/README.md` | 开发维护区说明。 |
 | `docs/development/skills/` | 可选协议升级与 Flow 创作 AI Skill；`cartridgeflow-flow-author` 内含真实工作台创作仿真和目标卡带预检脚本。 |
 | `docs/overview/PROJECT_STRUCTURE.md` | 项目分层和数据流。 |

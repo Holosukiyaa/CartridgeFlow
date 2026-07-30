@@ -61,6 +61,7 @@
 | `src/core/llm/` | 模型配置、导入、检测、Provider、Responses API 和重试。 |
 | `src/core/protocol/` | 基础宿主/发布清单加载、能力注册、兼容报告、认证、决策信封、工具计划和 CF-CRE 发行封装静态验证。 |
 | `src/core/protocol/release_envelope.py` | CF-CRE@1 的纯结构、公开合同、路径和摘要验证器；不执行卡带代码或签名验签。 |
+| `src/core/protocol/release_builder.py` | CF-CRE@1 候选包确定性构建与不解压归档读取；只允许暂存验证，永不安装、激活或执行。 |
 | `src/core/runtime/` | 状态机、错误、检查点、模型提示、Agent 协作和运行管理。 |
 | `src/core/studio/` | 系统环境、工具资源、外部适配、便携性、发布和卫生检查。 |
 | `src/core/workspace/host.py` | 卡带工作区宿主能力。 |
@@ -146,7 +147,7 @@
 | `docs/architecture/PERSONAL_RUNTIME_DISTRIBUTION_ARCHITECTURE.md` | 个人运行台的卡带发行、安装、资源重绑定、版本、市场与授权架构基线。 |
 | `docs/architecture/PORTABLE_DLC_ARCHITECTURE.md` | DLC 所有权、安全和宿主边界。 |
 | `docs/development/WORKER_COLLABORATION_GUIDE.md` | 面向操作者的 worker 协作目录、可直接粘贴的启动命令、固定交付报告、验收与受控清理指南。 |
-| `docs/development/DEVELOPMENT_CONSOLE_RELEASE_PROTOCOL_GUIDE.md` | 面向开发台的 CF-CRE@1 使用指南：发布前检查、公开合同、候选包构建、静态验证与状态边界。 |
+| `docs/development/PERSONAL_RUNTIME_CF_CRE_HANDOFF_GUIDE.md` | 面向个人运行台的 CF-CRE@1 接入边界、真实候选包演示、返回字段和后续安装状态机。 |
 | `docs/planning/ORCHESTRATION_EXECUTION_TASK_BRIEF.md` | ORCH-001 的分阶段工作包、文件所有权、依赖、验收口径与可直接启动的 worker 提示词。 |
 | `docs/development/README.md` | 开发维护区说明。 |
 | `docs/development/skills/` | 可选协议升级与 Flow 创作 AI Skill；`cartridgeflow-flow-author` 内含真实工作台创作仿真和目标卡带预检脚本。 |
@@ -171,6 +172,8 @@
 | `scripts/run_conformance.py` | 运行全量测试并写入 conformance 报告。 |
 | `scripts/tests/conformance/` | 当前协议、兼容性、能力和认证。 |
 | `scripts/tests/conformance/test_release_envelope_protocol.py` | CF-CRE@1 机器快照、有效发行物、公开泄露与摘要/未列文件拒绝的 conformance。 |
+| `scripts/tests/conformance/test_release_builder.py` | CF-CRE 候选包真实构建、归档暂存验证、重复路径和非便携源文件拒绝。 |
+| `scripts/demo_cf_cre_runtime_handoff.py` | 从开发卡带构建真实 CF-CRE 候选包并输出运行台暂存验证结果的可执行 demo。 |
 | `scripts/tests/history/` | 历史协议识别与迁移规则快照。 |
 | `scripts/tests/hygiene/` | 仓库、配置、数据和发布卫生。 |
 | `scripts/tests/lite/` | Lite API 白名单。 |

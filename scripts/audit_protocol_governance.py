@@ -38,6 +38,11 @@ def audit(root: Path = ROOT) -> list[str]:
         for item in catalog.releases
         if item["lifecycle"] in {"current", "supported_previous"}
     }
+    published.update(
+        (item["id"], item["version"])
+        for item in catalog.release_envelopes
+        if item.get("implementation_status") in {"partial", "supported"}
+    )
 
     for release in catalog.releases:
         label = f"{release['id']}@{release['version']}"
@@ -128,7 +133,7 @@ def audit(root: Path = ROOT) -> list[str]:
     base_supported = {(str(item.get("id")), str(item.get("version"))) for item in base.get("supported_protocols", [])}
     unknown_base = base_supported - published
     if unknown_base:
-        errors.append(f"Base declares releases that are not published by release manifest: {sorted(unknown_base)}")
+        errors.append(f"Base declares protocols that are not published by release manifest: {sorted(unknown_base)}")
     default = catalog.data["default_for_new_flows"]
     default_key = (str(default["id"]), str(default["version"]))
     if default_key not in base_supported:

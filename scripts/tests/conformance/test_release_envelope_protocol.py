@@ -6,7 +6,7 @@ import unittest
 from copy import deepcopy
 from pathlib import Path
 
-from core.protocol import build_release_envelope_report, load_base_implementation, load_protocol_release_catalog
+from core.protocol import ProtocolRegistry, build_release_envelope_report, load_base_implementation, load_protocol_release_catalog
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -106,22 +106,25 @@ def replace_hashed_file(release, bundle, path, content):
 
 
 class ReleaseEnvelopeProtocolTests(unittest.TestCase):
-    def test_catalog_registers_a_validation_only_release_without_changing_flow_default(self):
+    def test_catalog_registers_a_partial_release_builder_without_changing_flow_default(self):
         catalog = load_protocol_release_catalog(ROOT)
         release = catalog.default_release_envelope()
         self.assertEqual(("CF-CRE", "1"), (release["id"], release["version"]))
-        self.assertEqual("validation_only", release["implementation_status"])
+        self.assertEqual("partial", release["implementation_status"])
         self.assertEqual({"id": "CF-FARP", "version": "0.9"}, catalog.data["default_for_new_flows"])
         self.assertEqual("CF-CRE", catalog.public_payload()["release_envelopes"]["default_for_new_releases"]["id"])
         base = load_base_implementation(ROOT)
-        self.assertNotIn(("CF-CRE", "1"), {(item["id"], item["version"]) for item in base["supported_protocols"]})
+        self.assertIn(("CF-CRE", "1"), {(item["id"], item["version"]) for item in base["supported_protocols"]})
+        registry = ProtocolRegistry(ROOT)
+        self.assertTrue(registry.supports_protocol("CF-CRE", "1"))
+        self.assertIn("release_envelope_builder_v1", registry.capabilities)
 
     def test_valid_release_bundle_passes_static_validation(self):
         release, experience, delivery, bundle = valid_release_bundle()
         report = build_release_envelope_report(release, experience, delivery, bundle_files=bundle)
         self.assertTrue(report["ok"], report["findings"])
         self.assertEqual("compatible", report["status"])
-        self.assertEqual("validation_only", report["implementation_status"])
+        self.assertEqual("partial", report["implementation_status"])
 
     def test_public_contract_cannot_leak_internal_connection_fields(self):
         release, experience, delivery, bundle = valid_release_bundle()
@@ -158,7 +161,7 @@ class ReleaseEnvelopeProtocolTests(unittest.TestCase):
     def test_protocol_document_declares_draft_and_promotion_boundary(self):
         text = DOCUMENT.read_text(encoding="utf-8")
         self.assertIn("CF-CRE@1", text)
-        self.assertIn("validation_only", text)
+        self.assertIn("partial", text)
         self.assertIn("晋级条件", text)
 
 

@@ -21,7 +21,7 @@
         "id": "CF-CRE",
         "version": "1",
         "lifecycle": "draft",
-        "implementation_status": "validation_only",
+        "implementation_status": "partial",
         "registry": "releases/CF-CRE-1.json",
         "profiles": "vocabulary/release-envelope-profiles-1.json",
         "capabilities": "vocabulary/release-envelope-capabilities-1.json",

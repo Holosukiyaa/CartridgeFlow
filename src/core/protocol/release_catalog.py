@@ -138,7 +138,7 @@ def _validate_release_envelopes(data: dict) -> None:
         seen.add(key)
         if item.get("lifecycle") not in _RELEASE_ENVELOPE_LIFECYCLES:
             raise ProtocolReleaseCatalogError(f"release_envelopes.releases[{index}].lifecycle is invalid")
-        if item.get("implementation_status") not in {"validation_only", "supported"}:
+        if item.get("implementation_status") not in {"validation_only", "partial", "supported"}:
             raise ProtocolReleaseCatalogError(f"release_envelopes.releases[{index}].implementation_status is invalid")
         for field in ("registry", "profiles", "capabilities", "document"):
             if not isinstance(item.get(field), str) or not item[field]:

@@ -131,7 +131,7 @@ Release 使用新的根布局，避免与当前开发 ZIP 的“根目录就是�
 }
 ```
 
-`CF-CRE@1` 已冻结 Release Manifest、公开合同、内容摘要和签名输入的字段语义。市场价格、排序、评价和促销不应写入 Release Manifest；当前协议仅实现静态 `validation_only` 验证，安装器和验签器仍是后续任务。
+`CF-CRE@1` 已冻结 Release Manifest、公开合同、内容摘要和签名输入的字段语义。市场价格、排序、评价和促销不应写入 Release Manifest；当前已实现候选包构建和静态归档验证（`partial`），安装器和验签器仍是后续任务。
 
 ### 5.3 公开体验与交付合同
 
@@ -202,7 +202,7 @@ Release Builder 必须以稳定路径排序、规范化 JSON 和逐文件 SHA-25
 
 现有开发台 `/api/cartridges/{id}/package` 会生成 `.cartridge.zip`，并附带兼容性、Flow 分析、本机绑定描述和 portability 报告。它适合作为 `dev_export` 的实现基础，但不应直接改名为市场包。
 
-原因包括：它没有 Release identity、内容根签名、发行版本并存、公开体验合同、市场审核身份或授权记录；而且当前运行时语义和 CF-FARP 0.9 支持矩阵仍为 `partial`。`CF-CRE@1` 现已作为 `validation_only` 协议落地，现有 ZIP 在 Release Builder、验签和安装器完成前仍只服务开发、测试和受控手动导入。
+原因包括：它没有 Release identity、内容根签名、发行版本并存、公开体验合同、市场审核身份或授权记录；而且当前运行时语义和 CF-FARP 0.9 支持矩阵仍为 `partial`。`CF-CRE@1` 现已具备候选包构建和静态归档验证，现有开发 ZIP 在验签和安装器完成前仍只服务开发、测试和受控手动导入。
 
 ### 7.3 可复现性
 

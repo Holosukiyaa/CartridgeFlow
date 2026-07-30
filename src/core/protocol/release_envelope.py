@@ -119,7 +119,7 @@ def build_release_envelope_report(
     return {
         "schema": REPORT_SCHEMA,
         "protocol": "CF-CRE@1",
-        "implementation_status": "validation_only",
+        "implementation_status": "partial",
         "ok": counts["blocker"] == 0,
         "status": report_status(findings),
         "summary": counts,

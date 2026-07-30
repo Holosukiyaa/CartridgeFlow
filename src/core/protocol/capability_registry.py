@@ -41,16 +41,20 @@ class ProtocolRegistry:
     def supports_protocol(self, protocol_id: str, version: str) -> bool:
         if protocol_id == "CF-FARP":
             return self.release_catalog.published(protocol_id, version)
+        if protocol_id == "CF-CRE":
+            envelope = self.release_catalog.get_release_envelope(protocol_id, version)
+            return bool(envelope and envelope.get("implementation_status") in {"partial", "supported"})
         return (protocol_id, version) in self.protocols
 
     def recognizes_protocol(self, protocol_id: str, version: str) -> bool:
-        return self.release_catalog.recognizes(protocol_id, version) or (protocol_id, version) in self.protocols
+        return self.release_catalog.recognizes(protocol_id, version) or self.release_catalog.get_release_envelope(protocol_id, version) is not None or (protocol_id, version) in self.protocols
 
     def protocol_lifecycle(self, protocol_id: str, version: str) -> dict | None:
         return self.release_catalog.lifecycle(protocol_id, version)
 
     def _load_protocols(self) -> set[tuple[str, str]]:
         result = {(item["id"], item["version"]) for item in self.release_catalog.releases}
+        result.update((item["id"], item["version"]) for item in self.release_catalog.release_envelopes)
         for path in self.base_dir.glob("CARTRIDGEFLOW-BASE-*.json"):
             data = self._read_json(path)
             if data.get("id") and data.get("version"):
@@ -88,7 +92,10 @@ class ProtocolRegistry:
     def _load_versioned_id_set(self, stem: str, key: str) -> set[str]:
         """Merge the base vocabulary with protocol-version vocabulary snapshots."""
         result: set[str] = set()
-        paths = sorted(self.vocabulary_dir.glob(f"{stem}*.json"))
+        paths = sorted({
+            *self.vocabulary_dir.glob(f"{stem}*.json"),
+            *self.vocabulary_dir.glob(f"release-envelope-{stem}-*.json"),
+        })
         if not paths:
             raise ProtocolRegistryError(f"protocol vocabulary file not found: {stem}.json")
         for path in paths:

@@ -44,4 +44,4 @@ python scripts/run_conformance.py
 
 查找文件用途、审计历史遗留内容或新增文件时，使用并同步维护 [项目文件清单](FILE_INVENTORY.md)。
 
-涉及卡带发布、发行候选包、签名或安装闭环时，先阅读[开发台使用 CF-CRE@1 发行卡带指南](DEVELOPMENT_CONSOLE_RELEASE_PROTOCOL_GUIDE.md)。
+涉及卡带发布、发行候选包、签名、运行台导入或安装闭环时，阅读 [CF-CRE@1 个人运行台接入指南](PERSONAL_RUNTIME_CF_CRE_HANDOFF_GUIDE.md)。

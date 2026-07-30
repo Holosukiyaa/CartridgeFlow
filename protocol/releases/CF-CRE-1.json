@@ -4,7 +4,7 @@
   "version": "1",
   "name": "CartridgeFlow 发行封装协议",
   "status": "draft",
-  "implementation_status": "validation_only",
+  "implementation_status": "partial",
   "standalone": true,
   "base_contract": {
     "id": "CARTRIDGEFLOW-BASE",

@@ -6,6 +6,8 @@
     {"id": "release_envelope_hash_manifest_v1", "profile": "release_envelope_validation"},
     {"id": "release_envelope_path_safety_v1", "profile": "release_envelope_validation"},
     {"id": "release_envelope_digest_validation_v1", "profile": "release_envelope_validation"},
-    {"id": "release_envelope_signature_metadata_v1", "profile": "release_envelope_validation"}
+    {"id": "release_envelope_signature_metadata_v1", "profile": "release_envelope_validation"},
+    {"id": "release_envelope_builder_v1", "profile": "release_envelope_validation"},
+    {"id": "release_envelope_archive_reader_v1", "profile": "release_envelope_validation"}
   ]
 }

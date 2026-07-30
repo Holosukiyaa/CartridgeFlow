@@ -338,6 +338,14 @@
       "positive_tests": ["test_runtime_recovery.RuntimeRecoveryTests.test_completed_flow_has_before_and_after_checkpoint_for_every_node"],
       "failure_tests": ["test_runtime_recovery.RuntimeRecoveryTests.test_missing_delivery_output_fails_closed"],
       "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/flow-workbench/TestBenchView.tsx"]}
+    },
+    "release_envelope": {
+      "verification": "verified",
+      "implementation": ["src/core/protocol/release_envelope.py#validate_release_envelope", "src/core/protocol/release_builder.py#build_release_archive", "src/core/protocol/release_builder.py#inspect_release_archive"],
+      "positive_tests": ["test_release_builder.ReleaseBuilderTests.test_builds_real_archive_that_runtime_can_stage_without_activation", "test_release_envelope_protocol.ReleaseEnvelopeProtocolTests.test_valid_release_bundle_passes_static_validation"],
+      "failure_tests": ["test_release_builder.ReleaseBuilderTests.test_archive_reader_rejects_duplicate_members_before_contract_validation", "test_release_builder.ReleaseBuilderTests.test_builder_rejects_local_runtime_artifacts", "test_release_envelope_protocol.ReleaseEnvelopeProtocolTests.test_altered_or_unlisted_bundle_content_is_rejected"],
+      "ui": {"status": "not_applicable", "entries": []},
+      "notes": "Base supports deterministic release-candidate construction and archive staging validation only. It does not verify signatures, bind resources, install, activate, run, roll back, or publish releases."
     }
   },
   "capabilities": {
@@ -456,6 +464,14 @@
     "mcp_graph_authoring_operations": "tool_transparency",
     "mcp_source_digest_guard": "tool_transparency",
     "portable_dlc_descriptor_v3": "tool_transparency",
-    "tool_resource_catalog_v2": "tool_transparency"
+    "tool_resource_catalog_v2": "tool_transparency",
+    "release_envelope_parse_v1": "release_envelope",
+    "release_envelope_public_contract_v1": "release_envelope",
+    "release_envelope_hash_manifest_v1": "release_envelope",
+    "release_envelope_path_safety_v1": "release_envelope",
+    "release_envelope_digest_validation_v1": "release_envelope",
+    "release_envelope_signature_metadata_v1": "release_envelope",
+    "release_envelope_builder_v1": "release_envelope",
+    "release_envelope_archive_reader_v1": "release_envelope"
   }
 }

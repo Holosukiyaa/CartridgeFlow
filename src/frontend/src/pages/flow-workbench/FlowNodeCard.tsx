@@ -72,7 +72,10 @@ function DetailedNodeContent({ node, order, view, runState }: Pick<FlowNodeCardP
           <strong style={{ background: node.locked ? undefined : view.category.bg, color: node.locked ? undefined : view.category.color }}>{String(order).padStart(2, '0')}</strong>
           <i className="flow-node-category-icon"><NodeKindIcon iconKey={view.iconKey} /></i>
           <span className="flow-node-title-copy">
-            <b className="flow-node-title-text" title={`${view.title}（原节点：${node.display_name || node.title}）`}>{view.title}</b>
+            <span className="flow-node-title-line">
+              <b className="flow-node-title-text" title={`${view.title}（原节点：${node.display_name || node.title}）`}>{view.title}</b>
+              <span className="flow-node-category-pill" style={{ background: view.category.bg, color: view.category.color }}><NodeKindIcon iconKey={view.iconKey} />{view.kindLabel}</span>
+            </span>
           </span>
         </div>
         <span className={`flow-node-status status-${runState?.status || view.configHealth}`}>{view.runStatusLabel}</span>
@@ -105,6 +108,7 @@ function CompactNodeContent({ node, order, runState }: Pick<FlowNodeCardProps, '
     <>
       <div className="flow-node-title">
         <strong style={{ background: node.locked ? undefined : view.category.bg, color: node.locked ? undefined : view.category.color }}>{String(order).padStart(2, '0')}</strong>
+        <span className="flow-node-category-pill" style={{ background: view.category.bg, color: view.category.color }}><NodeKindIcon iconKey={view.iconKey} />{view.kindLabel}</span>
         {view.isImportantNode && <span className="flow-node-milestone">{view.milestoneLabel || '重点'}</span>}
         {view.remoteServiceLabel && <span className="flow-node-remote">{view.remoteServiceLabel}</span>}
         {node.display_name || node.title}

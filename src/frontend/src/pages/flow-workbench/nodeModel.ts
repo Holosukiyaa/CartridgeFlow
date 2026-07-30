@@ -10,8 +10,73 @@ export const FLOW_NODE_DIMENSIONS: Record<FlowNodeViewMode, { width: number; hei
   compact: { width: 280, height: 146 },
 }
 
+export type FlowNodeDimensions = { width: number; height: number }
+
 type FlowLayoutOptions = {
   viewMode?: FlowNodeViewMode
+  nodeDimensions?: Record<string, FlowNodeDimensions>
+}
+
+function countEntries(value: unknown) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? Object.keys(value).length : 0
+}
+
+function isEngineeringResource(node: FlowNode) {
+  return node.scope === 'engineering_resource' || Boolean(node.params?.engineering_resource)
+}
+
+function isBoundaryNodeForDimensions(node: FlowNode) {
+  return node.id === 'start'
+    || node.id === 'complete'
+    || node.action === 'complete'
+    || node.action === 'end'
+}
+
+function resourceDimensions(node: FlowNode): FlowNodeDimensions {
+  const resourceType = String(node.params?.resource_type || '').toLowerCase()
+  const resourceId = String(node.params?.resource_id || node.id || '')
+  const titleAllowance = resourceId.length > 28 ? 20 : 0
+  if (/component|ui|interaction/.test(resourceType)) return { width: 320, height: 282 + titleAllowance }
+  if (/mcp|remote/.test(resourceType)) return { width: 316, height: 234 + titleAllowance }
+  if (/model/.test(resourceType)) return { width: 306, height: 218 + titleAllowance }
+  if (/tool/.test(resourceType)) return { width: 306, height: 224 + titleAllowance }
+  return { width: 300, height: 206 + titleAllowance }
+}
+
+export function getFlowNodeDimensions(
+  node: FlowNode,
+  viewMode: FlowNodeViewMode,
+  context: { incoming?: number; outgoing?: number } = {},
+): FlowNodeDimensions {
+  if (viewMode === 'compact') return FLOW_NODE_DIMENSIONS.compact
+  if (viewMode === 'engineering' && isEngineeringResource(node)) return resourceDimensions(node)
+
+  const inputs = countEntries(node.inputs) + countEntries(node.input_binding) + (node.input_schema ? 1 : 0)
+  const outputs = countEntries(node.outputs) + (node.output || node.primary_output || node.output_contract ? 1 : 0)
+  const bindings = [node.component_ref, node.tool_binding, node.mcp_binding, node.allowed_tools?.length].filter(Boolean).length
+  const execution = [node.kind, node.executor, node.action, node.effect, node.model_role, node.endpoint].filter(Boolean).length
+  const routes = countEntries(node.action_routes) + Number(context.outgoing || 0) + (node.next ? 1 : 0)
+  const policies = [node.timeout_ms, node.failure_policy, node.permission, node.audit_log].filter((value) => value !== undefined && value !== null && value !== '').length
+  const sections = [inputs, outputs, bindings, execution, routes, policies].filter(Boolean)
+  const boundary = isBoundaryNodeForDimensions(node)
+  const visibleSections = sections.slice(0, boundary ? 2 : 5)
+  const fieldRows = visibleSections.reduce((total, count) => total + Math.min(3, count), 0)
+  const moreRows = visibleSections.filter((count) => count > 3).length
+
+  if (viewMode === 'engineering') {
+    const height = 91 + visibleSections.length * 27 + fieldRows * 17 + moreRows * 16
+    return {
+      width: boundary ? 292 : 334,
+      height: Math.max(boundary ? 196 : 246, Math.min(boundary ? 278 : 544, height)),
+    }
+  }
+
+  const detailedRows = Math.min(4, inputs || Number(context.incoming || 0) || 1) + Math.min(4, outputs || Number(context.outgoing || 0) || 1)
+  const height = 224 + detailedRows * 28 + (node.params?.description || node.params?.purpose ? 30 : 0)
+  return {
+    width: boundary ? 368 : 440,
+    height: Math.max(boundary ? 286 : 346, Math.min(536, height)),
+  }
 }
 
 function getFlowLayoutMetrics(options: FlowLayoutOptions = {}) {
@@ -627,7 +692,7 @@ export function isStartNode(node?: FlowNode, nodeId?: string) {
   return nodeId === 'start' || node?.id === 'start' || node?.action === 'start' || node?.data?.action === 'start'
 }
 
-function resolveLayoutCollisions(layout: Record<string, { x: number; y: number }>, options: { rowGap?: number; xTolerance?: number } = {}) {
+function resolveLayoutCollisions(layout: Record<string, { x: number; y: number }>, options: { rowGap?: number; xTolerance?: number; nodeDimensions?: Record<string, FlowNodeDimensions> } = {}) {
   const rowGap = options.rowGap || 170
   const xTolerance = options.xTolerance || 180
   const columns: Array<{ centerX: number; nodeIds: string[] }> = []
@@ -648,8 +713,11 @@ function resolveLayoutCollisions(layout: Record<string, { x: number; y: number }
       .forEach((nodeId, index, ordered) => {
         if (index === 0) return
         const previous = ordered[index - 1]
-        if (layout[nodeId].y - layout[previous].y < rowGap) {
-          layout[nodeId] = { ...layout[nodeId], y: layout[previous].y + rowGap }
+        const requiredGap = options.nodeDimensions
+          ? (options.nodeDimensions[previous]?.height || 0) + rowGap
+          : rowGap
+        if (layout[nodeId].y - layout[previous].y < requiredGap) {
+          layout[nodeId] = { ...layout[nodeId], y: layout[previous].y + requiredGap }
         }
       })
   })
@@ -705,8 +773,9 @@ export function buildBalancedLayout(graph: FlowGraph, options: FlowLayoutOptions
     if (!layout[node.id]) layout[node.id] = automatic[node.id] || { x: node.x, y: node.y }
   })
   return resolveLayoutCollisions(layout, {
-    rowGap: metrics.height + (metrics.viewMode === 'detailed' ? 84 : 34),
+    rowGap: metrics.viewMode === 'detailed' ? 84 : 60,
     xTolerance: metrics.width + 16,
+    nodeDimensions: options.nodeDimensions,
   })
 }
 
@@ -859,13 +928,12 @@ export function buildAutoAlignLayout(graph: FlowGraph, options: FlowLayoutOption
     marginy: 120,
   })
 
-  const nodeWidth = metrics.width
-  const nodeHeight = metrics.height
   const nodes = graph.nodes || []
   const nodeIds = new Set(nodes.map((node) => node.id))
 
   nodes.forEach((node) => {
-    layoutGraph.setNode(node.id, { width: nodeWidth, height: nodeHeight })
+    const dimensions = options.nodeDimensions?.[node.id] || FLOW_NODE_DIMENSIONS[metrics.viewMode]
+    layoutGraph.setNode(node.id, dimensions)
   })
 
   ;(graph.edges || []).forEach((edge) => {
@@ -883,13 +951,15 @@ export function buildAutoAlignLayout(graph: FlowGraph, options: FlowLayoutOption
   const layout: Record<string, { x: number; y: number }> = {}
   nodes.forEach((node) => {
     const point = layoutGraph.node(node.id)
+    const dimensions = options.nodeDimensions?.[node.id] || FLOW_NODE_DIMENSIONS[metrics.viewMode]
     layout[node.id] = point
-      ? { x: Math.round(point.x - nodeWidth / 2), y: Math.round(point.y - nodeHeight / 2) }
+      ? { x: Math.round(point.x - dimensions.width / 2), y: Math.round(point.y - dimensions.height / 2) }
       : { x: node.x, y: node.y }
   })
 
   return resolveLayoutCollisions(layout, {
-    rowGap: nodeHeight + (metrics.viewMode === 'detailed' ? 84 : 60),
-    xTolerance: nodeWidth - 30,
+    rowGap: metrics.viewMode === 'detailed' ? 84 : 60,
+    xTolerance: metrics.width - 30,
+    nodeDimensions: options.nodeDimensions,
   })
 }

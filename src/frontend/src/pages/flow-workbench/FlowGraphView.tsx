@@ -23,7 +23,7 @@ import type { AIFlowSelection, FlowAnnotation, FlowEdge, FlowEvent, FlowFiles, F
 import { DEFAULT_WORKSPACE_THEME, loadWorkspaceTheme, saveWorkspaceTheme, WORKSPACE_THEME_PRESETS, type WorkspaceTheme } from '../../appearance.ts'
 import { showToast } from '../../toast.tsx'
 import type { CreateNodeHandler, DesignDisplayMode, NodeCategoryId } from './types.ts'
-import { FLOW_NODE_DIMENSIONS, NODE_CATEGORIES, buildBalancedLayout, getNodeCategory, getNodePalette, getPreset, getPresets, isStartNode, type FlowNodeViewMode } from './nodeModel.ts'
+import { FLOW_NODE_DIMENSIONS, NODE_CATEGORIES, buildBalancedLayout, getFlowNodeDimensions, getNodeCategory, getNodePalette, getPreset, getPresets, isStartNode, type FlowNodeViewMode } from './nodeModel.ts'
 import type { NodeDetailSection } from './nodeDetails.ts'
 import type { NodeRunState } from './runState.ts'
 import { FlowNodeCard, type FlowNodeProbeState } from './FlowNodeCard.tsx'
@@ -489,6 +489,7 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
     if (!onCreateNode && canvasPanel === 'nodes') setCanvasPanel(null)
   }, [activeCanvasTool, canvasPanel, onCreateNode, onEdgesSave])
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance | null>(null)
+  const resourcePositionsRef = useRef<Record<string, { x: number; y: number }>>({})
   const [nodeEditorPositions, setNodeEditorPositions] = useState<Record<string, NodeEditorPosition>>({})
   const [draggingEditorId, setDraggingEditorId] = useState<string | null>(null)
   const wrapperRef = useRef<HTMLDivElement | null>(null)
@@ -592,6 +593,18 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
   const nodeViewMode: FlowNodeViewMode = compactStatic ? 'compact' : displayMode === 'engineering' ? 'engineering' : 'detailed'
   const expandedMainNodeIds = useMemo(() => new Set(nodeEditors.map((editor) => editor.nodeId)), [nodeEditors])
   const layoutViewMode = nodeViewMode
+  const nodeDimensions = useMemo(() => {
+    const incoming = new Map<string, number>()
+    const outgoing = new Map<string, number>()
+    graph.edges.forEach((edge) => {
+      incoming.set(edge.to, (incoming.get(edge.to) || 0) + 1)
+      outgoing.set(edge.from, (outgoing.get(edge.from) || 0) + 1)
+    })
+    return Object.fromEntries(graph.nodes.map((node) => [node.id, getFlowNodeDimensions(node, nodeViewMode, {
+      incoming: incoming.get(node.id) || 0,
+      outgoing: outgoing.get(node.id) || 0,
+    })]))
+  }, [graph.edges, graph.nodes, nodeViewMode])
   const layoutGraph = useMemo(() => displayMode === 'engineering'
     ? {
         ...renderGraph,
@@ -603,7 +616,7 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
         ],
       }
     : renderGraph, [displayMode, renderGraph, visibleEngineeringRelations])
-  const layout = useMemo(() => buildBalancedLayout(layoutGraph, { viewMode: layoutViewMode }), [layoutGraph, layoutViewMode])
+  const layout = useMemo(() => buildBalancedLayout(layoutGraph, { viewMode: layoutViewMode, nodeDimensions }), [layoutGraph, layoutViewMode, nodeDimensions])
   const edgePortPlan = useMemo(() => {
     const counts = new Map<string, PortCounts>()
     const cursor = new Map<string, number>()
@@ -695,21 +708,22 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
   const compactNodeTypes = useMemo(() => ({ custom: CompactCanvasNode }), [CompactCanvasNode])
   const nodeTypes = compactStatic ? compactNodeTypes : displayMode === 'engineering' ? ENGINEERING_NODE_TYPES : OUTCOME_NODE_TYPES
   const initialNodes: FlowGraphNode[] = useMemo(() => graph.nodes.map((node) => {
-    const dimensions = FLOW_NODE_DIMENSIONS[nodeViewMode]
+    const dimensions = nodeDimensions[node.id] || FLOW_NODE_DIMENSIONS[nodeViewMode]
     const runState = nodeRunStates?.get(node.id)
+    const resource = isEngineeringResourceNode(node)
     return {
       id: node.id,
       type: 'custom',
-      position: layout[node.id] || { x: node.x, y: node.y },
+      position: resourcePositionsRef.current[node.id] || layout[node.id] || { x: node.x, y: node.y },
       data: {
         ...node,
         __runtimeRenderKey: `${displayMode}:${runState?.status || 'normal'}`,
       } as unknown as Record<string, unknown>,
       className: runState ? `cf-runtime-node run-node-${runState.status}` : '',
-      deletable: !node.locked && !isStartNode(node, node.id),
+      deletable: !resource && !node.locked && !isStartNode(node, node.id),
       style: { width: dimensions.width, height: dimensions.height },
     }
-  }), [displayMode, graph.nodes, layout, nodeRunStates, nodeViewMode])
+  }), [displayMode, graph.nodes, layout, nodeDimensions, nodeRunStates, nodeViewMode])
   const initialEdges: FlowGraphEdge[] = useMemo(() => {
     const branchLaneBySource = new Map<string, number>()
     const controlEdges = visibleGraphEdges.map((edge, index) => {
@@ -909,6 +923,9 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
     flowInstance?.setEdges(initialEdges)
   }, [flowInstance, initialEdges])
   useEffect(() => {
+    resourcePositionsRef.current = {}
+  }, [graph.id])
+  useEffect(() => {
     if (!flowInstance || compactStatic) return
     const selectedId = selectedNode?.id || null
     const currentNodes = flowInstance.getNodes() as FlowGraphNode[]
@@ -969,7 +986,9 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
     return items.reduce<FlowEdge[]>((result, edge) => {
       if (!edge.source || !edge.target || edge.source === edge.target) return result
       const scope = String(edge.data?.scope || 'root')
-      if (scope === 'data') return result
+      const source = nodeById.get(edge.source)
+      const target = nodeById.get(edge.target)
+      if (scope === 'data' || scope === 'engineering_dependency' || (source && isEngineeringResourceNode(source)) || (target && isEngineeringResourceNode(target))) return result
       const label = String(edge.data?.label || edge.label || '').trim()
       const key = `${scope}:${edge.source}->${edge.target}`
       if (seen.has(key)) return result
@@ -977,7 +996,7 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
       result.push({ from: edge.source, to: edge.target, scope, ...(label ? { label } : {}) })
       return result
     }, [])
-  }, [])
+  }, [nodeById])
 
   const saveEdgesQuietly = useCallback(async (items: FlowGraphEdge[]) => {
     if (compactStatic || readOnlyGraph || !onEdgesSave) return
@@ -988,6 +1007,7 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
     const source = nodeById.get(sourceId)
     const target = nodeById.get(targetId)
     if (!source || !target) return '节点不存在，无法连接'
+    if (isEngineeringResourceNode(source) || isEngineeringResourceNode(target)) return '资源依赖仅用于工程视图，不能写入 Root Flow 控制流'
     if (sourceId === targetId) return '不能连接到自身'
     if (isStartNode(target, targetId)) return '开始节点不能作为链路目标'
     if (source.type === 'terminal' && !isStartNode(source, sourceId)) return '结尾节点不能再接出链路'
@@ -1664,15 +1684,26 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
         }}
         onNodeDragStart={() => setContextMenu(null)}
         onNodeDragStop={async () => {
-          if (compactStatic || readOnlyGraph || !onLayoutSave) return
+          if (compactStatic || readOnlyGraph) return
           const currentNodes = (flowInstance?.getNodes() as FlowGraphNode[] | undefined) || nodes
           setNodes(currentNodes)
+          const resourceLayout = currentNodes.reduce<Record<string, { x: number; y: number }>>((positions, currentNode) => {
+            const flowNode = currentNode.data as unknown as FlowNode
+            if (isEngineeringResourceNode(flowNode)) {
+              positions[currentNode.id] = { x: Math.round(currentNode.position.x), y: Math.round(currentNode.position.y) }
+            }
+            return positions
+          }, {})
+          if (Object.keys(resourceLayout).length) {
+            resourcePositionsRef.current = { ...resourcePositionsRef.current, ...resourceLayout }
+          }
+          if (!onLayoutSave) return
           await onLayoutSave(buildLayoutFromNodes(currentNodes))
         }}
         onNodesDelete={async (deletedNodes: FlowGraphNode[]) => {
           if (compactStatic || readOnlyGraph || !onDeleteNode || deletedNodes.length === 0) return
           const node = deletedNodes[0].data as unknown as FlowNode
-          if (!node || node.locked || isStartNode(node, node.id) || deletingNodeRef.current) return
+          if (!node || isEngineeringResourceNode(node) || node.locked || isStartNode(node, node.id) || deletingNodeRef.current) return
           deletingNodeRef.current = true
           try { await onDeleteNode(node) } finally { deletingNodeRef.current = false }
         }}

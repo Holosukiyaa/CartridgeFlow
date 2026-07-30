@@ -38,8 +38,21 @@ export type EngineeringNodeSource = {
 
 export type EngineeringNodeView = ReturnType<typeof buildEngineeringNodeView>
 
+export type EngineeringResourceKind = 'ui' | 'mcp' | 'model' | 'tool' | 'resource'
+
+export type EngineeringResourceView = {
+  kind: EngineeringResourceKind
+  kindLabel: string
+  title: string
+  reference: string
+  detail: string
+  stateLabel: string
+  metadata: Array<{ label: string; value: string }>
+}
+
 export type EngineeringNodeRenderModel = {
   view: EngineeringNodeView
+  resource?: EngineeringResourceView
   connectedFields: ReadonlySet<string>
   connectedInputs: ReadonlySet<string>
   connectedOutputs: ReadonlySet<string>
@@ -72,11 +85,113 @@ function dependencyField(kind: string) {
   return 'allowed_tools'
 }
 
+function dependencyResourceType(relation: FlowEngineeringRelation) {
+  if (relation.kind === 'mcp_dependency') return 'mcp'
+  return relation.to?.type || relation.kind.replace(/_dependency$/, '')
+}
+
 function dependencyLabel(kind: string, id: string) {
   if (kind === 'model_dependency') return `模型依赖：${id}`
   if (kind === 'component_dependency') return `组件依赖：${id}`
   if (kind === 'mcp_dependency') return `MCP 依赖：${id}`
   return `工具依赖：${id}`
+}
+
+function normalizeResourceKind(type: string): EngineeringResourceKind {
+  const normalized = type.toLowerCase()
+  if (/component|ui|interaction/.test(normalized)) return 'ui'
+  if (/mcp|remote/.test(normalized)) return 'mcp'
+  if (/model/.test(normalized)) return 'model'
+  if (/tool/.test(normalized)) return 'tool'
+  return 'resource'
+}
+
+function resourceKindLabel(kind: EngineeringResourceKind) {
+  if (kind === 'ui') return 'UI 资源'
+  if (kind === 'mcp') return 'MCP 资源'
+  if (kind === 'model') return '模型资源'
+  if (kind === 'tool') return '工具资源'
+  return '工程资源'
+}
+
+function splitResourceIdentity(reference: string) {
+  const slash = reference.lastIndexOf('/')
+  if (slash > 0 && slash < reference.length - 1) {
+    return { service: reference.slice(0, slash), tool: reference.slice(slash + 1) }
+  }
+  const colon = reference.lastIndexOf(':')
+  if (colon > 0 && colon < reference.length - 1) {
+    return { service: reference.slice(0, colon), tool: reference.slice(colon + 1) }
+  }
+  return { service: '', tool: reference }
+}
+
+function buildEngineeringResourceView(node: FlowNode): EngineeringResourceView {
+  const reference = String(node.params?.resource_id || node.title || node.id)
+  const kind = normalizeResourceKind(String(node.params?.resource_type || 'resource'))
+  const references = Array.isArray(node.params?.referenced_by)
+    ? node.params.referenced_by.map(String).filter(Boolean)
+    : []
+  const referenceCount = references.length ? `${references.length} 个节点引用` : '工程投影'
+  const identity = splitResourceIdentity(reference)
+  if (kind === 'ui') {
+    return {
+      kind,
+      kindLabel: resourceKindLabel(kind),
+      title: reference,
+      reference,
+      detail: 'HTML / 交互预览',
+      stateLabel: '只读资源',
+      metadata: [
+        { label: '组件引用', value: reference },
+        { label: '类型', value: '交互组件' },
+        { label: '使用情况', value: referenceCount },
+      ],
+    }
+  }
+  if (kind === 'mcp') {
+    return {
+      kind,
+      kindLabel: resourceKindLabel(kind),
+      title: reference,
+      reference,
+      detail: identity.service ? `${identity.service} / ${identity.tool}` : identity.tool,
+      stateLabel: '待解析连接',
+      metadata: [
+        { label: '服务', value: identity.service || '未声明' },
+        { label: '工具', value: identity.tool || reference },
+        { label: '使用情况', value: referenceCount },
+      ],
+    }
+  }
+  if (kind === 'model') {
+    return {
+      kind,
+      kindLabel: resourceKindLabel(kind),
+      title: reference,
+      reference,
+      detail: '模型角色绑定',
+      stateLabel: '待解析绑定',
+      metadata: [
+        { label: '模型角色', value: reference },
+        { label: '供应方', value: '未绑定' },
+        { label: '使用情况', value: referenceCount },
+      ],
+    }
+  }
+  return {
+    kind,
+    kindLabel: resourceKindLabel(kind),
+    title: reference,
+    reference,
+    detail: kind === 'tool' ? '工具依赖' : '工程依赖',
+    stateLabel: '只读资源',
+    metadata: [
+      { label: '资源标识', value: reference },
+      { label: '类型', value: kind === 'tool' ? '工具' : '工程资源' },
+      { label: '使用情况', value: referenceCount },
+    ],
+  }
 }
 
 function mapAnalyzerRelation(relation: FlowEngineeringRelation): EngineeringDataRelation | null {
@@ -101,7 +216,7 @@ function mapAnalyzerRelation(relation: FlowEngineeringRelation): EngineeringData
 
   if (!relation.kind.endsWith('_dependency')) return null
   const from = relation.from?.node_id
-  const targetType = relation.to?.type || relation.kind.replace(/_dependency$/, '')
+  const targetType = dependencyResourceType(relation)
   const targetId = relation.to?.id
   if (!from || !targetId) return null
   return {
@@ -121,11 +236,17 @@ function buildEngineeringResourceNodes(relations: FlowEngineeringRelation[]): Fl
   const resources = new Map<string, FlowNode>()
   relations.forEach((relation) => {
     if (!relation.kind.endsWith('_dependency')) return
-    const type = relation.to?.type || relation.kind.replace(/_dependency$/, '')
+    const type = dependencyResourceType(relation)
     const id = relation.to?.id
     if (!id) return
     const nodeId = resourceNodeId(type, id)
-    if (resources.has(nodeId)) return
+    const existing = resources.get(nodeId)
+    if (existing) {
+      const referencedBy = Array.isArray(existing.params?.referenced_by) ? existing.params.referenced_by : []
+      if (relation.from?.node_id && !referencedBy.includes(relation.from.node_id)) referencedBy.push(relation.from.node_id)
+      existing.params = { ...(existing.params || {}), referenced_by: referencedBy }
+      return
+    }
     resources.set(nodeId, {
       id: nodeId,
       title: id,
@@ -146,6 +267,7 @@ function buildEngineeringResourceNodes(relations: FlowEngineeringRelation[]): Fl
         engineering_resource: true,
         resource_type: type,
         resource_id: id,
+        referenced_by: relation.from?.node_id ? [relation.from.node_id] : [],
       },
       x: 0,
       y: 0,
@@ -156,11 +278,9 @@ function buildEngineeringResourceNodes(relations: FlowEngineeringRelation[]): Fl
 
 export function buildEngineeringProjection(graph: FlowGraph) {
   const analyzerRelations = graph.engineering_relations || []
-  // MCP implementation is disclosed on its business node, not as a second ID-only canvas node.
-  const canvasRelations = analyzerRelations.filter((relation) => relation.kind !== 'mcp_dependency')
-  const authoritativeRelations = canvasRelations.map(mapAnalyzerRelation).filter((relation): relation is EngineeringDataRelation => Boolean(relation))
+  const authoritativeRelations = analyzerRelations.map(mapAnalyzerRelation).filter((relation): relation is EngineeringDataRelation => Boolean(relation))
   if (!analyzerRelations.length) return { graph, relations: buildLegacyEngineeringDataRelations(graph), resourceCount: 0 }
-  const resourceNodes = buildEngineeringResourceNodes(canvasRelations)
+  const resourceNodes = buildEngineeringResourceNodes(analyzerRelations)
   return {
     graph: resourceNodes.length ? { ...graph, nodes: [...graph.nodes, ...resourceNodes] } : graph,
     relations: authoritativeRelations,
@@ -541,6 +661,7 @@ export function buildEngineeringNodeModels(
         sourceByNode.get(node.id)!,
         getNodePreflightIssues(graph, node.id),
       ),
+      resource: isEngineeringResourceNode(node) ? buildEngineeringResourceView(node) : undefined,
       connectedFields: new Set([...connectedInputs, ...connectedOutputs]),
       connectedInputs,
       connectedOutputs,

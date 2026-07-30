@@ -140,6 +140,7 @@
 | `docs/architecture/AI_VIDEO_DAILY_CARTRIDGE.md` | AI 视频日报参考卡带的完整闭环、质量门槛、发布安全和版本演进草案。 |
 | `docs/architecture/FLOW_NODE_INFORMATION_ARCHITECTURE.md` | 各节点主卡和详情信息架构。 |
 | `docs/architecture/FLOW_AUTHORING_ANALYSIS_CONTRACT.md` | Flow 业务流程、执行契约、工程关系三层边界，以及统一分析、强制检测和创作 AI 入口。 |
+| `docs/architecture/N8N_ORCHESTRATION_BENCHMARK_REPORT.md` | 以 n8n 为独立编排参照，定义 CartridgeFlow 的执行语义缺口、差异化边界和 ORCH-001 至 ORCH-006 推进任务。 |
 | `docs/architecture/PORTABLE_DLC_ARCHITECTURE.md` | DLC 所有权、安全和宿主边界。 |
 | `docs/development/WORKER_COLLABORATION_GUIDE.md` | 面向操作者的 worker 协作目录、可直接粘贴的启动命令、固定交付报告、验收与受控清理指南。 |
 | `docs/development/README.md` | 开发维护区说明。 |
@@ -170,6 +171,7 @@
 | `scripts/tests/runtime/` | 节点执行、错误、恢复、DLC 和 Worker。 |
 | `scripts/tests/studio/` | 本机环境、工具绑定、便携性和 TODO。 |
 | `scripts/tests/ui/` | 节点信息架构断言和工作台截图。 |
+| `scripts/tests/ui/assert_engineering_view_integration.mjs` | ENG-021 工程视图接线、资源本地位置持久化与三类 MCP 详情入口断言。 |
 | `scripts/tests/fixtures/` | 跨测试复用夹具。 |
 
 ## 不属于源码的目录

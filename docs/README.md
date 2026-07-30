@@ -12,6 +12,7 @@
 | 修改 Portable DLC | [Portable DLC 架构](architecture/PORTABLE_DLC_ARCHITECTURE.md) -> [协议治理](protocol/governance/GOVERNANCE.md) |
 | 修改 Flow 节点主卡或详情信息 | [节点信息架构报告](architecture/FLOW_NODE_INFORMATION_ARCHITECTURE.md) -> [当前 CF-FARP 0.9 协议](protocol/flow-authoring/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.9.md) -> 对应节点视图代码 |
 | 设计 Flow 创作、关系探测或强制检测 | [Flow 创作与分析架构](architecture/FLOW_AUTHORING_ANALYSIS_CONTRACT.md) -> [当前 CF-FARP 0.9 协议](protocol/flow-authoring/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.9.md) -> 协议校验、图构建与工作台关系代码 |
+| 改进执行编排、循环、合流、子 Flow 或测试夹具 | [n8n 编排取经与差异化报告](architecture/N8N_ORCHESTRATION_BENCHMARK_REPORT.md) -> [Flow 创作与分析架构](architecture/FLOW_AUTHORING_ANALYSIS_CONTRACT.md) -> 当前协议与运行时测试 |
 | 修改 AI 管家交互 | [AI 管家交互模式](architecture/AI_STEWARD_INTERACTION_MODES.md) -> 工作台视图与结构化变更边界 |
 | 设计 AI 视频日报参考流程 | [AI 视频日报卡带](architecture/AI_VIDEO_DAILY_CARTRIDGE.md) -> 当前卡带工作台能力边界 |
 | 开发和运行自动测试 | [开发与维护](development/README.md) -> `scripts/` |
@@ -41,6 +42,7 @@ docs/
 - [Portable DLC 架构](architecture/PORTABLE_DLC_ARCHITECTURE.md)：基座与卡带私有能力的激活、隔离和所有权约束。
 - [Flow 节点信息架构](architecture/FLOW_NODE_INFORMATION_ARCHITECTURE.md)：逐类规定开始、结束和全部业务节点的主卡、运行态、详情子卡与禁止展示信息。
 - [Flow 创作与分析架构](architecture/FLOW_AUTHORING_ANALYSIS_CONTRACT.md)：规定业务流程、执行契约和工程关系三层边界，以及统一 Analyzer、强制检测与创作 AI 入口。
+- [n8n 编排取经与差异化报告](architecture/N8N_ORCHESTRATION_BENCHMARK_REPORT.md)：以独立实现为前提，记录应借鉴的编排语义、必须保留的差异化和分阶段验收任务。
 - [AI 管家交互模式](architecture/AI_STEWARD_INTERACTION_MODES.md)：规定引导/委托双模式、工程视图指针与框选语义，以及 AI 修改权限边界。
 - [AI 视频日报卡带](architecture/AI_VIDEO_DAILY_CARTRIDGE.md)：记录日报采集、筛选、生成、视频发布和人工审批的完整参考闭环。
 - [协议治理](protocol/governance/GOVERNANCE.md)：修改协议、实现 Flow 和发布快照时必须遵守的规则。

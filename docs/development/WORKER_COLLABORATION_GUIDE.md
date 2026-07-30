@@ -15,7 +15,7 @@ C:\_HOLOLAB\code\CF WS\CartridgeFlow
 worker 的独立目录位于项目同级目录，例如：
 
 ```text
-C:\_HOLOLAB\code\CF WS\CartridgeFlow-worker-002-external-mcp-detail
+C:\_HOLOLAB\code\CF WS\CartridgeFlow-worker-004-engineering-integration
 ```
 
 不要手动在 worker 目录和主目录之间切换来执行命令，也不要在两个目录修改同一份产品文件。
@@ -31,27 +31,27 @@ git log -1 --oneline
 git worktree list
 ```
 
-只有在 `git status` 干净、前置 worker 已验收并合入基线时，才能启动依赖它的下一位 worker。当前 `ENG-021` 中，worker-002 依赖已合入的 worker-001；worker-004 还必须等待 001、002、003 都合入。
+只有在 `git status` 干净、前置 worker 已验收并合入基线时，才能启动依赖它的下一位 worker。当前 `ENG-021` 的 worker-001、002、003 已合入，下一位可启动的是 worker-004。
 
 ## 启动 Worker
 
 每次启动都采用同一结构：先切换根目录、创建同级 worktree、把范围和报告格式写入提示词、再用绝对 worktree 路径启动。不要在提示词中要求 worker 阅读 `MENTOR_WORKERS.md`。
 
-以下是当前可启动的 worker-002 示例。它的后端契约已在基线中：
+以下是当前可启动的 worker-004。它负责最终接线、资源位置持久化和浏览器验收；不要把前面三位 worker 已验收的实现重新改写。
 
 ```powershell
 Set-Location -LiteralPath "C:\_HOLOLAB\code\CF WS\CartridgeFlow"
-$worktree = "C:\_HOLOLAB\code\CF WS\CartridgeFlow-worker-002-external-mcp-detail"
-git worktree add $worktree -b "workers/worker-002-external-mcp-detail"
+$worktree = "C:\_HOLOLAB\code\CF WS\CartridgeFlow-worker-004-engineering-integration"
+git worktree add $worktree -b "workers/worker-004-engineering-integration"
 
 $prompt = @'
-你是 worker-002-external-mcp-detail。
+你是 worker-004-engineering-integration。
 
-目标：为 ENG-021 实现按 MCP 呈现模式区分的前端详情模板。
-允许修改：src/frontend/src/api.ts、src/frontend/src/api.types.ts、src/frontend/src/pages/flow-workbench/EngineeringInspector.tsx、src/frontend/src/pages/flow-workbench/McpTransparencyOverlay.tsx、同目录新增详情模板组件，以及直接覆盖这些组件的前端测试。
-禁止修改：src/core/**、src/backend/**、FlowGraphView.tsx、engineeringNode.ts、views.tsx、共享 CSS、docs/**、MENTOR_WORKERS.md。
-依赖：worker-001 的资源目录、资源详情与连通性 API 已合入当前基线；直接消费该契约，不要修改它。
-验收：本地可解析 DLC MCP 保留源码、操作图和指纹编辑入口；外部 MCP 显示“连接详情、调用契约、运行轨迹”，且不显示源码入口；不可审计 MCP 仅显示已知契约和不可观测原因；所有用户可见文案使用中文；前端测试和生产构建通过。
+目标：完成 ENG-021 的最终工程视图接线、资源位置持久化和端到端验收。
+允许修改：src/frontend/src/pages/flow-workbench/views.tsx、仅为接线所需的 src/frontend/src/pages/FlowWorkbench.tsx、最终集成/E2E 测试、docs/development/FILE_INVENTORY.md。
+禁止修改：src/core/**、src/backend/**、src/frontend/src/api.ts、src/frontend/src/api.types.ts、EngineeringInspector.tsx、McpTransparencyOverlay.tsx、McpDetailTemplates.tsx、FlowGraphView.tsx、engineeringNode.ts、EngineeringNodeCard.tsx、FlowNodeCard.tsx、nodeModel.ts、docs/planning/**、MENTOR_WORKERS.md。
+依赖：worker-001、worker-002、worker-003 已合入当前基线。直接接入既有资源契约、MCP 详情模板与工程画布行为，不要重写它们。
+验收：工程视图能打开本地可解析、外部连接器和不可审计三类 MCP 的正确详情；外部 MCP 没有源码入口；资源拖动后刷新仍保留本地工程视图位置且不改变 Root Flow 拓扑；使用 AI 日报外部采集卡带完成桌面 100%/125% 与窄视口 Playwright 回归；前端构建、相关 API/UI 测试和流程预检通过。
 
 先阅读 AGENT.md、任务书 docs/planning/ENGINEERING_VIEW_RESOURCE_TASK_BRIEF.md，以及你将修改的源码。只在允许路径内工作，保留真实失败状态，不制造模拟成功。完成后只提交本任务的改动。
 
@@ -70,7 +70,7 @@ codex -C $worktree $prompt
 ```powershell
 Set-Location -LiteralPath "C:\_HOLOLAB\code\CF WS\CartridgeFlow"
 git worktree list
-git branch --list "workers/worker-002-external-mcp-detail"
+git branch --list "workers/worker-004-engineering-integration"
 ```
 
 ## 交付与验收
@@ -91,11 +91,11 @@ mentor 会检查提交基线、允许路径、测试、真实错误语义和已�
 
 ```powershell
 Set-Location -LiteralPath "C:\_HOLOLAB\code\CF WS\CartridgeFlow"
-$worktree = "C:\_HOLOLAB\code\CF WS\CartridgeFlow-worker-002-external-mcp-detail"
+$worktree = "C:\_HOLOLAB\code\CF WS\CartridgeFlow-worker-004-engineering-integration"
 git -C $worktree status --short
 git branch --contains <accepted-commit-sha>
 git worktree remove $worktree
-git branch -d "workers/worker-002-external-mcp-detail"
+git branch -d "workers/worker-004-engineering-integration"
 ```
 
 若 worktree 仍有改动、提交未合入或任务未验收，mentor 不会删除它，而会报告阻塞原因。

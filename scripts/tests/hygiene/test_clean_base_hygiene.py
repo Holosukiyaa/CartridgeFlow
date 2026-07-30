@@ -101,7 +101,6 @@ class CleanBaseHygieneTests(unittest.TestCase):
     def test_maintenance_assets_and_generated_output_have_single_owners(self):
         expected_maintenance_assets = (
             ROOT / "docs" / "development" / "README.md",
-            ROOT / "docs" / "development" / "AI_DEVELOPER_GUIDE.md",
             ROOT / "scripts" / "bootstrap.ps1",
             ROOT / "scripts" / "launch.py",
             ROOT / "scripts" / "run_conformance.py",

@@ -138,16 +138,11 @@
 | `docs/README.md` | 文档总入口。 |
 | `docs/architecture/AI_STEWARD_INTERACTION_MODES.md` | AI 管家的引导/委托双模式、工程视图定位工具和修改边界。 |
 | `docs/architecture/AI_VIDEO_DAILY_CARTRIDGE.md` | AI 视频日报参考卡带的完整闭环、质量门槛、发布安全和版本演进草案。 |
-| `docs/architecture/ENTERPRISE_MANAGER_RUNNER_PLAIN_GUIDE.md` | 企业版统一管理器与分布式卡带运行器的大白话架构说明。 |
-| `docs/architecture/OFFICIAL_INTERFACE_ONBOARDING_CARTRIDGE_ACTION_GUIDE.md` | 官方接口接入验证卡带、最小探测、知识沉淀和审批上线行动指南。 |
 | `docs/architecture/FLOW_NODE_INFORMATION_ARCHITECTURE.md` | 各节点主卡和详情信息架构。 |
 | `docs/architecture/FLOW_AUTHORING_ANALYSIS_CONTRACT.md` | Flow 业务流程、执行契约、工程关系三层边界，以及统一分析、强制检测和创作 AI 入口。 |
 | `docs/architecture/PORTABLE_DLC_ARCHITECTURE.md` | DLC 所有权、安全和宿主边界。 |
-| `docs/development/AI_DEVELOPER_GUIDE.md` | 深层架构与验收参考。 |
 | `docs/development/WORKER_COLLABORATION_GUIDE.md` | 面向操作者的 worker 协作、基线、启动、报告与验收使用指南。 |
-| `docs/development/FLOW_GRAPH_PERFORMANCE_OPTIMIZATION.md` | 大型 Flow 画布的性能瓶颈、分阶段优化方案、基准与行为回归要求。 |
 | `docs/development/README.md` | 开发维护区说明。 |
-| `docs/development/SECURITY_AUDIT_2026-07-28.md` | Python、FastAPI、React、DLC/MCP、文件路径、内容隔离和依赖的安全审计与整改记录。 |
 | `docs/development/skills/` | 可选协议升级与 Flow 创作 AI Skill；`cartridgeflow-flow-author` 内含真实工作台创作仿真和目标卡带预检脚本。 |
 | `docs/overview/PROJECT_STRUCTURE.md` | 项目分层和数据流。 |
 | `docs/planning/ROADMAP.md` | 少量长期方向。 |

@@ -105,4 +105,4 @@ python -m compileall -q src/core src/backend scripts
 
 完成修改前，按风险运行测试；前端改动必须通过生产构建。路径、启动或配置变化需要实际启动相关入口。协议和共享运行逻辑变化应运行完整 conformance。
 
-需要深入时再查阅 `docs/overview/PROJECT_STRUCTURE.md`、`docs/development/AI_DEVELOPER_GUIDE.md` 和对应协议正文。
+需要深入时再查阅 `docs/overview/PROJECT_STRUCTURE.md` 和对应协议正文。

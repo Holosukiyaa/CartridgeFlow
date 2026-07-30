@@ -19,9 +19,9 @@ No worker may merge another worker branch. The user explicitly approves any merg
 
 | Worker | Status | Objective | Allowed write paths | Exclusions | Dependencies | Branch | Worktree | Acceptance evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| worker-001-resource-contracts | planned | Define redacted external MCP connection details, health semantics, and engineering resource-layout persistence contract. | `src/core/studio/resource_catalog.py`, `src/core/lab/dev_flow.py`, `src/backend/main.py`, `src/backend/lite_main.py`, `scripts/tests/lite/`, backend/core tests directly covering this contract | `src/frontend/**`, `docs/planning/**`, `MENTOR_WORKERS.md`, product CSS, unrelated runtime logic | Clean baseline | `workers/worker-001-resource-contracts` | `..\CartridgeFlow-worker-001-resource-contracts` | Pending |
+| worker-001-resource-contracts | accepted | Define redacted external MCP connection details, health semantics, and engineering resource-layout persistence contract. | `src/core/studio/resource_catalog.py`, `src/core/lab/dev_flow.py`, `src/backend/main.py`, `src/backend/lite_main.py`, `scripts/tests/lite/`, backend/core tests directly covering this contract | `src/frontend/**`, `docs/planning/**`, `MENTOR_WORKERS.md`, product CSS, unrelated runtime logic | Clean baseline | `workers/worker-001-resource-contracts` | `..\CartridgeFlow-worker-001-resource-contracts` | Accepted and merged into `main` as `8194f73`; redaction and real probe tests passed. |
 | worker-002-external-mcp-detail | planned | Build type-correct MCP detail templates that distinguish local source, external connection, and opaque modes. | `src/frontend/src/api.ts`, `src/frontend/src/api.types.ts`, `src/frontend/src/pages/flow-workbench/EngineeringInspector.tsx`, `src/frontend/src/pages/flow-workbench/McpTransparencyOverlay.tsx`, new detail-template components under the same folder, directly related frontend tests | `src/core/**`, `src/backend/**`, `FlowGraphView.tsx`, `engineeringNode.ts`, `views.tsx`, shared CSS owned by worker 003, `docs/**`, `MENTOR_WORKERS.md` | worker-001 accepted and merged into base | `workers/worker-002-external-mcp-detail` | `..\CartridgeFlow-worker-002-external-mcp-detail` | Pending |
-| worker-003-engineering-canvas | planned | Render resource-specific engineering nodes, category markers, draggable canvas behavior, and adaptive card dimensions without changing APIs or detail templates. | `src/frontend/src/pages/flow-workbench/engineeringNode.ts`, `EngineeringNodeCard.tsx`, `FlowGraphView.tsx`, `FlowNodeCard.tsx`, `flowNodeView.ts`, `nodeModel.ts`, engineering-view CSS, related component/layout tests | `src/core/**`, `src/backend/**`, `src/frontend/src/api.ts`, `src/frontend/src/api.types.ts`, `views.tsx`, `EngineeringInspector.tsx`, `McpTransparencyOverlay.tsx`, `docs/**`, `MENTOR_WORKERS.md` | Clean baseline; can run in parallel with worker-001 | `workers/worker-003-engineering-canvas` | `..\CartridgeFlow-worker-003-engineering-canvas` | Pending |
+| worker-003-engineering-canvas | accepted | Render resource-specific engineering nodes, category markers, draggable canvas behavior, and adaptive card dimensions without changing APIs or detail templates. | `src/frontend/src/pages/flow-workbench/engineeringNode.ts`, `EngineeringNodeCard.tsx`, `FlowGraphView.tsx`, `FlowNodeCard.tsx`, `nodeModel.ts`, engineering-view CSS, related component/layout tests | `src/core/**`, `src/backend/**`, `src/frontend/src/api.ts`, `src/frontend/src/api.types.ts`, `views.tsx`, `EngineeringInspector.tsx`, `McpTransparencyOverlay.tsx`, `docs/**`, `MENTOR_WORKERS.md` | Clean baseline; can run in parallel with worker-001 | `workers/worker-003-engineering-canvas` | `..\CartridgeFlow-worker-003-engineering-canvas` | Accepted and merged into `main` as `786bbde`; build and engineering assertions passed. |
 | worker-004-engineering-integration | planned | Connect accepted APIs, MCP detail templates, and canvas behavior; persist resource positions and produce final browser evidence. | `src/frontend/src/pages/flow-workbench/views.tsx`, `src/frontend/src/pages/FlowWorkbench.tsx` only if required for wiring, final integration/E2E tests, `docs/development/FILE_INVENTORY.md` | `src/core/**`, `src/backend/**`, `src/frontend/src/api.ts`, `src/frontend/src/api.types.ts`, node-card files owned by worker-003, MCP detail components owned by worker-002, `docs/planning/**`, `MENTOR_WORKERS.md` | workers 001, 002, 003 accepted and merged into base | `workers/worker-004-engineering-integration` | `..\CartridgeFlow-worker-004-engineering-integration` | Pending |
 
 ## Worker Reports
@@ -29,11 +29,11 @@ No worker may merge another worker branch. The user explicitly approves any merg
 ### worker-001-resource-contracts
 
 - Prompt issued: 2026-07-30 Asia/Shanghai
-- Changed files: Pending
-- Commit: Pending
-- Tests: Pending
-- Risks or follow-up: Pending
-- Mentor acceptance: Pending
+- Changed files: `src/core/studio/resource_catalog.py`, `src/backend/main.py`, `scripts/tests/studio/test_resource_catalog_eng021.py`, `scripts/tests/lite/test_lite_api_surface.py`
+- Commit: `a2d28ea7204d28cb1bff0d3c0a9c481c3c47229e` (`feat: add engineering resource connector contracts`)
+- Tests: worker reported `python scripts/run_conformance.py` (287 passed), targeted resource/Lite/catalog tests (22 passed), `compileall`, and `git diff --check`; mentor independently reran `PYTHONPATH=src python -m unittest scripts.tests.studio.test_resource_catalog_eng021 scripts.tests.lite.test_lite_api_surface` (18 passed) and patch whitespace validation.
+- Risks or follow-up: Connection health is process-local and run telemetry remains `not_observed`; HTTP probing uses a non-invasive `HEAD`, so services that do not support it report their genuine probe failure. `autoreview` did not run because TruffleHog is absent.
+- Mentor acceptance: Accepted on 2026-07-30. The commit is scoped, based on `e4d95d3`, exposes redacted detail and stable connectivity errors, and does not manufacture a successful probe. User-approved cherry-pick completed on `main` as `8194f73`.
 
 ### worker-002-external-mcp-detail
 
@@ -47,11 +47,11 @@ No worker may merge another worker branch. The user explicitly approves any merg
 ### worker-003-engineering-canvas
 
 - Prompt issued: 2026-07-30 Asia/Shanghai
-- Changed files: Pending
-- Commit: Pending
-- Tests: Pending
-- Risks or follow-up: Pending
-- Mentor acceptance: Pending
+- Changed files: `src/frontend/src/pages/flow-workbench/engineeringNode.ts`, `EngineeringNodeCard.tsx`, `FlowGraphView.tsx`, `FlowNodeCard.tsx`, `nodeModel.ts`, `src/frontend/src/styles/99-workbench-reference-shell.css`, `scripts/tests/ui/assert_engineering_canvas.mjs`
+- Commit: `6fa5a0b03f44d212279da3f12b0d4d94d9be9d68` (`feat(canvas): add engineering resource cards`)
+- Tests: worker reported Playwright validation for resource cards, dependency edges and resource drag; mentor independently reran `node scripts/tests/ui/assert_engineering_canvas.mjs` and `npm run build`, both passed. `git diff --check` passed.
+- Risks or follow-up: Resource positions are session-local until worker-004 owns persistence; an existing React maximum update-depth console error remains outside this commit's scope. `autoreview` did not run because TruffleHog is absent. Build also warns that the installed Node `20.18.0` is below Vite's stated `20.19+` requirement and that the production chunk exceeds 500 kB.
+- Mentor acceptance: Accepted on 2026-07-30. Resource nodes remain engineering-only: they are excluded from persisted business layout and Root Flow control edges, while category markers and content-dependent dimensions are covered by the assertions. User-approved cherry-pick completed on `main` as `786bbde`.
 
 ### worker-004-engineering-integration
 
@@ -69,3 +69,7 @@ No worker may merge another worker branch. The user explicitly approves any merg
 | 2026-07-30 Asia/Shanghai | Register created for `ENG-021`; three sequential, non-overlapping assignments planned. |
 | 2026-07-30 Asia/Shanghai | Added `docs/development/WORKER_COLLABORATION_GUIDE.md` for the operator workflow; no worker started. |
 | 2026-07-30 Asia/Shanghai | Revised delivery into two parallel initial lanes plus a dedicated final integration worker; clarified that worker 002 starts after 001 without waiting for worker 003. |
+| 2026-07-30 Asia/Shanghai | Accepted worker-001 commit `a2d28ea`; it remains unmerged pending explicit user approval. |
+| 2026-07-30 Asia/Shanghai | User approved merge; cherry-picked worker-001 into `main` as `8194f73` without conflicts. |
+| 2026-07-30 Asia/Shanghai | Accepted worker-003 commit `6fa5a0b`; it remains unmerged pending explicit user approval. |
+| 2026-07-30 Asia/Shanghai | User approved merge; cherry-picked worker-003 into `main` as `786bbde` without conflicts. |

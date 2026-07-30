@@ -5,7 +5,6 @@
 ```text
 docs/development/
 ├─ README.md               本入口
-├─ AI_DEVELOPER_GUIDE.md   深层架构和验收参考
 ├─ FILE_INVENTORY.md       项目自有文件清单和废弃审计
 └─ skills/                 可选 AI Skill 包
 ```
@@ -39,6 +38,6 @@ python scripts/run_conformance.py
 
 修改产品行为时先看 `src/`。修改验证规则、开发环境或维护流程时再进入 `scripts/`。当前能力证据只能引用当前或领域中立测试，不能由 `scripts/tests/history/` 中的旧协议测试代替。
 
-需要深入理解架构、协议运行链和 Portable DLC 时，再阅读 [AI 开发者指南](AI_DEVELOPER_GUIDE.md)。根目录 `AGENT.md` 仍是 AI 接手仓库的唯一权威起点。
+根目录 `AGENT.md` 是 AI 接手仓库的唯一权威起点；架构与协议说明按当前任务从 `docs/` 对应分区查阅。
 
 查找文件用途、审计历史遗留内容或新增文件时，使用并同步维护 [项目文件清单](FILE_INVENTORY.md)。

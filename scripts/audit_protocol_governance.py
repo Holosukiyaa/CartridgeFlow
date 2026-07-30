@@ -112,7 +112,6 @@ def audit(root: Path = ROOT) -> list[str]:
         "docs/README.md",
         "protocol/README.md",
         "docs/protocol/governance/GOVERNANCE.md",
-        "docs/development/AI_DEVELOPER_GUIDE.md",
         "docs/planning/ROADMAP.md",
         "docs/architecture/FLOW_AUTHORING_ANALYSIS_CONTRACT.md",
         "docs/architecture/PORTABLE_DLC_ARCHITECTURE.md",

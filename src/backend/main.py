@@ -2462,6 +2462,51 @@ def get_lab_flow_resource_catalog(cartridge_id: str):
         raise HTTPException(status_code=404, detail=str(exc))
 
 
+def _resource_catalog_http_error(exc) -> HTTPException:
+    detail = {"code": exc.code, "message": str(exc)}
+    if exc.health is not None:
+        detail["connection_health"] = exc.health
+    return HTTPException(status_code=exc.status_code, detail=detail)
+
+
+@app.get("/api/lab/flows/{cartridge_id}/resource-details/{resource_id:path}")
+def get_lab_flow_resource_detail(cartridge_id: str, resource_id: str):
+    from core.studio.resource_catalog import ResourceCatalogError, get_flow_resource_detail
+
+    try:
+        cartridge = registry.get_cartridge(cartridge_id)
+        return get_flow_resource_detail(
+            ROOT,
+            cartridge.get("manifest") or {},
+            cartridge.get("root_flow") or {},
+            resource_id,
+            package_path=cartridge.get("package_path"),
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail={"code": "CARTRIDGE_NOT_FOUND", "message": str(exc)})
+    except ResourceCatalogError as exc:
+        raise _resource_catalog_http_error(exc)
+
+
+@app.post("/api/lab/flows/{cartridge_id}/resource-connectivity/{resource_id:path}")
+def check_lab_flow_resource_connectivity(cartridge_id: str, resource_id: str):
+    from core.studio.resource_catalog import ResourceCatalogError, check_flow_resource_connectivity
+
+    try:
+        cartridge = registry.get_cartridge(cartridge_id)
+        return check_flow_resource_connectivity(
+            ROOT,
+            cartridge.get("manifest") or {},
+            cartridge.get("root_flow") or {},
+            resource_id,
+            package_path=cartridge.get("package_path"),
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail={"code": "CARTRIDGE_NOT_FOUND", "message": str(exc)})
+    except ResourceCatalogError as exc:
+        raise _resource_catalog_http_error(exc)
+
+
 def _ensure_manifest_tool_editor_allowed(manifest: dict) -> None:
     if manifest.get("portable_dlc"):
         raise HTTPException(

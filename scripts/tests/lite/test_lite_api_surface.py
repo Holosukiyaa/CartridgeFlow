@@ -27,6 +27,8 @@ class LiteApiSurfaceTests(unittest.TestCase):
             "/api/lab/flows/simulations/authoring",
             "/api/lab/flows/dev.example/nodes",
             "/api/lab/flows/dev.example/test-run",
+            "/api/lab/flows/dev.example/resource-details/external-news",
+            "/api/lab/flows/dev.example/resource-connectivity/external-news",
             "/api/llm/providers",
             "/api/studio/resources",
             "/api/studio/packages",
@@ -39,6 +41,49 @@ class LiteApiSurfaceTests(unittest.TestCase):
         for path in allowed:
             with self.subTest(path=path):
                 self.assertTrue(is_lite_api_allowed(path))
+
+    def test_resource_detail_is_redacted_and_unbound_connectivity_has_stable_error(self):
+        secret = "lite-resource-secret"
+        endpoint = f"https://private.example.test/connector?token={secret}"
+        manifest = {
+            "id": "dev.example",
+            "mcp_tools": [{
+                "id": "external-news",
+                "type": "remote",
+                "server": "news-service",
+                "tool": "fetch",
+                "contract": {"timeout_ms": 3000, "idempotent": True, "permissions": ["network:read"]},
+            }],
+        }
+        cartridge = {"manifest": manifest, "root_flow": {"states": {"fetch": {"allowed_tools": ["external-news"]}}}, "package_path": None}
+        resources = {
+            "version": 1,
+            "tools": [{
+                "id": "external-news",
+                "kind": "remote_api",
+                "server": "news-service",
+                "tool": "fetch",
+                "endpoint": endpoint,
+                "auth_env": "LITE_RESOURCE_TOKEN",
+                "auth_header": "Authorization",
+                "enabled": True,
+            }],
+            "bindings": {"roles": {}, "tools": {"dev.example": []}},
+        }
+        with patch.object(backend_main.registry, "get_cartridge", return_value=cartridge), patch(
+            "core.studio.resource_catalog.load_resources", return_value=resources,
+        ):
+            detail = self.client.get("/api/lab/flows/dev.example/resource-details/external-news")
+            check = self.client.post("/api/lab/flows/dev.example/resource-connectivity/external-news")
+
+        self.assertEqual(200, detail.status_code)
+        self.assertEqual("external_connector", detail.json()["resource"]["presentation_mode"])
+        self.assertEqual("local-resource:external-news#endpoint", detail.json()["resource"]["connector"]["endpoint"]["reference"])
+        self.assertNotIn(secret, detail.text)
+        self.assertNotIn(endpoint, detail.text)
+        self.assertNotIn("Authorization", detail.text)
+        self.assertEqual(409, check.status_code)
+        self.assertEqual("EXTERNAL_CONNECTOR_UNBOUND", check.json()["detail"]["code"])
 
     def test_global_and_removed_routes_are_blocked(self):
         blocked = [

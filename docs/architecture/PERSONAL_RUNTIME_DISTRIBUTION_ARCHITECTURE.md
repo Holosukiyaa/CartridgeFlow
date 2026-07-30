@@ -50,7 +50,7 @@
 | Activation | 当前默认用于新 Run 的已安装版本指针。 | 可切换 |
 | Run / Revision | 一次生产及其交付物；固定引用实际运行的 Release。 | 历史不可重写 |
 
-`CF-FARP` 继续描述 Flow 的创作、分析和执行语义。本文提出的发行层应独立定义为 `Cartridge Release Envelope v1`（简称 `CF-CRE@1`），不得为了市场字段直接改写已发布的 CF-FARP 正文。
+`CF-FARP` 继续描述 Flow 的创作、分析和执行语义。发行层已独立定义为 [`CF-CRE@1`](../protocol/release-envelope/CARTRIDGEFLOW_RELEASE_ENVELOPE_PROTOCOL_v1.md)，其生命周期、默认 Release 版本和机器快照只从 [`protocol/catalog/release_manifest.json`](../../protocol/catalog/release_manifest.json) 读取；不得为了市场字段直接改写已发布的 CF-FARP 正文。
 
 ## 4. 发布、市场与运行的关系
 
@@ -131,7 +131,7 @@ Release 使用新的根布局，避免与当前开发 ZIP 的“根目录就是�
 }
 ```
 
-字段名称可在 `DIST-001` 中定稿，但以下原则固定：发行身份、协议版本、Runner 兼容性、能力要求、公开合同、内容摘要和发布者身份必须由同一签名覆盖。市场价格、排序、评价和促销不应写入 Release Manifest。
+`CF-CRE@1` 已冻结 Release Manifest、公开合同、内容摘要和签名输入的字段语义。市场价格、排序、评价和促销不应写入 Release Manifest；当前协议仅实现静态 `validation_only` 验证，安装器和验签器仍是后续任务。
 
 ### 5.3 公开体验与交付合同
 
@@ -202,7 +202,7 @@ Release Builder 必须以稳定路径排序、规范化 JSON 和逐文件 SHA-25
 
 现有开发台 `/api/cartridges/{id}/package` 会生成 `.cartridge.zip`，并附带兼容性、Flow 分析、本机绑定描述和 portability 报告。它适合作为 `dev_export` 的实现基础，但不应直接改名为市场包。
 
-原因包括：它没有 Release identity、内容根签名、发行版本并存、公开体验合同、市场审核身份或授权记录；而且当前运行时语义和 CF-FARP 0.9 支持矩阵仍为 `partial`。在 `CF-CRE@1` 落地前，现有 ZIP 只服务开发、测试和受控手动导入。
+原因包括：它没有 Release identity、内容根签名、发行版本并存、公开体验合同、市场审核身份或授权记录；而且当前运行时语义和 CF-FARP 0.9 支持矩阵仍为 `partial`。`CF-CRE@1` 现已作为 `validation_only` 协议落地，现有 ZIP 在 Release Builder、验签和安装器完成前仍只服务开发、测试和受控手动导入。
 
 ### 7.3 可复现性
 
@@ -332,7 +332,7 @@ Listing 在安装前必须展示：实际主产物示例、用户输入、所需
 
 | 领域 | 当前可复用基础 | 发行架构仍需实现 |
 | --- | --- | --- |
-| 开发打包 | 现有 ZIP 导出、package/production 预检、分析和 portability 报告。 | `CF-CRE@1` 目录、内容根、签名、公开合同、安装模拟。 |
+| 开发打包 | 现有 ZIP 导出、package/production 预检、分析和 portability 报告；`CF-CRE@1` 已有静态验证。 | Release Builder、实际签名、安装模拟。 |
 | 导入安全 | 已限制 ZIP 大小、成员数、解压总量、路径穿越和符号链接。 | 流式下载、Release 摘要/签名验证、信任库、隔离区和撤销状态。 |
 | 卡带安装 | 已导入到 `installed_cartridges`，并可卸载、保留用户产物。 | 版本并存、原子激活、回滚、活动 Run 保护和安装记录。 |
 | 资源可移植性 | 已区分随包内容、本机重绑定、禁止文件与缺失项。 | 面向运行台的绑定向导、授权记录、能力健康检查和绑定迁移。 |

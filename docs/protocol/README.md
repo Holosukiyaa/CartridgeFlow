@@ -1,16 +1,13 @@
-# Protocol Documents
+# 协议文档
 
-Protocol documents are grouped by their role. `protocol/catalog/release_manifest.json`
-is the machine-readable authority for release lifecycle, default versions, and
-the canonical document path for each CF-FARP release.
+协议文档按职责分组。`protocol/catalog/release_manifest.json` 是流程协议生命周期和独立发行封装轨道的机器可读权威来源；它记录默认新流程版本、默认新发行封装版本，以及每个快照的规范文档路径。
 
 ```text
 docs/protocol/
-  base-contract/    Base Contract release documents
-  flow-authoring/   CF-FARP release documents
-  governance/       Human-readable protocol governance rules
+  base-contract/    基础宿主契约发行文档
+  flow-authoring/   CF-FARP 流程协议发行文档
+  release-envelope/ CF-CRE 卡带发行封装协议文档
+  governance/       供人阅读的协议治理规则
 ```
 
-Use the latest document referenced by the release manifest for active work.
-Historical documents remain immutable release evidence; add a new version rather
-than rewriting an older protocol document.
+进行当前工作时，应使用发布清单引用的最新文档。历史文档是不可变的发行证据；应增加新版本，而不是改写旧协议文档。

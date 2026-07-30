@@ -9,6 +9,7 @@
 | 第一次了解项目 | 根目录 `README.md` -> [项目分层](overview/PROJECT_STRUCTURE.md) -> [路线图](planning/ROADMAP.md) |
 | AI 接手或准备开发 | 根目录 `AGENT.md` -> [任务清单](planning/TODO.md) -> 与需求直接相关的源码；产品边界和里程碑再查 [路线图](planning/ROADMAP.md) |
 | 修改 Base、Flow 或运行时 | [当前 Base 0.2 契约](protocol/base-contract/CARTRIDGEFLOW_BASE_CONTRACT_v0.2.md) -> [当前 CF-FARP 0.9 协议](protocol/flow-authoring/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.9.md) -> [发布清单](../protocol/catalog/release_manifest.json) -> `src/core/protocol/` -> 对应 conformance 测试；兼容修复还要核对对应历史快照 |
+| 修改卡带发行协议或发行包验证器 | [CF-CRE@1 发行协议](protocol/release-envelope/CARTRIDGEFLOW_RELEASE_ENVELOPE_PROTOCOL_v1.md) -> [个人运行台发行与安装架构](architecture/PERSONAL_RUNTIME_DISTRIBUTION_ARCHITECTURE.md) -> [发布清单](../protocol/catalog/release_manifest.json) -> `src/core/protocol/release_envelope.py` -> 对应一致性测试 |
 | 修改 Portable DLC | [Portable DLC 架构](architecture/PORTABLE_DLC_ARCHITECTURE.md) -> [协议治理](protocol/governance/GOVERNANCE.md) |
 | 设计个人运行台卡带打包、安装、市场分发或版本升级 | [个人运行台发行与安装架构](architecture/PERSONAL_RUNTIME_DISTRIBUTION_ARCHITECTURE.md) -> 当前协议、打包/导入代码与对应测试 |
 | 修改 Flow 节点主卡或详情信息 | [节点信息架构报告](architecture/FLOW_NODE_INFORMATION_ARCHITECTURE.md) -> [当前 CF-FARP 0.9 协议](protocol/flow-authoring/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.9.md) -> 对应节点视图代码 |
@@ -39,6 +40,7 @@ docs/
 - [Base Contract 0.2](protocol/base-contract/CARTRIDGEFLOW_BASE_CONTRACT_v0.2.md)：当前基座宿主契约。
 - [CF-FARP 0.9](protocol/flow-authoring/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.9.md)：当前正式 Flow 协议正文，新增 MCP/DLC 透明执行与 source model。
 - [CF-FARP 0.8](protocol/flow-authoring/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.8.md)：兼容运行的上一版协议快照。
+- [CF-CRE 1](protocol/release-envelope/CARTRIDGEFLOW_RELEASE_ENVELOPE_PROTOCOL_v1.md)：个人运行台卡带发行包的身份、公开合同、完整性和签名元数据协议；当前仅提供静态验证，状态为 `validation_only` 草案。
 - [发布清单](../protocol/catalog/release_manifest.json)：版本生命周期、默认新建版本和迁移目标的唯一来源。
 - [Portable DLC 架构](architecture/PORTABLE_DLC_ARCHITECTURE.md)：基座与卡带私有能力的激活、隔离和所有权约束。
 - [Flow 节点信息架构](architecture/FLOW_NODE_INFORMATION_ARCHITECTURE.md)：逐类规定开始、结束和全部业务节点的主卡、运行态、详情子卡与禁止展示信息。

@@ -30,6 +30,7 @@ def audit(root: Path = ROOT) -> list[str]:
     if flat_documents:
         errors.append(f"docs/protocol must not contain flat release documents: {sorted(flat_documents)}")
     _require_text(protocol_docs / "README.md", "release_manifest.json", errors)
+    _require_text(protocol_docs / "README.md", "release-envelope", errors)
 
     known = {(item["id"], item["version"]) for item in catalog.releases}
     published = {
@@ -58,6 +59,37 @@ def audit(root: Path = ROOT) -> list[str]:
             errors.append(f"{label}: protocol document is missing: {document}")
         elif document and Path(document).parent != Path("docs/protocol/flow-authoring"):
             errors.append(f"{label}: protocol document must live under docs/protocol/flow-authoring/")
+
+    envelope_known = {(item["id"], item["version"]) for item in catalog.release_envelopes}
+    for release in catalog.release_envelopes:
+        label = f"{release['id']}@{release['version']}"
+        registry_path = protocol_dir / release["registry"]
+        if not registry_path.is_file():
+            errors.append(f"{label}: registry snapshot is missing: {release['registry']}")
+            continue
+        registry = _read_json(registry_path, errors)
+        if registry and (str(registry.get("id")), str(registry.get("version"))) != (release["id"], release["version"]):
+            errors.append(f"{label}: registry snapshot identity does not match release manifest")
+        for field, registry_field in (("profiles", "profiles_file"), ("capabilities", "capabilities_file")):
+            value = release.get(field)
+            if not isinstance(value, str) or not (protocol_dir / value).is_file():
+                errors.append(f"{label}: {field} snapshot is missing")
+            elif registry and registry.get(registry_field) != value:
+                errors.append(f"{label}: release manifest {field} does not match registry {registry_field}")
+        document = release.get("document")
+        if not (root / document).is_file():
+            errors.append(f"{label}: protocol document is missing: {document}")
+        elif Path(document).parent != Path("docs/protocol/release-envelope"):
+            errors.append(f"{label}: protocol document must live under docs/protocol/release-envelope/")
+
+    envelope_snapshot_keys = {
+        (data.get("id"), str(data.get("version")))
+        for path in (protocol_dir / "releases").glob("CF-CRE-*.json")
+        for data in [_read_json(path, errors)]
+        if data
+    }
+    if envelope_snapshot_keys != envelope_known:
+        errors.append(f"release envelope manifest and CF-CRE snapshots differ: manifest={sorted(envelope_known)}, snapshots={sorted(envelope_snapshot_keys)}")
 
     base_registry = _read_json(protocol_dir / "base" / "CARTRIDGEFLOW-BASE-0.2.json", errors)
     base_document = base_registry.get("document") if base_registry else None
@@ -115,6 +147,7 @@ def audit(root: Path = ROOT) -> list[str]:
         "docs/planning/ROADMAP.md",
         "docs/architecture/FLOW_AUTHORING_ANALYSIS_CONTRACT.md",
         "docs/architecture/PORTABLE_DLC_ARCHITECTURE.md",
+        "docs/architecture/PERSONAL_RUNTIME_DISTRIBUTION_ARCHITECTURE.md",
     ]:
         _require_text(root / document, "release_manifest.json", errors)
 

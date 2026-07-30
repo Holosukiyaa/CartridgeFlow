@@ -1,0 +1,16 @@
+{
+  "schema_version": "1",
+  "id": "CF-CRE",
+  "version": "1",
+  "name": "CartridgeFlow 发行封装协议",
+  "status": "draft",
+  "implementation_status": "validation_only",
+  "standalone": true,
+  "base_contract": {
+    "id": "CARTRIDGEFLOW-BASE",
+    "version": "0.2"
+  },
+  "profiles_file": "vocabulary/release-envelope-profiles-1.json",
+  "capabilities_file": "vocabulary/release-envelope-capabilities-1.json",
+  "document": "docs/protocol/release-envelope/CARTRIDGEFLOW_RELEASE_ENVELOPE_PROTOCOL_v1.md"
+}

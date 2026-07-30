@@ -1,0 +1,9 @@
+{
+  "schema_version": "0.1",
+  "profiles": [
+    {
+      "id": "release_envelope_validation",
+      "description": "仅对 CF-CRE@1 草案做静态结构验证；不表示已支持包签名验签、安装、市场或运行器执行。"
+    }
+  ]
+}

@@ -24,10 +24,11 @@
 | `config/templates/llm/*.json` | 无密钥的模型连接与角色分配模板。 |
 | `config/templates/studio/*.json` | 无密钥的凭据与工具资源模板。 |
 | `config/README.md` | 配置区与本机数据边界说明。 |
-| `protocol/releases/CF-FARP-0.1.json` 至 `CF-FARP-0.9.json` | Flow 协议机器快照；v0.9 是最新规范，v0.8 是当前 Base 支持的上一版，旧版本用于支持、识别或迁移。 |
+| `protocol/releases/CF-FARP-0.1.json` 至 `CF-FARP-1.0.json` | Flow 协议机器快照；v0.9 是当前正式规范，v1.0 是未执行支持的 ExecutionPlan 草案。 |
+| `protocol/releases/CF-CRE-1.json` | 个人运行台发行封装协议的机器快照；当前只支持静态验证。 |
 | `protocol/base/CARTRIDGEFLOW-BASE-0.2.json` | 当前 Base Contract 机器清单。 |
-| `protocol/vocabulary/capabilities*.json` | 能力注册表与 0.7/0.8/0.9 版本化快照。 |
-| `protocol/vocabulary/profiles*.json` | Profile 注册表与 0.7/0.8/0.9 版本化快照。 |
+| `protocol/vocabulary/capabilities*.json`、`release-envelope-capabilities-1.json` | 流程协议与发行封装协议的能力注册表和版本化快照。 |
+| `protocol/vocabulary/profiles*.json`、`release-envelope-profiles-1.json` | 流程协议与发行封装协议的配置档注册表和版本化快照。 |
 | `protocol/governance/` | 可变的协议治理说明和历史兼容镜像。 |
 | `protocol/catalog/release_manifest.json` | 协议发布的唯一生命周期、默认版本、迁移目标和快照路径来源。 |
 | `protocol/tooling/tool_packs.json` | 工具包契约注册表。 |
@@ -58,7 +59,8 @@
 | `src/core/lab/mcp_slots.py` | Flow 工具槽位和启用清单。 |
 | `src/core/lab/builtin_mcp.py`、`mcp/` | 通用 MCP 与媒体/DLC 工具契约。 |
 | `src/core/llm/` | 模型配置、导入、检测、Provider、Responses API 和重试。 |
-| `src/core/protocol/` | Base 清单、发布清单加载、能力注册、兼容报告、认证、决策信封和工具计划。 |
+| `src/core/protocol/` | 基础宿主/发布清单加载、能力注册、兼容报告、认证、决策信封、工具计划和 CF-CRE 发行封装静态验证。 |
+| `src/core/protocol/release_envelope.py` | CF-CRE@1 的纯结构、公开合同、路径和摘要验证器；不执行卡带代码或签名验签。 |
 | `src/core/runtime/` | 状态机、错误、检查点、模型提示、Agent 协作和运行管理。 |
 | `src/core/studio/` | 系统环境、工具资源、外部适配、便携性、发布和卫生检查。 |
 | `src/core/workspace/host.py` | 卡带工作区宿主能力。 |
@@ -144,6 +146,7 @@
 | `docs/architecture/PERSONAL_RUNTIME_DISTRIBUTION_ARCHITECTURE.md` | 个人运行台的卡带发行、安装、资源重绑定、版本、市场与授权架构基线。 |
 | `docs/architecture/PORTABLE_DLC_ARCHITECTURE.md` | DLC 所有权、安全和宿主边界。 |
 | `docs/development/WORKER_COLLABORATION_GUIDE.md` | 面向操作者的 worker 协作目录、可直接粘贴的启动命令、固定交付报告、验收与受控清理指南。 |
+| `docs/development/DEVELOPMENT_CONSOLE_RELEASE_PROTOCOL_GUIDE.md` | 面向开发台的 CF-CRE@1 使用指南：发布前检查、公开合同、候选包构建、静态验证与状态边界。 |
 | `docs/planning/ORCHESTRATION_EXECUTION_TASK_BRIEF.md` | ORCH-001 的分阶段工作包、文件所有权、依赖、验收口径与可直接启动的 worker 提示词。 |
 | `docs/development/README.md` | 开发维护区说明。 |
 | `docs/development/skills/` | 可选协议升级与 Flow 创作 AI Skill；`cartridgeflow-flow-author` 内含真实工作台创作仿真和目标卡带预检脚本。 |
@@ -155,6 +158,7 @@
 | `docs/protocol/README.md` | 协议文档导航与目录边界。 |
 | `docs/protocol/base-contract/` | Base Contract 的发布正文历史。 |
 | `docs/protocol/flow-authoring/` | CF-FARP Flow Authoring 协议的发布正文历史。 |
+| `docs/protocol/release-envelope/` | CF-CRE 卡带发行包协议正文。 |
 | `docs/protocol/governance/` | 人类阅读的协议治理规则。 |
 
 ## 脚本与测试
@@ -166,6 +170,7 @@
 | `scripts/audit_protocol_governance.py` | 全盘校验协议发布清单、历史镜像、快照、Base 声明、发放入口和文档基线。 |
 | `scripts/run_conformance.py` | 运行全量测试并写入 conformance 报告。 |
 | `scripts/tests/conformance/` | 当前协议、兼容性、能力和认证。 |
+| `scripts/tests/conformance/test_release_envelope_protocol.py` | CF-CRE@1 机器快照、有效发行物、公开泄露与摘要/未列文件拒绝的 conformance。 |
 | `scripts/tests/history/` | 历史协议识别与迁移规则快照。 |
 | `scripts/tests/hygiene/` | 仓库、配置、数据和发布卫生。 |
 | `scripts/tests/lite/` | Lite API 白名单。 |

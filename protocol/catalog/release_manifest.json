@@ -13,5 +13,20 @@
     {"id": "CF-FARP", "version": "0.8", "lifecycle": "supported_previous", "registry": "releases/CF-FARP-0.8.json", "profiles": "vocabulary/profiles-0.8.json", "capabilities": "vocabulary/capabilities-0.8.json", "document": "docs/protocol/flow-authoring/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.8.md"},
     {"id": "CF-FARP", "version": "0.9", "lifecycle": "current", "registry": "releases/CF-FARP-0.9.json", "profiles": "vocabulary/profiles-0.9.json", "capabilities": "vocabulary/capabilities-0.9.json", "document": "docs/protocol/flow-authoring/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.9.md"},
     {"id": "CF-FARP", "version": "1.0", "lifecycle": "recognized_legacy", "status": "draft", "implementation_status": "unsupported", "migration_target": {"id": "CF-FARP", "version": "0.9"}, "registry": "releases/CF-FARP-1.0.json", "profiles": "vocabulary/profiles-1.0.json", "capabilities": "vocabulary/capabilities-1.0.json", "document": "docs/protocol/flow-authoring/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v1.0.md"}
-  ]
+  ],
+  "release_envelopes": {
+    "default_for_new_releases": {"id": "CF-CRE", "version": "1"},
+    "releases": [
+      {
+        "id": "CF-CRE",
+        "version": "1",
+        "lifecycle": "draft",
+        "implementation_status": "validation_only",
+        "registry": "releases/CF-CRE-1.json",
+        "profiles": "vocabulary/release-envelope-profiles-1.json",
+        "capabilities": "vocabulary/release-envelope-capabilities-1.json",
+        "document": "docs/protocol/release-envelope/CARTRIDGEFLOW_RELEASE_ENVELOPE_PROTOCOL_v1.md"
+      }
+    ]
+  }
 }

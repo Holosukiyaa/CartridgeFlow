@@ -5,6 +5,8 @@
 ```text
 docs/development/
 ├─ README.md               本入口
+├─ DEVELOPMENT_CONSOLE_RELEASE_PROTOCOL_GUIDE.md
+│                         开发台使用 CF-CRE@1 生成发行候选包的指南
 ├─ FILE_INVENTORY.md       项目自有文件清单和废弃审计
 └─ skills/                 可选 AI Skill 包
 ```
@@ -41,3 +43,5 @@ python scripts/run_conformance.py
 根目录 `AGENT.md` 是 AI 接手仓库的唯一权威起点；架构与协议说明按当前任务从 `docs/` 对应分区查阅。
 
 查找文件用途、审计历史遗留内容或新增文件时，使用并同步维护 [项目文件清单](FILE_INVENTORY.md)。
+
+涉及卡带发布、发行候选包、签名或安装闭环时，先阅读[开发台使用 CF-CRE@1 发行卡带指南](DEVELOPMENT_CONSOLE_RELEASE_PROTOCOL_GUIDE.md)。

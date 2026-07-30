@@ -5,16 +5,16 @@
 
 ```text
 protocol/
-  base/          Base Contract 机器快照
+  base/          基础宿主契约机器快照
   catalog/       发布清单
   governance/    可变治理镜像与目录说明
-  releases/      CF-FARP 发布快照
+  releases/      CF-FARP 与 CF-CRE 发布快照
   tooling/       工具包注册表
-  vocabulary/    capability 与 profile 词表快照
+  vocabulary/    能力与配置档词表快照
   README.md      本导航
 ```
 
-协议正文在 `docs/protocol/` 中按 Base Contract、Flow Authoring 和治理规则分类。
+协议正文在 `docs/protocol/` 中按基础宿主契约、流程编写、发行封装和治理规则分类。
 修改协议前先读取 `catalog/release_manifest.json`；新增版本时新增完整快照，不能覆盖历史版本。
 修改后运行：
 

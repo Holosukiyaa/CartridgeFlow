@@ -10,6 +10,7 @@ class ProtocolReleaseCatalogError(ValueError):
 
 RELEASE_MANIFEST_PATH = Path("protocol/catalog/release_manifest.json")
 _LIFECYCLES = {"current", "supported_previous", "recognized_legacy"}
+_RELEASE_ENVELOPE_LIFECYCLES = {"draft", "active", "supported_previous"}
 
 
 class ProtocolReleaseCatalog:
@@ -17,7 +18,9 @@ class ProtocolReleaseCatalog:
         self.root = Path(root)
         self.data = _load_release_manifest(self.root)
         self.releases = self.data["releases"]
+        self.release_envelopes = self.data["release_envelopes"]["releases"]
         self._by_key = {(item["id"], item["version"]): item for item in self.releases}
+        self._release_envelopes_by_key = {(item["id"], item["version"]): item for item in self.release_envelopes}
 
     def get(self, protocol_id: str, version: str) -> dict | None:
         return self._by_key.get((str(protocol_id), str(version)))
@@ -41,6 +44,13 @@ class ProtocolReleaseCatalog:
             "document": item.get("document"),
         }
 
+    def get_release_envelope(self, protocol_id: str, version: str) -> dict | None:
+        return self._release_envelopes_by_key.get((str(protocol_id), str(version)))
+
+    def default_release_envelope(self) -> dict | None:
+        default = self.data["release_envelopes"]["default_for_new_releases"]
+        return self.get_release_envelope(str(default["id"]), str(default["version"]))
+
     def public_payload(self) -> dict:
         default = dict(self.data["default_for_new_flows"])
         return {
@@ -51,6 +61,13 @@ class ProtocolReleaseCatalog:
                 {key: value for key, value in item.items() if key in {"id", "version", "lifecycle", "migration_target"}}
                 for item in self.releases
             ],
+            "release_envelopes": {
+                "default_for_new_releases": dict(self.data["release_envelopes"]["default_for_new_releases"]),
+                "releases": [
+                    {key: value for key, value in item.items() if key in {"id", "version", "lifecycle", "implementation_status"}}
+                    for item in self.release_envelopes
+                ],
+            },
         }
 
 
@@ -97,4 +114,34 @@ def _load_release_manifest(root: Path) -> dict:
     default = (str(data["default_for_new_flows"]["id"]), str(data["default_for_new_flows"]["version"]))
     if current != 1 or default not in seen or next(item for item in releases if (item["id"], item["version"]) == default)["lifecycle"] != "current":
         raise ProtocolReleaseCatalogError("default_for_new_flows must be the only current release")
+    _validate_release_envelopes(data)
     return data
+
+
+def _validate_release_envelopes(data: dict) -> None:
+    track = data.get("release_envelopes")
+    if not isinstance(track, dict):
+        raise ProtocolReleaseCatalogError("protocol release manifest release_envelopes is required")
+    default = track.get("default_for_new_releases")
+    if not isinstance(default, dict) or not default.get("id") or not default.get("version"):
+        raise ProtocolReleaseCatalogError("release_envelopes.default_for_new_releases requires id and version")
+    releases = track.get("releases")
+    if not isinstance(releases, list) or not releases:
+        raise ProtocolReleaseCatalogError("release_envelopes.releases must be a non-empty array")
+    seen: set[tuple[str, str]] = set()
+    for index, item in enumerate(releases):
+        if not isinstance(item, dict) or not item.get("id") or not item.get("version"):
+            raise ProtocolReleaseCatalogError(f"release_envelopes.releases[{index}] requires id and version")
+        key = (str(item["id"]), str(item["version"]))
+        if key in seen:
+            raise ProtocolReleaseCatalogError(f"release_envelopes duplicates {key[0]}@{key[1]}")
+        seen.add(key)
+        if item.get("lifecycle") not in _RELEASE_ENVELOPE_LIFECYCLES:
+            raise ProtocolReleaseCatalogError(f"release_envelopes.releases[{index}].lifecycle is invalid")
+        if item.get("implementation_status") not in {"validation_only", "supported"}:
+            raise ProtocolReleaseCatalogError(f"release_envelopes.releases[{index}].implementation_status is invalid")
+        for field in ("registry", "profiles", "capabilities", "document"):
+            if not isinstance(item.get(field), str) or not item[field]:
+                raise ProtocolReleaseCatalogError(f"release_envelopes.releases[{index}].{field} is required")
+    if (str(default["id"]), str(default["version"])) not in seen:
+        raise ProtocolReleaseCatalogError("release_envelopes.default_for_new_releases must name a registered release")

@@ -44,6 +44,9 @@ class CheckpointManager:
         safe_node = re.sub(r"[^a-zA-Z0-9._-]+", "_", str(node_id or "node"))[:80] or "node"
         filename = f"{revision:05d}-{safe_node}-{phase}.json"
         store = ((state_doc.get("context") or {}).get("store") or {}) if isinstance(state_doc, dict) else {}
+        execution = state_doc.get("execution") if isinstance(state_doc.get("execution"), dict) else None
+        active_token = ((state_doc.get("context") or {}).get("_execution_token")) if isinstance(state_doc, dict) else None
+        token_snapshot = _token_snapshot(active_token)
         prior_items = [item for item in index.get("items") or [] if isinstance(item, dict)]
         state_snapshot = deepcopy(state_doc)
         if phase == "after":
@@ -71,6 +74,8 @@ class CheckpointManager:
             "artifact_ids": [str(item.get("artifact_id") or item.get("name") or "") for item in run.get("artifacts") or [] if isinstance(item, dict)],
             "replay": replay or {},
             "event_snapshot": deepcopy(event_snapshot) if isinstance(event_snapshot, dict) else None,
+            "token": token_snapshot,
+            "execution_snapshot": deepcopy(execution) if execution is not None else None,
             "run_snapshot": deepcopy(run),
             "state_snapshot": state_snapshot,
         }
@@ -85,6 +90,9 @@ class CheckpointManager:
             "path": f"checkpoints/{filename}",
             "replay": replay or {},
             "event_id": str((event_snapshot or {}).get("event_id") or ""),
+            "token_id": str((token_snapshot or {}).get("token_id") or ""),
+            "token_attempt": (token_snapshot or {}).get("attempt"),
+            "token_input_refs": deepcopy((token_snapshot or {}).get("input_refs") or []),
         }
         items = prior_items
         items.append(summary)
@@ -181,3 +189,19 @@ def _upstream_revisions(state_doc: dict, prior_items: list[dict], node_id: str) 
                 "event_id": summary.get("event_id", ""),
             })
     return revisions
+
+
+def _token_snapshot(token) -> dict | None:
+    if not isinstance(token, dict) or not token.get("token_id"):
+        return None
+    return {
+        "token_id": str(token.get("token_id")),
+        "run_id": str(token.get("run_id") or ""),
+        "node_id": str(token.get("node_id") or ""),
+        "attempt": int(token.get("attempt") or 0),
+        "status": str(token.get("status") or ""),
+        "input_refs": deepcopy(token.get("input_refs") or []),
+        "lineage": deepcopy(token.get("lineage") or {}),
+        "parent_token_ids": [str(item) for item in token.get("parent_token_ids") or []],
+        "via_edge_id": str(token.get("via_edge_id") or ""),
+    }

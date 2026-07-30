@@ -18,6 +18,7 @@ from core.llm.config_manager import build_model_binding_report
 from core.workspace.host import WorkspaceHostManager
 from core.lab.node_executor import LabNodeExecutor
 from core.protocol import CompatibilityBlockedError, build_compatibility_report, load_base_implementation
+from core.orchestration import ExecutionPlanCompileError, compile_execution_plan
 from core.studio.external_adapters import cancel_external_calls_for_run
 from core.studio.resource_resolver import resolve_cartridge_resources
 from .artifacts import ArtifactManager
@@ -181,6 +182,7 @@ class CartridgeRunner:
             ))
         normalized_probe_range = self._normalize_probe_range(source_root_flow, probe_range)
         root_flow = self._build_probe_root_flow(source_root_flow, normalized_probe_range) if normalized_probe_range else source_root_flow
+        execution_plan = self._compile_execution_plan(root_flow)
         run_dir = self.runs_dir / run_id
         artifacts_dir = run_dir / "artifacts"
         artifacts_dir.mkdir(parents=True, exist_ok=True)
@@ -210,6 +212,7 @@ class CartridgeRunner:
             },
             "flow_analysis": ((compatibility.get("flow_contract") or {}).get("analysis")),
             "flow_output_bindings": self._flow_output_bindings(root_flow),
+            "execution_plan": execution_plan,
             "workspace": manifest.get("workspace", {}),
             "mcp_tools": manifest.get("mcp_tools", []),
             "resource_catalog": resource_catalog,
@@ -235,6 +238,8 @@ class CartridgeRunner:
         }
         engine = RootFlowEngine(root_flow)
         state_doc = engine.create_state(run_id, inputs)
+        if execution_plan:
+            state_doc["execution"] = engine.create_execution_tokens(run_id, execution_plan, inputs)
         state_doc["context"]["local_resources"] = local_resource_report.get("descriptor", {})
         state_doc["context"].setdefault("store", {})["local_resources"] = local_resource_report.get("descriptor", {}).get("roles", {})
         if normalized_test_mode:
@@ -520,12 +525,13 @@ class CartridgeRunner:
             return item
         engine.enter = enter_and_sync
 
-        engine.run_standard_flow(
+        self._run_flow_engine(
+            engine,
             state_doc,
             handlers,
-            edge_handler=lambda source, target, _doc: self._append_flow_edge_event(
-                run_id, cartridge_id, source, target
-            ),
+            run=run,
+            run_dir=run_dir,
+            execution_plan=execution_plan,
         )
         run["current_state"] = state_doc["current_state"]
         paused = (state_doc.get("context") or {}).get("_pause_flow")
@@ -560,6 +566,97 @@ class CartridgeRunner:
         self._write_json(run_dir / "root_flow_state.json", state_doc)
         self._write_json(run_dir / "run.json", run)
         return run
+
+    def _compile_execution_plan(self, root_flow: dict) -> dict | None:
+        protocol = root_flow.get("protocol") if isinstance(root_flow, dict) and isinstance(root_flow.get("protocol"), dict) else {}
+        if protocol.get("id") != "CF-FARP" or str(protocol.get("version")) != "1.0":
+            return None
+        try:
+            return compile_execution_plan(root_flow)
+        except ExecutionPlanCompileError as exc:
+            raise RuntimeFailure(build_runtime_error(
+                "FLOW_CONTRACT_INVALID",
+                source="runtime.execution_plan",
+                cause_chain=[{"type": exc.code, "message": str(exc)}],
+                context={"findings": list(exc.findings)},
+            )) from exc
+
+    def _run_flow_engine(
+        self,
+        engine: RootFlowEngine,
+        state_doc: dict,
+        handlers: dict,
+        *,
+        run: dict,
+        run_dir: Path,
+        execution_plan: dict | None,
+        start_state: str | None = None,
+        visited: set[str] | None = None,
+        completed_parents: dict[str, set[str]] | None = None,
+        initial_queue: list[str] | None = None,
+    ) -> dict:
+        run_id = str(run.get("run_id") or "")
+        cartridge_id = str(run.get("cartridge_id") or "")
+        if execution_plan:
+            def token_handler(event: dict) -> None:
+                token = event.get("token") if isinstance(event.get("token"), dict) else {}
+                self._append_event(
+                    run_id,
+                    cartridge_id,
+                    f"execution_token_{event.get('type')}",
+                    str(token.get("node_id") or ""),
+                    f"Execution token {event.get('type')}: {token.get('token_id')}",
+                    event,
+                )
+                if event.get("type") == "waiting":
+                    checkpoint = self.checkpoint_manager.save(
+                        run_dir,
+                        run,
+                        state_doc,
+                        node_id=str(token.get("node_id") or ""),
+                        phase="after",
+                        outcome="paused_waiting_user",
+                        replay=token.get("replay") if isinstance(token.get("replay"), dict) else {},
+                        event_snapshot=self.get_events(run_id)[-1],
+                    )
+                    active = (state_doc.get("context") or {}).get("_execution_token")
+                    if isinstance(active, dict):
+                        active.setdefault("checkpoints", []).append({
+                            "checkpoint_id": checkpoint["checkpoint_id"],
+                            "phase": "after",
+                            "revision": checkpoint["revision"],
+                        })
+                    run["latest_checkpoint"] = checkpoint
+                    self._write_json(run_dir / "run.json", run)
+                self._write_json(run_dir / "root_flow_state.json", state_doc)
+
+            def edge_handler(source: str, target: str, _doc: dict, data: dict) -> None:
+                payload = data if isinstance(data, dict) else {}
+                self._append_flow_edge_event(
+                    run_id,
+                    cartridge_id,
+                    source,
+                    target,
+                    reason=str(payload.get("reason") or "flow_progress"),
+                    data=payload,
+                )
+
+            return engine.run_execution_plan(
+                state_doc,
+                execution_plan,
+                handlers,
+                edge_handler=edge_handler,
+                token_handler=token_handler,
+            )
+        return engine.run_standard_flow(
+            state_doc,
+            handlers,
+            start_state=start_state,
+            visited=visited,
+            completed_parents=completed_parents,
+            initial_queue=initial_queue,
+            edge_handler=lambda source, target, _doc: self._append_flow_edge_event(run_id, cartridge_id, source, target),
+        )
 
     def build_compatibility_report(self, manifest: dict, root_flow: dict | None, package_path: str | Path | None = None, analysis_target: str = "dev") -> dict:
         base = load_base_implementation(self.root)
@@ -1296,22 +1393,68 @@ class CartridgeRunner:
         source_root_flow = cartridge.get("root_flow") or {}
         probe_range = run.get("probe_range")
         root_flow = self._build_probe_root_flow(source_root_flow, probe_range) if probe_range else source_root_flow
-        start_state, include_paused_parent = self._resolve_resume_start(root_flow, pending, state_doc.get("current_state"))
-        replay_exclusions = self._resume_replay_exclusions(root_flow, resolved_resume, start_state)
-
-        completed_parents = self._completed_parent_map_from_history(
-            root_flow,
-            state_doc,
-            include_paused_node=include_paused_parent,
-            exclude_states=replay_exclusions,
-        )
-        visited = self._completed_visited_from_history(
-            state_doc,
-            exclude_state=start_state,
-            include_paused_node=include_paused_parent,
-            exclude_states=replay_exclusions,
-        )
-        initial_queue = self._resume_initial_queue(root_flow, start_state, visited, completed_parents)
+        execution_plan = run.get("execution_plan") if isinstance(run.get("execution_plan"), dict) else self._compile_execution_plan(root_flow)
+        if execution_plan:
+            resume_source = str(pending.get("node_id") or state_doc.get("current_state") or "").strip()
+            policy = str(resolved_resume.get("policy") or "resume_same_node")
+            success_edges = [
+                edge for edge in execution_plan.get("edges") or []
+                if isinstance(edge, dict) and edge.get("from") == resume_source and edge.get("kind") != "failure"
+            ]
+            if policy == "resume_same_node":
+                start_state = resume_source
+            elif policy in {"resume_next_node", "resume_target_node"}:
+                target = str(resolved_resume.get("target_node") or "").strip()
+                if policy == "resume_next_node":
+                    if len(success_edges) != 1 or success_edges[0].get("kind") not in {"sequence", "wait"}:
+                        raise ValueError("ExecutionPlan interaction can resume next only through one declared sequence or wait relation")
+                    target = str(success_edges[0].get("to") or "")
+                if target not in {str(edge.get("to") or "") for edge in success_edges}:
+                    raise ValueError("ExecutionPlan interaction target is not a declared successor")
+                start_state = target
+            else:
+                raise ValueError(f"Unsupported ExecutionPlan interaction resume policy: {policy}")
+            execution = state_doc.get("execution") if isinstance(state_doc.get("execution"), dict) else {}
+            paused_tokens = [
+                token for token in execution.get("tokens") or []
+                if isinstance(token, dict) and token.get("node_id") == resume_source and token.get("status") == "paused"
+            ]
+            if not paused_tokens:
+                raise ValueError("Pending interaction has no paused ExecutionPlan token")
+            active = max(paused_tokens, key=lambda token: int(token.get("created_sequence") or 0))
+            active.setdefault("input_refs", []).append({
+                "kind": "interaction_answer",
+                "store_key": store_key,
+                "sha256": hashlib.sha256(json.dumps(answer_value, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")).hexdigest(),
+            })
+            if policy == "resume_same_node":
+                active["status"] = "ready"
+                active["attempt"] = int(active.get("attempt") or 0) + 1
+            else:
+                active["status"] = "completed"
+                active["transition_pending"] = True
+            active["updated_at"] = now_iso()
+            include_paused_parent = policy != "resume_same_node"
+            replay_exclusions = set()
+            completed_parents = None
+            visited = None
+            initial_queue = None
+        else:
+            start_state, include_paused_parent = self._resolve_resume_start(root_flow, pending, state_doc.get("current_state"))
+            replay_exclusions = self._resume_replay_exclusions(root_flow, resolved_resume, start_state)
+            completed_parents = self._completed_parent_map_from_history(
+                root_flow,
+                state_doc,
+                include_paused_node=include_paused_parent,
+                exclude_states=replay_exclusions,
+            )
+            visited = self._completed_visited_from_history(
+                state_doc,
+                exclude_state=start_state,
+                include_paused_node=include_paused_parent,
+                exclude_states=replay_exclusions,
+            )
+            initial_queue = self._resume_initial_queue(root_flow, start_state, visited, completed_parents)
 
         self._write_json(state_path, state_doc)
         self._write_json(run_dir / "run.json", run)
@@ -1387,6 +1530,9 @@ class CartridgeRunner:
         run_id = run["run_id"]
         cartridge_id = run["cartridge_id"]
         engine = RootFlowEngine(root_flow)
+        execution_plan = run.get("execution_plan") if isinstance(run.get("execution_plan"), dict) else self._compile_execution_plan(root_flow)
+        if execution_plan:
+            run["execution_plan"] = execution_plan
 
         def sync_state(state_name: str):
             run["current_state"] = state_name
@@ -1617,16 +1763,17 @@ class CartridgeRunner:
 
         engine.enter = enter_and_sync
         state_doc["status"] = "running"
-        engine.run_standard_flow(
+        self._run_flow_engine(
+            engine,
             state_doc,
             handlers,
+            run=run,
+            run_dir=run_dir,
+            execution_plan=execution_plan,
             start_state=start_state,
             visited=visited,
             completed_parents=completed_parents,
             initial_queue=initial_queue,
-            edge_handler=lambda source, target, _doc: self._append_flow_edge_event(
-                run_id, cartridge_id, source, target
-            ),
         )
 
         run["current_state"] = state_doc["current_state"]
@@ -1907,6 +2054,9 @@ class CartridgeRunner:
             def _wrapped(doc: dict, *, _node_id=node_id, _handler=handler):
                 node = states.get(_node_id) if isinstance(states.get(_node_id), dict) else {}
                 replay = self._node_replay_metadata(node, run)
+                active_token = (doc.get("context") or {}).get("_execution_token")
+                if isinstance(active_token, dict):
+                    active_token["replay"] = deepcopy(replay)
                 before = self.checkpoint_manager.save(
                     run_dir,
                     run,
@@ -1916,6 +2066,12 @@ class CartridgeRunner:
                     outcome="entered",
                     replay=replay,
                 )
+                if isinstance(active_token, dict):
+                    active_token.setdefault("checkpoints", []).append({
+                        "checkpoint_id": before["checkpoint_id"],
+                        "phase": "before",
+                        "revision": before["revision"],
+                    })
                 run["latest_checkpoint"] = before
                 self._write_json(run_dir / "run.json", run)
                 self._write_json(run_dir / "root_flow_state.json", doc)
@@ -1976,6 +2132,12 @@ class CartridgeRunner:
                     replay=replay,
                     event_snapshot=event_snapshot,
                 )
+                if isinstance(active_token, dict):
+                    active_token.setdefault("checkpoints", []).append({
+                        "checkpoint_id": after["checkpoint_id"],
+                        "phase": "after",
+                        "revision": after["revision"],
+                    })
                 run["latest_checkpoint"] = after
                 self._write_json(run_dir / "run.json", run)
                 self._write_json(run_dir / "root_flow_state.json", doc)
@@ -2085,6 +2247,94 @@ class CartridgeRunner:
     def control(self, run_id: str, action: str) -> dict:
         return self.control_with_options(run_id, action)
 
+    def resume_execution_wait(
+        self,
+        run_id: str,
+        resume_key: str | None = None,
+        value=None,
+    ) -> dict:
+        """Resume one declared CF-FARP@1.0 wait without re-executing its source token."""
+        run_dir = self.runs_dir / run_id
+        run = self.get_run(run_id)
+        plan = run.get("execution_plan") if isinstance(run.get("execution_plan"), dict) else None
+        if not plan:
+            raise ValueError("Run is not backed by an ExecutionPlan token ledger")
+        state_doc = self._read_json(run_dir / "root_flow_state.json")
+        execution = state_doc.get("execution") if isinstance(state_doc.get("execution"), dict) else {}
+        waiting = [
+            token for token in execution.get("tokens") or []
+            if isinstance(token, dict) and token.get("status") == "waiting" and isinstance(token.get("wait"), dict)
+        ]
+        if not waiting:
+            raise ValueError("Run has no waiting execution token")
+        keys = {str((token.get("wait") or {}).get("resume_key") or "") for token in waiting}
+        selected_key = str(resume_key or "").strip()
+        if not selected_key:
+            if len(keys) != 1:
+                raise ValueError("resume_key is required when a run has multiple waits")
+            selected_key = next(iter(keys))
+        selected = [token for token in waiting if str((token.get("wait") or {}).get("resume_key") or "") == selected_key]
+        if not selected:
+            raise ValueError("resume_key does not match a waiting execution token")
+        candidate_state = deepcopy(state_doc)
+        candidate_store = candidate_state.setdefault("context", {}).setdefault("store", {})
+        if value is not None:
+            candidate_store[selected_key] = value
+        for token in selected:
+            wait = token["wait"]
+            mode = str(wait.get("mode") or "")
+            if mode == "duration":
+                try:
+                    started = datetime.fromisoformat(str(wait.get("started_at") or "").replace("Z", "+00:00")).replace(tzinfo=None)
+                except ValueError as exc:
+                    raise ValueError("waiting execution token has an invalid duration checkpoint") from exc
+                elapsed_ms = int((datetime.now() - started).total_seconds() * 1000)
+                if elapsed_ms < int(wait.get("duration_ms") or 0):
+                    raise ValueError("duration wait has not reached its declared resume boundary")
+            elif mode == "condition" and not RootFlowEngine({})._resolve_value_ref(str(wait.get("condition_ref") or ""), candidate_state, token):
+                raise ValueError("condition wait has not reached its declared resume boundary")
+        store = state_doc.setdefault("context", {}).setdefault("store", {})
+        if value is not None:
+            store[selected_key] = value
+        for token in selected:
+            wait = token["wait"]
+            if str(wait.get("mode") or "") == "signal":
+                wait["resumed"] = True
+            wait["resumed_at"] = now_iso()
+            token.setdefault("input_refs", []).append({
+                "kind": "wait_resume",
+                "resume_key": selected_key,
+                "sha256": hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")).hexdigest(),
+            })
+        state_doc["context"].pop("_pause_flow", None)
+        self._set_run_status(run, "running", "execution_wait_resumed")
+        run["current_state"] = str(selected[0].get("node_id") or run.get("current_state") or "")
+        run["updated_at"] = now_iso()
+        self._write_json(run_dir / "root_flow_state.json", state_doc)
+        self._write_json(run_dir / "run.json", run)
+        self._append_event(
+            run_id,
+            str(run.get("cartridge_id") or ""),
+            "execution_wait_resume_requested",
+            run["current_state"],
+            "Execution wait resume requested",
+            {"resume_key": selected_key, "token_ids": [token.get("token_id") for token in selected]},
+        )
+        cartridge = self.registry.get_cartridge(run.get("cartridge_id") or "")
+        source_root_flow = cartridge.get("root_flow") or {}
+        root_flow = self._build_probe_root_flow(source_root_flow, run.get("probe_range")) if run.get("probe_range") else source_root_flow
+        return self._continue_run(
+            run=run,
+            run_dir=run_dir,
+            manifest=cartridge.get("manifest") or {},
+            root_flow=root_flow,
+            source_root_flow=source_root_flow,
+            state_doc=state_doc,
+            normalized_probe_range=run.get("probe_range"),
+            inputs=run.get("inputs") or {},
+            start_state=run["current_state"],
+        )
+
     def control_with_options(
         self,
         run_id: str,
@@ -2115,6 +2365,8 @@ class CartridgeRunner:
             run["current_state"] = "paused"
         elif action == "resume":
             if run.get("status") == "paused_waiting_user":
+                if isinstance(run.get("execution_plan"), dict):
+                    return self.resume_execution_wait(run_id)
                 raise ValueError("Use pending-interaction/answer to resume a run waiting for user input")
             return self.recover_run(run_id, "resume_checkpoint", confirm_side_effect=confirm_side_effect, feedback=feedback)
         else:
@@ -2176,7 +2428,10 @@ class CartridgeRunner:
             summary = self.checkpoint_manager.latest(run_dir, phase="before", node_id=node_id)
             recovery_status = "retrying"
         elif action == "resume_checkpoint":
-            summary = self.checkpoint_manager.latest(run_dir, phase="after", outcome="completed")
+            if isinstance(current.get("execution_plan"), dict) and current.get("status") in {"paused_waiting_user", "interrupted"}:
+                summary = self.checkpoint_manager.latest(run_dir, phase="after", outcome="paused_waiting_user")
+            else:
+                summary = self.checkpoint_manager.latest(run_dir, phase="after", outcome="completed")
             recovery_status = "recovering"
         elif action == "rollback_to_node":
             node_id = str(target_node or "").strip()
@@ -2213,9 +2468,12 @@ class CartridgeRunner:
         source_root_flow = cartridge.get("root_flow") or {}
         probe_range = current.get("probe_range")
         root_flow = self._build_probe_root_flow(source_root_flow, probe_range) if probe_range else source_root_flow
+        execution_plan = self._compile_execution_plan(root_flow)
 
         restored["run_id"] = run_id
         restored["cartridge_id"] = current.get("cartridge_id")
+        if execution_plan:
+            restored["execution_plan"] = execution_plan
         restored["status"] = recovery_status
         restored["status_history"] = current.get("status_history") or []
         restored["errors"] = current.get("errors") or []
@@ -2277,6 +2535,71 @@ class CartridgeRunner:
         (context.get("store") or {}).pop("_pending_interaction", None)
 
         start_state = str(summary.get("node_id") or "")
+        if execution_plan:
+            recovery_engine = RootFlowEngine(root_flow)
+            checkpoint_token = checkpoint.get("token") if isinstance(checkpoint.get("token"), dict) else {}
+            if checkpoint_token.get("status") == "waiting":
+                self._set_run_status(restored, "paused_waiting_user", "execution_wait_restored")
+                restored["current_state"] = start_state
+                state_doc["current_state"] = start_state
+                state_doc["status"] = "paused_waiting_user"
+                self._write_json(run_dir / "run.json", restored)
+                self._write_json(run_dir / "root_flow_state.json", state_doc)
+                self._append_event(
+                    run_id,
+                    restored.get("cartridge_id") or "",
+                    "execution_wait_restored",
+                    start_state,
+                    "Execution wait restored from checkpoint",
+                    recovery_record,
+                )
+                return restored
+            recovery_engine.prepare_execution_recovery(
+                state_doc,
+                node_id=start_state,
+                phase=str(summary.get("phase") or "before"),
+                outcome=str(summary.get("outcome") or "entered"),
+            )
+            if confirm_side_effect and unsafe:
+                active = max(
+                    (
+                        token for token in (state_doc.get("execution") or {}).get("tokens") or []
+                        if isinstance(token, dict) and token.get("node_id") == start_state
+                    ),
+                    key=lambda item: int(item.get("created_sequence") or 0),
+                    default=None,
+                )
+                if active is not None:
+                    active["replay_confirmation"] = {
+                        "action": action,
+                        "confirmed_at": now_iso(),
+                        "checkpoint_id": summary.get("checkpoint_id"),
+                    }
+            self._set_run_status(restored, "running", "checkpoint_loaded")
+            restored["current_state"] = start_state
+            state_doc["current_state"] = start_state
+            state_doc["status"] = "running"
+            self._write_json(run_dir / "run.json", restored)
+            self._write_json(run_dir / "root_flow_state.json", state_doc)
+            self._append_event(
+                run_id,
+                restored.get("cartridge_id") or "",
+                "run_recovery_started",
+                start_state,
+                f"Run recovery started: {action}",
+                recovery_record,
+            )
+            return self._continue_run(
+                run=restored,
+                run_dir=run_dir,
+                manifest=manifest,
+                root_flow=root_flow,
+                source_root_flow=source_root_flow,
+                state_doc=state_doc,
+                normalized_probe_range=probe_range,
+                inputs=restored.get("inputs") or {},
+                start_state=start_state,
+            )
         if summary.get("phase") == "after":
             next_states = RootFlowEngine(root_flow).next_states(start_state)
             if not next_states:
@@ -2401,6 +2724,7 @@ class CartridgeRunner:
         source: str,
         target: str,
         reason: str = "flow_progress",
+        data: dict | None = None,
     ) -> None:
         self._append_event(
             run_id,
@@ -2408,7 +2732,7 @@ class CartridgeRunner:
             "flow_edge_traversed",
             target,
             f"Flow edge traversed: {source} -> {target}",
-            {"from": source, "to": target, "reason": reason},
+            {"from": source, "to": target, "reason": reason, **(data or {})},
         )
 
     def _append_operation_events(self, run_id: str, cartridge_id: str, state_name: str, result: dict) -> None:

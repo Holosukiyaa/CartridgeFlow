@@ -14,7 +14,7 @@ import { saveNodeDraft } from './nodeEditing.ts'
 import { showToast } from '../../toast.tsx'
 import { buildNodeAuthoringPath } from './nodeAuthoring.ts'
 import { EngineeringInspector } from './EngineeringInspector.tsx'
-import { buildEngineeringNodeModels, buildEngineeringProjection, type EngineeringEdgeVisibility } from './engineeringNode.ts'
+import { buildEngineeringNodeModels, buildEngineeringProjection, isEngineeringResourceNode, type EngineeringEdgeVisibility } from './engineeringNode.ts'
 import { AIFlowStewardPanel } from './AIFlowStewardPanel.tsx'
 import { McpTransparencyOverlay } from './McpTransparencyOverlay.tsx'
 
@@ -88,6 +88,7 @@ export function WorkbenchHeader({
 export function DesignView({
   graph, editable, files, flowId, selectedNode, focusNodeId, openNodeEditors,
   onSelectNode, onGuideNodeEditor, onCloseNodeEditor, onToggleNodeEditorPin, onNodeEditorPositionChange, onCloseUnpinnedNodeEditors, onLayoutSave, autoLayoutOnMount, onAutoLayoutComplete, onEdgesSave, onAnnotationsSave, onCreateNode, onDeleteNode, onFilesChange, onSaved,
+  engineeringResourceLayout, onEngineeringResourceLayoutSave,
   modelPanel, toolPanel, packagePanel, cartridgePanel, runStatus, nodeRunStates, runEvents, runCompletionVisible, runCompletion, onDismissRunCompletion, onOpenRunLog, onOpenPendingInteraction,
   protocolInfo,
 }: {
@@ -113,6 +114,8 @@ export function DesignView({
   onDeleteNode: (node: FlowNode) => Promise<void>
   onFilesChange: (files: FlowFiles) => void
   onSaved: (result: GraphResult) => void
+  engineeringResourceLayout?: Record<string, { x: number; y: number }>
+  onEngineeringResourceLayoutSave?: (layout: Record<string, { x: number; y: number }>) => void
   modelPanel?: ReactNode
   toolPanel?: ReactNode
   packagePanel?: ReactNode
@@ -144,6 +147,18 @@ export function DesignView({
   const [nodeDrafts, setNodeDrafts] = useState<Record<string, NodeDraft>>({})
   const [savingNodeIds, setSavingNodeIds] = useState<Set<string>>(() => new Set())
   const engineeringProjection = useMemo(() => buildEngineeringProjection(graph), [graph])
+  const engineeringGraph = useMemo(() => {
+    if (!engineeringResourceLayout || Object.keys(engineeringResourceLayout).length === 0) return engineeringProjection.graph
+    return {
+      ...engineeringProjection.graph,
+      nodes: engineeringProjection.graph.nodes.map((node) => {
+        if (!isEngineeringResourceNode(node)) return node
+        const position = engineeringResourceLayout[node.id]
+        if (!position) return node
+        return { ...node, params: { ...(node.params || {}), layout: position } }
+      }),
+    }
+  }, [engineeringProjection.graph, engineeringResourceLayout])
   const engineeringDataRelations = engineeringProjection.relations
   const engineeringRelationCounts = useMemo(() => {
     const relations = engineeringDataRelations
@@ -281,15 +296,22 @@ export function DesignView({
   useEffect(() => {
     let active = true
     const nodeId = selectedNode?.id
+    const resourceId = selectedNode && isEngineeringResourceNode(selectedNode)
+      ? String(selectedNode.params?.resource_id || '').trim()
+      : ''
     setMcpTool(null)
     setMcpSource(null)
     setMcpError('')
     setMcpOverlayOpen(false)
     if (!engineering || !nodeId) return () => { active = false }
     void fetchFlowResourceCatalog(flowId).then(async (catalog) => {
-      const tool = catalog.tools.find((item) => item.node_references?.includes(nodeId) && (item.source === 'cartridge_dlc' || item.transparency)) || null
+      const tool = catalog.tools.find((item) => (
+        item.node_references?.includes(nodeId)
+        || (resourceId && [item.id, item.resource_id].includes(resourceId))
+      ) && (item.source === 'cartridge_dlc' || item.transparency)) || null
       if (!active || !tool) return
       setMcpTool(tool)
+      if (tool.presentation_mode && tool.presentation_mode !== 'local_parsable') return
       const sourceNodeId = String(tool.node_id || '').trim()
       if (!sourceNodeId) return
       setMcpLoading(true)
@@ -303,22 +325,47 @@ export function DesignView({
       }
     }).catch((error: any) => { if (active) setMcpError(error?.message || 'MCP 资源目录不可读取') })
     return () => { active = false }
-  }, [engineering, flowId, selectedNode?.id])
+  }, [engineering, flowId, selectedNode?.id, selectedNode?.scope, selectedNode?.params?.resource_id])
   const canMutateGraph = editable
   const canEditSelectedNode = Boolean(editable && selectedNode && !selectedNode.locked && selectedNode.scope !== 'root')
   const visibleEngineeringRelations = useMemo(() => engineeringDataRelations.filter((relation) => (
     relation.kind === 'dependency' ? edgeVisibility.dependency : edgeVisibility.data
   )), [edgeVisibility.data, edgeVisibility.dependency, engineeringDataRelations])
   const engineeringNodeModels = useMemo(
-    () => engineering ? buildEngineeringNodeModels(engineeringProjection.graph, files, nodeRunStates, visibleEngineeringRelations) : new Map(),
-    [engineering, engineeringProjection.graph, files, nodeRunStates, visibleEngineeringRelations],
+    () => engineering ? buildEngineeringNodeModels(engineeringGraph, files, nodeRunStates, visibleEngineeringRelations) : new Map(),
+    [engineering, engineeringGraph, files, nodeRunStates, visibleEngineeringRelations],
   )
-  const canvasGraph = engineering ? engineeringProjection.graph : graph
+  const canvasGraph = engineering ? engineeringGraph : graph
   const persistBusinessLayout = useCallback(async (layout: Record<string, { x: number; y: number }>) => {
     const businessNodeIds = new Set(graph.nodes.map((node) => node.id))
     const filtered = Object.fromEntries(Object.entries(layout).filter(([nodeId]) => businessNodeIds.has(nodeId)))
     await onLayoutSave(filtered)
   }, [graph.nodes, onLayoutSave])
+  useEffect(() => {
+    if (!engineering || !onEngineeringResourceLayoutSave) return
+    const resourceNodeIds = new Set(engineeringGraph.nodes.filter(isEngineeringResourceNode).map((node) => node.id))
+    if (resourceNodeIds.size === 0) return
+    let frame = 0
+    const captureResourceLayout = () => {
+      window.cancelAnimationFrame(frame)
+      frame = window.requestAnimationFrame(() => {
+        const layout: Record<string, { x: number; y: number }> = {}
+        document.querySelectorAll<HTMLElement>('.cf-flow-graph-shell.display-engineering .react-flow__node[data-id]').forEach((element) => {
+          const nodeId = element.dataset.id || ''
+          if (!resourceNodeIds.has(nodeId)) return
+          const match = element.style.transform.match(/translate(?:3d)?\(\s*(-?(?:\d+|\d*\.\d+))px(?:,\s*|\s+)(-?(?:\d+|\d*\.\d+))px/)
+          if (!match) return
+          layout[nodeId] = { x: Math.round(Number(match[1])), y: Math.round(Number(match[2])) }
+        })
+        if (Object.keys(layout).length) onEngineeringResourceLayoutSave(layout)
+      })
+    }
+    document.addEventListener('pointerup', captureResourceLayout)
+    return () => {
+      document.removeEventListener('pointerup', captureResourceLayout)
+      window.cancelAnimationFrame(frame)
+    }
+  }, [engineering, engineeringGraph.nodes, onEngineeringResourceLayoutSave])
   const emptyNodeEditors = useMemo(() => [], [])
   return (
     <div className={`cf-design-studio ${engineering ? 'engineering-mode' : 'outcome-mode'} ${engineeringInspectorOpen && engineering ? 'inspector-open' : ''} ${stewardOpen ? 'ai-steward-open' : ''} ${nodeEditors.length ? 'drawer-open' : ''}`}>

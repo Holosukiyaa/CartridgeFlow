@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { Box, Button, Spinner, Text } from '../ui.tsx'
 import {
   cloneCartridgeToDev,
@@ -47,6 +47,7 @@ import './flow-workbench/TestBench.css'
 
 const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms))
 const pinnedNodeDetailsStorageKey = (flowId: string) => `cartridgeflow.lite.pinned-node-details.v1:${flowId}`
+const engineeringResourceLayoutStorageKey = (flowId: string) => `cartridgeflow.lite.engineering-resource-layout.v1:${flowId}`
 const RUN_COMPLETION_NOTICE_MS = 8000
 
 type OptimisticRunTransition = {
@@ -123,6 +124,8 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
   const [focusNodeId, setFocusNodeId] = useState<string | null>(null)
   const [openNodeEditors, setOpenNodeEditors] = useState<OpenNodeDetail[]>([])
   const [restoredNodeDetailsFlowId, setRestoredNodeDetailsFlowId] = useState('')
+  const [engineeringResourceLayout, setEngineeringResourceLayout] = useState<Record<string, { x: number; y: number }>>({})
+  const engineeringResourceLayoutRef = useRef<Record<string, { x: number; y: number }>>({})
   const [runs, setRuns] = useState<RunResult[]>([])
   const [events, setEvents] = useState<FlowEvent[]>([])
   const [mcpTools, setMcpTools] = useState<McpTool[]>([])
@@ -284,6 +287,39 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
       setOpenNodeEditors([])
     } finally {
       setRestoredNodeDetailsFlowId(flowId)
+    }
+  }, [flowId])
+
+  useEffect(() => {
+    let restored: Record<string, { x: number; y: number }> = {}
+    try {
+      const stored = JSON.parse(window.localStorage.getItem(engineeringResourceLayoutStorageKey(flowId)) || '{}')
+      if (stored && typeof stored === 'object' && !Array.isArray(stored)) {
+        restored = Object.entries(stored).reduce<Record<string, { x: number; y: number }>>((result, [nodeId, position]) => {
+          const x = Number((position as any)?.x)
+          const y = Number((position as any)?.y)
+          if (nodeId && Number.isFinite(x) && Number.isFinite(y)) result[nodeId] = { x, y }
+          return result
+        }, {})
+      }
+    } catch {
+      // Invalid local metadata must not affect the Flow or its runtime graph.
+    }
+    engineeringResourceLayoutRef.current = restored
+    setEngineeringResourceLayout(restored)
+  }, [flowId])
+
+  const saveEngineeringResourceLayout = useCallback((layout: Record<string, { x: number; y: number }>) => {
+    const next = { ...engineeringResourceLayoutRef.current, ...layout }
+    const unchanged = Object.keys(next).length === Object.keys(engineeringResourceLayoutRef.current).length
+      && Object.entries(next).every(([nodeId, position]) => engineeringResourceLayoutRef.current[nodeId]?.x === position.x && engineeringResourceLayoutRef.current[nodeId]?.y === position.y)
+    if (unchanged) return
+    engineeringResourceLayoutRef.current = next
+    setEngineeringResourceLayout(next)
+    try {
+      window.localStorage.setItem(engineeringResourceLayoutStorageKey(flowId), JSON.stringify(next))
+    } catch {
+      // Local storage can be unavailable; keep the current-session engineering layout.
     }
   }, [flowId])
 
@@ -658,6 +694,8 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
             }}
             onCreateNode={createCategoryNode}
             onFilesChange={setFiles}
+            engineeringResourceLayout={engineeringResourceLayout}
+            onEngineeringResourceLayoutSave={saveEngineeringResourceLayout}
             runStatus={visualRuntimeRun?.status}
             nodeRunStates={designNodeRunStates}
             runEvents={designRunEvents}

@@ -10,6 +10,7 @@
 | AI 接手或准备开发 | 根目录 `AGENT.md` -> [任务清单](planning/TODO.md) -> 与需求直接相关的源码；产品边界和里程碑再查 [路线图](planning/ROADMAP.md) |
 | 修改 Base、Flow 或运行时 | [当前 Base 0.2 契约](protocol/base-contract/CARTRIDGEFLOW_BASE_CONTRACT_v0.2.md) -> [当前 CF-FARP 0.9 协议](protocol/flow-authoring/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.9.md) -> [发布清单](../protocol/catalog/release_manifest.json) -> `src/core/protocol/` -> 对应 conformance 测试；兼容修复还要核对对应历史快照 |
 | 修改 Portable DLC | [Portable DLC 架构](architecture/PORTABLE_DLC_ARCHITECTURE.md) -> [协议治理](protocol/governance/GOVERNANCE.md) |
+| 设计个人运行台卡带打包、安装、市场分发或版本升级 | [个人运行台发行与安装架构](architecture/PERSONAL_RUNTIME_DISTRIBUTION_ARCHITECTURE.md) -> 当前协议、打包/导入代码与对应测试 |
 | 修改 Flow 节点主卡或详情信息 | [节点信息架构报告](architecture/FLOW_NODE_INFORMATION_ARCHITECTURE.md) -> [当前 CF-FARP 0.9 协议](protocol/flow-authoring/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.9.md) -> 对应节点视图代码 |
 | 设计 Flow 创作、关系探测或强制检测 | [Flow 创作与分析架构](architecture/FLOW_AUTHORING_ANALYSIS_CONTRACT.md) -> [当前 CF-FARP 0.9 协议](protocol/flow-authoring/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.9.md) -> 协议校验、图构建与工作台关系代码 |
 | 改进执行编排、循环、合流、子 Flow 或测试夹具 | [n8n 编排取经与差异化报告](architecture/N8N_ORCHESTRATION_BENCHMARK_REPORT.md) -> [编排执行任务书](planning/ORCHESTRATION_EXECUTION_TASK_BRIEF.md) -> [Flow 创作与分析架构](architecture/FLOW_AUTHORING_ANALYSIS_CONTRACT.md) -> 当前协议与运行时测试 |
@@ -43,6 +44,7 @@ docs/
 - [Flow 节点信息架构](architecture/FLOW_NODE_INFORMATION_ARCHITECTURE.md)：逐类规定开始、结束和全部业务节点的主卡、运行态、详情子卡与禁止展示信息。
 - [Flow 创作与分析架构](architecture/FLOW_AUTHORING_ANALYSIS_CONTRACT.md)：规定业务流程、执行契约和工程关系三层边界，以及统一 Analyzer、强制检测与创作 AI 入口。
 - [n8n 编排取经与差异化报告](architecture/N8N_ORCHESTRATION_BENCHMARK_REPORT.md)：以独立实现为前提，记录应借鉴的编排语义、必须保留的差异化和分阶段验收任务。
+- [个人运行台发行与安装架构](architecture/PERSONAL_RUNTIME_DISTRIBUTION_ARCHITECTURE.md)：定义开发台到个人运行台的 Release、安装、资源重绑定、版本、市场和授权边界。
 - [编排执行任务书](planning/ORCHESTRATION_EXECUTION_TASK_BRIEF.md)：将 ORCH-001 分为协议、计划编译、Token 运行器和画布投影四个可验收工作包，并给出启动顺序。
 - [AI 管家交互模式](architecture/AI_STEWARD_INTERACTION_MODES.md)：规定引导/委托双模式、工程视图指针与框选语义，以及 AI 修改权限边界。
 - [AI 视频日报卡带](architecture/AI_VIDEO_DAILY_CARTRIDGE.md)：记录日报采集、筛选、生成、视频发布和人工审批的完整参考闭环。

@@ -141,6 +141,7 @@
 | `docs/architecture/FLOW_NODE_INFORMATION_ARCHITECTURE.md` | 各节点主卡和详情信息架构。 |
 | `docs/architecture/FLOW_AUTHORING_ANALYSIS_CONTRACT.md` | Flow 业务流程、执行契约、工程关系三层边界，以及统一分析、强制检测和创作 AI 入口。 |
 | `docs/architecture/N8N_ORCHESTRATION_BENCHMARK_REPORT.md` | 以 n8n 为独立编排参照，定义 CartridgeFlow 的执行语义缺口、差异化边界和 ORCH-001 至 ORCH-006 推进任务。 |
+| `docs/architecture/PERSONAL_RUNTIME_DISTRIBUTION_ARCHITECTURE.md` | 个人运行台的卡带发行、安装、资源重绑定、版本、市场与授权架构基线。 |
 | `docs/architecture/PORTABLE_DLC_ARCHITECTURE.md` | DLC 所有权、安全和宿主边界。 |
 | `docs/development/WORKER_COLLABORATION_GUIDE.md` | 面向操作者的 worker 协作目录、可直接粘贴的启动命令、固定交付报告、验收与受控清理指南。 |
 | `docs/planning/ORCHESTRATION_EXECUTION_TASK_BRIEF.md` | ORCH-001 的分阶段工作包、文件所有权、依赖、验收口径与可直接启动的 worker 提示词。 |

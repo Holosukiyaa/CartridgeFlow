@@ -1,7 +1,7 @@
 // API 工具：封装所有对后端的 fetch 调用，统一走 /api 前缀
 
 // 基础请求方法：所有 API 调用共用
-import type { RuntimeErrorEnvelope, CartridgeSummary, CartridgeDetail, RunResult, FlowGraph, FlowEdge, FlowAnnotation, FlowLabItem, FlowLabDetail, FlowEvent, TestProbeRange, FlowFiles, CartridgeAsset, InteractionComponent, CartridgeAssetsResponse, McpTool, McpSourceModel, McpSourceResponse, McpSourceEditResponse, BaseImplementationResponse, StudioConformanceResponse, StudioTodoResponse, CompatibilityReport, ProtocolCertificationReport, McpToolsResponse, ValidationResponse, NodeUpdateResult, NodeCreatePayload, LlmProvider, LlmAssignments, LlmConfigBundle, LlmDetectionResult, LlmTestResult, StudioResources, FlowResourceCatalog, StudioCredential, StudioEnvironmentSnapshot, StudioPackageItem, PortabilityReport, StudioReleasePreflight, AIFlowStewardContext, AIFlowStewardMessage, AIFlowStewardMode } from './api.types.ts'
+import type { RuntimeErrorEnvelope, CartridgeSummary, CartridgeDetail, RunResult, FlowGraph, FlowEdge, FlowAnnotation, FlowLabItem, FlowLabDetail, FlowEvent, TestProbeRange, FlowFiles, CartridgeAsset, InteractionComponent, CartridgeAssetsResponse, McpTool, McpSourceModel, McpSourceResponse, McpSourceEditResponse, BaseImplementationResponse, StudioConformanceResponse, StudioTodoResponse, CompatibilityReport, ProtocolCertificationReport, McpToolsResponse, ValidationResponse, NodeUpdateResult, NodeCreatePayload, LlmProvider, LlmAssignments, LlmConfigBundle, LlmDetectionResult, LlmTestResult, StudioResources, FlowResourceCatalog, FlowResourceDetail, FlowResourceConnectivityResult, StudioCredential, StudioEnvironmentSnapshot, StudioPackageItem, PortabilityReport, StudioReleasePreflight, AIFlowStewardContext, AIFlowStewardMessage, AIFlowStewardMode } from './api.types.ts'
 export type * from './api.types.ts'
 
 export class ApiError extends Error {
@@ -264,6 +264,12 @@ export const fetchMcpTools = (id: string) =>
 
 export const fetchFlowResourceCatalog = (id: string) =>
   api<FlowResourceCatalog>(`/api/lab/flows/${id}/resource-catalog`)
+
+export const fetchFlowResourceDetail = (id: string, resourceId: string) =>
+  api<FlowResourceDetail>(`/api/lab/flows/${id}/resource-details/${encodeURIComponent(resourceId)}`)
+
+export const checkFlowResourceConnectivity = (id: string, resourceId: string) =>
+  api<FlowResourceConnectivityResult>(`/api/lab/flows/${id}/resource-connectivity/${encodeURIComponent(resourceId)}`, { method: 'POST' })
 
 export const fetchMcpSourceModel = (id: string, nodeId: string) =>
   api<McpSourceModel>(`/api/lab/flows/${id}/mcp-nodes/${encodeURIComponent(nodeId)}/source-model`)

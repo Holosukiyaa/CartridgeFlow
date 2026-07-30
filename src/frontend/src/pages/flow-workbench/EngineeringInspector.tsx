@@ -3,6 +3,7 @@ import { Braces, Check, Clipboard, Code2, Database, FileCode2, GitCompareArrows,
 import type { FlowGraph, FlowNode, McpSourceResponse, StudioToolResource } from '../../api.ts'
 import { showToast } from '../../toast.tsx'
 import type { EngineeringNodeView, EngineeringSection } from './engineeringNode.ts'
+import { connectionStatusLabel, getMcpPresentationMode, mcpPresentationLabel } from './McpDetailTemplates.tsx'
 import type { NodeDraft } from './types.ts'
 
 type InspectorTab = 'overview' | 'schema' | 'bindings' | 'execution' | 'routes' | 'policies' | 'raw' | 'diff'
@@ -129,6 +130,7 @@ export function EngineeringInspector({ node, graph, view, unlocked, canEdit, onT
   }
 
   const sectionById = new Map(view.sections.map((section) => [section.id, section]))
+  const mcpPresentationMode = mcpTool ? getMcpPresentationMode(mcpTool) : null
   const visibleSections = tab === 'schema'
     ? ['inputs', 'outputs']
     : tab === 'overview'
@@ -202,12 +204,26 @@ export function EngineeringInspector({ node, graph, view, unlocked, canEdit, onT
             <div><span>动作</span><code>{node.action || '-'}</code></div>
             <div><span>作用范围</span><code>{node.scope || 'root'}</code></div>
             <p>{view.description}</p>
-            {mcpTool && <section className="cf-engineering-mcp-summary">
-              <header><Braces aria-hidden="true" /><strong>MCP 内部流程</strong><code>{mcpTool.transparency || 'unknown'}</code></header>
+            {mcpTool && mcpPresentationMode === 'local_parsable' && <section className="cf-engineering-mcp-summary">
+              <header><Braces aria-hidden="true" /><strong>本地 MCP 内部流程</strong><code>{mcpTool.transparency || 'unknown'}</code></header>
               <div><span>来源</span><code>{mcpSource?.path || mcpTool.implementation?.entry || mcpTool.source || '-'}</code></div>
-              <div><span>解析</span><code>{mcpLoading ? '解析中' : mcpSource?.source_model.ok ? '已解析' : mcpTool.parse_status === 'opaque' ? '不可解析' : mcpTool.parse_status || '未知'}</code></div>
+              <div><span>解析</span><code>{mcpLoading ? '解析中' : mcpSource?.source_model.ok ? '已解析' : mcpTool.parse_status === 'opaque' ? '不可解析' : '状态未知'}</code></div>
               <div><span>操作</span><code>{mcpSource?.source_model.operations.length ?? mcpTool.operation_count ?? 0}</code></div>
-              <footer><button type="button" onClick={onOpenMcp}><Braces aria-hidden="true" />展开流程</button><button type="button" onClick={onOpenMcpSource}><FileCode2 aria-hidden="true" />打开源码</button></footer>
+              <footer><button type="button" onClick={onOpenMcp}><Braces aria-hidden="true" />展开内部流程</button><button type="button" onClick={onOpenMcpSource}><FileCode2 aria-hidden="true" />查看源码</button></footer>
+            </section>}
+            {mcpTool && mcpPresentationMode === 'external_connector' && <section className="cf-engineering-mcp-summary">
+              <header><Braces aria-hidden="true" /><strong>外部 MCP</strong><code>{mcpTool.transparency || 'unknown'}</code></header>
+              <div><span>服务 / 工具</span><code>{[mcpTool.server, mcpTool.tool].filter(Boolean).join(' / ') || '未声明'}</code></div>
+              <div><span>连接状态</span><code>{connectionStatusLabel(mcpTool.health?.connection.status)}</code></div>
+              <div><span>透明度</span><code>{mcpPresentationLabel(mcpTool)}</code></div>
+              <footer><button type="button" onClick={onOpenMcp}><Braces aria-hidden="true" />查看连接详情</button></footer>
+            </section>}
+            {mcpTool && mcpPresentationMode === 'unauditable' && <section className="cf-engineering-mcp-summary">
+              <header><Braces aria-hidden="true" /><strong>不可审计 MCP</strong><code>{mcpTool.transparency || 'unknown'}</code></header>
+              <div><span>服务 / 工具</span><code>{[mcpTool.server, mcpTool.tool].filter(Boolean).join(' / ') || '未声明'}</code></div>
+              <div><span>内部实现</span><code>不可观测</code></div>
+              <div><span>可用信息</span><code>已知调用契约</code></div>
+              <footer><button type="button" onClick={onOpenMcp}><Braces aria-hidden="true" />查看已知契约</button></footer>
             </section>}
             {view.issues.length > 0 && <ul>{view.issues.map((issue) => <li className={issue.severity} key={issue.code}><b>{issue.origin === 'runtime_preflight' ? '运行前检查' : '配置提示'} · {issue.code}</b>{issue.message}</li>)}</ul>}
           </section>

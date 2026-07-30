@@ -619,6 +619,11 @@ export interface StudioToolResource {
   implementation?: Record<string, any>
   source_digest?: string
   parse_status?: 'parsed' | 'opaque' | 'not_applicable' | string
+  presentation_mode?: McpPresentationMode
+  readability?: McpReadability
+  connector?: McpConnector | null
+  contract?: McpCallContract
+  health?: McpResourceHealth
   operation_count?: number
   broker_capabilities?: string[]
   operation_graph?: {
@@ -627,6 +632,87 @@ export interface StudioToolResource {
     fallbacks?: Array<Record<string, any>>
     capabilities?: string[]
   }
+}
+
+export type McpPresentationMode = 'local_parsable' | 'external_connector' | 'unauditable' | string
+
+export interface McpReadability {
+  state: 'readable' | 'not_readable' | string
+  reason?: string | null
+}
+
+export interface McpConnectionReference {
+  state: 'configured' | 'not_configured' | string
+  reference?: string | null
+  transport?: string | null
+}
+
+export interface McpConnectorAuthentication {
+  required: boolean
+  reference?: string | null
+  status: 'configured' | 'missing' | 'not_required' | string
+}
+
+export interface McpConnector {
+  id: string
+  identity: string
+  kind: string
+  endpoint: McpConnectionReference
+  openapi: McpConnectionReference
+  command: McpConnectionReference
+  authentication: McpConnectorAuthentication
+}
+
+export interface McpCallContract {
+  server?: string
+  tool?: string
+  input_schema?: Record<string, any>
+  output_schema?: Record<string, any>
+  permissions?: string[]
+  read_only?: boolean
+  side_effect?: string
+  timeout_ms?: number
+  retry?: Record<string, any>
+  idempotency?: {
+    declared?: boolean | null
+    status?: 'idempotent' | 'non_idempotent' | 'unknown' | string
+  }
+}
+
+export interface McpConnectionHealth {
+  status: string
+  checked_at?: string | null
+  code?: string
+  message?: string
+  retryable?: boolean | null
+  adapter?: string | null
+  http_status?: number | null
+}
+
+export interface McpRunHealth {
+  status: string
+  last_run_at?: string | null
+  code?: string
+  message?: string
+}
+
+export interface McpResourceHealth {
+  connection: McpConnectionHealth
+  run: McpRunHealth
+}
+
+export interface FlowResourceDetail {
+  schema: 'cartridgeflow.flow_resource_detail.v1' | string
+  cartridge_id: string
+  resource: StudioToolResource
+}
+
+export interface FlowResourceConnectivityResult {
+  schema: 'cartridgeflow.flow_resource_connectivity.v1' | string
+  cartridge_id: string
+  resource_id: string
+  ok: boolean
+  connection_health: McpConnectionHealth
 }
 
 export interface StudioResources {
@@ -640,7 +726,7 @@ export interface StudioResources {
 }
 
 export interface FlowResourceCatalog {
-  schema: 'cartridgeflow.flow_resource_catalog.v1' | string
+  schema: 'cartridgeflow.flow_resource_catalog.v1' | 'cartridgeflow.flow_resource_catalog.v2' | string
   cartridge_id: string
   tools: StudioToolResource[]
   models: {

@@ -5,17 +5,29 @@ Repository root: `C:\_HOLOLAB\code\CF WS\CartridgeFlow`
 Last updated: 2026-07-30 Asia/Shanghai
 Mentor: Codex mentor-orchestrator
 
-## Delivery Plan
+## Current Delivery Plan: ORCH-001
 
-Deliver `ENG-021` with parallel lanes. Current baseline is `979d870`; it contains accepted worker-001, worker-002, and worker-003 changes. The root worktree must remain clean before creating the worker-004 worktree.
+Baseline: `9e7124a` (`docs: define orchestration delivery roadmap`). Delivery source: [n8n 编排取经与差异化报告](docs/architecture/N8N_ORCHESTRATION_BENCHMARK_REPORT.md). The goal is not n8n compatibility: it is one explicit, independently implemented `ExecutionPlan` semantic contract shared by protocol validation, Analyzer, runner, and engineering view.
 
-1. `worker-001-resource-contracts` and `worker-003-engineering-canvas` have been accepted and merged.
-2. `worker-002-external-mcp-detail` has been accepted and merged.
-3. `worker-004-engineering-integration` may now start from the current baseline. It owns only the integration seam and final E2E evidence.
+1. `worker-101-execution-plan-contract` is the only worker that may change protocol facts, release registry, capability vocabulary, or contract validation. It must publish `CF-FARP@1.0` as a draft/unsupported contract, never claim Base support before the runner exists.
+2. After worker 101 is accepted and user-approved merged, `worker-102-execution-plan-compiler` creates the pure compiled-plan model. It owns the shared `src/core/orchestration/` package.
+3. After worker 102 is accepted and merged, worker 103 and worker 104 may run in parallel: the former replaces queue/`visited` scheduling with token scheduling; the latter makes Analyzer and engineering view project the same plan. They have no shared write paths.
+4. Fixture/TestBench, typed ports, sub Flow, product delivery and adapter work deliberately remain out of this delivery. They start only after ORCH-001 closes with a clean conformance baseline.
 
-No worker may merge another worker branch. The user explicitly approves any merge or rebase used to prepare the next worker's base branch.
+Known gate: full conformance currently has a stale TODO-hygiene assertion. Repairing that isolated test is a direct baseline-maintenance action, not a worker assignment; do it before final ORCH-001 closure so it does not obscure orchestration evidence.
 
-## Workers
+No worker may merge another worker branch. The user explicitly approves every merge or rebase. Full task cards and paste-safe commands live in [ORCHESTRATION_EXECUTION_TASK_BRIEF.md](docs/planning/ORCHESTRATION_EXECUTION_TASK_BRIEF.md).
+
+## Current Workers
+
+| Worker | Status | Objective | Allowed write paths | Exclusions | Dependencies | Branch | Worktree | Acceptance evidence |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| worker-101-execution-plan-contract | planned | Freeze CF-FARP@1.0 ExecutionPlan semantics and reject ambiguous or non-executable Flow facts. | `docs/protocol/flow-authoring/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v1.0.md`, `docs/protocol/governance/GOVERNANCE.md`, `protocol/releases/CF-FARP-1.0.json`, `protocol/catalog/release_manifest.json`, `protocol/governance/protocol_history.json`, `protocol/vocabulary/*`, `src/core/protocol/flow_contract.py`, directly related conformance tests | `config/base/BASE_IMPLEMENTATION.json`, `src/core/cartridge/**`, `src/core/lab/**`, `src/core/runtime/**`, `src/frontend/**`, `src/backend/**`, `MENTOR_WORKERS.md` | Baseline `9e7124a` | `workers/worker-101-execution-plan-contract` | `..\CartridgeFlow-worker-101-execution-plan-contract` | New draft registry/document validate; v0.9 behavior remains unchanged; positive and negative semantics tests pass; Base does not claim v1.0 support. |
+| worker-102-execution-plan-compiler | planned | Compile validated v1.0 Flow facts into deterministic, serializable ExecutionPlan v1 without running nodes. | new `src/core/orchestration/**`, directly related `scripts/tests/orchestration/**` | `src/core/protocol/**`, `protocol/**`, `config/**`, `src/core/cartridge/**`, `src/core/lab/**`, `src/core/runtime/**`, `src/frontend/**`, `src/backend/**`, `MENTOR_WORKERS.md` | worker 101 accepted and merged | `workers/worker-102-execution-plan-compiler` | `..\CartridgeFlow-worker-102-execution-plan-compiler` | Same source digest yields same plan; plans carry control/fork/join/loop/batch/wait/failure facts; invalid input has stable compile errors; no execution side effect. |
+| worker-103-token-runner | planned | Make the runner consume ExecutionPlan tokens, checkpoints and replay boundaries instead of global `visited` scheduling. | `src/core/cartridge/root_flow.py`, `src/core/cartridge/runner.py`, `src/core/runtime/checkpoints.py`, directly related `scripts/tests/runtime/**` | `src/core/orchestration/**`, `src/core/protocol/**`, `protocol/**`, `src/core/lab/**`, `src/frontend/**`, `src/backend/**`, `MENTOR_WORKERS.md` | worker 102 accepted and merged | `workers/worker-103-token-runner` | `..\CartridgeFlow-worker-103-token-runner` | Loop re-entry, fork/join, wait/resume and deterministic checkpoint trace pass; unsafe side-effect tokens do not replay automatically. |
+| worker-104-plan-projection | planned | Project ExecutionPlan semantics into Analyzer and engineering view; visual executable edges must agree with the plan. | `src/core/lab/flow_analyzer.py`, `src/frontend/src/pages/flow-workbench/**`, directly related analyzer/UI tests | `src/core/orchestration/**`, `src/core/protocol/**`, `protocol/**`, `src/core/cartridge/**`, `src/core/runtime/**`, `src/backend/**`, `MENTOR_WORKERS.md` | worker 102 accepted and merged; may run parallel with worker 103 | `workers/worker-104-plan-projection` | `..\CartridgeFlow-worker-104-plan-projection` | Every executable visual edge maps to a plan edge; unsupported legacy `action_route`/implicit join has actionable Chinese diagnostics; build and targeted UI tests pass. |
+
+## Completed ENG-021 Workers
 
 | Worker | Status | Objective | Allowed write paths | Exclusions | Dependencies | Branch | Worktree | Acceptance evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -78,3 +90,4 @@ No worker may merge another worker branch. The user explicitly approves any merg
 | 2026-07-30 Asia/Shanghai | User approved merge; cherry-picked worker-002 into `main` as `979d870` without conflicts. |
 | 2026-07-30 Asia/Shanghai | Accepted worker-004 commit `e19e431`; it remains unmerged pending explicit user approval. Full conformance is blocked by a pre-existing TODO hygiene assertion. |
 | 2026-07-30 Asia/Shanghai | User approved worker-004 integration. Its source and UI-test changes were applied to `main` as `d3d9bd0`; `FILE_INVENTORY.md` remains alongside the user's uncommitted documentation edits. |
+| 2026-07-30 Asia/Shanghai | Created the `ORCH-001` delivery register from the n8n orchestration benchmark. Current baseline is `9e7124a`; worker 101 is the sole launchable protocol-contract worker, followed by 102, then parallel 103/104. |

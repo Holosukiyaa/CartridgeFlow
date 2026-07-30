@@ -143,6 +143,7 @@
 | `docs/architecture/N8N_ORCHESTRATION_BENCHMARK_REPORT.md` | 以 n8n 为独立编排参照，定义 CartridgeFlow 的执行语义缺口、差异化边界和 ORCH-001 至 ORCH-006 推进任务。 |
 | `docs/architecture/PORTABLE_DLC_ARCHITECTURE.md` | DLC 所有权、安全和宿主边界。 |
 | `docs/development/WORKER_COLLABORATION_GUIDE.md` | 面向操作者的 worker 协作目录、可直接粘贴的启动命令、固定交付报告、验收与受控清理指南。 |
+| `docs/planning/ORCHESTRATION_EXECUTION_TASK_BRIEF.md` | ORCH-001 的分阶段工作包、文件所有权、依赖、验收口径与可直接启动的 worker 提示词。 |
 | `docs/development/README.md` | 开发维护区说明。 |
 | `docs/development/skills/` | 可选协议升级与 Flow 创作 AI Skill；`cartridgeflow-flow-author` 内含真实工作台创作仿真和目标卡带预检脚本。 |
 | `docs/overview/PROJECT_STRUCTURE.md` | 项目分层和数据流。 |

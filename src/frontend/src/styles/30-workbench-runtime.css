@@ -660,7 +660,7 @@ textarea.cf-input {
 .flow-node-card .cf-node-port {
   width: 10px;
   height: 10px;
-  border: 2px solid #fffdf9;
+  border: 2px solid var(--paper);
   box-shadow: 0 1px 4px rgba(70, 44, 30, .22);
   z-index: 4;
 }

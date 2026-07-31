@@ -43,14 +43,11 @@ import { buildNodeRunStates, extractUiHtml } from './flow-workbench/runState.ts'
 import { passiveHtmlDocument } from './flow-workbench/passiveHtml.ts'
 import { NODE_DETAIL_SECTION_BY_ID, nodeDetailId, normalizeNodeDetailSection, type NodeDetailSection, type OpenNodeDetail } from './flow-workbench/nodeDetails.ts'
 import { clearNewFlowAutoLayout, shouldAutoLayoutNewFlow } from './flow-workbench/newFlowSetup.ts'
-import { readLocalStorageWithMigration } from '../storage.ts'
 import './flow-workbench/TestBench.css'
 
 const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms))
 const pinnedNodeDetailsStorageKey = (flowId: string) => `cartridgeflow.pinned-node-details.v1:${flowId}`
-const legacyPinnedNodeDetailsStorageKey = (flowId: string) => `cartridgeflow.lite.pinned-node-details.v1:${flowId}`
 const engineeringResourceLayoutStorageKey = (flowId: string) => `cartridgeflow.engineering-resource-layout.v1:${flowId}`
-const legacyEngineeringResourceLayoutStorageKey = (flowId: string) => `cartridgeflow.lite.engineering-resource-layout.v1:${flowId}`
 const RUN_COMPLETION_NOTICE_MS = 8000
 
 type OptimisticRunTransition = {
@@ -269,7 +266,7 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
   useEffect(() => {
     setRestoredNodeDetailsFlowId('')
     try {
-      const stored = JSON.parse(readLocalStorageWithMigration(pinnedNodeDetailsStorageKey(flowId), [legacyPinnedNodeDetailsStorageKey(flowId)]) || '[]')
+      const stored = JSON.parse(localStorage.getItem(pinnedNodeDetailsStorageKey(flowId)) || '[]')
       const restored = Array.isArray(stored) ? stored.reduce<OpenNodeDetail[]>((result, item) => {
         const nodeId = typeof item?.nodeId === 'string' ? item.nodeId : ''
         const section = normalizeNodeDetailSection(item?.section)
@@ -296,7 +293,7 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
   useEffect(() => {
     let restored: Record<string, { x: number; y: number }> = {}
     try {
-      const stored = JSON.parse(readLocalStorageWithMigration(engineeringResourceLayoutStorageKey(flowId), [legacyEngineeringResourceLayoutStorageKey(flowId)]) || '{}')
+      const stored = JSON.parse(localStorage.getItem(engineeringResourceLayoutStorageKey(flowId)) || '{}')
       if (stored && typeof stored === 'object' && !Array.isArray(stored)) {
         restored = Object.entries(stored).reduce<Record<string, { x: number; y: number }>>((result, [nodeId, position]) => {
           const x = Number((position as any)?.x)

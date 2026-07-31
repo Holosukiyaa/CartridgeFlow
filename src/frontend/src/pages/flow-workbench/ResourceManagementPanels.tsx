@@ -363,10 +363,10 @@ export function ModelManagementPanel({ flowId, cartridge, graph }: { flowId: str
                   <small>{provider.id === '__new__' ? '填写连接信息后会生成稳定连接 ID' : `${provider.default_model || '未设置默认模型'} · 连接 ID：${provider.id}`}</small>
                 </button>
                 {expanded && (
-                  <div className="cf-resource-card-body">
+                  <form className="cf-resource-card-body" onSubmit={(event) => { event.preventDefault(); void saveProvider() }}>
                     <div className="cf-resource-form">
                       <label><span>连接 ID</span><div className="with-action"><input value={draft.id || '保存后自动生成'} readOnly /><button type="button" disabled={!draft.id} onClick={() => navigator.clipboard.writeText(draft.id)} title="复制连接 ID"><Copy /></button></div></label>
-                      <label><span>API Key</span><input type="password" value={draft.apiKey} placeholder={provider.has_key ? `已保存在本机 ${provider.key_preview || ''}` : '输入本机密钥'} onChange={(event) => setDraft({ ...draft, apiKey: event.target.value })} /></label>
+                      <label><span>API Key</span><input type="password" autoComplete="off" value={draft.apiKey} placeholder={provider.has_key ? `已保存在本机 ${provider.key_preview || ''}` : '输入本机密钥'} onChange={(event) => setDraft({ ...draft, apiKey: event.target.value })} /></label>
                       <label><span>Base URL / 接口地址</span><input value={draft.baseUrl} placeholder="https://api.example.com/v1" onChange={(event) => setDraft({ ...draft, baseUrl: event.target.value })} /></label>
                       <label><span>模型</span><input list={`models-${provider.id}`} value={draft.model} onChange={(event) => setDraft({ ...draft, model: event.target.value })} /><datalist id={`models-${provider.id}`}>{(provider.available_models || []).map((model) => <option key={model} value={model} />)}</datalist></label>
                       <label><span>名称</span><input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></label>
@@ -377,9 +377,9 @@ export function ModelManagementPanel({ flowId, cartridge, graph }: { flowId: str
                       <button type="button" disabled={busy || !draft.id} onClick={() => void testProvider()}><Zap />测试连接</button>
                       {provider.id !== '__new__' && <button className="danger" type="button" disabled={busy} onClick={() => void removeProvider(provider)}>删除连接</button>}
                       {provider.id !== '__new__' && <button type="button" onClick={() => setActiveStage('flow')}>前往 Flow 绑定<ArrowRight /></button>}
-                      <button className="primary" type="button" disabled={busy} onClick={() => void saveProvider()}>保存</button>
+                      <button className="primary" type="submit" disabled={busy}>保存</button>
                     </div>
-                  </div>
+                  </form>
                 )}
               </article>
             )
@@ -810,7 +810,7 @@ export function ToolManagementPanel({ flowId, onFlowToolsChange }: { flowId: str
               </div>
             </div>
             {expanded && (
-              <div className="cf-resource-card-body">
+              <form className="cf-resource-card-body" onSubmit={(event) => { event.preventDefault(); void saveTool() }}>
                 {tool.locked ? (
                   <section className="cf-builtin-tool-detail"><b>底座内置工具</b><p>连接 ID：<code>{tool.id}</code></p><p>执行入口：<code>{tool.server}/{tool.tool}</code></p><span>内置工具由底座提供，不包含外部密钥，也不能在这里修改。</span></section>
                 ) : (
@@ -824,7 +824,7 @@ export function ToolManagementPanel({ flowId, onFlowToolsChange }: { flowId: str
                     <label><span>本机命令</span><input value={draft.command} placeholder="npx / python / 可执行文件" onChange={(event) => setDraft({ ...draft, command: event.target.value })} /></label>
                     <label><span>命令参数</span><input value={draft.args} onChange={(event) => setDraft({ ...draft, args: event.target.value })} /></label>
                     <label><span>凭据变量</span><input value={draft.authEnv} placeholder="例如 DOCS_API_KEY" onChange={(event) => setDraft({ ...draft, authEnv: event.target.value.toUpperCase() })} /></label>
-                    <label><span>API Key</span><input type="password" value={draft.apiKey} placeholder={draft.authEnv && configuredKeys.has(draft.authEnv) ? '已保存在本机' : '可选，仅保存在本机'} onChange={(event) => setDraft({ ...draft, apiKey: event.target.value })} /></label>
+                    <label><span>API Key</span><input type="password" autoComplete="off" value={draft.apiKey} placeholder={draft.authEnv && configuredKeys.has(draft.authEnv) ? '已保存在本机' : '可选，仅保存在本机'} onChange={(event) => setDraft({ ...draft, apiKey: event.target.value })} /></label>
                     <label className="wide"><span>说明</span><textarea rows={2} value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} /></label>
                   </div>
                 )}
@@ -832,9 +832,9 @@ export function ToolManagementPanel({ flowId, onFlowToolsChange }: { flowId: str
                 <div className="cf-resource-card-actions">
                   <button type="button" onClick={() => setMessage({ text: configured ? '本机连接字段与凭据检查通过。实际工具调用仍由运行节点触发。' : '连接配置不完整，请检查 Endpoint / 命令与凭据变量。', tone: configured ? 'success' : 'error' })}><Zap />检查配置</button>
                   {!tool.locked && tool.id !== '__new__' && <button className="danger" type="button" disabled={busy} onClick={() => void deleteTool(tool)}>删除工具</button>}
-                  {!tool.locked && <button className="primary" type="button" disabled={busy} onClick={() => void saveTool()}>保存</button>}
+                  {!tool.locked && <button className="primary" type="submit" disabled={busy}>保存</button>}
                 </div>
-              </div>
+              </form>
             )}
           </article>
         })}

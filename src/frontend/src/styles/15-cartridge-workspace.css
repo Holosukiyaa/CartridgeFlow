@@ -114,14 +114,14 @@
 }
 
 .cf-danger-soft-btn {
-  border: 1px solid #e3b8ae !important;
-  background: #fff8f6 !important;
-  color: #9a4f43 !important;
+  border: 1px solid color-mix(in srgb, var(--danger) 22%, var(--line-2)) !important;
+  background: var(--danger-soft) !important;
+  color: var(--danger) !important;
 }
 
 .cf-danger-soft-btn:hover {
-  border-color: #cf8f81 !important;
-  background: #fff1ed !important;
+  border-color: color-mix(in srgb, var(--danger) 40%, var(--line-2)) !important;
+  background: color-mix(in srgb, var(--danger) 12%, var(--paper)) !important;
 }
 
 .cf-cartridge-workspace-form-actions {

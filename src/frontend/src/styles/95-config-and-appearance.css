@@ -1,6 +1,6 @@
 /* Studio appearance settings and bounded configuration workspaces */
 :root {
-  --cf-user-font-scale: 1;
+  --cf-user-font-scale: 1.1;
   --cf-body-font-weight: 400;
   --cf-ui-font: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
 }
@@ -80,7 +80,7 @@ html[data-cf-font-weight="strong"] :where(
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #fffdf9;
+  background: var(--paper);
   box-shadow: 0 20px 60px rgba(31, 35, 40, .2);
 }
 .cf-config-modal-body { min-height: 0; padding: 15px 17px 17px; overflow-y: auto; }
@@ -122,7 +122,7 @@ html[data-cf-font-weight="strong"] :where(
 .cf-role-binding-select { min-width: 150px; max-width: 220px; }
 .cf-resource-bind-select { width: min(290px, 100%); margin-top: 7px; }
 .cf-resource-bind-select:focus,
-.cf-role-binding-select:focus { border-color: #d29162; box-shadow: 0 0 0 2px var(--accent-soft); }
+.cf-role-binding-select:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
 .cf-credential-panel-footer { flex: 0 0 86px; padding: 12px 3px 2px; display: grid; align-content: start; gap: 4px; border-top: 1px solid var(--line); }
 .cf-credential-panel-footer > span { color: var(--accent); font: 800 calc(9px * var(--cf-user-font-scale)) var(--mono); }
 .cf-credential-panel-footer code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-size: calc(9px * var(--cf-user-font-scale)); }
@@ -194,7 +194,7 @@ html[data-cf-density="compact"] .cf-cartridge-resource-row { padding-block: 9px;
 .cf-settings-reset { min-height: 31px; padding: 0 10px; border: 1px solid var(--line); border-radius: 5px; background: var(--paper); color: var(--muted); font-weight: 700; }
 .cf-settings-tabs { flex: 0 0 43px; min-height: 43px; display: flex; align-items: end; gap: 22px; border-bottom: 1px solid var(--line-2); }
 .cf-settings-tabs button { position: relative; min-height: 42px; padding: 0 2px; border: 0; background: transparent; color: var(--muted); font-size: 11px; font-weight: 700; }
-.cf-settings-tabs button::after { content: ""; position: absolute; right: 50%; bottom: -1px; left: 50%; height: 2px; background: #c77b4e; transition: right .18s ease, left .18s ease; }
+.cf-settings-tabs button::after { content: ""; position: absolute; right: 50%; bottom: -1px; left: 50%; height: 2px; background: var(--accent); transition: right .18s ease, left .18s ease; }
 .cf-settings-tabs button:hover { color: var(--text); }
 .cf-settings-tabs button.active { color: var(--text); }
 .cf-settings-tabs button.active::after { right: 0; left: 0; }
@@ -215,21 +215,21 @@ html[data-cf-density="compact"] .cf-cartridge-resource-row { padding-block: 9px;
 .cf-settings-weight > small { color: var(--muted); font-size: calc(9px * var(--cf-user-font-scale)); line-height: 1.5; }
 .cf-settings-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
 .cf-settings-options button { min-height: 70px; padding: 9px; display: grid; align-content: center; gap: 5px; border: 1px solid var(--line); border-radius: 5px; background: var(--paper-soft); color: inherit; text-align: left; }
-.cf-settings-options button.active { border-color: #e0a879; background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+.cf-settings-options button.active { border-color: var(--accent); background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
 .cf-settings-options strong { color: var(--text); font-size: 10px; }
 .cf-settings-options small { color: var(--muted); font-size: calc(9px * var(--cf-user-font-scale)); line-height: 1.45; }
 .cf-settings-segment { width: fit-content; padding: 2px; display: flex; border: 1px solid var(--line); border-radius: 5px; background: var(--paper-soft); }
 .cf-settings-segment button { min-height: 28px; padding: 0 16px; border: 0; border-radius: 3px; background: transparent; color: var(--muted); font-weight: 700; }
-.cf-settings-segment button.active { background: var(--paper); color: var(--accent-dark); box-shadow: 0 0 0 1px #e5bfa6; }
+.cf-settings-segment button.active { background: var(--paper); color: var(--accent-dark); box-shadow: 0 0 0 1px var(--accent-soft); }
 .cf-settings-toggle { min-height: 62px; padding: 12px 2px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--line); }
 .cf-settings-toggle input { width: 15px; height: 15px; accent-color: var(--accent); }
 .cf-settings-toggle span { display: grid; gap: 3px; }
 .cf-settings-toggle strong { color: var(--text); font-size: 10px; }
 .cf-settings-toggle small { color: var(--muted); font-size: calc(9px * var(--cf-user-font-scale)); }
 html[data-cf-scrollbar-mode="always"] .cf-diagnostics-detail-card,
-html[data-cf-scrollbar-mode="always"] .cf-overview-activity-list { scrollbar-color: rgba(188, 76, 0, .34) transparent; }
+html[data-cf-scrollbar-mode="always"] .cf-overview-activity-list { scrollbar-color: rgb(var(--cf-accent-rgb) / .34) transparent; }
 html[data-cf-scrollbar-mode="always"] .cf-diagnostics-detail-card::-webkit-scrollbar-thumb,
-html[data-cf-scrollbar-mode="always"] .cf-overview-activity-list::-webkit-scrollbar-thumb { background-color: rgba(188, 76, 0, .34); }
+html[data-cf-scrollbar-mode="always"] .cf-overview-activity-list::-webkit-scrollbar-thumb { background-color: rgb(var(--cf-accent-rgb) / .34); }
 .cf-settings-preview-surface { min-height: 250px; padding: 24px 4px; display: grid; align-content: center; justify-items: start; gap: 11px; border-bottom: 1px solid var(--line); }
 .cf-settings-preview-surface > span { color: var(--accent); font: 800 calc(9px * var(--cf-user-font-scale)) var(--mono); text-transform: uppercase; }
 .cf-settings-preview-surface h2 { color: var(--text); font: 720 calc(22px * var(--cf-user-font-scale))/1.2 Georgia, "Songti SC", serif; }
@@ -312,8 +312,8 @@ html[data-cf-scrollbar-mode="always"] .cf-overview-activity-list::-webkit-scroll
 ) {
   position: relative;
   z-index: 1;
-  background: #fff8f3;
-  box-shadow: inset 0 0 0 1px #dfb89f, inset 4px 0 0 #c77b4e;
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 22%, var(--line-2)), inset 4px 0 0 var(--accent);
   animation: cf-record-selection-enter .22s ease-out both;
 }
 
@@ -324,17 +324,17 @@ html[data-cf-scrollbar-mode="always"] .cf-overview-activity-list::-webkit-scroll
   .cf-release-project-list > button.selected,
   .cf-settings-options button.active
 ):hover {
-  background: #fff6ef;
+  background: color-mix(in srgb, var(--accent) 9%, var(--paper));
 }
 
 @keyframes cf-record-selection-enter {
   from {
-    background: #fffdfb;
-    box-shadow: inset 0 0 0 1px rgba(223, 184, 159, 0), inset 0 0 0 #c77b4e;
+    background: var(--paper);
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0), inset 0 0 0 var(--accent);
   }
   to {
-    background: #fff8f3;
-    box-shadow: inset 0 0 0 1px #dfb89f, inset 4px 0 0 #c77b4e;
+    background: var(--accent-soft);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 22%, var(--line-2)), inset 4px 0 0 var(--accent);
   }
 }
 

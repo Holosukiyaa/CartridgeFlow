@@ -3,10 +3,8 @@ import { Box, Button, Spinner, Text } from './ui.tsx'
 import { fetchLabFlows, type FlowLabItem } from './api.ts'
 import FlowWorkbench from './pages/FlowWorkbench.tsx'
 import CartridgeWorkspaceControl from './pages/flow-workbench/CartridgeWorkspaceControl.tsx'
-import { readLocalStorageWithMigration } from './storage.ts'
 
 const RECENT_CARTRIDGE_STORAGE_KEY = 'cartridgeflow.recent-cartridge'
-const LEGACY_RECENT_CARTRIDGE_STORAGE_KEY = 'cf.lite.recent_cartridge'
 
 function cartridgePath(flowId: string) {
   return `/cartridges/${encodeURIComponent(flowId)}/design`
@@ -62,7 +60,7 @@ function WorkbenchEntryRoute({ navigate }: { navigate: Navigate }) {
     return <CartridgeWorkspaceControl empty onSwitchFlow={(flowId) => { if (flowId) navigate(cartridgePath(flowId)) }} />
   }
 
-  const recentId = readLocalStorageWithMigration(RECENT_CARTRIDGE_STORAGE_KEY, [LEGACY_RECENT_CARTRIDGE_STORAGE_KEY])
+  const recentId = localStorage.getItem(RECENT_CARTRIDGE_STORAGE_KEY)
   const target = items.find((item) => item.id === recentId) || items.find((item) => item.editable) || items[0]
   return <Redirect to={cartridgePath(target.id)} navigate={navigate} />
 }

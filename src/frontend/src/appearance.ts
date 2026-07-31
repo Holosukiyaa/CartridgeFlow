@@ -19,7 +19,7 @@ export type AppearanceSettings = {
 }
 
 export const DEFAULT_APPEARANCE: AppearanceSettings = {
-  fontScale: 110,
+  fontScale: 100,
   fontFamily: 'developer',
   fontWeight: 'strong',
   density: 'comfortable',
@@ -29,7 +29,9 @@ export const DEFAULT_APPEARANCE: AppearanceSettings = {
 
 const STORAGE_KEY = 'cf.studio.appearance'
 const WORKSPACE_THEME_STORAGE_KEY = 'cf.workspace-theme'
-const LEGACY_WORKSPACE_THEME_STORAGE_KEY = 'cf.lite.workspace-theme'
+const FONT_SCALE_BASELINE = 110
+
+type StoredAppearance = Partial<AppearanceSettings> & { fontScaleBaseline?: number }
 
 // Workspace theme palette and default are maintained together in this block.
 export const WORKSPACE_THEME_PRESETS: Array<{ id: Exclude<WorkspaceThemeId, 'custom'>; label: string; color: string }> = [
@@ -46,8 +48,12 @@ export const DEFAULT_WORKSPACE_THEME: WorkspaceTheme = {
 
 export function loadAppearance(): AppearanceSettings {
   try {
-    const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}')
-    return normalizeAppearance(raw)
+    const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') as StoredAppearance
+    const settings = normalizeAppearance(raw.fontScaleBaseline === FONT_SCALE_BASELINE
+      ? raw
+      : { ...raw, fontScale: convertLegacyFontScale(raw.fontScale) })
+    if (raw.fontScaleBaseline !== FONT_SCALE_BASELINE) persistAppearance(settings)
+    return settings
   } catch {
     return { ...DEFAULT_APPEARANCE }
   }
@@ -55,7 +61,7 @@ export function loadAppearance(): AppearanceSettings {
 
 export function saveAppearance(settings: AppearanceSettings) {
   const normalized = normalizeAppearance(settings)
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized))
+  persistAppearance(normalized)
   applyAppearance(normalized)
   window.dispatchEvent(new CustomEvent('cf:appearance', { detail: normalized }))
   return normalized
@@ -63,7 +69,7 @@ export function saveAppearance(settings: AppearanceSettings) {
 
 export function applyAppearance(settings: AppearanceSettings) {
   const root = document.documentElement
-  root.style.setProperty('--cf-user-font-scale', String(settings.fontScale / 100))
+  root.style.setProperty('--cf-user-font-scale', String((settings.fontScale / 100) * (FONT_SCALE_BASELINE / 100)))
   root.dataset.cfFontScale = String(settings.fontScale)
   root.dataset.cfFontFamily = settings.fontFamily
   root.dataset.cfFontWeight = settings.fontWeight
@@ -72,9 +78,18 @@ export function applyAppearance(settings: AppearanceSettings) {
   root.dataset.cfScrollbarMode = settings.scrollbarMode
 }
 
+function persistAppearance(settings: AppearanceSettings) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...settings, fontScaleBaseline: FONT_SCALE_BASELINE }))
+}
+
+function convertLegacyFontScale(value: unknown) {
+  const legacyScale = Number(value ?? 110)
+  return Math.round((legacyScale / (FONT_SCALE_BASELINE / 100)) / 5) * 5
+}
+
 export function loadWorkspaceTheme(): WorkspaceTheme {
   try {
-    const value = JSON.parse(readLocalStorageWithMigration(WORKSPACE_THEME_STORAGE_KEY, [LEGACY_WORKSPACE_THEME_STORAGE_KEY]) || '{}')
+    const value = JSON.parse(localStorage.getItem(WORKSPACE_THEME_STORAGE_KEY) || '{}')
     if (!value?.id) return { ...DEFAULT_WORKSPACE_THEME }
     return normalizeWorkspaceTheme(value)
   } catch {
@@ -134,4 +149,3 @@ function normalizeAppearance(value: Partial<AppearanceSettings>): AppearanceSett
   const scrollbarMode: ScrollbarMode = ['subtle', 'always'].includes(String(value.scrollbarMode)) ? value.scrollbarMode as ScrollbarMode : DEFAULT_APPEARANCE.scrollbarMode
   return { fontScale, fontFamily, fontWeight, density, reducedMotion: Boolean(value.reducedMotion), scrollbarMode }
 }
-import { readLocalStorageWithMigration } from './storage.ts'

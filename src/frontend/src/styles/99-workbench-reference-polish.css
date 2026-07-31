@@ -1,8 +1,8 @@
 /* Workspace theme mapping. Semantic node and run-status colors remain
    independent; brand and interaction accents follow the selected theme. */
 .cf-workbench-brand-mark {
-  background: var(--accent);
-  box-shadow: 0 5px 14px rgb(var(--cf-accent-rgb) / .2), inset 0 0 0 1px rgba(255, 255, 255, .18);
+  background: #0b0f14;
+  box-shadow: 0 8px 20px rgba(11, 15, 20, .15), inset 0 0 0 1px rgba(255, 255, 255, .08);
 }
 
 .cf-workbench-current-trigger:hover,
@@ -110,9 +110,9 @@
 }
 .cf-design-panel-toggles button:hover,
 .cf-design-panel-toggles button.active {
-  border-color: #79b6aa;
-  background: #edf7f4;
-  color: #176f64;
+  border-color: color-mix(in srgb, var(--accent) 52%, #d7e0e3);
+  background: var(--accent-soft);
+  color: var(--accent-dark);
 }
 .cf-design-panel-toggles svg { width: 15px; height: 15px; }
 
@@ -147,10 +147,10 @@
   border: 0;
   border-radius: 4px;
   background: transparent;
-  color: #367f73;
+  color: var(--accent-dark);
   cursor: pointer;
 }
-.cf-engineering-inspector-section > header button:hover { background: #eaf5f2; }
+.cf-engineering-inspector-section > header button:hover { background: var(--accent-soft); }
 .cf-engineering-inspector-section > header button svg { width: 14px; height: 14px; }
 .cf-engineering-overview { position: relative; }
 .cf-engineering-overview-edit {
@@ -160,15 +160,15 @@
   align-items: center;
   justify-content: center;
   gap: 7px;
-  border: 1px solid #a8d0c8;
+  border: 1px solid color-mix(in srgb, var(--accent) 48%, #d7e0e3);
   border-radius: 6px;
-  background: #edf8f5;
-  color: #176f63;
+  background: var(--accent-soft);
+  color: var(--accent-dark);
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
 }
-.cf-engineering-overview-edit:hover { border-color: #5ca99b; background: #e4f4ef; }
+.cf-engineering-overview-edit:hover { border-color: var(--accent); background: var(--accent-soft); }
 .cf-engineering-overview-edit svg { width: 14px; height: 14px; }
 
 /* Keep history geometry stable while its data refreshes. */
@@ -199,20 +199,26 @@
   grid-column: 1 / -1;
   min-height: 42px;
   padding-inline: 12px;
-  border-color: #b8d8d1;
-  background: #f3faf8;
+  border-color: color-mix(in srgb, var(--accent) 46%, #dce3e5);
+  background: color-mix(in srgb, var(--accent) 5%, #fff);
 }
 
 /* Flow tool filters use the workspace accent instead of the retired orange state. */
 .cf-tool-filter-modes button:hover:not(:disabled) {
-  border-color: #80b9ae !important;
-  background: #eef8f5 !important;
-  color: #176f63 !important;
+  border-color: color-mix(in srgb, var(--accent) 52%, #dfe3e7) !important;
+  background: var(--accent-soft) !important;
+  color: var(--accent-dark) !important;
 }
 
 /* Long cartridge names are first-class header content. */
 .cf-workbench-header-spacer { flex: 0 1 48px; }
 .cf-workbench-page .cf-workbench-actions { flex: 1 1 auto; justify-content: flex-end; }
+.cf-workbench-protocol-tags { gap: 6px; }
+.cf-workbench-protocol-tags span {
+  border-color: color-mix(in srgb, var(--accent) 22%, #dfe4e8);
+  background: #fff;
+  color: #40675f;
+}
 .cf-workbench-page .cf-workbench-cartridge-control {
   width: fit-content;
   max-width: min(46vw, 460px);
@@ -488,7 +494,13 @@ html[data-cf-scrollbar-mode="always"] ::-webkit-scrollbar-thumb:hover {
 }
 
 @media (max-height: 800px) {
+  .cf-canvas-tool-rail button { min-height: 46px; padding-block: 3px; gap: 2px; }
+  .cf-canvas-tool-rail button svg { width: 17px; height: 17px; }
+  .cf-canvas-tool-rail nav button span { display: block; font-size: 10px; }
+  .cf-canvas-zoom-tools button { min-height: 31px; }
+}
+
+@media (max-height: 640px) {
   .cf-canvas-tool-rail button { min-height: 39px; padding-block: 4px; }
   .cf-canvas-tool-rail nav button span { display: none; }
-  .cf-canvas-zoom-tools button { min-height: 31px; }
 }

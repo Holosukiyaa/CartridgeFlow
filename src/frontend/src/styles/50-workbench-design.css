@@ -63,7 +63,7 @@ hr {
   gap: 8px;
   border: 1px solid var(--line);
   border-radius: 999px;
-  background: rgba(255, 250, 246, .94);
+  background: color-mix(in srgb, var(--accent) 4%, var(--paper));
   color: var(--text);
   padding: 8px 12px;
   box-shadow: 0 10px 26px rgba(75, 55, 40, .12);
@@ -93,7 +93,7 @@ hr {
 .cf-mcp-drawer {
   width: min(460px, calc(100vw - 48px));
   height: 100%;
-  background: var(--paper);
+  background: linear-gradient(180deg, var(--paper), color-mix(in srgb, var(--accent) 3%, var(--paper-soft)));
   border-left: 1px solid var(--line);
   box-shadow: -20px 0 44px rgba(75, 55, 40, .18);
   display: grid;

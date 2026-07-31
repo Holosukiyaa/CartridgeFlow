@@ -217,8 +217,8 @@ html[data-cf-font-family="developer"] .cf-resource-heading h1 {
 .cf-resource-module-actions button:hover,
 .cf-resource-center-actions button:hover,
 .cf-release-page-actions > button:hover {
-  border-color: #e8b89f;
-  background: #fff7f2;
+  border-color: var(--cf-surface-border-hover);
+  background: var(--cf-surface-hover);
   color: var(--accent-dark);
 }
 
@@ -242,9 +242,9 @@ html[data-cf-font-family="developer"] .cf-resource-heading h1 {
 .cf-overview-health {
   min-height: 32px;
   padding: 0 11px;
-  border: 1px solid #f1d6c7;
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--line-2));
   border-radius: 7px;
-  background: #fff8f4;
+  background: var(--accent-soft);
   color: var(--accent-dark);
   font-size: 11px;
 }
@@ -297,7 +297,7 @@ html[data-cf-font-family="developer"] .cf-resource-heading h1 {
 }
 
 .cf-overview-stat-strip > button:last-child { border-right: 0; }
-.cf-overview-stat-strip > button:hover { background: #fff8f4; }
+.cf-overview-stat-strip > button:hover { background: var(--cf-surface-hover); }
 .cf-overview-stat-strip > button > strong { color: var(--text); font-family: var(--cf-sans); font-size: 27px; font-weight: 650; }
 .cf-overview-stat-strip > button > small { color: var(--muted); font-size: 11px; }
 .cf-overview-mini-chart i b { background: var(--accent) !important; }
@@ -307,19 +307,19 @@ html[data-cf-font-family="developer"] .cf-resource-heading h1 {
 .cf-overview-panel-head { padding-bottom: 12px; border-bottom: 1px solid var(--line); }
 .cf-overview-run-summary,
 .cf-overview-resource-dock > button { border-color: var(--line) !important; background: #fff !important; }
-.cf-overview-resource-dock > button:hover { border-color: #e8c5b4 !important; background: #fff8f4 !important; }
+.cf-overview-resource-dock > button:hover { border-color: var(--cf-surface-border-hover) !important; background: var(--cf-surface-hover) !important; }
 
 .cf-resource-center-page { padding: 30px 34px 36px !important; }
 .cf-resource-center-summary { margin-top: 18px !important; border: 1px solid var(--line) !important; border-radius: 8px !important; background: #fff !important; box-shadow: var(--shadow-card); }
 .cf-resource-center-summary > button { min-height: 100px; background: #fff; border-right-color: var(--line) !important; }
-.cf-resource-center-summary > button:hover { background: #fff8f4; }
+.cf-resource-center-summary > button:hover { background: var(--cf-surface-hover); }
 .cf-resource-center-summary > button > strong { color: var(--text); font-family: var(--cf-sans); font-size: 28px; font-weight: 650; }
 .cf-resource-center-layout { margin-top: 16px !important; gap: 16px !important; }
 .cf-resource-center-section { overflow: hidden; }
 .cf-resource-center-section-head { padding: 19px 20px 15px !important; border-bottom-color: var(--line) !important; }
 .cf-resource-center-section-head p { color: var(--muted); font-size: 12px; }
 .cf-resource-center-row { min-height: 62px !important; border-bottom-color: var(--line) !important; }
-.cf-resource-center-row:hover { background: #fff8f4 !important; }
+.cf-resource-center-row:hover { background: var(--cf-surface-hover) !important; }
 
 .cf-resource-config-page { padding: 30px 34px 36px !important; }
 .cf-resource-library-section { border: 1px solid var(--line) !important; border-radius: 8px !important; background: #fff !important; box-shadow: var(--shadow-card); }
@@ -328,11 +328,11 @@ html[data-cf-font-family="developer"] .cf-resource-heading h1 {
 .cf-resource-library-head h2 { color: var(--text) !important; font-family: var(--cf-sans) !important; font-size: 20px !important; font-weight: 650 !important; }
 .cf-resource-card-grid { padding: 16px !important; gap: 12px !important; }
 .cf-resource-card { min-height: 142px; border-color: var(--line) !important; border-radius: 10px !important; background: #fff !important; box-shadow: none !important; }
-.cf-resource-card:hover { border-color: #e8bda7 !important; background: #fff9f6 !important; box-shadow: var(--shadow-hover) !important; }
+.cf-resource-card:hover { border-color: var(--cf-surface-border-hover) !important; background: var(--cf-surface-hover) !important; box-shadow: var(--shadow-hover) !important; }
 .cf-resource-card strong { color: var(--text) !important; font-size: 14px !important; }
 .cf-resource-card small { color: var(--muted) !important; }
 .cf-resource-card code { color: #8b949c !important; }
-.cf-resource-form-note { margin: 0 0 4px; padding: 11px 13px; border: 1px solid #efded5; border-radius: 8px; background: #fff8f4; color: #725f55; font-size: 12px; line-height: 1.5; }
+.cf-resource-form-note { margin: 0 0 4px; padding: 11px 13px; border: 1px solid color-mix(in srgb, var(--accent) 16%, var(--line-2)); border-radius: 8px; background: var(--accent-soft); color: var(--accent-dark); font-size: 12px; line-height: 1.5; }
 .cf-resource-form-note strong { display: block; margin-bottom: 3px; color: var(--accent-dark); font-size: 12px; }
 
 .cf-diagnostics-page { padding: 30px 34px 36px !important; }
@@ -341,7 +341,7 @@ html[data-cf-font-family="developer"] .cf-resource-heading h1 {
 .cf-diagnostics-detail { border-color: var(--line) !important; background: #fff !important; }
 .cf-diagnostics-run-item { border-color: var(--line) !important; border-radius: 9px !important; }
 .cf-diagnostics-run-item:hover { background: #f8fafb !important; }
-.cf-diagnostics-run-item.selected { border-color: #ebc1ac !important; background: #fff7f2 !important; box-shadow: inset 2px 0 var(--accent) !important; }
+.cf-diagnostics-run-item.selected { border-color: var(--accent) !important; background: var(--accent-soft) !important; box-shadow: inset 2px 0 var(--accent) !important; }
 .cf-diagnostics-evidence { border-color: var(--line) !important; border-radius: 10px !important; background: #fff !important; box-shadow: none !important; }
 
 .cf-release-page { padding: 30px 34px 36px !important; }
@@ -355,7 +355,7 @@ html[data-cf-font-family="developer"] .cf-resource-heading h1 {
 .cf-release-policy,
 .cf-release-result,
 .cf-release-actionbar { border-color: var(--line) !important; border-radius: 10px !important; background: #fff !important; }
-.cf-release-project-list button.selected { border-color: #ebc1ac !important; background: #fff7f2 !important; box-shadow: inset 2px 0 var(--accent) !important; }
+.cf-release-project-list button.selected { border-color: var(--accent) !important; background: var(--accent-soft) !important; box-shadow: inset 2px 0 var(--accent) !important; }
 
 .cf-settings-page { padding: 30px 34px 36px !important; }
 .cf-settings-layout { margin-top: 16px; gap: 16px !important; }
@@ -364,7 +364,7 @@ html[data-cf-font-family="developer"] .cf-resource-heading h1 {
 .cf-settings-options button,
 .cf-settings-segment button { border-color: var(--line) !important; background: #fff !important; }
 .cf-settings-options button.active,
-.cf-settings-segment button.active { border-color: #e9b89f !important; background: var(--accent-soft) !important; color: var(--accent-dark) !important; box-shadow: inset 2px 0 var(--accent) !important; }
+.cf-settings-segment button.active { border-color: var(--accent) !important; background: var(--accent-soft) !important; color: var(--accent-dark) !important; box-shadow: inset 2px 0 var(--accent) !important; }
 
 .cf-modal-backdrop { background: rgba(31, 38, 45, .24) !important; }
 .cf-modal,
@@ -580,7 +580,7 @@ html[data-cf-font-family="developer"] .cf-resource-heading h1 {
 }
 
 :where(button, a, input, select, textarea):focus-visible {
-  outline: 2px solid rgba(226, 111, 53, .28);
+  outline: 2px solid var(--cf-focus-ring);
   outline-offset: 2px;
 }
 
@@ -613,7 +613,7 @@ html[data-cf-font-family="developer"] .cf-resource-heading h1 {
 .cf-flow-card:hover,
 .cf-resource-connection-card:hover,
 .cf-resource-card:hover {
-  border-color: #e9c2ae !important;
+  border-color: var(--cf-surface-border-hover) !important;
   box-shadow: var(--shadow-hover) !important;
 }
 
@@ -647,7 +647,7 @@ html[data-cf-font-family="developer"] .cf-resource-heading h1 {
   color: var(--muted);
   font-family: var(--cf-sans);
 }
-.cf-flow-action-strip > :hover { background: #fff7f2; color: var(--accent-dark); }
+.cf-flow-action-strip > :hover { background: var(--cf-surface-hover); color: var(--accent-dark); }
 .cf-flow-action-strip > .danger { background: #fff; color: #a65c55; }
 .cf-flow-action-strip > .danger:hover { background: var(--danger-soft); color: var(--danger); }
 .cf-flow-empty-stage::before { height: 1px; }
@@ -666,7 +666,7 @@ html[data-cf-font-family="developer"] .cf-resource-heading h1 {
 .cf-overview-stat-strip > button > i,
 .cf-resource-center-summary > button > i { background: #edf0f2; }
 .cf-overview-stat-strip > button:hover,
-.cf-overview-resource-dock > button:hover { background: #fff8f4 !important; }
+.cf-overview-resource-dock > button:hover { background: var(--cf-surface-hover) !important; }
 .cf-overview-run-summary { border-color: var(--line) !important; }
 
 /* Resource center and configuration */
@@ -676,7 +676,7 @@ html[data-cf-font-family="developer"] .cf-resource-heading h1 {
 .cf-resource-connection-card::before { height: 1px; background: var(--accent); }
 .cf-resource-center-side { border-left-color: var(--line); }
 .cf-resource-center-row:hover,
-.cf-resource-center-needs > button:hover { background: #f9fafb !important; }
+.cf-resource-center-needs > button:hover { background: var(--cf-surface-hover) !important; }
 .cf-resource-card { border-radius: 8px !important; box-shadow: none !important; }
 .cf-resource-card-empty { border-color: var(--line-2); border-radius: 8px; background: #fbfcfd; }
 .cf-resource-form-note { background: #fff8f4; }
@@ -691,8 +691,8 @@ html[data-cf-font-family="developer"] .cf-resource-heading h1 {
 .cf-provider-create-grid > button:hover,
 .cf-connection-type-switch > button.active,
 .cf-provider-autodetect.detected {
-  border-color: #e9bda6;
-  background: #fff7f2;
+  border-color: var(--accent);
+  background: var(--accent-soft);
   box-shadow: inset 2px 0 var(--accent);
 }
 .cf-resource-modal-tabs { background: #fbfcfd; }
@@ -708,9 +708,9 @@ html[data-cf-font-family="developer"] .cf-resource-heading h1 {
   border-radius: 7px;
   background: #fff;
 }
-.cf-diagnostics-search input:focus { border-color: #e2a180; box-shadow: 0 0 0 3px rgba(226, 111, 53, .1); }
+.cf-diagnostics-search input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .cf-diagnostics-filters button.selected {
-  border-color: #ebc2ae;
+  border-color: var(--accent);
   background: var(--accent-soft);
   box-shadow: inset 0 -2px var(--accent);
 }

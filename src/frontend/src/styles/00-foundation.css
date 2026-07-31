@@ -20,6 +20,10 @@
   --accent-dark: #18685b;
   --accent-soft: #e8f3f1;
   --cf-accent-rgb: 22 131 110;
+  --cf-surface-hover: color-mix(in srgb, var(--accent) 7%, var(--paper));
+  --cf-surface-hover-strong: color-mix(in srgb, var(--accent) 12%, var(--paper));
+  --cf-surface-border-hover: color-mix(in srgb, var(--accent) 28%, var(--line-2));
+  --cf-focus-ring: rgb(var(--cf-accent-rgb) / .28);
   --green:       #1f883d;
   --green-soft:  #dafbe1;
   --mono:        ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
@@ -43,11 +47,11 @@ button { cursor: pointer; }
 html[data-cf-scrollbar-mode="subtle"] ::-webkit-scrollbar { width: 8px; height: 8px; }
 html[data-cf-scrollbar-mode="always"] ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
-html[data-cf-scrollbar-mode="subtle"] ::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 5px; background: rgba(188, 76, 0, .1); background-clip: padding-box; }
+html[data-cf-scrollbar-mode="subtle"] ::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 5px; background: rgb(var(--cf-accent-rgb) / .1); background-clip: padding-box; }
 html[data-cf-scrollbar-mode="subtle"] ::-webkit-scrollbar-thumb:hover,
-html[data-cf-scrollbar-mode="subtle"] :focus-within::-webkit-scrollbar-thumb { background-color: rgba(188, 76, 0, .32); }
-html[data-cf-scrollbar-mode="always"] ::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 5px; background: rgba(188, 76, 0, .34); background-clip: padding-box; }
-html[data-cf-scrollbar-mode="always"] ::-webkit-scrollbar-thumb:hover { background-color: rgba(159, 63, 0, .56); }
+html[data-cf-scrollbar-mode="subtle"] :focus-within::-webkit-scrollbar-thumb { background-color: rgb(var(--cf-accent-rgb) / .32); }
+html[data-cf-scrollbar-mode="always"] ::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 5px; background: rgb(var(--cf-accent-rgb) / .34); background-clip: padding-box; }
+html[data-cf-scrollbar-mode="always"] ::-webkit-scrollbar-thumb:hover { background-color: rgb(var(--cf-accent-rgb) / .56); }
 
 /* Animations */
 @keyframes cell-hint { 0% { opacity: .3; } 100% { opacity: 1; } }
@@ -129,14 +133,14 @@ html[data-cf-scrollbar-mode="always"] ::-webkit-scrollbar-thumb:hover { backgrou
 }
 
 .cf-logo-expand:hover {
-  border-color: #d99a70;
-  background: var(--accent-soft);
+  border-color: var(--cf-surface-border-hover);
+  background: var(--cf-surface-hover);
   box-shadow: 0 4px 12px rgba(31, 35, 40, .08);
   transform: translateY(-1px);
 }
 
 .cf-logo-expand:focus-visible {
-  outline: 2px solid rgba(188, 76, 0, .35);
+  outline: 2px solid var(--cf-focus-ring);
   outline-offset: 2px;
 }
 
@@ -173,11 +177,11 @@ html[data-cf-scrollbar-mode="always"] ::-webkit-scrollbar-thumb:hover { backgrou
 
 .cf-sidebar-toggle:hover {
   color: var(--accent-dark) !important;
-  background: rgba(255, 241, 229, .72) !important;
+  background: var(--cf-surface-hover) !important;
 }
 
 .cf-sidebar-toggle:focus-visible {
-  outline: 2px solid rgba(188, 76, 0, .28);
+  outline: 2px solid var(--cf-focus-ring);
   outline-offset: 1px;
 }
 

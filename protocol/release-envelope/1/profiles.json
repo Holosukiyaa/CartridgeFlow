@@ -3,7 +3,11 @@
   "profiles": [
     {
       "id": "release_envelope_validation",
-      "description": "支持 CF-CRE@1 发行候选包构建与静态归档验证；不表示已支持签名验签、安装、资源重绑定、市场或运行器执行。"
+      "description": "Validate the public CF-CRE@1 envelope, payload hashes, paths, and contract boundary."
+    },
+    {
+      "id": "release_envelope_runtime",
+      "description": "Verify Ed25519 publisher signatures, consult a local trust store, stage a verified payload, and expose activation readiness."
     }
   ]
 }

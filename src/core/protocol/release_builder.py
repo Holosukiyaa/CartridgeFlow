@@ -1,8 +1,8 @@
 """CF-CRE@1 archive construction and staged runtime-consumer validation.
 
-This module deliberately stops before trust, installation, activation, or code
-execution. It gives the development console and a future runtime one shared,
-byte-oriented boundary for a release candidate.
+This module verifies the envelope, signature, trust decision, and payload
+staging boundary. It never executes cartridge code; runtime execution remains
+the consumer's responsibility.
 """
 
 from __future__ import annotations
@@ -13,11 +13,13 @@ import re
 import zipfile
 from collections import Counter
 from pathlib import Path, PurePosixPath
+from typing import Mapping
 
 from core.studio.hygiene import scan_package_hygiene
 
 from .release_envelope import build_release_envelope_report
 from .release_catalog import load_protocol_release_catalog
+from .release_signing import ReleaseSigningIdentity, build_signature_metadata, generate_signing_identity, verify_signature_metadata
 
 
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
@@ -39,6 +41,7 @@ def build_release_archive(
     placement: str = "local",
     required_capabilities: list[str] | None = None,
     required_permissions: list[str] | None = None,
+    signing_identity: ReleaseSigningIdentity | None = None,
 ) -> dict:
     """Create a deterministic CF-CRE archive and verify its written bytes."""
     source = Path(source_package).resolve()
@@ -80,6 +83,7 @@ def build_release_archive(
     catalog = load_protocol_release_catalog(Path(__file__).resolve().parents[3])
     default_flow_protocol = catalog.data["default_for_new_flows"]
     default_base_contract = catalog.data["base_contract"]
+    identity = signing_identity or generate_signing_identity(f"{publisher_id}.ephemeral")
     release = {
         "schema": "cartridgeflow.release_envelope.v1",
         "release": {"publisher_id": publisher_id, "cartridge_id": cartridge_id, "version": version},
@@ -100,16 +104,12 @@ def build_release_archive(
         },
         "payload": {"path": "payload", "digest": payload_digest},
         "integrity": {"hashes_path": "hashes.json", "content_digest": content_digest},
-        "signatures": [{"role": "publisher", "key_id": f"{publisher_id}.demo", "algorithm": "ed25519", "path": "signatures/publisher.ed25519.json"}],
+        "signatures": [{"role": "publisher", "key_id": identity.key_id, "algorithm": "ed25519", "path": "signatures/publisher.ed25519.json"}],
     }
-    signature_metadata = {
-        "schema": "cartridgeflow.release_signature_metadata.v1",
-        "algorithm": "ed25519",
-        "verification": "not_implemented",
-        "purpose": "release-candidate-demo",
-    }
+    release_bytes = _canonical_bytes(release)
+    signature_metadata = build_signature_metadata(identity, release_bytes, hashes_bytes)
     archive_files = {
-        "release.manifest.json": _canonical_bytes(release),
+        "release.manifest.json": release_bytes,
         "hashes.json": hashes_bytes,
         "signatures/publisher.ed25519.json": _canonical_bytes(signature_metadata),
         **bundle_content,
@@ -124,13 +124,18 @@ def build_release_archive(
         "archive": str(output),
         "size": output.stat().st_size,
         "status": inspection["status"],
-        "activation_allowed": False,
+        "activation_allowed": inspection["activation_allowed"],
         "report": inspection["report"],
+        "signature": inspection.get("signature"),
     }
 
 
-def inspect_release_archive(archive_file: str | Path) -> dict:
-    """Read one archive for runtime staging without extracting or activating it."""
+def inspect_release_archive(
+    archive_file: str | Path,
+    *,
+    trusted_keys: Mapping[str, str] | None = None,
+) -> dict:
+    """Read, integrity-check, and signature-check one archive without extracting it."""
     archive = Path(archive_file)
     findings: list[dict] = []
     try:
@@ -156,13 +161,54 @@ def inspect_release_archive(archive_file: str | Path) -> dict:
     experience = _load_public_json(files, "public/experience.json")
     delivery = _load_public_json(files, "public/delivery.contract.json")
     report = build_release_envelope_report(release, experience, delivery, bundle_files=files)
+    signature = verify_signature_metadata(release, files, trusted_keys=trusted_keys)
+    findings = [*(report.get("findings") or []), *(signature.get("findings") or [])]
+    report = {
+        **report,
+        "ok": not findings,
+        "status": "compatible" if not findings else "blocked",
+        "summary": {"blocker": len(findings), "warning": 0, "info": 0},
+        "findings": findings,
+        "signature": {key: value for key, value in signature.items() if key != "findings"},
+    }
+    activation_allowed = bool(report["ok"] and signature.get("trusted"))
     return {
-        "status": "validated_pending_install" if report["ok"] else "rejected",
-        "activation_allowed": False,
+        "status": "ready_to_activate" if activation_allowed else "validated_pending_install" if report["ok"] else "rejected",
+        "activation_allowed": activation_allowed,
         "report": report,
         "release": release if report["ok"] else None,
         "public_contracts": {"experience": experience, "delivery": delivery} if report["ok"] else None,
+        "signature": signature,
     }
+
+
+def extract_release_payload(
+    archive_file: str | Path,
+    destination: str | Path,
+    *,
+    trusted_keys: Mapping[str, str],
+) -> dict:
+    """Install only a verified, trusted payload into an empty staging directory."""
+    inspection = inspect_release_archive(archive_file, trusted_keys=trusted_keys)
+    if not inspection.get("activation_allowed"):
+        raise ReleaseBuildError("release archive is not trusted and ready to activate")
+    target = Path(destination).resolve()
+    if target.exists() and any(target.iterdir()):
+        raise ReleaseBuildError("release payload destination must be empty")
+    target.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(archive_file) as archive:
+        for info in archive.infolist():
+            if info.is_dir() or not info.filename.startswith("payload/"):
+                continue
+            relative = info.filename.removeprefix("payload/")
+            if not relative or not _safe_archive_path(relative):
+                raise ReleaseBuildError("release payload contains an unsafe path")
+            output = (target / relative).resolve()
+            if output != target and target not in output.parents:
+                raise ReleaseBuildError("release payload escapes its staging directory")
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_bytes(archive.read(info))
+    return {"payload_path": str(target), "inspection": inspection}
 
 
 def _payload_files(source: Path) -> dict[str, bytes]:
@@ -236,7 +282,7 @@ def _rejected_archive_report(findings: list[dict]) -> dict:
         "report": {
             "schema": "cartridgeflow.release_envelope_report.v1",
             "protocol": "CF-CRE@1",
-            "implementation_status": "partial",
+            "implementation_status": "supported",
             "ok": False,
             "status": "blocked",
             "summary": {"blocker": len(findings), "warning": 0, "info": 0},

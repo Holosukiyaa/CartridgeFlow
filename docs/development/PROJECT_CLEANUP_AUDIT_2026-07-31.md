@@ -8,6 +8,8 @@ The working product boundary is now CartridgeFlow. The retired restricted-produc
 
 Published protocol releases now declare their runtime adapter and semantic features in `protocol/catalog/release_manifest.json`, mirrored by each release snapshot. Runtime code asks for features such as `typed_control_edges`, `tool_transparency`, `resource_catalog_v2`, and `execution_plan`; it no longer branches on the old release numbers. Adding a future release requires a directory, a catalog entry, a snapshot, and Base adapter support, rather than edits across runner, analyzer, UI, and package code.
 
+The current release baseline is `CF-FARP@1.0` plus `CF-CRE@1`. Both are active/supported only after evidence exists in the reference Base: execution-plan runtime, signed deterministic archive construction, Ed25519 local trust verification, trusted payload installation, activation, frontend preflight, and runtime handoff. Before that evidence gate, either release must remain draft.
+
 ## Fixed Findings
 
 - Removed the contradictory limited API gateway. The main FastAPI application is the only launch target and all API tests use it.
@@ -16,6 +18,9 @@ Published protocol releases now declare their runtime adapter and semantic featu
 - Added semantic adapter metadata for supported historical flow releases and explicit Base declarations for those adapters.
 - Routed compatibility checks, validation, runner topology, graph projection, resource catalog selection, Portable DLC schema selection, MCP transparency gates, and release defaults through catalog features or adapters.
 - Made the 0.9 protocol text self-contained. Its release relationship is retained only as release lineage; its normative sections no longer require prior text.
+- Added the independent `CF-CRE@1` release-envelope contract, signature/trust implementation, production archive builder, trusted import/activation path, and frontend package status lights.
+- Added a dependency-free Node.js runtime handoff demo that verifies and installs a CF-CRE archive, runs the minimum CF-FARP@1.0 execution plan, calls an OpenAI-compatible model API, and executes the declared filesystem MCP operation.
+- Fixed a ReactFlow selection feedback loop that caused `Maximum update depth exceeded` during canvas initialization; browser acceptance now reports 0 errors and 0 warnings.
 - Removed static UI claims about a prior protocol version. The UI displays catalog-derived current and target labels.
 - Split the 3747-line reference-shell stylesheet into base, engineering, resources, and polish modules while retaining import order. Updated the style assertion to read the module set.
 - Extracted HTTP request payload models from `backend/main.py` into `backend/api_models.py`; the application entry now contains assembly, helpers, and routes rather than model declarations.
@@ -52,15 +57,15 @@ React workbench
 
 ## Verification
 
-- `python scripts/run_conformance.py --quiet`: passed, 327 tests; capability evidence reports 124 verified and 17 partial capabilities.
+- `python scripts/run_conformance.py --quiet`: passed, 329 tests; capability evidence reports 128 verified and 17 partial capabilities, with 0 failing capabilities.
 - `python scripts/audit_protocol_governance.py`: passed.
-- `npm run build` in `src/frontend`: passed.
-- Four static UI assertions passed: engineering canvas, engineering view integration, execution-plan projection, and MCP detail templates.
+- `npm run build` in `src/frontend`: passed. The host emits only the known Node 20.18/Vite minimum-version and large-entry performance notices.
+- Five static UI assertions passed, including node information architecture.
+- Browser acceptance on `http://127.0.0.1:5173/cartridges/dev.cf-cre-farp-acceptance/design`: CF-FARP@1.0, all six package status lights green, production `.cf-cre.zip` download completed, console 0 errors/0 warnings; screenshot is retained under `.playwright-cli` locally.
+- Backend import acceptance: deleted the development source, imported the signed production archive, and received `activation.status=active`, `allowed=true`, `signature.trust_status=trusted`.
+- Node handoff acceptance: `verify` passed; mock and real OpenAI-compatible HTTP runs completed with trace `start -> model_decision -> write_artifact -> complete`.
 - FastAPI was imported with `TestClient`; `/api/health` returned 200 and the app registers 114 routes after removal of the three obsolete planning routes.
-- Browser capture setup was attempted. The local execution policy rejected a second local HTTP server launch; no background server remains. The browser CLI itself is available, so this is an environment execution constraint rather than a product failure.
-- The structured pre-commit review helper was invoked, but its mandatory secret-scan preflight stopped because TruffleHog is not installed on this host. It was not bypassed or auto-installed.
-
-The build host is running Node 20.18.0 while Vite requires 20.19 or later. The build still succeeds, but the host should be upgraded. Vite also reports a 766.58 kB compressed-entry warning; it is a performance follow-up, not a correctness failure.
+The build host is running Node 20.18.0 while Vite requires 20.19 or later. The build still succeeds; upgrade Node before relying on the Vite dev-server warning-free build gate. Vite also reports a large-entry performance notice; it does not affect the accepted browser flow.
 
 ## File Tree
 
@@ -70,6 +75,8 @@ The tree below is generated from the current non-generated workspace. It intenti
 .gitattributes
 .gitignore
 AGENT.md
+acceptance/
+  model-result.txt
 config/
   base/
     BASE_IMPLEMENTATION.json
@@ -191,6 +198,12 @@ protocol/
 README.md
 requirements.txt
 run.bat
+demos/
+  runtime-handoff-node/
+    mock-model.mjs
+    package.json
+    README.md
+    run.mjs
 scripts/
   audit_protocol_governance.py
   bootstrap.ps1
@@ -349,6 +362,7 @@ src/
       release_builder.py
       release_catalog.py
       release_envelope.py
+      release_signing.py
       report.py
       tool_plan.py
     runtime/

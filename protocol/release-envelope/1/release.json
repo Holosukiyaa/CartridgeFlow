@@ -3,8 +3,10 @@
   "id": "CF-CRE",
   "version": "1",
   "name": "CartridgeFlow 发行封装协议",
-  "status": "draft",
-  "implementation_status": "partial",
+  "status": "active",
+  "implementation_status": "supported",
+  "runtime_adapter": "cf-cre.release-envelope.v1",
+  "features": ["release_archive", "signature_verification", "trusted_install", "activation", "runtime_handoff"],
   "standalone": true,
   "base_contract": {
     "id": "CARTRIDGEFLOW-BASE",

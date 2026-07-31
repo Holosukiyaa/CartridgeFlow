@@ -6,7 +6,8 @@ from .certification import apply_protocol_certification_label, build_protocol_ce
 from .compatibility import CompatibilityBlockedError, build_compatibility_report
 from .decision_envelope import parse_decision_envelope, validate_decision_envelope
 from .release_envelope import build_release_envelope_report, validate_release_envelope
-from .release_builder import ReleaseBuildError, build_release_archive, inspect_release_archive
+from .release_builder import ReleaseBuildError, build_release_archive, extract_release_payload, inspect_release_archive
+from .release_signing import ReleaseSigningError, ensure_development_signing_identity, trusted_public_keys
 from .flow_contract import build_flow_contract_report_for_adapter, build_v02_flow_contract_report, build_v03_flow_contract_report, build_v04_flow_contract_report, build_v05_flow_contract_report, build_v06_flow_contract_report, build_v07_flow_contract_report, build_v08_flow_contract_report, build_v09_flow_contract_report, build_v10_flow_contract_report, validate_execution_plan_v1_flow_contract, validate_v02_flow_contract, validate_v03_flow_contract, validate_v04_flow_contract, validate_v05_flow_contract, validate_v06_flow_contract, validate_v07_flow_contract, validate_v08_flow_contract, validate_v09_flow_contract, validate_v10_flow_contract
 from .tool_plan import validate_tool_plan
 
@@ -20,6 +21,7 @@ __all__ = [
     "apply_protocol_certification_label",
     "build_protocol_certification_report",
     "build_release_envelope_report",
+    "build_release_archive",
     "build_compatibility_report",
     "build_flow_contract_report_for_adapter",
     "build_v02_flow_contract_report",
@@ -37,6 +39,12 @@ __all__ = [
     "protocol_features",
     "protocol_adapter_status",
     "parse_decision_envelope",
+    "extract_release_payload",
+    "inspect_release_archive",
+    "ReleaseBuildError",
+    "ReleaseSigningError",
+    "ensure_development_signing_identity",
+    "trusted_public_keys",
     "validate_decision_envelope",
     "validate_execution_plan_v1_flow_contract",
     "validate_release_envelope",

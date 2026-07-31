@@ -33,6 +33,7 @@ node_modules/
 /test_output/
 /logs/
 /temp/
+/.playwright-cli/
 *.log
 
 # Editor and operating-system files

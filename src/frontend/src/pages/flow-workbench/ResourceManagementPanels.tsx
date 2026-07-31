@@ -913,6 +913,8 @@ export function PackagingPanel({ flowId }: { flowId: string }) {
   }
 
   const statusItems = preflight ? [
+    { label: preflight.release_envelope.protocol, ready: preflight.release_envelope.status === 'ready', detail: preflight.release_envelope.status === 'ready' ? 'Public contract ready' : 'Public contract blocked' },
+    { label: 'CRE Base', ready: preflight.release_envelope.base_supported, detail: preflight.release_envelope.base_supported ? 'Signing and activation supported' : 'Base support unavailable' },
     { label: '包内容检查', ready: preflightStatus(preflight.package_hygiene.status), detail: `${preflight.package_hygiene.scanned_files || 0} 个文件` },
     { label: '可移植性', ready: preflightStatus(preflight.portability.status), detail: `${preflight.portability.summary?.local_rebind || 0} 项需本地重绑` },
     { label: '开发包', ready: preflight.dev_ready, detail: preflight.dev_ready ? '可以生成' : '存在阻断项' },

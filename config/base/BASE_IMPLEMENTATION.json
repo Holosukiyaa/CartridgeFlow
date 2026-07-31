@@ -37,7 +37,7 @@
     {
       "id": "CF-CRE",
       "version": "1",
-      "status": "partial"
+      "status": "supported"
     }
   ],
   "supported_protocol_adapters": [
@@ -60,6 +60,10 @@
     {
       "id": "cf-farp.execution-plan.v1",
       "status": "supported"
+    },
+    {
+      "id": "cf-cre.release-envelope.v1",
+      "status": "supported"
     }
   ],
   "profiles": [
@@ -72,7 +76,8 @@
     "portable_dlc_runtime",
     "flow_analysis",
     "tool_transparency",
-    "execution_plan_runtime"
+    "execution_plan_runtime",
+    "release_envelope_runtime"
   ],
   "capabilities": [
     "manifest_load",
@@ -197,6 +202,10 @@
     "release_envelope_path_safety_v1",
     "release_envelope_digest_validation_v1",
     "release_envelope_signature_metadata_v1",
+    "release_envelope_signature_verify_v1",
+    "release_envelope_trust_store_v1",
+    "release_envelope_trusted_install_v1",
+    "release_envelope_activation_v1",
     "release_envelope_builder_v1",
     "release_envelope_archive_reader_v1",
     "execution_plan_v1_authoring",

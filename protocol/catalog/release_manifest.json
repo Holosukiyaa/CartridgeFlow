@@ -20,8 +20,10 @@
       {
         "id": "CF-CRE",
         "version": "1",
-        "lifecycle": "draft",
-        "implementation_status": "partial",
+        "lifecycle": "active",
+        "implementation_status": "supported",
+        "runtime_adapter": "cf-cre.release-envelope.v1",
+        "features": ["release_archive", "signature_verification", "trusted_install", "activation", "runtime_handoff"],
         "registry": "release-envelope/1/release.json",
         "profiles": "release-envelope/1/profiles.json",
         "capabilities": "release-envelope/1/capabilities.json",

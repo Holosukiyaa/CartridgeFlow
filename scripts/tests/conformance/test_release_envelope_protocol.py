@@ -106,11 +106,11 @@ def replace_hashed_file(release, bundle, path, content):
 
 
 class ReleaseEnvelopeProtocolTests(unittest.TestCase):
-    def test_catalog_registers_a_partial_release_builder_without_changing_flow_default(self):
+    def test_catalog_registers_a_supported_release_builder_without_changing_flow_default(self):
         catalog = load_protocol_release_catalog(ROOT)
         release = catalog.default_release_envelope()
         self.assertEqual(("CF-CRE", "1"), (release["id"], release["version"]))
-        self.assertEqual("partial", release["implementation_status"])
+        self.assertEqual("supported", release["implementation_status"])
         self.assertEqual({"id": "CF-FARP", "version": "1.0"}, catalog.data["default_for_new_flows"])
         self.assertEqual("CF-CRE", catalog.public_payload()["release_envelopes"]["default_for_new_releases"]["id"])
         base = load_base_implementation(ROOT)
@@ -124,7 +124,7 @@ class ReleaseEnvelopeProtocolTests(unittest.TestCase):
         report = build_release_envelope_report(release, experience, delivery, bundle_files=bundle)
         self.assertTrue(report["ok"], report["findings"])
         self.assertEqual("compatible", report["status"])
-        self.assertEqual("partial", report["implementation_status"])
+        self.assertEqual("supported", report["implementation_status"])
 
     def test_public_contract_cannot_leak_internal_connection_fields(self):
         release, experience, delivery, bundle = valid_release_bundle()
@@ -158,10 +158,10 @@ class ReleaseEnvelopeProtocolTests(unittest.TestCase):
         unlisted_report = build_release_envelope_report(release, experience, delivery, bundle_files=unlisted)
         self.assertIn("cre_bundle_file_unlisted", {item["code"] for item in unlisted_report["findings"]})
 
-    def test_protocol_document_declares_draft_and_promotion_boundary(self):
+    def test_protocol_document_declares_active_support_boundary(self):
         text = DOCUMENT.read_text(encoding="utf-8")
         self.assertIn("CF-CRE@1", text)
-        self.assertIn("partial", text)
+        self.assertIn("active/supported", text)
         self.assertIn("晋级条件", text)
 
 

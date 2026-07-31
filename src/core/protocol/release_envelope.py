@@ -1,7 +1,8 @@
-"""Static validation for the draft CF-CRE@1 release envelope.
+"""Static validation for the CF-CRE@1 release envelope.
 
-This module intentionally validates declarations and supplied bytes only. It does
-not load a cartridge, verify an Ed25519 signature, or contact a market service.
+This module validates declarations and supplied bytes only. Signature trust,
+installation, activation, and runtime execution are handled by the release
+builder and runtime consumer layers.
 """
 
 from __future__ import annotations
@@ -119,7 +120,7 @@ def build_release_envelope_report(
     return {
         "schema": REPORT_SCHEMA,
         "protocol": "CF-CRE@1",
-        "implementation_status": "partial",
+        "implementation_status": "supported",
         "ok": counts["blocker"] == 0,
         "status": report_status(findings),
         "summary": counts,

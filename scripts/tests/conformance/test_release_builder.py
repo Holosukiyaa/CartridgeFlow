@@ -10,7 +10,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "src"))
 
-from core.protocol import build_release_archive, inspect_release_archive
+from core.protocol import build_release_archive, extract_release_payload, inspect_release_archive
+from core.protocol.release_signing import generate_signing_identity, verify_signature_metadata
 
 
 def public_contracts():
@@ -81,6 +82,55 @@ class ReleaseBuilderTests(unittest.TestCase):
             experience, delivery = public_contracts()
             with self.assertRaisesRegex(ValueError, "non-portable"):
                 build_release_archive(source, root / "daily.cf-release.zip", publisher_id="demo.publisher", experience=experience, delivery=delivery)
+
+    def test_trusted_signer_allows_payload_activation(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "source"
+            write_source(source)
+            identity = generate_signing_identity("demo.publisher.development")
+            experience, delivery = public_contracts()
+            result = build_release_archive(
+                source,
+                root / "daily.cf-release.zip",
+                publisher_id="demo.publisher",
+                experience=experience,
+                delivery=delivery,
+                signing_identity=identity,
+            )
+            import base64
+
+            trusted = {identity.key_id: base64.b64encode(identity.public_key).decode("ascii")}
+            inspection = inspect_release_archive(result["archive"], trusted_keys=trusted)
+            self.assertTrue(inspection["activation_allowed"], inspection["report"])
+            staged = extract_release_payload(result["archive"], root / "staged", trusted_keys=trusted)
+            self.assertEqual("dev.release-demo", json.loads((Path(staged["payload_path"]) / "manifest.json").read_text(encoding="utf-8"))["id"])
+
+    def test_untrusted_or_tampered_signature_blocks_activation(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "source"
+            write_source(source)
+            identity = generate_signing_identity("demo.publisher.development")
+            experience, delivery = public_contracts()
+            result = build_release_archive(
+                source,
+                root / "daily.cf-release.zip",
+                publisher_id="demo.publisher",
+                experience=experience,
+                delivery=delivery,
+                signing_identity=identity,
+            )
+            self.assertFalse(inspect_release_archive(result["archive"])["activation_allowed"])
+            with zipfile.ZipFile(result["archive"]) as archive:
+                files = {name: archive.read(name) for name in archive.namelist()}
+            release = json.loads(files["release.manifest.json"].decode("utf-8"))
+            metadata = json.loads(files["signatures/publisher.ed25519.json"].decode("utf-8"))
+            metadata["signature"] = "A" * len(metadata["signature"])
+            files["signatures/publisher.ed25519.json"] = json.dumps(metadata).encode("utf-8")
+            report = verify_signature_metadata(release, files)
+            self.assertFalse(report["ok"])
+            self.assertIn("cre_signature_verification_failed", {finding["code"] for finding in report["findings"]})
 
 
 if __name__ == "__main__":

@@ -48,6 +48,8 @@ def validate_base_implementation(data: dict) -> None:
             raise BaseManifestError(f"base.supported_protocols[{index}] must be an object")
         if not item.get("id") or not item.get("version"):
             raise BaseManifestError(f"base.supported_protocols[{index}] requires id and version")
+        if item.get("status") not in _ADAPTER_STATUSES:
+            raise BaseManifestError(f"base.supported_protocols[{index}].status is invalid")
     adapters = data.get("supported_protocol_adapters", [])
     if not isinstance(adapters, list):
         raise BaseManifestError("base.supported_protocol_adapters must be an array")
@@ -85,6 +87,10 @@ def supports_protocol_release(base: dict, release: dict | None) -> bool:
     """Resolve Base support from an implementation adapter, then legacy exact versions."""
     if not isinstance(release, dict):
         return False
+    if "status" in release and release.get("status") != "active":
+        return False
+    if "implementation_status" in release and release.get("implementation_status") != "supported":
+        return False
     adapter = release.get("runtime_adapter")
     if protocol_adapter_status(base, str(adapter) if adapter else None):
         return True
@@ -92,5 +98,6 @@ def supports_protocol_release(base: dict, release: dict | None) -> bool:
     return any(
         isinstance(item, dict)
         and (str(item.get("id") or ""), str(item.get("version") or "")) == expected
+        and item.get("status") in _ADAPTER_STATUSES
         for item in base.get("supported_protocols") or []
     )

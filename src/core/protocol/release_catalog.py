@@ -12,6 +12,7 @@ RELEASE_MANIFEST_PATH = Path("protocol/catalog/release_manifest.json")
 _LIFECYCLES = {"current", "supported_previous", "recognized_legacy"}
 _RELEASE_ENVELOPE_LIFECYCLES = {"draft", "active", "supported_previous"}
 _ADAPTER_STATUSES = {"partial", "supported"}
+_FLOW_RELEASE_STATUSES = {"draft", "active"}
 
 
 class ProtocolReleaseCatalog:
@@ -31,7 +32,14 @@ class ProtocolReleaseCatalog:
 
     def published(self, protocol_id: str, version: str) -> bool:
         item = self.get(protocol_id, version)
-        return bool(item and item["lifecycle"] in {"current", "supported_previous"})
+        if not item or item["lifecycle"] not in {"current", "supported_previous"}:
+            return False
+        # Historical releases predate explicit delivery state. Their lifecycle remains authoritative.
+        if "status" in item and item.get("status") != "active":
+            return False
+        if "implementation_status" in item and item.get("implementation_status") != "supported":
+            return False
+        return True
 
     def runtime_adapter(self, protocol_id: str, version: str) -> str | None:
         item = self.get(protocol_id, version)
@@ -64,6 +72,14 @@ class ProtocolReleaseCatalog:
         default = self.data["release_envelopes"]["default_for_new_releases"]
         return self.get_release_envelope(str(default["id"]), str(default["version"]))
 
+    def release_envelope_published(self, protocol_id: str, version: str) -> bool:
+        item = self.get_release_envelope(protocol_id, version)
+        return bool(
+            item
+            and item.get("lifecycle") in {"active", "supported_previous"}
+            and item.get("implementation_status") == "supported"
+        )
+
     def public_payload(self) -> dict:
         default = dict(self.data["default_for_new_flows"])
         return {
@@ -74,14 +90,18 @@ class ProtocolReleaseCatalog:
                 {
                     key: value
                     for key, value in item.items()
-                    if key in {"id", "version", "lifecycle", "migration_target", "runtime_adapter", "features"}
+                    if key in {"id", "version", "lifecycle", "status", "implementation_status", "migration_target", "runtime_adapter", "features"}
                 }
                 for item in self.releases
             ],
             "release_envelopes": {
                 "default_for_new_releases": dict(self.data["release_envelopes"]["default_for_new_releases"]),
                 "releases": [
-                    {key: value for key, value in item.items() if key in {"id", "version", "lifecycle", "implementation_status"}}
+                    {
+                        key: value
+                        for key, value in item.items()
+                        if key in {"id", "version", "lifecycle", "implementation_status", "runtime_adapter", "features"}
+                    }
                     for item in self.release_envelopes
                 ],
             },
@@ -120,6 +140,10 @@ def _load_release_manifest(root: Path) -> dict:
         seen.add(key)
         if item.get("lifecycle") not in _LIFECYCLES:
             raise ProtocolReleaseCatalogError(f"protocol release manifest releases[{index}].lifecycle is invalid")
+        if "status" in item and item.get("status") not in _FLOW_RELEASE_STATUSES:
+            raise ProtocolReleaseCatalogError(f"protocol release manifest releases[{index}].status is invalid")
+        if "implementation_status" in item and item.get("implementation_status") not in _ADAPTER_STATUSES:
+            raise ProtocolReleaseCatalogError(f"protocol release manifest releases[{index}].implementation_status is invalid")
         if not isinstance(item.get("registry"), str) or not item["registry"]:
             raise ProtocolReleaseCatalogError(f"protocol release manifest releases[{index}].registry is required")
         adapter = item.get("runtime_adapter")
@@ -172,5 +196,15 @@ def _validate_release_envelopes(data: dict) -> None:
         for field in ("registry", "profiles", "capabilities", "document"):
             if not isinstance(item.get(field), str) or not item[field]:
                 raise ProtocolReleaseCatalogError(f"release_envelopes.releases[{index}].{field} is required")
+        adapter = item.get("runtime_adapter")
+        if adapter is not None and (not isinstance(adapter, str) or not adapter.strip()):
+            raise ProtocolReleaseCatalogError(f"release_envelopes.releases[{index}].runtime_adapter must be a non-empty string")
+        features = item.get("features", [])
+        if not isinstance(features, list) or any(not isinstance(feature, str) or not feature.strip() for feature in features):
+            raise ProtocolReleaseCatalogError(f"release_envelopes.releases[{index}].features must be an array of non-empty strings")
+        if len(set(features)) != len(features):
+            raise ProtocolReleaseCatalogError(f"release_envelopes.releases[{index}].features must not contain duplicates")
+        if item.get("lifecycle") in {"active", "supported_previous"} and not adapter:
+            raise ProtocolReleaseCatalogError(f"published release envelope {key[0]}@{key[1]} requires runtime_adapter")
     if (str(default["id"]), str(default["version"])) not in seen:
         raise ProtocolReleaseCatalogError("release_envelopes.default_for_new_releases must name a registered release")

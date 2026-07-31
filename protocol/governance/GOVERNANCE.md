@@ -2,8 +2,8 @@
 
 ## CF-FARP@1.0 当前边界
 
-`CF-FARP@1.0` 是当前正式且受支持的执行计划协议。Base 已声明令牌运行、
-兼容性分派、持久化恢复、透明工具门禁与认证所需证据；默认新建流程使用 1.0。
+`CF-FARP@1.0` 是当前执行计划协议。参考 Base 已完成执行、签名打包、认证和 handoff
+证据闭环，当前为 active/supported；在证据闭环完成前，协议必须保持 draft。
 历史版本只能通过其自身契约运行，任何升级都必须显式完成并重新校验，不能由
 保存、打开或运行操作静默触发。
 
@@ -19,14 +19,14 @@
 protocol/base/0.2/specification.md
 protocol/flow-authoring/1.0/README.md
 protocol/base/CARTRIDGEFLOW-BASE-0.2.json
-protocol/flow-authoring/0.9/release.json
+protocol/flow-authoring/1.0/release.json
 ```
 
 Base v0.2 与 FARP v1.0 都是完整独立协议。阅读或实现目标版本不得依赖历史正文，也不得依赖任意领域伴随协议。Base Contract 约束宿主边界，CF-FARP 约束 Flow 创作、静态分析、运行语义与 MCP/DLC 透明执行，两者版本不要求相同。
 
 ## 版本支持策略
 
-最新正式规范是 `CF-FARP@1.0`。当前参考基座声明 `CF-FARP@0.6 partial`、`CF-FARP@0.7 partial`、`CF-FARP@0.8 partial` 与 `CF-FARP@1.0 partial`。v1.0 当前覆盖静态 parser、descriptor v3、source digest guard、结构化 source editing、Analyzer 透明度 finding、资源目录 v2 投影、declared operation trace events 与 operation capability broker preflight；OS 级 sandbox 与更细粒度资源目标 enforcement 仍按 partial evidence 管理。v0.8 已实现 Analyzer、typed control filtering、结构化 I/O、统一 Flow 资源目录、目标门禁、失败路径和 conformance 证据；`CF-FARP@0.1` 至 `0.5` 继续处于 `recognized` 状态。
+`CF-FARP@1.0` 当前为 active/supported，Base 通过 `cf-farp.execution-plan.v1` 执行适配器运行显式执行计划。`CF-CRE@1` 当前为 active/supported，Base 通过 `cf-cre.release-envelope.v1` 构建归档、验证 Ed25519 签名、检查本地信任并在兼容性和资源预检通过后激活载荷。v0.8 已实现 Analyzer、typed control filtering、结构化 I/O、统一 Flow 资源目录、目标门禁、失败路径和 conformance 证据；`CF-FARP@0.1` 至 `0.5` 继续处于 `recognized` 状态。
 
 版本判断必须经过三层：
 

@@ -40,8 +40,7 @@ class ProtocolRegistry:
         if protocol_id == "CF-FARP":
             return self.release_catalog.published(protocol_id, version)
         if protocol_id == "CF-CRE":
-            envelope = self.release_catalog.get_release_envelope(protocol_id, version)
-            return bool(envelope and envelope.get("implementation_status") in {"partial", "supported"})
+            return self.release_catalog.release_envelope_published(protocol_id, version)
         return (protocol_id, version) in self.protocols
 
     def recognizes_protocol(self, protocol_id: str, version: str) -> bool:

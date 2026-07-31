@@ -105,7 +105,7 @@ export const fetchDlcRunContext = (runId: string) =>
   api<{ schema: string; run_id: string; cartridge_id: string; frontend_url: string; context: Record<string, any>; artifacts?: Array<Record<string, any>>; pending_interaction?: any }>(`/api/cartridge-runs/${runId}/dlc-context`)
 
 export const packageCartridge = (id: string, packageMode: 'dev' | 'production' = 'dev') =>
-  api<{ ok: boolean; cartridge_id: string; filename: string; package_mode: string; url: string; size: number; mcp_tool_count: number; compatibility?: any; portability?: PortabilityReport }>(`/api/cartridges/${encodeURIComponent(id)}/package`, {
+  api<{ ok: boolean; cartridge_id: string; filename: string; package_mode: string; protocol?: string; release_id?: string; activation_allowed?: boolean; url: string; size: number; mcp_tool_count: number; compatibility?: any; portability?: PortabilityReport }>(`/api/cartridges/${encodeURIComponent(id)}/package`, {
     method: 'POST',
     body: JSON.stringify({ package_mode: packageMode }),
   })

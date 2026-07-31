@@ -760,6 +760,8 @@ export interface StudioPackageItem {
   name: string
   version: string
   package_mode: string
+  protocol?: string
+  release_id?: string
 }
 
 export interface PortabilityReport {
@@ -788,6 +790,12 @@ export interface StudioReleasePreflight {
   resources: { status: string; items: any[]; descriptor?: any }
   package_hygiene: { status: string; items: any[]; scanned_files?: number }
   portability: PortabilityReport
+  release_envelope: {
+    protocol: string
+    status: 'ready' | 'blocked' | string
+    base_supported: boolean
+    report: { ok: boolean; findings: any[]; summary?: Record<string, number> }
+  }
   issues: { area: string; severity: string; message: string }[]
   dev_ready: boolean
   production_ready: boolean

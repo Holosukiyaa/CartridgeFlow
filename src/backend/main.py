@@ -95,12 +95,19 @@ from core.studio.environment import ensure_local_credentials
 from core.protocol import (
     BaseManifestError,
     CompatibilityBlockedError,
+    ReleaseBuildError,
     apply_protocol_certification_label,
     build_compatibility_report,
+    build_release_archive,
     build_protocol_certification_report,
+    ensure_development_signing_identity,
+    extract_release_payload,
     has_protocol_feature,
+    inspect_release_archive,
     load_protocol_release_catalog,
     load_base_implementation,
+    supports_protocol_release,
+    trusted_public_keys,
 )
 
 ensure_data_layout(ROOT)
@@ -357,6 +364,16 @@ def _is_typed_root_flow(root_flow: dict) -> bool:
     )
 
 
+def _is_execution_plan_root_flow(root_flow: dict) -> bool:
+    protocol = root_flow.get("protocol") if isinstance(root_flow.get("protocol"), dict) else {}
+    return has_protocol_feature(
+        str(protocol.get("id") or ""),
+        str(protocol.get("version") or ""),
+        "execution_plan",
+        ROOT,
+    )
+
+
 def _edge_scope(edge: dict) -> str:
     if edge.get("scope"):
         return str(edge.get("scope") or "root")
@@ -378,11 +395,35 @@ def _stored_flow_edge(root_flow: dict, source: str, target: str, scope: str = "r
 
 
 def _flow_edges(root_flow: dict) -> list[dict]:
+    if _is_execution_plan_root_flow(root_flow):
+        plan = root_flow.get("execution_plan") if isinstance(root_flow.get("execution_plan"), dict) else {}
+        return [edge for edge in plan.get("edges") or [] if isinstance(edge, dict)]
     field = "control_edges" if _is_typed_root_flow(root_flow) else "edges"
     return [edge for edge in root_flow.get(field) or [] if isinstance(edge, dict)]
 
 
 def _write_flow_edges(root_flow: dict, edges: list[dict]) -> None:
+    if _is_execution_plan_root_flow(root_flow):
+        plan = root_flow.setdefault("execution_plan", {"schema": "cartridgeflow.execution_plan.v1", "entry": root_flow.get("start")})
+        normalized = []
+        seen = set()
+        for edge in edges:
+            source = str(edge.get("from") or edge.get("source") or "").strip()
+            target = str(edge.get("to") or edge.get("target") or "").strip()
+            kind = str(edge.get("kind") or "sequence")
+            if not source or not target or source == target or kind != "sequence":
+                continue
+            key = (source, target)
+            if key in seen:
+                continue
+            seen.add(key)
+            normalized.append({"id": str(edge.get("id") or f"{source}_{target}"), "kind": "sequence", "from": source, "to": target})
+        plan["schema"] = "cartridgeflow.execution_plan.v1"
+        plan["entry"] = str(plan.get("entry") or root_flow.get("start") or "")
+        plan["edges"] = normalized
+        root_flow.pop("edges", None)
+        root_flow.pop("control_edges", None)
+        return
     seen = set()
     normalized = []
     for edge in edges:
@@ -1031,7 +1072,7 @@ def _release_preflight_for_cartridge(cartridge: dict) -> dict:
     from core.studio.environment import environment_snapshot
     from core.studio.hygiene import scan_package_hygiene
     from core.studio.portability import build_portability_report
-    from core.studio.release import resource_preflight
+    from core.studio.release import release_contract_preview, resource_preflight
     from core.studio.resources import load_resources
 
     manifest = cartridge.get("manifest") or {}
@@ -1059,6 +1100,14 @@ def _release_preflight_for_cartridge(cartridge: dict) -> dict:
 
     model_report = build_model_binding_report(manifest, cartridge.get("root_flow") or {})
     model_items = model_report.get("items") or []
+    release_preview = release_contract_preview(manifest)
+    release_catalog = load_protocol_release_catalog(ROOT)
+    release_protocol = release_catalog.default_release_envelope()
+    release_protocol_supported = bool(
+        release_protocol
+        and release_catalog.release_envelope_published(str(release_protocol.get("id") or ""), str(release_protocol.get("version") or ""))
+        and supports_protocol_release(load_base_implementation(ROOT), release_protocol)
+    )
 
     issues = []
     for finding in compatibility.get("findings") or []:
@@ -1082,6 +1131,11 @@ def _release_preflight_for_cartridge(cartridge: dict) -> dict:
         issues.append({"area": "portability", "severity": "blocker", "message": item.get("reason") or item.get("id")})
     for item in portability_report.get("forbidden") or []:
         issues.append({"area": "portability", "severity": "blocker", "message": item.get("reason") or item.get("id")})
+    if release_preview.get("status") != "ready":
+        for finding in (release_preview.get("report") or {}).get("findings") or []:
+            issues.append({"area": "release_envelope", "severity": finding.get("severity") or "blocker", "message": finding.get("message") or finding.get("code")})
+    if not release_protocol_supported:
+        issues.append({"area": "release_envelope", "severity": "blocker", "message": "CF-CRE@1 is not active and supported by this Base"})
 
     delivery_level = (compatibility.get("delivery_readiness") or {}).get("level")
     if compatibility.get("legacy"):
@@ -1098,6 +1152,8 @@ def _release_preflight_for_cartridge(cartridge: dict) -> dict:
         and resource_report.get("status") == "ok"
         and package_report.get("status") == "ok"
         and portability_report.get("status") == "ok"
+        and release_preview.get("status") == "ready"
+        and release_protocol_supported
     )
     return {
         "cartridge": {key: cartridge.get(key) for key in ("id", "name", "version", "source", "editable")},
@@ -1109,6 +1165,12 @@ def _release_preflight_for_cartridge(cartridge: dict) -> dict:
         "resources": resource_report,
         "package_hygiene": package_report,
         "portability": portability_report,
+        "release_envelope": {
+            "protocol": f"{(release_protocol or {}).get('id') or 'CF-CRE'}@{(release_protocol or {}).get('version') or '1'}",
+            "status": release_preview.get("status"),
+            "base_supported": release_protocol_supported,
+            "report": release_preview.get("report"),
+        },
         "issues": issues,
         "dev_ready": bool(cartridge.get("package_path") and Path(cartridge.get("package_path")).is_dir() and package_report.get("status") == "ok" and portability_report.get("status") == "ok"),
         "production_ready": production_ready,
@@ -1249,6 +1311,7 @@ def import_cartridge(payload: CartridgeImportPayload):
     extract_dir = tmp_dir / "package"
     installed_root = ROOT / INSTALLED_CARTRIDGES_DIR
     extract_root_resolved = extract_dir.resolve()
+    release_install = None
     try:
         extract_dir.mkdir(parents=True, exist_ok=True)
         try:
@@ -1259,8 +1322,21 @@ def import_cartridge(payload: CartridgeImportPayload):
                 members = zf.infolist()
                 if not members:
                     raise HTTPException(status_code=400, detail="Cartridge zip is empty")
-                _validate_cartridge_archive_members(members, extract_dir)
-                zf.extractall(extract_dir)
+                is_cre_archive = "release.manifest.json" in {member.filename for member in members}
+                if is_cre_archive:
+                    archive_path = tmp_dir / "release.cf-cre.zip"
+                    archive_path.write_bytes(archive_bytes)
+                    try:
+                        release_install = extract_release_payload(
+                            archive_path,
+                            extract_dir,
+                            trusted_keys=trusted_public_keys(ROOT),
+                        )
+                    except ReleaseBuildError as exc:
+                        raise HTTPException(status_code=400, detail=f"CF-CRE release cannot be activated: {exc}") from exc
+                else:
+                    _validate_cartridge_archive_members(members, extract_dir)
+                    zf.extractall(extract_dir)
         except _zipfile.BadZipFile:
             raise HTTPException(status_code=400, detail="Invalid cartridge zip")
 
@@ -1276,12 +1352,23 @@ def import_cartridge(payload: CartridgeImportPayload):
         if not _re.fullmatch(r"[A-Za-z0-9._-]+", cartridge_id):
             raise HTTPException(status_code=400, detail="manifest.id may only contain letters, numbers, dot, underscore, and hyphen")
 
+        root_flow = {}
         try:
             root_entry = manifest.get("root_flow", {}).get("entry", "root.flow.json")
             root_flow_path = (extract_dir / root_entry).resolve()
             if root_flow_path != extract_root_resolved and extract_root_resolved not in root_flow_path.parents:
                 raise HTTPException(status_code=400, detail="root_flow entry points outside the cartridge package")
             registry.validator.validate_package(extract_dir, manifest)
+            if root_flow_path.is_file():
+                root_flow = _json.loads(root_flow_path.read_text(encoding="utf-8"))
+            if release_install:
+                compatibility = _compatibility_for_manifest(manifest, root_flow, analysis_target="production")
+                if not compatibility.get("ok"):
+                    raise HTTPException(status_code=400, detail={
+                        "error": "release_payload_incompatible",
+                        "message": "CF-CRE payload does not meet this Base's production compatibility contract.",
+                        "report": compatibility,
+                    })
         except Exception as e:
             if isinstance(e, HTTPException):
                 raise
@@ -1301,11 +1388,21 @@ def import_cartridge(payload: CartridgeImportPayload):
             _shutil.rmtree(target_dir)
         _shutil.move(str(extract_dir), str(target_dir))
         cartridge = registry.get_cartridge(cartridge_id)
+        activation = None
+        if release_install:
+            preflight = _release_preflight_for_cartridge(cartridge)
+            activation = {
+                "status": "active" if preflight.get("production_ready") else "installed_pending_rebind",
+                "allowed": bool(preflight.get("production_ready")),
+                "release_id": ((release_install.get("inspection") or {}).get("release") or {}).get("release_id"),
+                "signature": (release_install.get("inspection") or {}).get("signature"),
+            }
         return {
             "ok": True,
             "cartridge": cartridge,
             "installed_path": _public_data_path(target_dir),
             "replaced": replaced,
+            "activation": activation,
         }
     finally:
         _shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -1407,6 +1504,54 @@ def package_cartridge(cartridge_id: str, payload: CartridgePackagePayload | None
     version = _re.sub(r"[^a-zA-Z0-9._-]+", "_", str(cartridge.get("version") or "0.0.0"))
     out_dir = ROOT / PACKAGES_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
+    if package_mode == "production":
+        from core.studio.release import release_archive_inputs
+
+        release_inputs = release_archive_inputs(cartridge.get("manifest") or {})
+        safe_publisher = _re.sub(r"[^a-zA-Z0-9._-]+", "_", str(release_inputs["publisher_id"]))
+        signing_identity = ensure_development_signing_identity(ROOT, safe_publisher)
+        out_file = out_dir / f"{safe_id}-{version}.cf-cre.zip"
+        try:
+            built = build_release_archive(
+                package_path,
+                out_file,
+                publisher_id=safe_publisher,
+                experience=release_inputs["experience"],
+                delivery=release_inputs["delivery"],
+                placement=release_inputs["placement"],
+                required_capabilities=release_inputs["required_capabilities"],
+                required_permissions=release_inputs["required_permissions"],
+                signing_identity=signing_identity,
+            )
+            inspection = inspect_release_archive(out_file, trusted_keys=trusted_public_keys(ROOT))
+        except ReleaseBuildError as exc:
+            raise HTTPException(status_code=400, detail={"error": "release_build_failed", "message": str(exc)}) from exc
+        if not inspection.get("activation_allowed"):
+            raise HTTPException(status_code=400, detail={
+                "error": "release_activation_blocked",
+                "message": "CF-CRE package failed signature trust or integrity activation checks.",
+                "report": inspection,
+            })
+        return {
+            "ok": True,
+            "cartridge_id": cartridge_id,
+            "filename": out_file.name,
+            "package_mode": package_mode,
+            "protocol": "CF-CRE@1",
+            "release_id": built["release_id"],
+            "activation_allowed": inspection["activation_allowed"],
+            "signature": inspection.get("signature"),
+            "url": f"/packages/{out_file.name}",
+            "size": out_file.stat().st_size,
+            "portability": portability,
+            "mcp_tool_count": len(cartridge.get("mcp_tools") or []),
+            "compatibility": {
+                "ok": compatibility.get("ok"),
+                "status": compatibility.get("status"),
+                "legacy": compatibility.get("legacy"),
+                "summary": compatibility.get("summary", {}),
+            },
+        }
     out_file = out_dir / f"{safe_id}-{version}.cartridge.zip"
     root = package_path.resolve()
     from core.studio.release import build_binding_descriptor
@@ -1703,7 +1848,7 @@ def simulate_lab_flow_authoring(payload: AuthoringSimulationPayload = AuthoringS
             template_id="runtime",
             node_id="organize_result",
             title="整理结果",
-            after_node_id="welcome",
+            after_node_id="start",
         ))
         steps.append({"action": "在画布创建业务节点", "ok": node_result.get("status") == "node_created"})
 
@@ -2572,6 +2717,48 @@ def create_lab_flow_node(cartridge_id: str, payload: NodeCreatePayload):
         new_state["title"] = payload.title
     _ensure_typed_node_contracts(root_flow, new_state)
     after_node_id = payload.after_node_id or root_flow.get("start")
+    if _is_execution_plan_root_flow(root_flow):
+        plan = root_flow.setdefault("execution_plan", {
+            "schema": "cartridgeflow.execution_plan.v1",
+            "entry": root_flow.get("start"),
+            "edges": [],
+        })
+        edges = [edge for edge in plan.get("edges") or [] if isinstance(edge, dict)]
+        if after_node_id and after_node_id in states:
+            source_layout = states[after_node_id].get("layout") or {}
+            new_state["layout"] = {"x": int(source_layout.get("x", 80)) + 300, "y": int(source_layout.get("y", 120))}
+            successor = next((edge for edge in edges if edge.get("kind") == "sequence" and edge.get("from") == after_node_id), None)
+            if successor:
+                edges.remove(successor)
+                successor_target = str(successor.get("to") or "")
+                edges.append({"id": f"{after_node_id}_{node_id}", "kind": "sequence", "from": after_node_id, "to": node_id})
+                if successor_target:
+                    edges.append({"id": f"{node_id}_{successor_target}", "kind": "sequence", "from": node_id, "to": successor_target})
+        elif not root_flow.get("start"):
+            root_flow["start"] = node_id
+            plan["entry"] = node_id
+        states[node_id] = new_state
+        if new_state.get("type") == "process":
+            failed_id = f"{node_id}_failed"
+            if failed_id not in states:
+                states[failed_id] = {"type": "terminal", "title": f"{new_state.get('title') or node_id} failed", "display_name": "Failed", "locked": True}
+            edges.append({
+                "id": f"{node_id}_failure",
+                "kind": "failure",
+                "from": node_id,
+                "to": failed_id,
+                "failure": {"id": f"{node_id}_exception", "causes": ["exception"]},
+            })
+        plan["schema"] = "cartridgeflow.execution_plan.v1"
+        plan["entry"] = str(plan.get("entry") or root_flow.get("start") or "")
+        plan["edges"] = edges
+        root_flow.pop("edges", None)
+        root_flow.pop("control_edges", None)
+        files["root_flow"] = _json.dumps(root_flow, ensure_ascii=False, indent=2)
+        dev_flow_manager.save_file(cartridge_id, "root_flow", files["root_flow"])
+        validation = dev_flow_manager.validate_files(cartridge_id, files)
+        graph = flow_graph_builder.build(dev_flow_manager.preview_graph(cartridge_id, files))
+        return {"status": "node_created", "node_id": node_id, "files": files, "validation": validation, "graph": graph}
     current_edges = _flow_edges(root_flow)
     branch_edges = [edge for edge in current_edges if _edge_scope(edge) != "root"]
     if after_node_id and after_node_id in states:

@@ -45,6 +45,25 @@ export type ProtocolDisplayInfo = {
   currentProtocolLabel: string
   currentProtocolStatus: string
 }
+
+function graphNodesMatch(current: FlowGraphNode[], next: FlowGraphNode[]) {
+  if (current.length !== next.length) return false
+  return current.every((node, index) => {
+    const candidate = next[index]
+    return node.id === candidate.id
+      && node.type === candidate.type
+      && node.position.x === candidate.position.x
+      && node.position.y === candidate.position.y
+      && node.className === candidate.className
+      && JSON.stringify(node.data) === JSON.stringify(candidate.data)
+      && JSON.stringify(node.style) === JSON.stringify(candidate.style)
+  })
+}
+
+function graphEdgesMatch(current: FlowGraphEdge[], next: FlowGraphEdge[]) {
+  if (current.length !== next.length) return false
+  return current.every((edge, index) => JSON.stringify(edge) === JSON.stringify(next[index]))
+}
 const DEFAULT_PROTOCOL_DISPLAY: ProtocolDisplayInfo = {
   baseContractLabel: 'Base Contract 未读取',
   targetProtocolLabel: '协议发布清单未读取',
@@ -928,12 +947,16 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
   }, [nodeEditorPlacements, nodeEditorPositions, onNodeEditorPositionChange])
 
   useEffect(() => {
-    setNodes(initialNodes)
-    flowInstance?.setNodes(initialNodes)
+    setNodes((current) => graphNodesMatch(current, initialNodes) ? current : initialNodes)
+    if (flowInstance && !graphNodesMatch(flowInstance.getNodes() as FlowGraphNode[], initialNodes)) {
+      flowInstance.setNodes(initialNodes)
+    }
   }, [flowInstance, initialNodes])
   useEffect(() => {
-    setEdges(initialEdges)
-    flowInstance?.setEdges(initialEdges)
+    setEdges((current) => graphEdgesMatch(current, initialEdges) ? current : initialEdges)
+    if (flowInstance && !graphEdgesMatch(flowInstance.getEdges() as FlowGraphEdge[], initialEdges)) {
+      flowInstance.setEdges(initialEdges)
+    }
   }, [flowInstance, initialEdges])
   useEffect(() => {
     resourcePositionsRef.current = {}
@@ -1666,7 +1689,7 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
           }
           if (activeCanvasTool !== 'select' || selectedNodes.length !== 1) return
           const node = selectedNodes[0]?.data as unknown as FlowNode
-          if (node) onSelectNode(node)
+          if (node && selectedNode?.id !== node.id) onSelectNode(node)
         }}
         onNodeClick={(event, graphNode) => {
           if (activeCanvasTool !== 'steward-pointer') return

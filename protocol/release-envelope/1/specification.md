@@ -4,7 +4,7 @@
 
 协议状态：激活（`active`）
 
-实现状态：支持（`supported`）：Base 可构建、验证签名、校验本地信任、安装并激活通过兼容性与资源预检的发行包；运行台最小 handoff 实现位于 `demos/runtime-handoff-node/`。
+实现状态：支持（`supported`）：Base 可构建、验证签名、校验本地信任、安装并激活通过兼容性与资源预检的发行包；运行台最小 handoff 实现位于 `runtime-developer-toolkit/demo/`。
 
 发布日期：2026-07-30
 
@@ -16,7 +16,7 @@
 
 本协议不定义流程节点或调度语义；这些仍由发行包中声明版本的 `CF-FARP` 负责。本协议也不定义支付、分账、市场审核、密钥托管、加密、数字版权保护或网络下载。Ed25519 验签、信任、安装和激活由实现本协议的宿主适配器负责。
 
-当前仓库已实现本协议的静态结构、公开合同泄露、路径和摘要验证器、确定性的签名发行 ZIP 构建、信任校验、载荷安装和激活；Node 运行台最小 handoff 实现位于 `demos/runtime-handoff-node/`。参考 Base 的 `CF-CRE@1` 状态为 active/supported。
+当前仓库已实现本协议的静态结构、公开合同泄露、路径和摘要验证器、确定性的签名发行 ZIP 构建、信任校验、载荷安装和激活；Node 运行台最小 handoff 实现位于 `runtime-developer-toolkit/demo/`。参考 Base 的 `CF-CRE@1` 状态为 active/supported。
 
 本文中的“必须”“不得”“应当”“可以”分别表示强制要求、禁止要求、推荐要求和可选行为。
 

@@ -17,7 +17,7 @@ cleanup disposition live in `PROJECT_CLEANUP_AUDIT_2026-07-31.md`.
 | Frontend | `src/frontend/src/` | `main.tsx`, `App.tsx`, `pages/FlowWorkbench.tsx` |
 | Tests | `scripts/tests/` | `api/`, `conformance/`, `runtime/`, `studio/`, `lab/`, `orchestration/`, `ui/` |
 | Automation | `scripts/` | `bootstrap.ps1`, `launch.py`, `run_conformance.py`, `run_node_coverage.py` |
-| Runtime handoff | `demos/runtime-handoff-node/`, `docs/development/` | `run.mjs`, `README.md`, `mock-model.mjs`, `RUNTIME_TEAM_CF_CRE_FARP_DEVELOPMENT_GUIDE.md` |
+| Runtime developer toolkit | `runtime-developer-toolkit/` | `README.md`, `guide/`, `demo/`, `samples/` |
 
 Generated output, dependencies, caches, user data, and temporary files are not
 enumerated. They must remain outside source ownership and outside Git.

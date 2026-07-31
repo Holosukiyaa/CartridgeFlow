@@ -4,7 +4,7 @@
 
 适用对象：不使用 Python、负责实现个人运行台或运行时消费层的 Node.js/TypeScript 团队。
 
-本指南回答三个问题：运行台必须信任什么、运行台必须执行什么、运行台如何证明自己没有越过协议边界。仓库中的 `demos/runtime-handoff-node/` 是最小可运行参考实现；它是协议交接起点，不是生产运行台的完整替代品。
+本指南回答三个问题：运行台必须信任什么、运行台必须执行什么、运行台如何证明自己没有越过协议边界。工具包中的 `runtime-developer-toolkit/demo/` 是最小可运行参考实现；它是协议交接起点，不是生产运行台的完整替代品。
 
 ## 1. 先记住四条边界
 
@@ -41,7 +41,7 @@ CF-CRE ZIP
 进入仓库根目录后，先检查脚本语法：
 
 ```powershell
-npm --prefix demos/runtime-handoff-node run check
+npm --prefix runtime-developer-toolkit/demo run check
 ```
 
 ### 2.2 找到验收包和信任库
@@ -49,13 +49,13 @@ npm --prefix demos/runtime-handoff-node run check
 CartridgeFlow Base 生成的本地验收包位于：
 
 ```text
-.data/user/packages/<cartridge>-<version>.cf-cre.zip
+runtime-developer-toolkit/samples/<cartridge>-<version>.cf-cre.zip
 ```
 
 本地开发信任库位于：
 
 ```text
-.data/user/config/release_keys/trusted_publishers.json
+runtime-developer-toolkit/samples/trusted_publishers.json
 ```
 
 生产运行台不能直接使用开发目录。运行台应在安装或首次启动时导入经过管理员配置的信任库，并将信任库作为受保护的运行台配置管理。
@@ -63,9 +63,9 @@ CartridgeFlow Base 生成的本地验收包位于：
 ### 2.3 只验证包
 
 ```powershell
-node demos/runtime-handoff-node/run.mjs verify `
-  .data/user/packages/dev.cf-cre-farp-acceptance-1.0.0.cf-cre.zip `
-  --trust .data/user/config/release_keys/trusted_publishers.json
+node runtime-developer-toolkit/demo/run.mjs verify `
+  runtime-developer-toolkit/samples/dev.cf-cre-farp-acceptance-1.0.0.cf-cre.zip `
+  --trust runtime-developer-toolkit/samples/trusted_publishers.json
 ```
 
 成功结果至少包含：
@@ -84,10 +84,10 @@ node demos/runtime-handoff-node/run.mjs verify `
 ### 2.4 只安装载荷
 
 ```powershell
-node demos/runtime-handoff-node/run.mjs install `
-  .data/user/packages/dev.cf-cre-farp-acceptance-1.0.0.cf-cre.zip `
+node runtime-developer-toolkit/demo/run.mjs install `
+  runtime-developer-toolkit/samples/dev.cf-cre-farp-acceptance-1.0.0.cf-cre.zip `
   .data/temp/runtime-install `
-  --trust .data/user/config/release_keys/trusted_publishers.json
+  --trust runtime-developer-toolkit/samples/trusted_publishers.json
 ```
 
 安装器只能写入显式的目标目录。安装目标应该是版本隔离的目录，不得直接覆盖当前激活版本。
@@ -95,10 +95,10 @@ node demos/runtime-handoff-node/run.mjs install `
 ### 2.5 mock 流程模式
 
 ```powershell
-node demos/runtime-handoff-node/run.mjs run `
-  .data/user/packages/dev.cf-cre-farp-acceptance-1.0.0.cf-cre.zip `
+node runtime-developer-toolkit/demo/run.mjs run `
+  runtime-developer-toolkit/samples/dev.cf-cre-farp-acceptance-1.0.0.cf-cre.zip `
   .data/temp/runtime-run-mock `
-  --trust .data/user/config/release_keys/trusted_publishers.json `
+  --trust runtime-developer-toolkit/samples/trusted_publishers.json `
   --mock
 ```
 
@@ -109,7 +109,7 @@ node demos/runtime-handoff-node/run.mjs run `
 仓库提供了一个明确的本地 OpenAI-compatible 测试服务：
 
 ```powershell
-node demos/runtime-handoff-node/mock-model.mjs
+node runtime-developer-toolkit/demo/mock-model.mjs
 ```
 
 另开终端运行：
@@ -119,10 +119,10 @@ $env:CF_RUNTIME_MODEL_BASE_URL = "http://127.0.0.1:11434/v1"
 $env:CF_RUNTIME_MODEL_API_KEY = "cf-demo-key"
 $env:CF_RUNTIME_MODEL = "cf-demo-model"
 
-node demos/runtime-handoff-node/run.mjs run `
-  .data/user/packages/dev.cf-cre-farp-acceptance-1.0.0.cf-cre.zip `
+node runtime-developer-toolkit/demo/run.mjs run `
+  runtime-developer-toolkit/samples/dev.cf-cre-farp-acceptance-1.0.0.cf-cre.zip `
   .data/temp/runtime-run-http `
-  --trust .data/user/config/release_keys/trusted_publishers.json
+  --trust runtime-developer-toolkit/samples/trusted_publishers.json
 ```
 
 这次不使用 `--mock`，所以 demo 会真实执行 `POST /chat/completions`。但服务端仍是本地测试服务，不代表第三方模型已被验证。生产运行台应将三个环境变量替换为用户明确绑定的模型连接，凭据不能进入发行包。
@@ -452,5 +452,5 @@ runtime_contract_invalid
 - `config/base/BASE_IMPLEMENTATION.json`：参考 Base 的支持声明。
 - `src/core/protocol/release_builder.py`：Base 的发行包构建和检查实现。
 - `src/core/protocol/release_signing.py`：签名和本地信任实现。
-- `demos/runtime-handoff-node/run.mjs`：无 Python 最小运行台参考。
+- `runtime-developer-toolkit/demo/run.mjs`：无 Python 最小运行台参考。
 - `docs/development/PROJECT_CLEANUP_AUDIT_2026-07-31.md`：全仓审计和文件树。

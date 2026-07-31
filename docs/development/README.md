@@ -7,8 +7,6 @@ docs/development/
 ├─ README.md               本入口
 ├─ DEVELOPMENT_CONSOLE_RELEASE_PROTOCOL_GUIDE.md
 │                         开发台使用 CF-CRE@1 生成发行候选包的指南
-├─ RUNTIME_TEAM_CF_CRE_FARP_DEVELOPMENT_GUIDE.md
-│                         运行台团队实现 CF-CRE@1 与 CF-FARP@1.0 的交接指南
 ├─ FILE_INVENTORY.md       项目自有文件清单和废弃审计
 └─ skills/                 可选 AI Skill 包
 ```
@@ -46,4 +44,4 @@ python scripts/run_conformance.py
 
 查找文件用途、审计历史遗留内容或新增文件时，使用并同步维护 [项目文件清单](FILE_INVENTORY.md)。
 
-涉及卡带发布、发行候选包、签名、运行台导入或安装闭环时，阅读 [运行台团队 CF-CRE@1 与 CF-FARP@1.0 开发指南](RUNTIME_TEAM_CF_CRE_FARP_DEVELOPMENT_GUIDE.md)。
+涉及卡带发布、发行候选包、签名、运行台导入或安装闭环时，阅读 [运行台开发者工具包](../../runtime-developer-toolkit/README.md) 和其中的 [运行台团队 CF-CRE@1 与 CF-FARP@1.0 开发指南](../../runtime-developer-toolkit/guide/RUNTIME_TEAM_CF_CRE_FARP_DEVELOPMENT_GUIDE.md)。

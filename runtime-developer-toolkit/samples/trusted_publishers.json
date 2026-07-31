@@ -1,0 +1,11 @@
+{
+  "schema": "cartridgeflow.release_trust_store.v1",
+  "keys": [
+    {
+      "key_id": "local.development",
+      "publisher_id": "local",
+      "algorithm": "ed25519",
+      "public_key": "4TZOBL3C6KTYy6rbq2QeDNMjXCIt6hvd7QpRps4+9RY="
+    }
+  ]
+}

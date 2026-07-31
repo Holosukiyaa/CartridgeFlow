@@ -96,7 +96,6 @@ docs/
     FILE_INVENTORY.md
     PROJECT_CLEANUP_AUDIT_2026-07-31.md
     README.md
-    RUNTIME_TEAM_CF_CRE_FARP_DEVELOPMENT_GUIDE.md
     skills/
       cartridgeflow-flow-author/
         agents/
@@ -199,12 +198,18 @@ protocol/
 README.md
 requirements.txt
 run.bat
-demos/
-  runtime-handoff-node/
+runtime-developer-toolkit/
+  README.md
+  guide/
+    RUNTIME_TEAM_CF_CRE_FARP_DEVELOPMENT_GUIDE.md
+  demo/
     mock-model.mjs
     package.json
     README.md
     run.mjs
+  samples/
+    dev.cf-cre-farp-acceptance-1.0.0.cf-cre.zip
+    trusted_publishers.json
 scripts/
   audit_protocol_governance.py
   bootstrap.ps1

@@ -8,16 +8,16 @@ from core.lab.graph import FlowGraphBuilder
 
 
 ROOT = Path(__file__).resolve().parents[3]
-DOCUMENT = ROOT / "docs/protocol/flow-authoring/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.9.md"
+DOCUMENT = ROOT / "protocol/flow-authoring/0.9/specification.md"
 
 
 class ProtocolV09SpecificationTests(unittest.TestCase):
     def test_registry_and_base_publish_v09_partial_support(self):
-        registry_data = json.loads((ROOT / "protocol/releases/CF-FARP-0.9.json").read_text(encoding="utf-8"))
+        registry_data = json.loads((ROOT / "protocol/flow-authoring/0.9/release.json").read_text(encoding="utf-8"))
         self.assertEqual("0.9", registry_data["version"])
         self.assertEqual({"id": "CF-FARP", "version": "0.8"}, registry_data["supersedes"])
-        self.assertEqual("vocabulary/capabilities-0.9.json", registry_data["capabilities_file"])
-        self.assertEqual("vocabulary/profiles-0.9.json", registry_data["profiles_file"])
+        self.assertEqual("flow-authoring/0.9/capabilities.json", registry_data["capabilities_file"])
+        self.assertEqual("flow-authoring/0.9/profiles.json", registry_data["profiles_file"])
         self.assertEqual(DOCUMENT, ROOT / registry_data["document"])
 
         registry = ProtocolRegistry(ROOT)
@@ -101,8 +101,8 @@ class ProtocolV09SpecificationTests(unittest.TestCase):
         self.assertEqual([], [target for target in targets if target not in heading_anchors])
 
     def test_v09_tool_transparency_vocabulary_is_registered(self):
-        capabilities = json.loads((ROOT / "protocol/vocabulary/capabilities-0.9.json").read_text(encoding="utf-8"))
-        profiles = json.loads((ROOT / "protocol/vocabulary/profiles-0.9.json").read_text(encoding="utf-8"))
+        capabilities = json.loads((ROOT / "protocol/flow-authoring/0.9/capabilities.json").read_text(encoding="utf-8"))
+        profiles = json.loads((ROOT / "protocol/flow-authoring/0.9/profiles.json").read_text(encoding="utf-8"))
         registered = {item["id"] for item in capabilities["capabilities"]}
         profile_ids = {item["id"] for item in profiles["profiles"]}
 

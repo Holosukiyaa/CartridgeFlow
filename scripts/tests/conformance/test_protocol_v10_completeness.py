@@ -1,35 +1,26 @@
 import json
+import re
 import unittest
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[3]
-DOCUMENT = ROOT / "docs/protocol/flow-authoring/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v1.0.md"
+RELEASE_DIR = ROOT / "protocol/flow-authoring/1.0"
+DOCUMENT = RELEASE_DIR / "README.md"
 
 
 def vocabulary(version: str, field: str) -> list[dict]:
-    path = ROOT / f"protocol/vocabulary/{field}-{version}.json"
+    path = ROOT / "protocol/flow-authoring" / version / f"{field}.json"
     return json.loads(path.read_text(encoding="utf-8"))[field]
 
 
 class ProtocolV10CompletenessTests(unittest.TestCase):
-    def test_v10_profiles_are_a_complete_superset_of_v08_and_v09(self):
-        inherited = {
-            item["id"]
-            for version in ("0.8", "0.9")
-            for item in vocabulary(version, "profiles")
-        }
+    def test_v10_profiles_are_declared_by_this_release(self):
         current = {item["id"] for item in vocabulary("1.0", "profiles")}
 
-        self.assertFalse(inherited - current)
-        self.assertIn("execution_plan_runtime", current)
+        self.assertTrue({"runtime_core", "flow_analysis", "tool_transparency"}.issubset(current))
 
-    def test_v10_capabilities_are_a_complete_superset_of_v08_and_v09(self):
-        inherited = {
-            item["id"]
-            for version in ("0.8", "0.9")
-            for item in vocabulary(version, "capabilities")
-        }
+    def test_v10_capabilities_are_declared_by_this_release(self):
         current = {item["id"] for item in vocabulary("1.0", "capabilities")}
         required_v10 = {
             "execution_plan_v1_authoring",
@@ -51,7 +42,6 @@ class ProtocolV10CompletenessTests(unittest.TestCase):
             "execution_plan_source_digest_guard",
         }
 
-        self.assertFalse(inherited - current)
         self.assertFalse(required_v10 - current)
 
     def test_every_base_declared_v10_capability_has_evidence(self):
@@ -68,19 +58,29 @@ class ProtocolV10CompletenessTests(unittest.TestCase):
             self.assertIsInstance(record, dict, capability)
             self.assertTrue(record.get("implementation"), capability)
 
-    def test_v10_document_contains_all_three_self_contained_contract_layers(self):
+    def test_v10_documentation_is_modular_and_self_contained(self):
         document = DOCUMENT.read_text(encoding="utf-8")
-        for heading in (
-            "第一部分：基础流程、运行、资源与交付合同",
-            "第二部分：MCP/DLC 透明执行合同",
-            "第三部分：显式执行计划与令牌运行合同",
-            "## 5. 卡带包结构",
-            "## 50. 统一 Flow 资源目录",
-            "## 51. 执行计划是唯一控制事实",
-            "## 56. 1.0 完成门槛",
-        ):
-            self.assertIn(heading, document)
-        self.assertGreater(len(document.encode("utf-8")), 150_000)
+        modules = {
+            "overview.md": "协议目标",
+            "package-and-resources.md": "Manifest 契约",
+            "flow-and-data.md": "Root Flow",
+            "runtime-and-recovery.md": "Run 与节点状态",
+            "extensions-and-lifecycle.md": "Portable DLC",
+            "authoring-and-analysis.md": "Authoring facts",
+            "tool-transparency.md": "MCP/DLC 透明执行原则",
+            "execution-plan.md": "执行计划是唯一控制事实",
+            "conformance.md": "Conformance requirements",
+        }
+        for filename, marker in modules.items():
+            self.assertIn(filename, document)
+            text = (RELEASE_DIR / filename).read_text(encoding="utf-8")
+            self.assertIn(marker, text)
+            self.assertLess(len(text.encode("utf-8")), 40_000)
+            self.assertIsNone(re.search(r"v0\\.\\d", text), filename)
+
+        self.assertIn("非规范迁移资料", document)
+        migration = (RELEASE_DIR / "migration.md").read_text(encoding="utf-8")
+        self.assertIn("non-normative", migration)
 
     def test_v10_analyzer_applies_the_transparency_gate(self):
         from core.lab.flow_analyzer import analyze_flow

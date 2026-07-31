@@ -10,7 +10,7 @@ from core.protocol import ProtocolRegistry, build_release_envelope_report, load_
 
 
 ROOT = Path(__file__).resolve().parents[3]
-DOCUMENT = ROOT / "docs/protocol/release-envelope/CARTRIDGEFLOW_RELEASE_ENVELOPE_PROTOCOL_v1.md"
+DOCUMENT = ROOT / "protocol/release-envelope/1/specification.md"
 
 
 def digest(value: bytes) -> str:

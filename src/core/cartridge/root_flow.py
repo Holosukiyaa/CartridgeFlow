@@ -5,6 +5,7 @@ import json
 import re
 
 from core.runtime.state_machine import assert_transition
+from core.protocol.features import has_protocol_feature
 
 
 def now_iso() -> str:
@@ -69,7 +70,11 @@ class RootFlowEngine:
 
     def _uses_typed_control_edges(self) -> bool:
         protocol = self.root_flow.get("protocol") if isinstance(self.root_flow.get("protocol"), dict) else {}
-        return protocol.get("id") == "CF-FARP" and str(protocol.get("version")) in {"0.8", "0.9"}
+        return has_protocol_feature(
+            str(protocol.get("id") or ""),
+            str(protocol.get("version") or ""),
+            "typed_control_edges",
+        )
 
     def next_states(self, state_name: str, context: dict | None = None) -> list[str]:
         result = []

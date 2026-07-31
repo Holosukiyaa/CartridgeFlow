@@ -28,7 +28,8 @@ export const DEFAULT_APPEARANCE: AppearanceSettings = {
 }
 
 const STORAGE_KEY = 'cf.studio.appearance'
-const WORKSPACE_THEME_STORAGE_KEY = 'cf.lite.workspace-theme'
+const WORKSPACE_THEME_STORAGE_KEY = 'cf.workspace-theme'
+const LEGACY_WORKSPACE_THEME_STORAGE_KEY = 'cf.lite.workspace-theme'
 
 // Workspace theme palette and default are maintained together in this block.
 export const WORKSPACE_THEME_PRESETS: Array<{ id: Exclude<WorkspaceThemeId, 'custom'>; label: string; color: string }> = [
@@ -73,7 +74,7 @@ export function applyAppearance(settings: AppearanceSettings) {
 
 export function loadWorkspaceTheme(): WorkspaceTheme {
   try {
-    const value = JSON.parse(localStorage.getItem(WORKSPACE_THEME_STORAGE_KEY) || '{}')
+    const value = JSON.parse(readLocalStorageWithMigration(WORKSPACE_THEME_STORAGE_KEY, [LEGACY_WORKSPACE_THEME_STORAGE_KEY]) || '{}')
     if (!value?.id) return { ...DEFAULT_WORKSPACE_THEME }
     return normalizeWorkspaceTheme(value)
   } catch {
@@ -133,3 +134,4 @@ function normalizeAppearance(value: Partial<AppearanceSettings>): AppearanceSett
   const scrollbarMode: ScrollbarMode = ['subtle', 'always'].includes(String(value.scrollbarMode)) ? value.scrollbarMode as ScrollbarMode : DEFAULT_APPEARANCE.scrollbarMode
   return { fontScale, fontFamily, fontWeight, density, reducedMotion: Boolean(value.reducedMotion), scrollbarMode }
 }
+import { readLocalStorageWithMigration } from './storage.ts'

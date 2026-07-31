@@ -16,6 +16,7 @@ from urllib.parse import urlsplit
 from core.extensions import PortableDlcValidationError, load_portable_dlc_descriptor
 from core.lab.builtin_mcp import BuiltinMcpRegistry
 from core.llm.config_manager import get_assignments, list_providers, public_provider
+from core.protocol.features import has_protocol_feature
 from core.studio.resources import load_resources
 
 
@@ -65,8 +66,12 @@ def build_flow_resource_catalog(
     root_flow = root_flow if isinstance(root_flow, dict) else {}
     cartridge_id = str(manifest.get("id") or "")
     runtime_contract = manifest.get("runtime_contract") if isinstance(manifest.get("runtime_contract"), dict) else {}
-    protocol_version = str(runtime_contract.get("protocol_version") or "")
-    catalog_schema = CATALOG_SCHEMA_V2 if runtime_contract.get("protocol") == "CF-FARP" and protocol_version == "0.9" else CATALOG_SCHEMA
+    catalog_schema = CATALOG_SCHEMA_V2 if has_protocol_feature(
+        str(runtime_contract.get("protocol") or ""),
+        str(runtime_contract.get("protocol_version") or ""),
+        "resource_catalog_v2",
+        root,
+    ) else CATALOG_SCHEMA
     resources = deepcopy(resources) if isinstance(resources, dict) else load_resources()
     selected_local = set(((resources.get("bindings") or {}).get("tools") or {}).get(cartridge_id) or [])
     manifest_tools = [item for item in manifest.get("mcp_tools") or [] if isinstance(item, dict) and item.get("id")]

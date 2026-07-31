@@ -37,17 +37,22 @@ Unacceptable old-version edits:
 
 ## 3. Add Source Protocol Document
 
-For `CF-FARP 0.x`, add:
+For a CF-FARP release, add a complete version directory:
 
 ```text
-docs/protocol/flow-authoring/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.x.md
+protocol/flow-authoring/<version>/
+  README.md
+  release.json
+  profiles.json
+  capabilities.json
+  ...normative modules...
 ```
 
 The document should include:
 
 - Protocol id and version.
 - Status.
-- Relationship to earlier versions. Use `supersedes` for a full replacement version and `extends` only for an explicitly incremental extension.
+- A complete, self-contained normative module set. Historical migration material must be non-normative and separate from runtime semantics.
 - New goals.
 - Normative rules.
 - Certification requirements.
@@ -59,7 +64,7 @@ The document should include:
 Add:
 
 ```text
-protocol/releases/CF-FARP-0.x.json
+protocol/flow-authoring/<version>/release.json
 ```
 
 The file should include:
@@ -72,28 +77,29 @@ The file should include:
 - `supersedes` for a full replacement version, or `extends` for an explicitly incremental version
 - registry file references
 - source document path
+- `runtime_adapter` and semantic `features`, mirrored in `release_manifest.json`
 
 ## 5. Update Vocabulary
 
 Update only vocabulary files that are required:
 
 ```text
-protocol/vocabulary/profiles.json
-protocol/vocabulary/capabilities.json
-protocol/tooling/tool_packs.json
+protocol/flow-authoring/<version>/profiles.json
+protocol/flow-authoring/<version>/capabilities.json
+protocol/base/<base-version>/tool_packs.json
 ```
 
 Adding vocabulary does not mean the current base supports it.
 
 ## 6. Do Not Overclaim Base Support
 
-Do not add the new protocol to:
+Do not add a new runtime adapter to:
 
 ```text
-config/base/BASE_IMPLEMENTATION.json.supported_protocols
+config/base/BASE_IMPLEMENTATION.json.supported_protocol_adapters
 ```
 
-until implementation exists for:
+unless implementation exists for:
 
 - Runtime execution behavior.
 - Compatibility report checks.
@@ -125,7 +131,7 @@ Do not add implicit output-name-derived consume keys to older protocols.
 Update:
 
 ```text
-docs/protocol/governance/GOVERNANCE.md
+protocol/governance/GOVERNANCE.md
 AGENT.md
 ```
 
@@ -152,9 +158,9 @@ Prefer small conformance tests over broad integration tests for protocol registr
 Run at minimum:
 
 ```text
-python -m json.tool protocol/releases/CF-FARP-0.x.json
-python -m json.tool protocol/vocabulary/profiles.json
-python -m json.tool protocol/vocabulary/capabilities.json
+python -m json.tool protocol/flow-authoring/<version>/release.json
+python -m json.tool protocol/flow-authoring/<version>/profiles.json
+python -m json.tool protocol/flow-authoring/<version>/capabilities.json
 python scripts/run_conformance.py
 ```
 

@@ -5,4 +5,4 @@ This directory contains mutable governance material rather than published protoc
 - `protocol_history.json` is a compatibility mirror for recognized legacy releases. Its contents must match the legacy release entries in `../catalog/release_manifest.json`.
 - `../catalog/release_manifest.json` is the only authority for release lifecycle, migration targets, the default new-flow version, and published artifact paths.
 
-Published CF-FARP snapshots, vocabulary snapshots, the Base Contract identity, and tool-pack registry remain in their respective category directories. Their paths are stable published evidence and must not be moved during ordinary repository cleanup.
+Published protocol artifacts live below their protocol category and version directory. Each release directory keeps its specification, machine snapshot, vocabulary, and referenced Base tool-pack contract together. These paths are release evidence; moving them requires a catalog migration and governance audit.

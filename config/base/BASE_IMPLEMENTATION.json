@@ -40,6 +40,28 @@
       "status": "partial"
     }
   ],
+  "supported_protocol_adapters": [
+    {
+      "id": "cf-farp.standard-flow.v06",
+      "status": "partial"
+    },
+    {
+      "id": "cf-farp.standard-flow.v07",
+      "status": "partial"
+    },
+    {
+      "id": "cf-farp.typed-control.v08",
+      "status": "partial"
+    },
+    {
+      "id": "cf-farp.typed-control.v09",
+      "status": "partial"
+    },
+    {
+      "id": "cf-farp.execution-plan.v1",
+      "status": "supported"
+    }
+  ],
   "profiles": [
     "runtime_core",
     "testbench_core",

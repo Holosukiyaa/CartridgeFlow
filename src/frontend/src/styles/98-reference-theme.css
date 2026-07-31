@@ -305,10 +305,8 @@ html[data-cf-font-family="developer"] .cf-resource-heading h1 {
 .cf-overview-comfort-grid { gap: 16px !important; }
 .cf-overview-panel { padding: 20px !important; }
 .cf-overview-panel-head { padding-bottom: 12px; border-bottom: 1px solid var(--line); }
-.cf-overview-todo-list > button,
 .cf-overview-run-summary,
 .cf-overview-resource-dock > button { border-color: var(--line) !important; background: #fff !important; }
-.cf-overview-todo-list > button:hover,
 .cf-overview-resource-dock > button:hover { border-color: #e8c5b4 !important; background: #fff8f4 !important; }
 
 .cf-resource-center-page { padding: 30px 34px 36px !important; }
@@ -457,14 +455,8 @@ html[data-cf-font-family="developer"] .cf-resource-heading h1 {
     min-height: 0;
     overflow: hidden;
   }
-  .cf-overview-comfort-grid .cf-overview-todo,
   .cf-overview-comfort-side,
   .cf-overview-protocol { min-height: 0; }
-  .cf-overview-comfort-grid .cf-overview-todo-list {
-    min-height: 0;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-  }
   .cf-overview-comfort-side {
     grid-template-rows: minmax(0, 1fr) auto;
     overflow: hidden;
@@ -675,8 +667,6 @@ html[data-cf-font-family="developer"] .cf-resource-heading h1 {
 .cf-resource-center-summary > button > i { background: #edf0f2; }
 .cf-overview-stat-strip > button:hover,
 .cf-overview-resource-dock > button:hover { background: #fff8f4 !important; }
-.cf-overview-todo-list > button { border-color: var(--line) !important; }
-.cf-overview-todo-list > button:hover { background: #f9fafb !important; }
 .cf-overview-run-summary { border-color: var(--line) !important; }
 
 /* Resource center and configuration */

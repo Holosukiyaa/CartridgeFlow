@@ -7,7 +7,7 @@ from core.protocol import ProtocolRegistry, build_compatibility_report, load_bas
 
 
 ROOT = Path(__file__).resolve().parents[3]
-DOCUMENT = ROOT / "docs/protocol/flow-authoring/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.7.md"
+DOCUMENT = ROOT / "protocol/flow-authoring/0.7/specification.md"
 
 
 def v07_manifest():
@@ -47,11 +47,11 @@ def v07_flow():
 
 class ProtocolV07SpecificationTests(unittest.TestCase):
     def test_registry_publishes_v07_with_passive_and_sandboxed_base_support(self):
-        registry_data = json.loads((ROOT / "protocol/releases/CF-FARP-0.7.json").read_text(encoding="utf-8"))
+        registry_data = json.loads((ROOT / "protocol/flow-authoring/0.7/release.json").read_text(encoding="utf-8"))
         self.assertEqual("0.7", registry_data["version"])
         self.assertEqual({"id": "CF-FARP", "version": "0.6"}, registry_data["supersedes"])
-        self.assertEqual("vocabulary/capabilities-0.7.json", registry_data["capabilities_file"])
-        self.assertEqual("vocabulary/profiles-0.7.json", registry_data["profiles_file"])
+        self.assertEqual("flow-authoring/0.7/capabilities.json", registry_data["capabilities_file"])
+        self.assertEqual("flow-authoring/0.7/profiles.json", registry_data["profiles_file"])
         self.assertEqual(DOCUMENT, ROOT / registry_data["document"])
 
         registry = ProtocolRegistry(ROOT)
@@ -72,7 +72,7 @@ class ProtocolV07SpecificationTests(unittest.TestCase):
 
     def test_v07_is_complete_standalone_and_has_valid_toc(self):
         text = DOCUMENT.read_text(encoding="utf-8")
-        v06 = (ROOT / "docs/protocol/flow-authoring/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.6.md").read_text(encoding="utf-8")
+        v06 = (ROOT / "protocol/flow-authoring/0.6/specification.md").read_text(encoding="utf-8")
         self.assertGreater(len(text.splitlines()), len(v06.splitlines()))
         for section in [
             "## 6. Manifest 契约",
@@ -114,11 +114,11 @@ class ProtocolV07SpecificationTests(unittest.TestCase):
         capability_block = re.search(r"```text\n(.*?)\n```", capability_section.group(1), re.DOTALL)
         self.assertIsNotNone(capability_block)
         documented = {item.strip() for item in capability_block.group(1).splitlines() if item.strip()}
-        capabilities = json.loads((ROOT / "protocol/vocabulary/capabilities-0.7.json").read_text(encoding="utf-8"))
+        capabilities = json.loads((ROOT / "protocol/flow-authoring/0.7/capabilities.json").read_text(encoding="utf-8"))
         registered = {item["id"] for item in capabilities["capabilities"]}
         self.assertEqual(registered, documented)
 
-        profiles = json.loads((ROOT / "protocol/vocabulary/profiles-0.7.json").read_text(encoding="utf-8"))
+        profiles = json.loads((ROOT / "protocol/flow-authoring/0.7/profiles.json").read_text(encoding="utf-8"))
         profile_ids = {item["id"] for item in profiles["profiles"]}
         self.assertIn("interaction_runtime", profile_ids)
         self.assertEqual([], [item["profile"] for item in capabilities["capabilities"] if item["profile"] not in profile_ids])

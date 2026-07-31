@@ -40,4 +40,4 @@ finally {
     Pop-Location
 }
 
-Write-Host "CartridgeFlowLite dependencies are ready."
+Write-Host "CartridgeFlow dependencies are ready."

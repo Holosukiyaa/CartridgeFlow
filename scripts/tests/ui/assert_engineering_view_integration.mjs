@@ -23,7 +23,7 @@ expect(views, /onEngineeringResourceLayoutSave/, '工程视图必须将拖放后
 expect(views, /document\.addEventListener\('pointerup', captureResourceLayout\)/, '资源位置必须在拖放结束后捕获。')
 expect(views, /tool\.presentation_mode && tool\.presentation_mode !== 'local_parsable'/, '外部和不可审计 MCP 不得请求源码。')
 expect(views, /\[item\.id, item\.resource_id\]\.includes\(resourceId\)/, '选中 MCP 资源卡时必须能映射回资源目录详情。')
-expect(workbench, /cartridgeflow\.lite\.engineering-resource-layout\.v1/, '工程资源位置必须以 Flow 为键保存到本地布局元数据。')
+expect(workbench, /cartridgeflow\.engineering-resource-layout\.v1/, '工程资源位置必须以 Flow 为键保存到本地布局元数据。')
 expect(workbench, /window\.localStorage\.setItem\(engineeringResourceLayoutStorageKey/, '工程资源位置必须在刷新前同步写入本地存储。')
 expect(inspector, /查看连接详情/, '外部 MCP 必须保留连接详情入口。')
 expect(inspector, /查看已知契约/, '不可审计 MCP 必须保留已知契约入口。')

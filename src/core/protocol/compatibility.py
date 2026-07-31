@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .base_manifest import supports_protocol_release
 from .capability_registry import ProtocolRegistry
-from .flow_contract import build_v02_flow_contract_report, build_v03_flow_contract_report, build_v04_flow_contract_report, build_v05_flow_contract_report, build_v06_flow_contract_report, build_v07_flow_contract_report, build_v08_flow_contract_report, build_v09_flow_contract_report, build_v10_flow_contract_report
+from .flow_contract import build_flow_contract_report_for_adapter, build_v02_flow_contract_report, build_v03_flow_contract_report, build_v04_flow_contract_report, build_v05_flow_contract_report
 from .report import report_status, summarize_findings
 
 
@@ -56,10 +57,12 @@ def build_compatibility_report(
 
     protocol_id = str(runtime_contract.get("protocol") or (base_contract or {}).get("id") or "CF-FARP")
     protocol_version = str(runtime_contract.get("protocol_version") or (base_contract or {}).get("version") or "0.1")
+    release = registry.release_catalog.get(protocol_id, protocol_version)
+    base_supports_release = supports_protocol_release(base, release)
     lifecycle = registry.protocol_lifecycle(protocol_id, protocol_version) or {}
     if not registry.supports_protocol(protocol_id, protocol_version) and not lifecycle:
         findings.append(_finding("blocker", "unknown_protocol", f"Protocol is not registered: {protocol_id}@{protocol_version}"))
-    if (protocol_id, protocol_version) not in base_protocols:
+    if not base_supports_release:
         migration_target = lifecycle.get("migration_target") if isinstance(lifecycle.get("migration_target"), dict) else {}
         target_id = str(migration_target.get("id") or "")
         target_version = str(migration_target.get("version") or "")
@@ -75,7 +78,8 @@ def build_compatibility_report(
     implementation_base_id = str(implementation_base_contract.get("id") or "")
     implementation_base_version = str(implementation_base_contract.get("version") or "")
     base_contract_supported = True
-    if protocol_id == "CF-FARP" and protocol_version in {"0.6", "0.7", "0.8", "0.9", "1.0"}:
+    requires_base_contract = bool(release and "base_contract" in (release.get("features") or []))
+    if requires_base_contract:
         base_contract_supported = bool(
             required_base_id
             and required_base_version
@@ -176,33 +180,30 @@ def build_compatibility_report(
         findings.append(_finding("blocker", "invalid_root_flow", "root_flow.states must be a non-empty object"))
     elif root_flow.get("start") and root_flow.get("start") not in root_flow.get("states", {}):
         findings.append(_finding("blocker", "invalid_root_flow_start", f"root_flow.start points to missing state: {root_flow.get('start')}"))
-    elif (protocol_id, protocol_version) in base_protocols and protocol_id == "CF-FARP" and protocol_version == "0.2":
+    elif base_supports_release and protocol_id == "CF-FARP" and protocol_version == "0.2":
         flow_contract = build_v02_flow_contract_report(root_flow, manifest)
         findings.extend(flow_contract.get("findings") or [])
-    elif (protocol_id, protocol_version) in base_protocols and protocol_id == "CF-FARP" and protocol_version == "0.3":
+    elif base_supports_release and protocol_id == "CF-FARP" and protocol_version == "0.3":
         flow_contract = build_v03_flow_contract_report(root_flow, manifest)
         findings.extend(flow_contract.get("findings") or [])
-    elif (protocol_id, protocol_version) in base_protocols and protocol_id == "CF-FARP" and protocol_version == "0.4":
+    elif base_supports_release and protocol_id == "CF-FARP" and protocol_version == "0.4":
         flow_contract = build_v04_flow_contract_report(root_flow, manifest)
         findings.extend(flow_contract.get("findings") or [])
-    elif (protocol_id, protocol_version) in base_protocols and protocol_id == "CF-FARP" and protocol_version == "0.5":
+    elif base_supports_release and protocol_id == "CF-FARP" and protocol_version == "0.5":
         flow_contract = build_v05_flow_contract_report(root_flow, manifest)
         findings.extend(flow_contract.get("findings") or [])
-    elif (protocol_id, protocol_version) in base_protocols and protocol_id == "CF-FARP" and protocol_version == "0.6":
-        flow_contract = build_v06_flow_contract_report(root_flow, manifest)
-        findings.extend(flow_contract.get("findings") or [])
-    elif (protocol_id, protocol_version) in base_protocols and protocol_id == "CF-FARP" and protocol_version == "0.7":
-        flow_contract = build_v07_flow_contract_report(root_flow, manifest)
-        findings.extend(flow_contract.get("findings") or [])
-    elif (protocol_id, protocol_version) in base_protocols and protocol_id == "CF-FARP" and protocol_version == "0.8":
-        flow_contract = build_v08_flow_contract_report(root_flow, manifest, target=analysis_target, base=base)
-        findings.extend(flow_contract.get("findings") or [])
-    elif (protocol_id, protocol_version) in base_protocols and protocol_id == "CF-FARP" and protocol_version == "0.9":
-        flow_contract = build_v09_flow_contract_report(root_flow, manifest, target=analysis_target, base=base)
-        findings.extend(flow_contract.get("findings") or [])
-    elif (protocol_id, protocol_version) in base_protocols and protocol_id == "CF-FARP" and protocol_version == "1.0":
-        flow_contract = build_v10_flow_contract_report(root_flow, manifest)
-        findings.extend(flow_contract.get("findings") or [])
+    elif base_supports_release and release:
+        flow_contract = build_flow_contract_report_for_adapter(
+            registry.release_catalog.runtime_adapter(protocol_id, protocol_version),
+            root_flow,
+            manifest,
+            protocol_id=protocol_id,
+            protocol_version=protocol_version,
+            target=analysis_target,
+            base=base,
+        )
+        if flow_contract:
+            findings.extend(flow_contract.get("findings") or [])
 
     delivery = manifest.get("delivery_readiness")
     if not isinstance(delivery, dict):
@@ -237,10 +238,12 @@ def build_compatibility_report(
             "required": f"{protocol_id}@{protocol_version}",
             "id": protocol_id,
             "version": protocol_version,
-            "supported": (protocol_id, protocol_version) in base_protocols,
+            "supported": base_supports_release,
+            "runtime_adapter": registry.release_catalog.runtime_adapter(protocol_id, protocol_version),
+            "features": sorted(registry.release_catalog.features(protocol_id, protocol_version)),
             "lifecycle": lifecycle.get("status") or (
                 "supported"
-                if (protocol_id, protocol_version) in base_protocols
+                if base_supports_release
                 else "unsupported"
                 if registry.supports_protocol(protocol_id, protocol_version)
                 else "unknown"

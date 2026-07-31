@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from .compatibility import build_compatibility_report
-from .flow_contract import build_v02_flow_contract_report, build_v03_flow_contract_report, build_v04_flow_contract_report, build_v05_flow_contract_report, build_v06_flow_contract_report, build_v08_flow_contract_report, build_v09_flow_contract_report, build_v10_flow_contract_report
+from .flow_contract import build_flow_contract_report_for_adapter
 from .report import summarize_findings
 
 
@@ -50,7 +50,8 @@ def build_protocol_certification_report(
         protocol_id = str(runtime_contract.get("protocol") or "")
         protocol_version = str(runtime_contract.get("protocol_version") or "")
         expected_base = base.get("base_contract") if isinstance(base.get("base_contract"), dict) else {}
-        if protocol_id == "CF-FARP" and protocol_version in {"0.6", "0.7", "0.8", "0.9", "1.0"}:
+        protocol_features = (compatibility.get("protocol") or {}).get("features") or []
+        if "base_contract" in protocol_features:
             contract_matches = base_id == str(expected_base.get("id") or "") and base_version == str(expected_base.get("version") or "")
             mismatch_message = "manifest.base_contract must match the Base implementation contract."
         else:
@@ -87,36 +88,16 @@ def build_protocol_certification_report(
             ))
 
     protocol = compatibility.get("protocol") or {}
-    if protocol.get("id") == "CF-FARP" and protocol.get("version") == "0.2":
-        flow_contract = compatibility.get("flow_contract") or build_v02_flow_contract_report(root_flow, manifest)
-        for item in flow_contract.get("findings") or []:
-            findings.append(item)
-    if protocol.get("id") == "CF-FARP" and protocol.get("version") == "0.3":
-        flow_contract = compatibility.get("flow_contract") or build_v03_flow_contract_report(root_flow, manifest)
-        for item in flow_contract.get("findings") or []:
-            findings.append(item)
-    if protocol.get("id") == "CF-FARP" and protocol.get("version") == "0.4":
-        flow_contract = compatibility.get("flow_contract") or build_v04_flow_contract_report(root_flow, manifest)
-        for item in flow_contract.get("findings") or []:
-            findings.append(item)
-    if protocol.get("id") == "CF-FARP" and protocol.get("version") == "0.5":
-        flow_contract = compatibility.get("flow_contract") or build_v05_flow_contract_report(root_flow, manifest)
-        for item in flow_contract.get("findings") or []:
-            findings.append(item)
-    if protocol.get("id") == "CF-FARP" and protocol.get("version") == "0.6":
-        flow_contract = compatibility.get("flow_contract") or build_v06_flow_contract_report(root_flow, manifest)
-        for item in flow_contract.get("findings") or []:
-            findings.append(item)
-    if protocol.get("id") == "CF-FARP" and protocol.get("version") == "0.8":
-        flow_contract = compatibility.get("flow_contract") or build_v08_flow_contract_report(root_flow, manifest, target="publish", base=base)
-        for item in flow_contract.get("findings") or []:
-            findings.append(item)
-    if protocol.get("id") == "CF-FARP" and protocol.get("version") == "0.9":
-        flow_contract = compatibility.get("flow_contract") or build_v09_flow_contract_report(root_flow, manifest, target="publish", base=base)
-        for item in flow_contract.get("findings") or []:
-            findings.append(item)
-    if protocol.get("id") == "CF-FARP" and protocol.get("version") == "1.0":
-        flow_contract = compatibility.get("flow_contract") or build_v10_flow_contract_report(root_flow, manifest)
+    flow_contract = compatibility.get("flow_contract")
+    if not flow_contract:
+        flow_contract = build_flow_contract_report_for_adapter(
+            protocol.get("runtime_adapter"),
+            root_flow,
+            manifest,
+            protocol_id=str(protocol.get("id") or ""),
+            protocol_version=str(protocol.get("version") or ""),
+        )
+    if flow_contract:
         for item in flow_contract.get("findings") or []:
             findings.append(item)
 

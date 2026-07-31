@@ -1,4 +1,4 @@
-"""Safe structured edits for CF-FARP@0.9 MCP Python source files."""
+"""Safe structured edits for protocol-transparent MCP Python source files."""
 
 from __future__ import annotations
 
@@ -110,7 +110,7 @@ def add_mcp_operation(
 def _load_editable_model(source: str, expected_source_digest: str) -> dict:
     model = parse_mcp_python_source(source)
     if not model.get("ok"):
-        raise McpSourceEditError("MCP_SOURCE_INVALID", "source must pass the v0.9 static parser before editing")
+        raise McpSourceEditError("MCP_SOURCE_INVALID", "source must pass the protocol static parser before editing")
     expected = str(expected_source_digest or "").strip().lower()
     actual = str(model.get("source_digest") or "").strip().lower()
     if not expected:

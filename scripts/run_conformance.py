@@ -21,7 +21,7 @@ from core.data_paths import CONFORMANCE_REPORT
 from audit_protocol_governance import audit as audit_protocol_governance
 
 
-TEST_GROUPS = ("conformance", "runtime", "studio", "llm", "lite", "hygiene", "history")
+TEST_GROUPS = ("conformance", "runtime", "studio", "llm", "api", "lab", "orchestration", "hygiene", "history")
 
 
 def discover_tests(pattern: str) -> unittest.TestSuite:

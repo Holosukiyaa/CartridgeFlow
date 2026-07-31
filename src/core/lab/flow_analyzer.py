@@ -7,8 +7,11 @@ import json
 import re
 from collections import defaultdict
 from copy import deepcopy
+from pathlib import Path
 
 from core.orchestration import ExecutionPlanCompileError, compile_execution_plan
+from core.protocol.base_manifest import supports_protocol_release
+from core.protocol.release_catalog import load_protocol_release_catalog
 
 
 ANALYSIS_SCHEMA = "cartridgeflow.flow_analysis.v1"
@@ -26,6 +29,7 @@ def analyze_flow(
     *,
     target: str = "dev",
     base: dict | None = None,
+    runtime_adapter: str | None = None,
 ) -> dict:
     """Compile authoring facts into topology, relations, and stable findings."""
     root_flow = deepcopy(root_flow) if isinstance(root_flow, dict) else {}
@@ -62,12 +66,22 @@ def analyze_flow(
         findings.append(finding)
 
     protocol = _protocol_identity(root_flow, manifest)
-    if protocol == ("CF-FARP", "1.0"):
-        return _analyze_v10_execution_plan(root_flow, manifest, target=target, base=base)
-    if protocol[0] != "CF-FARP" or protocol[1] not in {"0.8", "0.9"}:
+    runtime_adapter = runtime_adapter or _catalog_runtime_adapter(*protocol)
+    features = _catalog_features(*protocol)
+    if runtime_adapter == "cf-farp.execution-plan.v1":
+        return _analyze_v10_execution_plan(
+            root_flow,
+            manifest,
+            target=target,
+            base=base,
+            protocol_id=protocol[0],
+            protocol_version=protocol[1],
+            runtime_adapter=runtime_adapter,
+        )
+    if "flow_analysis" not in features:
         add(
             "PROTOCOL_UNSUPPORTED",
-            f"Flow Analyzer requires CF-FARP@0.8 or CF-FARP@0.9, got {protocol[0]}@{protocol[1]}.",
+            f"Flow Analyzer requires a release with flow_analysis, got {protocol[0]}@{protocol[1]}.",
             stage="protocol_structure",
             path="protocol",
         )
@@ -139,8 +153,8 @@ def analyze_flow(
         for item in manifest.get("mcp_tools") or []
         if isinstance(item, dict) and item.get("id")
     }
-    if protocol == ("CF-FARP", "0.9"):
-        _validate_tool_transparency(manifest, declared_tools, add, protocol_version="0.9")
+    if "tool_transparency" in features:
+        _validate_tool_transparency(manifest, declared_tools, add, protocol_version=protocol[1])
     roles = {
         str(item.get("id"))
         for item in ((manifest.get("llm_recipe") or {}).get("roles") or [])
@@ -213,7 +227,7 @@ def analyze_flow(
             declared_tool = declared_tools.get(tool_id) or {}
             tool_kind = "mcp_dependency" if declared_tool.get("type") in {"mcp", "cartridge_dlc", "local_resource", "remote_mcp"} else "tool_dependency"
             relations.append(_resource_relation(tool_kind, node_id, "tool", tool_id, f"{node_path}.allowed_tools"))
-            if protocol == ("CF-FARP", "0.9") and declared_tool:
+            if "tool_transparency" in features and declared_tool:
                 transparency = str(declared_tool.get("transparency") or "legacy_opaque").strip()
                 relations.append(_resource_relation("tool_operation", node_id, "tool_transparency", transparency, f"manifest.mcp_tools.{tool_id}.transparency"))
             if tool_id not in declared_tools:
@@ -292,7 +306,7 @@ def analyze_flow(
         "schema": ANALYSIS_SCHEMA,
         "analysis_version": ANALYSIS_VERSION,
         "analysis_id": analysis_id,
-        "analyzer": {"implementation_id": "cartridgeflow.reference.flow-analyzer", "implementation_version": "0.9.0"},
+        "analyzer": {"implementation_id": "cartridgeflow.reference.flow-analyzer", "implementation_version": "1.0.0"},
         "protocol": {"id": protocol[0], "version": protocol[1]},
         "target": target,
         "source_digest": source_digest,
@@ -314,10 +328,19 @@ def analyze_flow(
     }
 
 
-def _analyze_v10_execution_plan(root_flow: dict, manifest: dict, *, target: str, base: dict) -> dict:
-    """Project only compiler-approved CF-FARP@1.0 transitions for consumers.
+def _analyze_v10_execution_plan(
+    root_flow: dict,
+    manifest: dict,
+    *,
+    target: str,
+    base: dict,
+    protocol_id: str,
+    protocol_version: str,
+    runtime_adapter: str,
+) -> dict:
+    """Project only compiler-approved execution-plan-v1 transitions for consumers.
 
-    The v1.0 contract deliberately makes ``execution_plan.edges`` the only
+    The execution-plan-v1 contract deliberately makes ``execution_plan.edges`` the only
     source of executable topology.  Keeping this boundary here prevents the
     analyzer and every consumer of its relations from accidentally treating a
     legacy canvas relation as a runner transition.
@@ -325,16 +348,20 @@ def _analyze_v10_execution_plan(root_flow: dict, manifest: dict, *, target: str,
     source_digest = build_source_digest(manifest, root_flow, base)
     analysis_id = f"analysis:{source_digest.split(':', 1)[-1][:24]}"
     try:
-        plan = compile_execution_plan(root_flow)
+        plan = compile_execution_plan(
+            root_flow,
+            protocol_id=protocol_id,
+            protocol_version=protocol_version,
+        )
     except ExecutionPlanCompileError as error:
-        findings = _v10_compile_findings(error.findings, root_flow)
+        findings = _v10_compile_findings(error.findings, root_flow, f"{protocol_id}@{protocol_version}")
         counts = _finding_counts(findings)
         return {
             "schema": ANALYSIS_SCHEMA,
             "analysis_version": ANALYSIS_VERSION,
             "analysis_id": analysis_id,
             "analyzer": {"implementation_id": "cartridgeflow.reference.flow-analyzer", "implementation_version": "1.0.0"},
-            "protocol": {"id": "CF-FARP", "version": "1.0"},
+            "protocol": {"id": protocol_id, "version": protocol_version, "runtime_adapter": runtime_adapter},
             "target": target,
             "source_digest": source_digest,
             "normalized_topology": {"start": _v10_entry(root_flow), "control_edges": []},
@@ -369,8 +396,8 @@ def _analyze_v10_execution_plan(root_flow: dict, manifest: dict, *, target: str,
         }
         for relation in relations
     ]
-    runtime_supported = _v10_base_runtime_supported(base)
-    findings = [] if runtime_supported else [_v10_runtime_unsupported_finding(base)]
+    runtime_supported = _v10_base_runtime_supported(base, protocol_id, protocol_version, runtime_adapter)
+    findings = [] if runtime_supported else [_v10_runtime_unsupported_finding(base, f"{protocol_id}@{protocol_version}")]
 
     def add(code: str, message: str, *, stage: str, path: str | None = None, severity: str = "blocker", **extra) -> None:
         finding = {
@@ -390,14 +417,14 @@ def _analyze_v10_execution_plan(root_flow: dict, manifest: dict, *, target: str,
         for tool in manifest.get("mcp_tools") or []
         if isinstance(tool, dict) and str(tool.get("id") or "").strip()
     }
-    _validate_tool_transparency(manifest, declared_tools, add, protocol_version="1.0")
+    _validate_tool_transparency(manifest, declared_tools, add, protocol_version=protocol_version)
     counts = _finding_counts(findings)
     return {
         "schema": ANALYSIS_SCHEMA,
         "analysis_version": ANALYSIS_VERSION,
         "analysis_id": analysis_id,
         "analyzer": {"implementation_id": "cartridgeflow.reference.flow-analyzer", "implementation_version": "1.0.0"},
-        "protocol": {"id": "CF-FARP", "version": "1.0"},
+        "protocol": {"id": protocol_id, "version": protocol_version, "runtime_adapter": runtime_adapter},
         "target": target,
         "source_digest": source_digest,
         "normalized_topology": {"start": plan["entry"], "control_edges": topology},
@@ -425,19 +452,16 @@ def _analyze_v10_execution_plan(root_flow: dict, manifest: dict, *, target: str,
     }
 
 
-def _v10_base_runtime_supported(base: dict) -> bool:
-    """Base support is the only authority that can open v1.0 runtime gates."""
-    supported = base.get("supported_protocols") if isinstance(base.get("supported_protocols"), list) else []
-    return any(
-        isinstance(item, dict)
-        and item.get("id") == "CF-FARP"
-        and str(item.get("version")) == "1.0"
-        and item.get("status") in {"partial", "supported"}
-        for item in supported
-    )
+def _v10_base_runtime_supported(base: dict, protocol_id: str, protocol_version: str, runtime_adapter: str) -> bool:
+    """Prefer adapter support while retaining declared-release compatibility."""
+    return supports_protocol_release(base, {
+        "id": protocol_id,
+        "version": protocol_version,
+        "runtime_adapter": runtime_adapter,
+    })
 
 
-def _v10_runtime_unsupported_finding(base: dict) -> dict:
+def _v10_runtime_unsupported_finding(base: dict, protocol_label: str) -> dict:
     implementation_id = str(base.get("implementation_id") or "当前 Base")
     return {
         "id": "finding:v10_base_runtime_unsupported:flow:base.supported_protocols",
@@ -495,7 +519,7 @@ def _v10_plan_relation(edge: dict, *, relation_id: str, target: str, derived_fro
     }
 
 
-def _v10_compile_findings(compiler_findings: tuple[dict, ...], root_flow: dict) -> list[dict]:
+def _v10_compile_findings(compiler_findings: tuple[dict, ...], root_flow: dict, protocol_label: str) -> list[dict]:
     findings: list[dict] = []
     for index, raw in enumerate(compiler_findings):
         finding = dict(raw)
@@ -510,7 +534,7 @@ def _v10_compile_findings(compiler_findings: tuple[dict, ...], root_flow: dict) 
             "severity": str(finding.get("severity") or "blocker"),
             "code": code,
             "stage": "execution_plan",
-            "message": _v10_diagnostic_message(code, edge_id, node_id),
+            "message": _v10_diagnostic_message(code, edge_id, node_id).replace("CF-FARP@1.0", protocol_label),
             "path": path,
         }
         if node_id:
@@ -795,7 +819,7 @@ def _collect_control_edges(root_flow: dict, states: dict, add) -> list[dict]:
                 append("failure_route", node_id, str(target), f"states.{node_id}.failure_route", selector)
 
     if root_flow.get("edges"):
-        add("DERIVED_RELATION_IN_CONTROL_GRAPH", "v0.8/v0.9 do not permit legacy root_flow.edges; migrate executable facts to control_edges.", stage="topology", path="edges")
+        add("DERIVED_RELATION_IN_CONTROL_GRAPH", "The selected typed-control release does not permit legacy root_flow.edges; migrate executable facts to control_edges.", stage="topology", path="edges")
     raw_edges = root_flow.get("control_edges") or []
     if not isinstance(raw_edges, list):
         add("CONTROL_EDGE_KIND_INVALID", "root_flow.control_edges must be an array.", stage="topology", path="control_edges")
@@ -813,6 +837,21 @@ def _protocol_identity(root_flow: dict, manifest: dict) -> tuple[str, str]:
     protocol = root_flow.get("protocol") if isinstance(root_flow.get("protocol"), dict) else {}
     runtime = manifest.get("runtime_contract") if isinstance(manifest.get("runtime_contract"), dict) else {}
     return str(protocol.get("id") or runtime.get("protocol") or ""), str(protocol.get("version") or runtime.get("protocol_version") or "")
+
+
+def _catalog_runtime_adapter(protocol_id: str, protocol_version: str) -> str | None:
+    """Resolve release semantics from the host catalog when no caller supplied one."""
+    try:
+        return load_protocol_release_catalog(Path(__file__).resolve().parents[3]).runtime_adapter(protocol_id, protocol_version)
+    except ValueError:
+        return None
+
+
+def _catalog_features(protocol_id: str, protocol_version: str) -> frozenset[str]:
+    try:
+        return load_protocol_release_catalog(Path(__file__).resolve().parents[3]).features(protocol_id, protocol_version)
+    except ValueError:
+        return frozenset()
 
 
 def _has_exactly_one_schema(contract: dict) -> bool:

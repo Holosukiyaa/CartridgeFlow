@@ -17,6 +17,7 @@ from pathlib import Path, PurePosixPath
 from core.studio.hygiene import scan_package_hygiene
 
 from .release_envelope import build_release_envelope_report
+from .release_catalog import load_protocol_release_catalog
 
 
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
@@ -76,13 +77,16 @@ def build_release_archive(
     content_digest = _digest(hashes_bytes)
     flow_protocol = flow.get("protocol") if isinstance(flow.get("protocol"), dict) else {}
     base_contract = manifest.get("base_contract") if isinstance(manifest.get("base_contract"), dict) else {}
+    catalog = load_protocol_release_catalog(Path(__file__).resolve().parents[3])
+    default_flow_protocol = catalog.data["default_for_new_flows"]
+    default_base_contract = catalog.data["base_contract"]
     release = {
         "schema": "cartridgeflow.release_envelope.v1",
         "release": {"publisher_id": publisher_id, "cartridge_id": cartridge_id, "version": version},
         "release_id": f"{publisher_id}:{cartridge_id}@{version}+{content_digest}",
         "runtime": {
-            "base_contract": {"id": str(base_contract.get("id") or "CARTRIDGEFLOW-BASE"), "version": str(base_contract.get("version") or "0.2")},
-            "flow_contract": {"id": str(flow_protocol.get("id") or "CF-FARP"), "version": str(flow_protocol.get("version") or "0.9")},
+            "base_contract": {"id": str(base_contract.get("id") or default_base_contract["id"]), "version": str(base_contract.get("version") or default_base_contract["version"])},
+            "flow_contract": {"id": str(flow_protocol.get("id") or default_flow_protocol["id"]), "version": str(flow_protocol.get("version") or default_flow_protocol["version"])},
             "min_runner_version": "0.3.0",
         },
         "execution": {

@@ -594,7 +594,7 @@ function McpSourceEditor({ flowId, tool, onSaved }: { flowId: string; tool: Stud
 
   return (
     <section className="cf-builtin-tool-detail">
-      <b>MCP 源码与内部流程（v0.9）</b>
+      <b>MCP 源码与内部流程</b>
       <p>透明度：<code>{tool.transparency || 'unknown'}</code> · 解析状态：<code>{tool.parse_status || 'unknown'}</code> · 操作数：<code>{tool.operation_count || 0}</code></p>
       <McpOperationGraphPreview tool={tool} data={data} />
       {!data ? (

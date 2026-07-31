@@ -21,9 +21,9 @@ Read before editing:
 - `AGENT.md`
 - `references/authoring-checklist.md`
 - `protocol/catalog/release_manifest.json`
-- `docs/protocol/governance/GOVERNANCE.md`
+- `protocol/governance/GOVERNANCE.md`
 
-Read `docs/protocol/flow-authoring/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v1.0.md` before creating or modifying a v1 Flow or a DLC MCP tool. Read the document path named by the release catalog rather than guessing a version.
+Read `protocol/flow-authoring/1.0/README.md` and its listed normative modules before creating or modifying a v1 Flow or a DLC MCP tool. Read the document path named by the release catalog rather than guessing a version.
 
 ## Workflow
 

@@ -1,7 +1,7 @@
 // API 工具：封装所有对后端的 fetch 调用，统一走 /api 前缀
 
 // 基础请求方法：所有 API 调用共用
-import type { RuntimeErrorEnvelope, CartridgeSummary, CartridgeDetail, RunResult, FlowGraph, FlowEdge, FlowAnnotation, FlowLabItem, FlowLabDetail, FlowEvent, TestProbeRange, FlowFiles, CartridgeAsset, InteractionComponent, CartridgeAssetsResponse, McpTool, McpSourceModel, McpSourceResponse, McpSourceEditResponse, BaseImplementationResponse, StudioConformanceResponse, StudioTodoResponse, CompatibilityReport, ProtocolCertificationReport, McpToolsResponse, ValidationResponse, NodeUpdateResult, NodeCreatePayload, LlmProvider, LlmAssignments, LlmConfigBundle, LlmDetectionResult, LlmTestResult, StudioResources, FlowResourceCatalog, FlowResourceDetail, FlowResourceConnectivityResult, StudioCredential, StudioEnvironmentSnapshot, StudioPackageItem, PortabilityReport, StudioReleasePreflight, AIFlowStewardContext, AIFlowStewardMessage, AIFlowStewardMode } from './api.types.ts'
+import type { RuntimeErrorEnvelope, CartridgeDetail, RunResult, FlowGraph, FlowEdge, FlowAnnotation, FlowLabItem, FlowLabDetail, FlowEvent, TestProbeRange, FlowFiles, CartridgeAsset, InteractionComponent, CartridgeAssetsResponse, McpSourceResponse, McpSourceEditResponse, BaseImplementationResponse, StudioConformanceResponse, McpToolsResponse, ValidationResponse, NodeUpdateResult, NodeCreatePayload, LlmProvider, LlmAssignments, LlmConfigBundle, LlmDetectionResult, LlmTestResult, StudioResources, FlowResourceCatalog, FlowResourceDetail, FlowResourceConnectivityResult, StudioCredential, StudioEnvironmentSnapshot, StudioPackageItem, PortabilityReport, StudioReleasePreflight, AIFlowStewardContext, AIFlowStewardMessage, AIFlowStewardMode } from './api.types.ts'
 export type * from './api.types.ts'
 
 export class ApiError extends Error {
@@ -39,71 +39,13 @@ export async function api<T = any>(path: string, options: RequestInit = {}): Pro
   return res.json() as Promise<T>
 }
 
-export async function apiText(path: string, options: RequestInit = {}): Promise<string> {
-  const res = await fetch(path, {
-    headers: { ...(options.headers as Record<string, string>) },
-    ...options,
-  })
-  if (!res.ok) throw new Error(await res.text())
-  return res.text()
-}
-
 // ── 卡带相关类型 ──────────────────────────────────────────────
-export const fetchCartridges = () => api<{ items: CartridgeSummary[] }>('/api/cartridges')
-
-export const fetchCartridgeRuns = () => api<{ items: RunResult[] }>('/api/cartridge-runs')
-
-export const fetchCartridge = (id: string) => api<CartridgeDetail>(`/api/cartridges/${id}`)
-
 export const fetchBaseImplementation = () => api<BaseImplementationResponse>('/api/base')
 
 export const fetchStudioConformance = () => api<StudioConformanceResponse>('/api/studio/conformance')
 
-export const fetchStudioTodo = () => api<StudioTodoResponse>('/api/studio/todo')
-
-export const fetchStudioTodoFile = () => apiText('/api/studio/todo/file')
-
-export const fetchStudioTodoTemplate = () => apiText('/api/studio/todo/template')
-
-export const fetchCartridgeCompatibility = (id: string) =>
-  api<CompatibilityReport>(`/api/cartridges/${id}/compatibility`)
-
-export const fetchCartridgeCertification = (id: string) =>
-  api<ProtocolCertificationReport>(`/api/cartridges/${id}/certification`)
-
-export const createCartridgeRun = (cartridgeId: string, inputs: Record<string, any>, testMode?: Record<string, any>) =>
-  api<RunResult>('/api/cartridge-runs', {
-    method: 'POST',
-    body: JSON.stringify({ cartridge_id: cartridgeId, inputs, ...(testMode ? { test_mode: testMode } : {}) }),
-  })
-
 export const fetchCartridgeRun = (runId: string) =>
   api<RunResult>(`/api/cartridge-runs/${runId}`)
-
-export const deleteCartridgeRun = (runId: string) =>
-  api<{ run_id: string; deleted: boolean }>(`/api/cartridge-runs/${encodeURIComponent(runId)}`, { method: 'DELETE' })
-
-export interface RunDiagnosticBundle {
-  schema: string
-  generated_at?: string
-  run_id: string
-  cartridge_id: string
-  summary: {
-    status?: string
-    current_state?: string
-    error_code?: string | null
-    error_category?: string | null
-    event_count: number
-    checkpoint_count: number
-    artifact_count: number
-  }
-  run: RunResult
-  events: FlowEvent[]
-  checkpoints: any[]
-}
-
-export const fetchCartridgeRunDiagnostics = (runId: string) =>
-  api<RunDiagnosticBundle>(`/api/cartridge-runs/${encodeURIComponent(runId)}/diagnostics`)
 
 export const fetchCartridgeRunEvents = (runId: string) =>
   api<{ items: FlowEvent[] }>(`/api/cartridge-runs/${runId}/events`)
@@ -184,9 +126,6 @@ export async function importCartridgePackage(file: File, installMode: 'keep_exis
   })
 }
 
-export const uninstallInstalledCartridge = (id: string) =>
-  api<{ ok: boolean; cartridge_id: string }>(`/api/cartridges/${id}/installed`, { method: 'DELETE' })
-
 export const cloneCartridgeToDev = (id: string, newId: string, name: string, description = '') =>
   api<{ ok: boolean; cartridge: CartridgeDetail; id: string; path: string }>(`/api/cartridges/${id}/clone-to-dev`, {
     method: 'POST',
@@ -247,17 +186,11 @@ export const saveCartridgeAsset = (id: string, assetId: string, asset: Omit<Cart
     body: JSON.stringify(asset),
   })
 
-export const deleteCartridgeAsset = (id: string, assetId: string) =>
-  api<{ status: string; asset_id: string; files: FlowFiles }>(`/api/lab/flows/${id}/assets/${assetId}`, { method: 'DELETE' })
-
 export const saveInteractionComponent = (id: string, componentId: string, component: InteractionComponent) =>
   api<{ status: string; component: InteractionComponent; files: FlowFiles }>(`/api/lab/flows/${id}/interaction-components/${componentId}`, {
     method: 'PUT',
     body: JSON.stringify({ component }),
   })
-
-export const deleteInteractionComponent = (id: string, componentId: string) =>
-  api<{ status: string; component_id: string; files: FlowFiles }>(`/api/lab/flows/${id}/interaction-components/${componentId}`, { method: 'DELETE' })
 
 export const fetchMcpTools = (id: string) =>
   api<McpToolsResponse>(`/api/lab/flows/${id}/mcp-tools`)
@@ -270,9 +203,6 @@ export const fetchFlowResourceDetail = (id: string, resourceId: string) =>
 
 export const checkFlowResourceConnectivity = (id: string, resourceId: string) =>
   api<FlowResourceConnectivityResult>(`/api/lab/flows/${id}/resource-connectivity/${encodeURIComponent(resourceId)}`, { method: 'POST' })
-
-export const fetchMcpSourceModel = (id: string, nodeId: string) =>
-  api<McpSourceModel>(`/api/lab/flows/${id}/mcp-nodes/${encodeURIComponent(nodeId)}/source-model`)
 
 export const fetchMcpSource = (id: string, nodeId: string) =>
   api<McpSourceResponse>(`/api/lab/flows/${id}/mcp-nodes/${encodeURIComponent(nodeId)}/source`)
@@ -295,57 +225,10 @@ export const addMcpOperation = (id: string, nodeId: string, expectedSourceDigest
     body: JSON.stringify({ expected_source_digest: expectedSourceDigest, operation }),
   })
 
-export const createMcpTool = (id: string, tool: Partial<McpTool>) =>
-  api<{ status: string; tool: McpTool; mcp_tools: McpTool[]; files: FlowFiles }>(`/api/lab/flows/${id}/mcp-tools`, {
-    method: 'POST',
-    body: JSON.stringify(tool),
-  })
-
-export const updateMcpTool = (id: string, toolId: string, tool: Partial<McpTool>) =>
-  api<{ status: string; tool: McpTool; mcp_tools: McpTool[]; files: FlowFiles }>(`/api/lab/flows/${id}/mcp-tools/${toolId}`, {
-    method: 'PUT',
-    body: JSON.stringify(tool),
-  })
-
-export const deleteMcpTool = (id: string, toolId: string) =>
-  api<{ status: string; tool_id: string; mcp_tools: McpTool[]; files: FlowFiles }>(`/api/lab/flows/${id}/mcp-tools/${toolId}`, {
-    method: 'DELETE',
-  })
-
 export const saveLabFlowFile = (id: string, fileType: string, content: string) =>
   api<{ file_type: string; saved: boolean }>(`/api/lab/flows/${id}/files/${fileType}`, {
     method: 'PUT',
     body: JSON.stringify({ content }),
-  })
-
-export const validateLabFlow = (id: string, files: FlowFiles) =>
-  api<ValidationResponse>(`/api/lab/flows/${id}/validate`, {
-    method: 'POST',
-    body: JSON.stringify({ files }),
-  })
-
-export const fetchLabFlowCompatibility = (id: string, files: FlowFiles) =>
-  api<CompatibilityReport>(`/api/lab/flows/${id}/compatibility`, {
-    method: 'POST',
-    body: JSON.stringify({ files }),
-  })
-
-export const fetchLabFlowCertification = (id: string, files: FlowFiles) =>
-  api<ProtocolCertificationReport>(`/api/lab/flows/${id}/certification`, {
-    method: 'POST',
-    body: JSON.stringify({ files }),
-  })
-
-export const applyLabFlowCertification = (id: string, files: FlowFiles) =>
-  api<{ ok: boolean; cartridge_id: string; label: string; report: ProtocolCertificationReport; files: FlowFiles; manifest: any }>(`/api/lab/flows/${id}/certification/apply`, {
-    method: 'POST',
-    body: JSON.stringify({ files }),
-  })
-
-export const previewLabFlowGraph = (id: string, files: FlowFiles) =>
-  api<{ graph: FlowGraph }>(`/api/lab/flows/${id}/preview-graph`, {
-    method: 'POST',
-    body: JSON.stringify({ files }),
   })
 
 export const updateFlowNode = (id: string, nodeId: string, payload: any) =>
@@ -398,8 +281,6 @@ export const runFlow = (id: string, inputs?: Record<string, string>, probeRange?
   })
 
 // ── LLM Provider API ──────────────────────────────────────────────
-export const fetchLlmProviders = () => api<{ providers: LlmProvider[]; paths: any }>('/api/llm/providers')
-
 export const fetchLlmAssignments = () => api<LlmAssignments>('/api/llm/assignments')
 
 export const saveLlmAssignments = (assignments: LlmAssignments) =>
@@ -422,15 +303,6 @@ export const updateLlmProvider = (providerId: string, provider: Record<string, a
 
 export const deleteLlmProvider = (providerId: string) =>
   api<{ ok: boolean }>(`/api/llm/providers/${encodeURIComponent(providerId)}`, { method: 'DELETE' })
-
-export const activateLlmProvider = (providerId: string) =>
-  api<{ ok: boolean; provider: LlmProvider }>(`/api/llm/providers/${encodeURIComponent(providerId)}/activate`, { method: 'POST' })
-
-export const detectLlmProvider = (payload: { provider_id?: string; base_url: string; api_key?: string; preferred_model?: string }) =>
-  api<LlmDetectionResult>('/api/llm/detect', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  })
 
 export const testLlmProvider = (providerId: string, model = '') =>
   api<LlmTestResult>('/api/llm/test', {
@@ -465,15 +337,6 @@ export const createStudioCredential = (credential: Record<string, any>) =>
     method: 'POST',
     body: JSON.stringify(credential),
   })
-
-export const updateStudioCredential = (key: string, credential: Record<string, any>) =>
-  api<{ ok: boolean; credential: StudioCredential }>(`/api/studio/environment/credentials/${encodeURIComponent(key)}`, {
-    method: 'PUT',
-    body: JSON.stringify(credential),
-  })
-
-export const deleteStudioCredential = (key: string) =>
-  api<{ ok: boolean }>(`/api/studio/environment/credentials/${encodeURIComponent(key)}`, { method: 'DELETE' })
 
 export const fetchStudioPackages = () => api<{ items: StudioPackageItem[] }>('/api/studio/packages')
 

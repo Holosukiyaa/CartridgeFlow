@@ -3,16 +3,16 @@
   "base_contract": {"id": "CARTRIDGEFLOW-BASE", "version": "0.2"},
   "default_for_new_flows": {"id": "CF-FARP", "version": "1.0"},
   "releases": [
-    {"id": "CF-FARP", "version": "0.1", "lifecycle": "recognized_legacy", "migration_target": {"id": "CF-FARP", "version": "0.6"}, "registry": "releases/CF-FARP-0.1.json", "profiles": "vocabulary/profiles.json", "capabilities": "vocabulary/capabilities.json"},
-    {"id": "CF-FARP", "version": "0.2", "lifecycle": "recognized_legacy", "migration_target": {"id": "CF-FARP", "version": "0.6"}, "registry": "releases/CF-FARP-0.2.json", "profiles": "vocabulary/profiles.json", "capabilities": "vocabulary/capabilities.json"},
-    {"id": "CF-FARP", "version": "0.3", "lifecycle": "recognized_legacy", "migration_target": {"id": "CF-FARP", "version": "0.6"}, "registry": "releases/CF-FARP-0.3.json", "profiles": "vocabulary/profiles.json", "capabilities": "vocabulary/capabilities.json", "document": "docs/protocol/flow-authoring/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.3.md"},
-    {"id": "CF-FARP", "version": "0.4", "lifecycle": "recognized_legacy", "migration_target": {"id": "CF-FARP", "version": "0.6"}, "registry": "releases/CF-FARP-0.4.json", "profiles": "vocabulary/profiles.json", "capabilities": "vocabulary/capabilities.json", "document": "docs/protocol/flow-authoring/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.4.md"},
-    {"id": "CF-FARP", "version": "0.5", "lifecycle": "recognized_legacy", "migration_target": {"id": "CF-FARP", "version": "0.6"}, "registry": "releases/CF-FARP-0.5.json", "profiles": "vocabulary/profiles.json", "capabilities": "vocabulary/capabilities.json", "document": "docs/protocol/flow-authoring/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.5.md"},
-    {"id": "CF-FARP", "version": "0.6", "lifecycle": "supported_previous", "registry": "releases/CF-FARP-0.6.json", "profiles": "vocabulary/profiles.json", "capabilities": "vocabulary/capabilities.json", "document": "docs/protocol/flow-authoring/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.6.md"},
-    {"id": "CF-FARP", "version": "0.7", "lifecycle": "supported_previous", "registry": "releases/CF-FARP-0.7.json", "profiles": "vocabulary/profiles-0.7.json", "capabilities": "vocabulary/capabilities-0.7.json", "document": "docs/protocol/flow-authoring/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.7.md"},
-    {"id": "CF-FARP", "version": "0.8", "lifecycle": "supported_previous", "registry": "releases/CF-FARP-0.8.json", "profiles": "vocabulary/profiles-0.8.json", "capabilities": "vocabulary/capabilities-0.8.json", "document": "docs/protocol/flow-authoring/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.8.md"},
-    {"id": "CF-FARP", "version": "0.9", "lifecycle": "supported_previous", "migration_target": {"id": "CF-FARP", "version": "1.0"}, "registry": "releases/CF-FARP-0.9.json", "profiles": "vocabulary/profiles-0.9.json", "capabilities": "vocabulary/capabilities-0.9.json", "document": "docs/protocol/flow-authoring/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.9.md"},
-    {"id": "CF-FARP", "version": "1.0", "lifecycle": "current", "status": "active", "implementation_status": "supported", "registry": "releases/CF-FARP-1.0.json", "profiles": "vocabulary/profiles-1.0.json", "capabilities": "vocabulary/capabilities-1.0.json", "document": "docs/protocol/flow-authoring/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v1.0.md"}
+    {"id": "CF-FARP", "version": "0.1", "lifecycle": "recognized_legacy", "migration_target": {"id": "CF-FARP", "version": "0.6"}, "registry": "flow-authoring/0.1/release.json", "profiles": "flow-authoring/0.1/profiles.json", "capabilities": "flow-authoring/0.1/capabilities.json"},
+    {"id": "CF-FARP", "version": "0.2", "lifecycle": "recognized_legacy", "migration_target": {"id": "CF-FARP", "version": "0.6"}, "registry": "flow-authoring/0.2/release.json", "profiles": "flow-authoring/0.2/profiles.json", "capabilities": "flow-authoring/0.2/capabilities.json"},
+    {"id": "CF-FARP", "version": "0.3", "lifecycle": "recognized_legacy", "migration_target": {"id": "CF-FARP", "version": "0.6"}, "registry": "flow-authoring/0.3/release.json", "profiles": "flow-authoring/0.3/profiles.json", "capabilities": "flow-authoring/0.3/capabilities.json", "document": "protocol/flow-authoring/0.3/specification.md"},
+    {"id": "CF-FARP", "version": "0.4", "lifecycle": "recognized_legacy", "migration_target": {"id": "CF-FARP", "version": "0.6"}, "registry": "flow-authoring/0.4/release.json", "profiles": "flow-authoring/0.4/profiles.json", "capabilities": "flow-authoring/0.4/capabilities.json", "document": "protocol/flow-authoring/0.4/specification.md"},
+    {"id": "CF-FARP", "version": "0.5", "lifecycle": "recognized_legacy", "migration_target": {"id": "CF-FARP", "version": "0.6"}, "registry": "flow-authoring/0.5/release.json", "profiles": "flow-authoring/0.5/profiles.json", "capabilities": "flow-authoring/0.5/capabilities.json", "document": "protocol/flow-authoring/0.5/specification.md"},
+    {"id": "CF-FARP", "version": "0.6", "lifecycle": "supported_previous", "runtime_adapter": "cf-farp.standard-flow.v06", "features": ["base_contract", "portable_dlc"], "registry": "flow-authoring/0.6/release.json", "profiles": "flow-authoring/0.6/profiles.json", "capabilities": "flow-authoring/0.6/capabilities.json", "document": "protocol/flow-authoring/0.6/specification.md"},
+    {"id": "CF-FARP", "version": "0.7", "lifecycle": "supported_previous", "runtime_adapter": "cf-farp.standard-flow.v07", "features": ["base_contract", "portable_dlc", "asset_registry", "optional_dlc_backend"], "registry": "flow-authoring/0.7/release.json", "profiles": "flow-authoring/0.7/profiles.json", "capabilities": "flow-authoring/0.7/capabilities.json", "document": "protocol/flow-authoring/0.7/specification.md"},
+    {"id": "CF-FARP", "version": "0.8", "lifecycle": "supported_previous", "runtime_adapter": "cf-farp.typed-control.v08", "features": ["base_contract", "portable_dlc", "asset_registry", "typed_control_edges", "flow_analysis"], "registry": "flow-authoring/0.8/release.json", "profiles": "flow-authoring/0.8/profiles.json", "capabilities": "flow-authoring/0.8/capabilities.json", "document": "protocol/flow-authoring/0.8/specification.md"},
+    {"id": "CF-FARP", "version": "0.9", "lifecycle": "supported_previous", "migration_target": {"id": "CF-FARP", "version": "1.0"}, "runtime_adapter": "cf-farp.typed-control.v09", "features": ["base_contract", "portable_dlc", "asset_registry", "typed_control_edges", "flow_analysis", "tool_transparency", "resource_catalog_v2", "optional_dlc_backend"], "registry": "flow-authoring/0.9/release.json", "profiles": "flow-authoring/0.9/profiles.json", "capabilities": "flow-authoring/0.9/capabilities.json", "document": "protocol/flow-authoring/0.9/specification.md"},
+    {"id": "CF-FARP", "version": "1.0", "lifecycle": "current", "status": "active", "implementation_status": "supported", "runtime_adapter": "cf-farp.execution-plan.v1", "features": ["base_contract", "asset_registry", "execution_plan", "flow_analysis", "portable_dlc", "tool_transparency"], "registry": "flow-authoring/1.0/release.json", "profiles": "flow-authoring/1.0/profiles.json", "capabilities": "flow-authoring/1.0/capabilities.json", "document": "protocol/flow-authoring/1.0/README.md"}
   ],
   "release_envelopes": {
     "default_for_new_releases": {"id": "CF-CRE", "version": "1"},
@@ -22,10 +22,10 @@
         "version": "1",
         "lifecycle": "draft",
         "implementation_status": "partial",
-        "registry": "releases/CF-CRE-1.json",
-        "profiles": "vocabulary/release-envelope-profiles-1.json",
-        "capabilities": "vocabulary/release-envelope-capabilities-1.json",
-        "document": "docs/protocol/release-envelope/CARTRIDGEFLOW_RELEASE_ENVELOPE_PROTOCOL_v1.md"
+        "registry": "release-envelope/1/release.json",
+        "profiles": "release-envelope/1/profiles.json",
+        "capabilities": "release-envelope/1/capabilities.json",
+        "document": "protocol/release-envelope/1/specification.md"
       }
     ]
   }

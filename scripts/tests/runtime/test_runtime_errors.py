@@ -321,7 +321,7 @@ class RuntimeErrorEnvelopeTests(unittest.TestCase):
         self.assertEqual("PROVIDER_RATE_LIMITED", _http_error_code(429, "/api/llm/test"))
         self.assertEqual("PROVIDER_UNAVAILABLE", _http_error_code(502, "/api/llm/test"))
         self.assertEqual("PROVIDER_TIMEOUT", _http_error_code(504, "/api/llm/test"))
-        self.assertEqual("INTERNAL_UNEXPECTED", _http_error_code(502, "/api/studio/todo"))
+        self.assertEqual("INTERNAL_UNEXPECTED", _http_error_code(502, "/api/studio/conformance"))
 
         response = TestClient(app).get("/api/cartridge-runs/run_does_not_exist")
         payload = response.json()

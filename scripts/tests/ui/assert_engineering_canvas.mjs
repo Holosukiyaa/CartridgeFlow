@@ -10,13 +10,20 @@ function expect(source, pattern, message) {
   if (!pattern.test(source)) failures.push(message)
 }
 
-const [projection, card, graph, model, styles] = await Promise.all([
+const [projection, card, graph, model, ...styleModules] = await Promise.all([
   read('src/frontend/src/pages/flow-workbench/engineeringNode.ts'),
   read('src/frontend/src/pages/flow-workbench/EngineeringNodeCard.tsx'),
   read('src/frontend/src/pages/flow-workbench/FlowGraphView.tsx'),
   read('src/frontend/src/pages/flow-workbench/nodeModel.ts'),
-  read('src/frontend/src/styles/99-workbench-reference-shell.css'),
+  ...[
+    '99-workbench-reference-shell.css',
+    '99-workbench-reference-base.css',
+    '99-workbench-reference-engineering.css',
+    '99-workbench-reference-resources.css',
+    '99-workbench-reference-polish.css',
+  ].map((name) => read(`src/frontend/src/styles/${name}`)),
 ])
+const styles = styleModules.join('\n')
 
 expect(projection, /buildEngineeringResourceNodes\(analyzerRelations\)/, '工程投影必须保留全部资源依赖，包括 MCP 依赖。')
 expect(projection, /normalizeResourceKind/, '资源投影必须区分 UI、MCP、模型和工具资源。')

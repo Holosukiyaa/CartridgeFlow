@@ -1,0 +1,22 @@
+{
+  "schema_version": "0.9",
+  "id": "CF-FARP",
+  "version": "0.9",
+  "name": "CartridgeFlow Flow Authoring Runtime Protocol",
+  "status": "active",
+  "runtime_adapter": "cf-farp.typed-control.v09",
+  "features": ["base_contract", "portable_dlc", "asset_registry", "typed_control_edges", "flow_analysis", "tool_transparency", "resource_catalog_v2", "optional_dlc_backend"],
+  "standalone": true,
+  "base_contract": {
+    "id": "CARTRIDGEFLOW-BASE",
+    "version": "0.2"
+  },
+  "supersedes": {
+    "id": "CF-FARP",
+    "version": "0.8"
+  },
+  "profiles_file": "flow-authoring/0.9/profiles.json",
+  "capabilities_file": "flow-authoring/0.9/capabilities.json",
+  "tool_packs_file": "base/0.2/tool_packs.json",
+  "document": "protocol/flow-authoring/0.9/specification.md"
+}

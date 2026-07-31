@@ -1,4 +1,5 @@
 from .mcp_slots import get_tool_summary, normalize_tools
+from core.protocol.features import has_protocol_feature
 
 
 ROOT_LIFECYCLE_STATES = {
@@ -71,9 +72,13 @@ class FlowGraphBuilder:
                 edges.append({"from": state_id, "to": state.get("next"), "scope": "root"})
             edges.extend(self._answer_route_edges(state_id, state))
         protocol = root_flow.get("protocol") if isinstance(root_flow.get("protocol"), dict) else {}
-        is_typed_protocol = protocol.get("id") == "CF-FARP" and str(protocol.get("version")) in {"0.8", "0.9"}
-        is_v10 = protocol.get("id") == "CF-FARP" and str(protocol.get("version")) == "1.0"
-        raw_edges = root_flow.get("control_edges") if is_typed_protocol else [] if is_v10 else root_flow.get("edges")
+        is_typed_protocol = has_protocol_feature(
+            str(protocol.get("id") or ""),
+            str(protocol.get("version") or ""),
+            "typed_control_edges",
+        )
+        is_execution_plan = isinstance(root_flow.get("execution_plan"), dict) and root_flow["execution_plan"].get("schema") == "cartridgeflow.execution_plan.v1"
+        raw_edges = root_flow.get("control_edges") if is_typed_protocol else [] if is_execution_plan else root_flow.get("edges")
         for edge in raw_edges or []:
             if not isinstance(edge, dict) or (is_typed_protocol and edge.get("kind") not in {"control", "branch", "action_route", "failure_route"}):
                 continue
@@ -96,7 +101,7 @@ class FlowGraphBuilder:
             ],
             "sub_flows": [],
         }
-        if is_typed_protocol or is_v10:
+        if is_typed_protocol or is_execution_plan:
             from core.lab.flow_analyzer import analyze_flow
             analysis = analyze_flow(root_flow, cartridge, target="dev")
             graph["analysis"] = analysis

@@ -99,7 +99,7 @@ class ProtocolHistoryCompatibilityTests(unittest.TestCase):
         self.assertIn("compatibility_blocked", [item["code"] for item in report["findings"]])
 
     def test_v05_is_recognized_but_not_supported(self):
-        protocol = json.loads((ROOT / "protocol" / "releases" / "CF-FARP-0.5.json").read_text(encoding="utf-8"))
+        protocol = json.loads((ROOT / "protocol" / "flow-authoring" / "0.5" / "release.json").read_text(encoding="utf-8"))
         registry = ProtocolRegistry(ROOT)
         supported = {(item["id"], item["version"]) for item in load_base_implementation(ROOT)["supported_protocols"]}
 

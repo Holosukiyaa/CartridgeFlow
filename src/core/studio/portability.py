@@ -8,6 +8,7 @@ import re
 from pathlib import Path
 
 from core.cartridge.assets import CartridgeAssetError, load_asset_bundle
+from core.protocol.features import has_protocol_feature
 from core.studio.hygiene import scan_package_hygiene
 from core.studio.resource_resolver import resolve_cartridge_resources
 
@@ -57,7 +58,7 @@ def build_portability_report(
     _record_core_file(root, root_ref, "flow", portable, missing)
 
     protocol = manifest.get("runtime_contract") if isinstance(manifest.get("runtime_contract"), dict) else {}
-    if protocol.get("protocol") == "CF-FARP" and str(protocol.get("protocol_version")) in {"0.7", "0.8", "0.9", "1.0"}:
+    if has_protocol_feature(str(protocol.get("protocol") or ""), str(protocol.get("protocol_version") or ""), "asset_registry"):
         try:
             bundle = load_asset_bundle(root, manifest, include_content=False)
             for asset in bundle.get("assets") or []:

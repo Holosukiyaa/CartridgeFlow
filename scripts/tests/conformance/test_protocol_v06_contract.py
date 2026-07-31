@@ -89,8 +89,8 @@ class ProtocolV06ContractTest(unittest.TestCase):
         self.assertIn(("CF-FARP", "0.6"), {(item["id"], item["version"]) for item in base["supported_protocols"]})
 
     def test_v06_documents_are_complete_standalone_protocols(self):
-        base_registry = json.loads((ROOT / "protocol" / "base" / "CARTRIDGEFLOW-BASE-0.2.json").read_text(encoding="utf-8"))
-        farp_registry = json.loads((ROOT / "protocol" / "releases" / "CF-FARP-0.6.json").read_text(encoding="utf-8"))
+        base_registry = json.loads((ROOT / "protocol" / "base" / "0.2" / "release.json").read_text(encoding="utf-8"))
+        farp_registry = json.loads((ROOT / "protocol" / "flow-authoring" / "0.6" / "release.json").read_text(encoding="utf-8"))
         base_text = (ROOT / base_registry["document"]).read_text(encoding="utf-8")
         farp_text = (ROOT / farp_registry["document"]).read_text(encoding="utf-8")
 
@@ -100,7 +100,7 @@ class ProtocolV06ContractTest(unittest.TestCase):
             self.assertIn(section, farp_text)
         self.assertNotIn("某个具体供应商", farp_text)
 
-        old_lines = len((ROOT / "docs/protocol/flow-authoring/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.5.md").read_text(encoding="utf-8").splitlines())
+        old_lines = len((ROOT / "protocol/flow-authoring/0.5/specification.md").read_text(encoding="utf-8").splitlines())
         new_lines = len(farp_text.splitlines())
         self.assertGreaterEqual(new_lines, old_lines)
         self.assertIn("## 目录", farp_text)
@@ -123,7 +123,7 @@ class ProtocolV06ContractTest(unittest.TestCase):
             self.assertIn(term, farp_text)
 
     def test_v06_table_of_contents_targets_real_sections(self):
-        text = (ROOT / "docs/protocol/flow-authoring/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.6.md").read_text(encoding="utf-8")
+        text = (ROOT / "protocol/flow-authoring/0.6/specification.md").read_text(encoding="utf-8")
         headings = re.findall(r"^## (.+)$", text, re.MULTILINE)
 
         def anchor(title):
@@ -139,7 +139,7 @@ class ProtocolV06ContractTest(unittest.TestCase):
         self.assertEqual([], [target for target in targets if target not in heading_anchors])
 
     def test_v06_json_examples_and_capability_vocabulary_are_machine_valid(self):
-        text = (ROOT / "docs/protocol/flow-authoring/CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.6.md").read_text(encoding="utf-8")
+        text = (ROOT / "protocol/flow-authoring/0.6/specification.md").read_text(encoding="utf-8")
         json_blocks = re.findall(r"```json\n(.*?)\n```", text, re.DOTALL)
         self.assertGreaterEqual(len(json_blocks), 30)
         for index, block in enumerate(json_blocks, 1):
@@ -153,7 +153,7 @@ class ProtocolV06ContractTest(unittest.TestCase):
         capability_block = re.search(r"```text\n(.*?)\n```", capability_section.group(1), re.DOTALL)
         self.assertIsNotNone(capability_block)
         documented = {item.strip() for item in capability_block.group(1).splitlines() if item.strip()}
-        registry = json.loads((ROOT / "protocol/vocabulary/capabilities.json").read_text(encoding="utf-8"))
+        registry = json.loads((ROOT / "protocol/flow-authoring/0.6/capabilities.json").read_text(encoding="utf-8"))
         registered = {item["id"] for item in registry["capabilities"]}
         self.assertEqual(registered, documented)
 

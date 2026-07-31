@@ -12,7 +12,7 @@ import json
 from collections import defaultdict
 from typing import Any
 
-from core.protocol.flow_contract import validate_v10_flow_contract
+from core.protocol.flow_contract import validate_execution_plan_v1_flow_contract
 
 
 COMPILED_PLAN_SCHEMA = "cartridgeflow.execution_plan.compiled.v1"
@@ -44,23 +44,35 @@ class ExecutionPlanCompileError(ValueError):
         }
 
 
-def compile_execution_plan(root_flow: dict | None) -> dict[str, Any]:
-    """Compile validated CF-FARP@1.0 authoring facts into a token-runner input shape.
+def compile_execution_plan(
+    root_flow: dict | None,
+    *,
+    protocol_id: str | None = None,
+    protocol_version: str | None = None,
+) -> dict[str, Any]:
+    """Compile an execution-plan-v1 release into a token-runner input shape.
 
     The source object is only read.  Contract findings are sorted before being
     exposed so callers receive an identical machine-readable error for an
     identical invalid source.
     """
-    findings = _stable_findings(validate_v10_flow_contract(root_flow))
+    source = root_flow if isinstance(root_flow, dict) else {}
+    declared = source.get("protocol") if isinstance(source.get("protocol"), dict) else {}
+    protocol_id = protocol_id or str(declared.get("id") or "CF-FARP")
+    protocol_version = protocol_version or str(declared.get("version") or "1.0")
+    findings = _stable_findings(validate_execution_plan_v1_flow_contract(
+        source,
+        protocol_id=protocol_id,
+        protocol_version=protocol_version,
+    ))
     if findings:
         codes = ", ".join(sorted({item["code"] for item in findings}))
         raise ExecutionPlanCompileError(
             "execution_plan_contract_invalid",
-            f"CF-FARP@1.0 authoring facts are invalid: {codes}.",
+            f"{protocol_id}@{protocol_version} execution-plan authoring facts are invalid: {codes}.",
             findings,
         )
 
-    source = root_flow if isinstance(root_flow, dict) else {}
     source_digest = build_execution_plan_source_digest(source)
     states = source["states"]
     author_plan = source["execution_plan"]
@@ -70,7 +82,7 @@ def compile_execution_plan(root_flow: dict | None) -> dict[str, Any]:
     plan = {
         "schema": COMPILED_PLAN_SCHEMA,
         "compiler": {"id": COMPILER_ID, "version": COMPILER_VERSION},
-        "protocol": {"id": "CF-FARP", "version": "1.0"},
+        "protocol": {"id": protocol_id, "version": protocol_version},
         "plan_id": f"execution-plan:{source_digest.removeprefix('sha256:')[:24]}",
         "source_digest": source_digest,
         "entry": str(author_plan["entry"]).strip(),

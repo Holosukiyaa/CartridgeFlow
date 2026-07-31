@@ -23,6 +23,7 @@ from pathlib import Path
 from core.cartridge.node_normalizer import normalize_runtime_node
 from core.cartridge.assets import load_asset_bundle, materialize_passive_html
 from core.protocol import parse_decision_envelope, validate_decision_envelope, validate_tool_plan
+from core.protocol.features import has_protocol_feature
 from core.protocol.decision_envelope import make_blocked_decision_envelope, make_mock_decision_envelope
 from core.runtime.state_machine import assert_transition
 
@@ -579,7 +580,12 @@ class LabNodeExecutor:
         params: dict,
     ) -> dict:
         runtime_contract = run.get("runtime_contract") if isinstance(run.get("runtime_contract"), dict) else {}
-        is_transparent_protocol = runtime_contract.get("protocol") == "CF-FARP" and str(runtime_contract.get("protocol_version")) in {"0.9", "1.0"}
+        is_transparent_protocol = has_protocol_feature(
+            str(runtime_contract.get("protocol") or ""),
+            str(runtime_contract.get("protocol_version") or ""),
+            "tool_transparency",
+            self.workspace_root,
+        )
         if not is_transparent_protocol or not isinstance(manifest_tool, dict):
             return {"ok": True, "operations": [], "findings": [], "node_id": str(node_id or ""), "tool_id": str(tool_id or "")}
 

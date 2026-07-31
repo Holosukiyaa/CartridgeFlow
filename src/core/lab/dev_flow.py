@@ -23,11 +23,12 @@ class DevFlowManager:
     def __init__(self, root: str | Path):
         self.root = Path(root)
         protocol_root = self.root if (self.root / "protocol" / "catalog" / "release_manifest.json").is_file() else Path(__file__).resolve().parents[3]
-        release_catalog = load_protocol_release_catalog(protocol_root)
-        self.default_protocol = release_catalog.data["default_for_new_flows"]
+        self.release_catalog = load_protocol_release_catalog(protocol_root)
+        self.default_protocol = self.release_catalog.data["default_for_new_flows"]
         self.default_protocol_id = str(self.default_protocol["id"])
         self.default_protocol_version = str(self.default_protocol["version"])
-        self.base_contract = release_catalog.data["base_contract"]
+        self.default_runtime_adapter = self.release_catalog.runtime_adapter(self.default_protocol_id, self.default_protocol_version)
+        self.base_contract = self.release_catalog.data["base_contract"]
         self.dev_dir = self.root / DEV_CARTRIDGES_DIR
         self.validator = ManifestValidator()
         self.dev_dir.mkdir(parents=True, exist_ok=True)
@@ -117,7 +118,7 @@ class DevFlowManager:
         if root_flow:
             self._validate_root_flow(root_flow, errors, warnings)
             protocol = root_flow.get("protocol") if isinstance(root_flow.get("protocol"), dict) else {}
-            if not (protocol.get("id") == "CF-FARP" and str(protocol.get("version")) == "1.0"):
+            if not self._has_feature(protocol, "execution_plan"):
                 try:
                     from core.lab.flow_analyzer import analyze_flow_structure
                     structure = analyze_flow_structure(root_flow)
@@ -187,13 +188,17 @@ class DevFlowManager:
             if state.get("type") == "terminal":
                 terminal_count += 1
         protocol = root_flow.get("protocol") if isinstance(root_flow.get("protocol"), dict) else {}
-        if protocol.get("id") == "CF-FARP" and str(protocol.get("version")) == "1.0":
-            from core.protocol.flow_contract import validate_v10_flow_contract
-            for finding in validate_v10_flow_contract(root_flow):
+        if self._has_feature(protocol, "execution_plan"):
+            from core.protocol.flow_contract import validate_execution_plan_v1_flow_contract
+            for finding in validate_execution_plan_v1_flow_contract(
+                root_flow,
+                protocol_id=str(protocol.get("id") or ""),
+                protocol_version=str(protocol.get("version") or ""),
+            ):
                 if finding.get("severity") == "blocker":
                     errors.append(f"{finding.get('code')}: {finding.get('message')}")
             return
-        is_typed_protocol = protocol.get("id") == "CF-FARP" and str(protocol.get("version")) in {"0.8", "0.9"}
+        is_typed_protocol = self._has_feature(protocol, "typed_control_edges")
         if is_typed_protocol and root_flow.get("edges"):
             errors.append(f"CF-FARP@{protocol.get('version')} root_flow.edges is legacy; use typed root_flow.control_edges")
         edge_field = "control_edges" if is_typed_protocol else "edges"
@@ -371,14 +376,14 @@ class DevFlowManager:
         }
 
     def _root_flow_template(self, flow_id: str, name: str) -> dict:
-        if self.default_protocol_id == "CF-FARP" and self.default_protocol_version == "1.0":
+        if self.default_runtime_adapter == "cf-farp.execution-plan.v1":
             return {
                 "schema_version": "1.0",
                 "id": f"{flow_id}.root",
                 "name": f"{name or flow_id} 根流程",
                 "mode": "lifecycle",
                 "cartridge_id": flow_id,
-                "protocol": {"id": "CF-FARP", "version": "1.0"},
+                "protocol": {"id": self.default_protocol_id, "version": self.default_protocol_version},
                 "start": "start",
                 "states": {
                     "start": {"type": "control", "title": "开始", "display_name": "开始", "locked": True},
@@ -432,6 +437,13 @@ class DevFlowManager:
                 {"kind": "control", "from": "welcome", "to": "complete"},
             ],
         }
+
+    def _has_feature(self, protocol: dict, feature: str) -> bool:
+        return self.release_catalog.has_feature(
+            str(protocol.get("id") or ""),
+            str(protocol.get("version") or ""),
+            feature,
+        )
 
     def _asset_entry(self, asset_id: str, kind: str, path: str, media_type: str, content: bytes) -> dict:
         return {

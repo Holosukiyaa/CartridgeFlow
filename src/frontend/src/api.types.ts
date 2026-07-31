@@ -423,27 +423,6 @@ export interface StudioConformanceResponse {
   }
 }
 
-export interface StudioTodoItem {
-  id: string
-  text: string
-  raw: string
-  checked: boolean
-  section: string
-  priority: string
-  line: number
-}
-
-export interface StudioTodoResponse {
-  title: string
-  total: number
-  open: number
-  completed: number
-  items: StudioTodoItem[]
-  source: string
-  file_url: string
-  template_url: string
-}
-
 export interface CompatibilityFinding {
   severity: 'blocker' | 'warning' | 'info' | string
   code: string

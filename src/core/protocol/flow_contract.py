@@ -55,6 +55,11 @@ SIDE_EFFECT_EFFECTS = {
 
 LIFECYCLE_TYPES = {"system", "terminal"}
 READ_ONLY_TOOL_SIDE_EFFECTS = {"", "none", "read_only", "environment_probe"}
+EXECUTION_PLAN_V1_ADAPTER = "cf-farp.execution-plan.v1"
+STANDARD_FLOW_V06_ADAPTER = "cf-farp.standard-flow.v06"
+STANDARD_FLOW_V07_ADAPTER = "cf-farp.standard-flow.v07"
+TYPED_CONTROL_V08_ADAPTER = "cf-farp.typed-control.v08"
+TYPED_CONTROL_V09_ADAPTER = "cf-farp.typed-control.v09"
 
 
 def build_v02_flow_contract_report(root_flow: dict | None, manifest: dict | None = None) -> dict:
@@ -179,12 +184,52 @@ def build_v09_flow_contract_report(
 
 def build_v10_flow_contract_report(root_flow: dict | None, manifest: dict | None = None) -> dict:
     """验证可执行的 CF-FARP@1.0 编排契约。"""
-    findings = validate_v10_flow_contract(root_flow, manifest)
+    return build_flow_contract_report_for_adapter(
+        EXECUTION_PLAN_V1_ADAPTER,
+        root_flow,
+        manifest,
+        protocol_id="CF-FARP",
+        protocol_version="1.0",
+    ) or {}
+
+
+def build_flow_contract_report_for_adapter(
+    runtime_adapter: str | None,
+    root_flow: dict | None,
+    manifest: dict | None = None,
+    *,
+    protocol_id: str,
+    protocol_version: str,
+    target: str = "dev",
+    base: dict | None = None,
+) -> dict | None:
+    """Build a contract report for an implementation adapter, not a release number.
+
+    A release can keep this adapter when its documentation-only revision changes.
+    A new runtime semantic contract receives a new adapter id and handler here.
+    """
+    legacy_builders = {
+        STANDARD_FLOW_V06_ADAPTER: lambda: build_v06_flow_contract_report(root_flow, manifest),
+        STANDARD_FLOW_V07_ADAPTER: lambda: build_v07_flow_contract_report(root_flow, manifest),
+        TYPED_CONTROL_V08_ADAPTER: lambda: build_v08_flow_contract_report(root_flow, manifest, target=target, base=base),
+        TYPED_CONTROL_V09_ADAPTER: lambda: build_v09_flow_contract_report(root_flow, manifest, target=target, base=base),
+    }
+    if runtime_adapter in legacy_builders:
+        return legacy_builders[runtime_adapter]()
+    if runtime_adapter != EXECUTION_PLAN_V1_ADAPTER:
+        return None
+    findings = validate_execution_plan_v1_flow_contract(
+        root_flow,
+        manifest,
+        protocol_id=protocol_id,
+        protocol_version=protocol_version,
+    )
     counts = summarize_findings(findings)
     return {
         "ok": counts["blocker"] == 0,
         "status": "compatible" if counts["blocker"] == 0 else "blocked",
-        "protocol": "CF-FARP@1.0",
+        "protocol": f"{protocol_id}@{protocol_version}",
+        "runtime_adapter": runtime_adapter,
         "implementation_status": "supported",
         "summary": counts,
         "findings": findings,
@@ -200,7 +245,22 @@ def validate_v09_flow_contract(root_flow: dict | None, manifest: dict | None = N
 
 
 def validate_v10_flow_contract(root_flow: dict | None, manifest: dict | None = None) -> list[dict]:
-    """Validate CF-FARP@1.0 ExecutionPlan authoring facts.
+    return validate_execution_plan_v1_flow_contract(
+        root_flow,
+        manifest,
+        protocol_id="CF-FARP",
+        protocol_version="1.0",
+    )
+
+
+def validate_execution_plan_v1_flow_contract(
+    root_flow: dict | None,
+    manifest: dict | None = None,
+    *,
+    protocol_id: str = "CF-FARP",
+    protocol_version: str = "1.0",
+) -> list[dict]:
+    """Validate execution-plan-v1 authoring facts for a catalogued release.
 
     它只验证作者声明本身，不执行节点业务代码。编译器、运行器、分析器和
     认证层都必须消费同一份已验证的执行计划。
@@ -209,11 +269,11 @@ def validate_v10_flow_contract(root_flow: dict | None, manifest: dict | None = N
     findings: list[dict] = []
     root_flow = root_flow if isinstance(root_flow, dict) else {}
 
-    if not _root_flow_declares_version(root_flow, "1.0"):
+    if not _root_flow_declares_protocol(root_flow, protocol_id, protocol_version):
         findings.append(_finding(
             "blocker",
             "v10_root_flow_protocol_missing",
-            "root flow must declare protocol CF-FARP@1.0.",
+            f"root flow must declare protocol {protocol_id}@{protocol_version}.",
         ))
 
     states = root_flow.get("states")
@@ -226,7 +286,7 @@ def validate_v10_flow_contract(root_flow: dict | None, manifest: dict | None = N
         return findings + [_finding(
             "blocker",
             "v10_execution_plan_missing",
-            "CF-FARP@1.0 requires root_flow.execution_plan.",
+            f"{protocol_id}@{protocol_version} requires root_flow.execution_plan.",
         )]
     if execution_plan.get("schema") != "cartridgeflow.execution_plan.v1":
         findings.append(_finding(
@@ -930,12 +990,16 @@ def _root_flow_declares_v02(root_flow: dict) -> bool:
 
 
 def _root_flow_declares_version(root_flow: dict, version: str) -> bool:
+    return _root_flow_declares_protocol(root_flow, "CF-FARP", version)
+
+
+def _root_flow_declares_protocol(root_flow: dict, protocol_id: str, version: str) -> bool:
     protocol = root_flow.get("protocol")
     if isinstance(protocol, str):
-        return protocol.strip() in {f"CF-FARP@{version}", f"CF-FARP-{version}"}
+        return protocol.strip() in {f"{protocol_id}@{version}", f"{protocol_id}-{version}"}
     if isinstance(protocol, dict):
-        return str(protocol.get("id") or "") == "CF-FARP" and str(protocol.get("version") or "") == version
-    return str(root_flow.get("protocol_id") or "") == "CF-FARP" and str(root_flow.get("protocol_version") or "") == version
+        return str(protocol.get("id") or "") == protocol_id and str(protocol.get("version") or "") == version
+    return str(root_flow.get("protocol_id") or "") == protocol_id and str(root_flow.get("protocol_version") or "") == version
 
 
 def _local_binding_paths(value, path: str = "node") -> list[str]:

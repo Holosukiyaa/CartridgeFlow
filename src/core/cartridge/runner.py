@@ -17,7 +17,8 @@ from core.extensions import cancel_worker_calls_for_run
 from core.llm.config_manager import build_model_binding_report
 from core.workspace.host import WorkspaceHostManager
 from core.lab.node_executor import LabNodeExecutor
-from core.protocol import CompatibilityBlockedError, build_compatibility_report, load_base_implementation
+from core.protocol import CompatibilityBlockedError, build_compatibility_report, load_base_implementation, load_protocol_release_catalog
+from core.protocol.features import has_protocol_feature
 from core.orchestration import ExecutionPlanCompileError, compile_execution_plan
 from core.studio.external_adapters import cancel_external_calls_for_run
 from core.studio.resource_resolver import resolve_cartridge_resources
@@ -35,8 +36,13 @@ def now_iso() -> str:
 
 def _executable_edges(root_flow: dict) -> list[dict]:
     protocol = root_flow.get("protocol") if isinstance(root_flow.get("protocol"), dict) else {}
-    is_typed_protocol = protocol.get("id") == "CF-FARP" and str(protocol.get("version")) in {"0.8", "0.9", "1.0"}
-    source = root_flow.get("control_edges") if is_typed_protocol else root_flow.get("edges")
+    has_execution_plan = isinstance(root_flow.get("execution_plan"), dict) and root_flow["execution_plan"].get("schema") == "cartridgeflow.execution_plan.v1"
+    is_typed_protocol = has_protocol_feature(
+        str(protocol.get("id") or ""),
+        str(protocol.get("version") or ""),
+        "typed_control_edges",
+    )
+    source = [] if has_execution_plan else root_flow.get("control_edges") if is_typed_protocol else root_flow.get("edges")
     return [
         edge for edge in (source or [])
         if isinstance(edge, dict) and (not is_typed_protocol or edge.get("kind") in {"control", "branch", "action_route", "failure_route"})
@@ -47,6 +53,8 @@ class CartridgeRunner:
     def __init__(self, root: str | Path, registry):
         self.root = Path(root)
         self.registry = registry
+        protocol_root = self.root if (self.root / "protocol" / "catalog" / "release_manifest.json").is_file() else Path(__file__).resolve().parents[3]
+        self.release_catalog = load_protocol_release_catalog(protocol_root)
         self.runtime_manager = RuntimeManager(self.root)
         self.workspace_host = WorkspaceHostManager()
         self.dependency_resolver = DependencyResolver()
@@ -107,10 +115,14 @@ class CartridgeRunner:
         source_root_flow = cartridge.get("root_flow") or {}
         runtime_contract = manifest.get("runtime_contract") if isinstance(manifest.get("runtime_contract"), dict) else {}
         flow_protocol = source_root_flow.get("protocol") if isinstance(source_root_flow.get("protocol"), dict) else {}
-        is_typed_protocol = (
-            runtime_contract.get("protocol") == "CF-FARP" and str(runtime_contract.get("protocol_version")) in {"0.8", "0.9", "1.0"}
-        ) or (
-            flow_protocol.get("id") == "CF-FARP" and str(flow_protocol.get("version")) in {"0.8", "0.9", "1.0"}
+        is_typed_protocol = self._has_release_feature(
+            str(runtime_contract.get("protocol") or ""),
+            str(runtime_contract.get("protocol_version") or ""),
+            "flow_analysis",
+        ) or self._has_release_feature(
+            str(flow_protocol.get("id") or ""),
+            str(flow_protocol.get("version") or ""),
+            "flow_analysis",
         )
         if is_typed_protocol:
             from core.studio.resource_catalog import build_flow_resource_catalog
@@ -569,10 +581,16 @@ class CartridgeRunner:
 
     def _compile_execution_plan(self, root_flow: dict) -> dict | None:
         protocol = root_flow.get("protocol") if isinstance(root_flow, dict) and isinstance(root_flow.get("protocol"), dict) else {}
-        if protocol.get("id") != "CF-FARP" or str(protocol.get("version")) != "1.0":
+        protocol_id = str(protocol.get("id") or "")
+        protocol_version = str(protocol.get("version") or "")
+        if self.release_catalog.runtime_adapter(protocol_id, protocol_version) != "cf-farp.execution-plan.v1":
             return None
         try:
-            return compile_execution_plan(root_flow)
+            return compile_execution_plan(
+                root_flow,
+                protocol_id=protocol_id,
+                protocol_version=protocol_version,
+            )
         except ExecutionPlanCompileError as exc:
             raise RuntimeFailure(build_runtime_error(
                 "FLOW_CONTRACT_INVALID",
@@ -580,6 +598,9 @@ class CartridgeRunner:
                 cause_chain=[{"type": exc.code, "message": str(exc)}],
                 context={"findings": list(exc.findings)},
             )) from exc
+
+    def _has_release_feature(self, protocol_id: str, protocol_version: str, feature: str) -> bool:
+        return self.release_catalog.has_feature(protocol_id, protocol_version, feature)
 
     def _run_flow_engine(
         self,
@@ -937,7 +958,14 @@ class CartridgeRunner:
         probe_edges: list[dict] = []
         seen_edges: set[tuple[str, str]] = set()
 
-        is_typed_protocol = ((root_flow.get("protocol") or {}).get("id") == "CF-FARP" and str((root_flow.get("protocol") or {}).get("version")) in {"0.8", "0.9", "1.0"})
+        is_typed_protocol = (
+            isinstance(root_flow.get("execution_plan"), dict)
+            and root_flow["execution_plan"].get("schema") == "cartridgeflow.execution_plan.v1"
+        ) or self._has_release_feature(
+            str((root_flow.get("protocol") or {}).get("id") or ""),
+            str((root_flow.get("protocol") or {}).get("version") or ""),
+            "typed_control_edges",
+        )
 
         def _keep_edge(source: str, target: str, original: dict | None = None) -> None:
             if source not in node_id_set or target not in node_id_set:

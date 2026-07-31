@@ -19,17 +19,17 @@ import { AIFlowStewardPanel } from './AIFlowStewardPanel.tsx'
 import { McpTransparencyOverlay } from './McpTransparencyOverlay.tsx'
 
 type ExecutionPlanAnalysis = NonNullable<FlowGraph['analysis']> & {
-  protocol?: { id?: string; version?: string }
+  protocol?: { id?: string; version?: string; runtime_adapter?: string }
   relations?: FlowEngineeringRelation[]
   execution_plan?: { status?: 'compiled' | 'rejected' | string; runtime_status?: 'supported' | 'unsupported' | string; plan_id?: string; edge_count?: number }
 }
 
 function isExecutionPlanV1(files: FlowFiles, graph: FlowGraph) {
   const embedded = graph.analysis as ExecutionPlanAnalysis | undefined
-  if (embedded?.protocol?.id === 'CF-FARP' && embedded.protocol.version === '1.0') return true
+  if (embedded?.protocol?.runtime_adapter === 'cf-farp.execution-plan.v1') return true
   try {
     const rootFlow = JSON.parse(files.root_flow || '{}')
-    return rootFlow?.protocol?.id === 'CF-FARP' && String(rootFlow?.protocol?.version || '') === '1.0'
+    return rootFlow?.execution_plan?.schema === 'cartridgeflow.execution_plan.v1'
   } catch {
     return false
   }
@@ -70,7 +70,7 @@ export function WorkbenchHeader({
       <div className="cf-workbench-brand">
         <BrandMark className="cf-workbench-brand-mark" />
         <strong>CARTRIDGE WORKSPACE <i>/</i> 卡带工作台</strong>
-        <div className="cf-workbench-protocol-tags" aria-label="协议支持"><span>基座目标 {protocolInfo.targetProtocolLabel}</span><span>当前卡带 {protocolInfo.currentProtocolLabel}</span><span>Flow Analyzer v0.9</span><span>资源目录 v0.9</span></div>
+        <div className="cf-workbench-protocol-tags" aria-label="协议支持"><span>基座目标 {protocolInfo.targetProtocolLabel}</span><span>当前卡带 {protocolInfo.currentProtocolLabel}</span><span>Flow Analyzer</span><span>资源目录</span></div>
       </div>
       <div className="cf-workbench-header-spacer" />
       <div className="cf-workbench-actions">
@@ -178,9 +178,9 @@ export function DesignView({
       if (!response.ok) throw new Error(await response.text())
       return response.json() as Promise<ExecutionPlanAnalysis>
     }).then((report) => {
-      if (active && report?.protocol?.id === 'CF-FARP' && report.protocol.version === '1.0') setExecutionPlanAnalysis(report)
+      if (active && report?.protocol?.runtime_adapter === 'cf-farp.execution-plan.v1') setExecutionPlanAnalysis(report)
     }).catch(() => {
-      // A missing analysis result must leave the v1.0 canvas without runnable lines.
+      // A missing analysis result must leave an execution-plan canvas without runnable lines.
     })
     return () => { active = false }
   }, [editable, executionPlanV1, files, flowId])

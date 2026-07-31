@@ -40,9 +40,6 @@ html[data-cf-font-scale="115"] .cf-overview-resume-actions button { white-space:
 html[data-cf-font-scale="115"] .cf-overview-stat-strip > button { min-height: 78px; padding: 8px 11px; }
 html[data-cf-font-scale="115"] .cf-overview-stat-strip small { white-space: normal; line-height: 1.3; }
 html[data-cf-font-scale="115"] .cf-overview-comfort-grid { grid-template-columns: minmax(0, 1.08fr) minmax(350px, .92fr); gap: 30px; }
-html[data-cf-font-scale="115"] .cf-overview-comfort-grid .cf-overview-todo-list > button { height: auto; min-height: 62px; }
-html[data-cf-font-scale="115"] .cf-overview-todo-list > button strong { white-space: normal; line-height: 1.35; }
-html[data-cf-font-scale="115"] .cf-overview-todo-footer { min-height: 40px; flex-wrap: wrap; row-gap: 5px; }
 html[data-cf-font-scale="115"] .cf-overview-resource-dock { grid-template-columns: minmax(230px, 1.1fr) repeat(3, minmax(0, .8fr)); }
 html[data-cf-font-scale="115"] .cf-overview-resource-dock > button { padding-inline: 13px; }
 
@@ -54,7 +51,6 @@ html[data-cf-font-weight="strong"] :where(
   .cf-overview-stat-strip span,
   .cf-overview-stat-strip small,
   .cf-overview-activity-heading p,
-  .cf-overview-todo-list small,
   .cf-overview-protocol-copy,
   .cf-overview-conformance-line,
   .cf-overview-run-summary p,
@@ -231,10 +227,8 @@ html[data-cf-density="compact"] .cf-cartridge-resource-row { padding-block: 9px;
 .cf-settings-toggle strong { color: var(--text); font-size: 10px; }
 .cf-settings-toggle small { color: var(--muted); font-size: calc(9px * var(--cf-user-font-scale)); }
 html[data-cf-scrollbar-mode="always"] .cf-diagnostics-detail-card,
-html[data-cf-scrollbar-mode="always"] .cf-overview-todo-list,
 html[data-cf-scrollbar-mode="always"] .cf-overview-activity-list { scrollbar-color: rgba(188, 76, 0, .34) transparent; }
 html[data-cf-scrollbar-mode="always"] .cf-diagnostics-detail-card::-webkit-scrollbar-thumb,
-html[data-cf-scrollbar-mode="always"] .cf-overview-todo-list::-webkit-scrollbar-thumb,
 html[data-cf-scrollbar-mode="always"] .cf-overview-activity-list::-webkit-scrollbar-thumb { background-color: rgba(188, 76, 0, .34); }
 .cf-settings-preview-surface { min-height: 250px; padding: 24px 4px; display: grid; align-content: center; justify-items: start; gap: 11px; border-bottom: 1px solid var(--line); }
 .cf-settings-preview-surface > span { color: var(--accent); font: 800 calc(9px * var(--cf-user-font-scale)) var(--mono); text-transform: uppercase; }

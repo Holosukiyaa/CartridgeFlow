@@ -11,6 +11,7 @@ class ProtocolReleaseCatalogError(ValueError):
 RELEASE_MANIFEST_PATH = Path("protocol/catalog/release_manifest.json")
 _LIFECYCLES = {"current", "supported_previous", "recognized_legacy"}
 _RELEASE_ENVELOPE_LIFECYCLES = {"draft", "active", "supported_previous"}
+_ADAPTER_STATUSES = {"partial", "supported"}
 
 
 class ProtocolReleaseCatalog:
@@ -31,6 +32,18 @@ class ProtocolReleaseCatalog:
     def published(self, protocol_id: str, version: str) -> bool:
         item = self.get(protocol_id, version)
         return bool(item and item["lifecycle"] in {"current", "supported_previous"})
+
+    def runtime_adapter(self, protocol_id: str, version: str) -> str | None:
+        item = self.get(protocol_id, version)
+        adapter = item.get("runtime_adapter") if item else None
+        return str(adapter) if isinstance(adapter, str) and adapter else None
+
+    def features(self, protocol_id: str, version: str) -> frozenset[str]:
+        item = self.get(protocol_id, version)
+        return frozenset(str(feature) for feature in (item or {}).get("features") or [])
+
+    def has_feature(self, protocol_id: str, version: str, feature: str) -> bool:
+        return str(feature) in self.features(protocol_id, version)
 
     def lifecycle(self, protocol_id: str, version: str) -> dict | None:
         item = self.get(protocol_id, version)
@@ -58,7 +71,11 @@ class ProtocolReleaseCatalog:
             "base_contract": dict(self.data["base_contract"]),
             "default_for_new_flows": {**default, "label": f"{default['id']}@{default['version']}"},
             "releases": [
-                {key: value for key, value in item.items() if key in {"id", "version", "lifecycle", "migration_target"}}
+                {
+                    key: value
+                    for key, value in item.items()
+                    if key in {"id", "version", "lifecycle", "migration_target", "runtime_adapter", "features"}
+                }
                 for item in self.releases
             ],
             "release_envelopes": {
@@ -105,11 +122,23 @@ def _load_release_manifest(root: Path) -> dict:
             raise ProtocolReleaseCatalogError(f"protocol release manifest releases[{index}].lifecycle is invalid")
         if not isinstance(item.get("registry"), str) or not item["registry"]:
             raise ProtocolReleaseCatalogError(f"protocol release manifest releases[{index}].registry is required")
+        adapter = item.get("runtime_adapter")
+        if adapter is not None and (not isinstance(adapter, str) or not adapter.strip()):
+            raise ProtocolReleaseCatalogError(f"protocol release manifest releases[{index}].runtime_adapter must be a non-empty string")
+        features = item.get("features", [])
+        if not isinstance(features, list) or any(not isinstance(feature, str) or not feature.strip() for feature in features):
+            raise ProtocolReleaseCatalogError(f"protocol release manifest releases[{index}].features must be an array of non-empty strings")
+        if len(set(features)) != len(features):
+            raise ProtocolReleaseCatalogError(f"protocol release manifest releases[{index}].features must not contain duplicates")
         if item["lifecycle"] == "recognized_legacy":
             target = item.get("migration_target")
             if not isinstance(target, dict) or not target.get("id") or not target.get("version"):
                 raise ProtocolReleaseCatalogError(f"legacy release {key[0]}@{key[1]} requires migration_target")
+        if item["lifecycle"] in {"current", "supported_previous"} and not adapter:
+            raise ProtocolReleaseCatalogError(f"published release {key[0]}@{key[1]} requires runtime_adapter")
         if item["lifecycle"] == "current":
+            if not adapter:
+                raise ProtocolReleaseCatalogError(f"current release {key[0]}@{key[1]} requires runtime_adapter")
             current += 1
     default = (str(data["default_for_new_flows"]["id"]), str(data["default_for_new_flows"]["version"]))
     if current != 1 or default not in seen or next(item for item in releases if (item["id"], item["version"]) == default)["lifecycle"] != "current":

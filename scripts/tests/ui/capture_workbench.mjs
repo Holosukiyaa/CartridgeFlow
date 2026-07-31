@@ -305,7 +305,7 @@ const metrics = await command('Runtime.evaluate', {
       factLabels: [...element.querySelectorAll('.cf-node-detail-card dt')].map((item) => item.textContent?.trim() || ''),
     })),
     pinnedNodeEditors: document.querySelectorAll('.cf-node-drawer-pin.active').length,
-    pinnedDetailStorage: Object.fromEntries(Object.keys(localStorage).filter((key) => key.startsWith('cartridgeflow.lite.pinned-node-details.v1:')).map((key) => [key, localStorage.getItem(key)])),
+    pinnedDetailStorage: Object.fromEntries(Object.keys(localStorage).filter((key) => key.startsWith('cartridgeflow.pinned-node-details.v1:')).map((key) => [key, localStorage.getItem(key)])),
     viewportTransform: document.querySelector('.react-flow__viewport')?.style.transform || '',
     viewportTransformBeforeAction: window.__cfViewportTransformBeforeAction || '',
     viewportTransformAfterEditorOpen: window.__cfViewportTransformAfterEditorOpen || '',

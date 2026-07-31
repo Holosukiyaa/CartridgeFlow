@@ -3,10 +3,18 @@ from pathlib import Path
 
 from core.extensions import PortableDlcValidationError, load_portable_dlc_descriptor
 from core.cartridge.assets import CartridgeAssetError, load_asset_bundle, validate_interaction_nodes
+from core.protocol.features import protocol_features
 
 
 class ManifestValidationError(ValueError):
     pass
+
+
+def _catalog_protocol_features(runtime_contract: dict) -> frozenset[str]:
+    return protocol_features(
+        str(runtime_contract.get("protocol") or ""),
+        str(runtime_contract.get("protocol_version") or ""),
+    )
 
 
 class ManifestValidator:
@@ -81,16 +89,18 @@ class ManifestValidator:
                                 errors.append(f"manifest.runtime_contract.{field}[{i}] must be a string or object")
 
         runtime_protocol = runtime_contract if isinstance(runtime_contract, dict) else {}
-        is_v06 = runtime_protocol.get("protocol") == "CF-FARP" and runtime_protocol.get("protocol_version") == "0.6"
-        is_v07 = runtime_protocol.get("protocol") == "CF-FARP" and runtime_protocol.get("protocol_version") == "0.7"
-        is_v08 = runtime_protocol.get("protocol") == "CF-FARP" and runtime_protocol.get("protocol_version") == "0.8"
-        is_v09 = runtime_protocol.get("protocol") == "CF-FARP" and runtime_protocol.get("protocol_version") == "0.9"
-        is_v10 = runtime_protocol.get("protocol") == "CF-FARP" and runtime_protocol.get("protocol_version") == "1.0"
-        is_typed_protocol = is_v08 or is_v09 or is_v10
-        if is_v06 or is_v07 or is_typed_protocol:
+        protocol_features = _catalog_protocol_features(runtime_protocol)
+        protocol_label = f"{runtime_protocol.get('protocol') or 'unknown'}@{runtime_protocol.get('protocol_version') or 'unknown'}"
+        requires_base_contract = "base_contract" in protocol_features
+        is_typed_protocol = "typed_control_edges" in protocol_features
+        uses_tool_transparency = "tool_transparency" in protocol_features
+        uses_execution_plan = "execution_plan" in protocol_features
+        uses_asset_registry = "asset_registry" in protocol_features
+        supports_portable_dlc = "portable_dlc" in protocol_features
+        if requires_base_contract:
             base_contract = manifest.get("base_contract")
             if not isinstance(base_contract, dict) or base_contract.get("id") != "CARTRIDGEFLOW-BASE" or not base_contract.get("version"):
-                errors.append(f"CF-FARP@{'1.0' if is_v10 else '0.9' if is_v09 else '0.8' if is_v08 else '0.7' if is_v07 else '0.6'} requires manifest.base_contract with id CARTRIDGEFLOW-BASE and a version")
+                errors.append(f"{protocol_label} requires manifest.base_contract with id CARTRIDGEFLOW-BASE and a version")
         if is_typed_protocol:
             required_profiles = {str(item) for item in runtime_protocol.get("required_profiles") or [] if isinstance(item, str)}
             required_capabilities = {str(item) for item in runtime_protocol.get("required_capabilities") or [] if isinstance(item, str)}
@@ -104,7 +114,7 @@ class ManifestValidator:
                 "flow_analysis_report_v1",
                 "analysis_report_freshness_guard",
             }
-            if is_v09 or is_v10:
+            if uses_tool_transparency:
                 minimum_profiles.add("tool_transparency")
                 minimum_capabilities.update({
                     "mcp_source_model_v1",
@@ -115,7 +125,7 @@ class ManifestValidator:
                     "portable_dlc_descriptor_v3",
                     "tool_resource_catalog_v2",
                 })
-            if is_v10:
+            if uses_execution_plan:
                 minimum_profiles.add("execution_plan_runtime")
                 minimum_capabilities.update({
                     "execution_plan_v1_authoring",
@@ -128,9 +138,9 @@ class ManifestValidator:
                     "execution_plan_source_digest_guard",
                 })
             for item in sorted(minimum_profiles - required_profiles):
-                errors.append(f"CF-FARP@{'1.0' if is_v10 else '0.9' if is_v09 else '0.8'} requires runtime_contract.required_profiles to include {item}")
+                errors.append(f"{protocol_label} requires runtime_contract.required_profiles to include {item}")
             for item in sorted(minimum_capabilities - required_capabilities):
-                errors.append(f"CF-FARP@{'1.0' if is_v10 else '0.9' if is_v09 else '0.8'} requires runtime_contract.required_capabilities to include {item}")
+                errors.append(f"{protocol_label} requires runtime_contract.required_capabilities to include {item}")
 
         protocol_extensions = manifest.get("protocol_extensions", [])
         if not isinstance(protocol_extensions, list):
@@ -292,7 +302,7 @@ class ManifestValidator:
                     errors.append(f"manifest.mcp_tools[{i}].tool is required")
                 if "required" in tool and not isinstance(tool.get("required"), bool):
                     errors.append(f"manifest.mcp_tools[{i}].required must be a boolean")
-                if is_v06 or is_v07 or is_typed_protocol:
+                if supports_portable_dlc:
                     self._reject_llm_recipe_local_fields(tool, f"manifest.mcp_tools[{i}]", errors)
                     tool_type = tool.get("type") or "builtin"
                     resource_role = str(tool.get("resource_role") or "").strip()
@@ -300,10 +310,10 @@ class ManifestValidator:
                         errors.append(f"manifest.mcp_tools[{i}].resource_role is required for external tools")
                     elif resource_role and resource_role not in resource_roles:
                         errors.append(f"manifest.mcp_tools[{i}].resource_role must reference resource_requirements")
-                    if (is_v09 or is_v10) and tool_type == "cartridge_dlc":
+                    if uses_tool_transparency and tool_type == "cartridge_dlc":
                         transparency = str(tool.get("transparency") or "").strip()
                         if transparency not in {"declared_graph", "source_model"}:
-                            errors.append(f"CF-FARP@{'1.0' if is_v10 else '0.9'} requires manifest.mcp_tools[{i}].transparency for cartridge_dlc tools")
+                            errors.append(f"{protocol_label} requires manifest.mcp_tools[{i}].transparency for cartridge_dlc tools")
                 contract = tool.get("contract")
                 if contract is not None:
                     if not isinstance(contract, dict):
@@ -321,7 +331,7 @@ class ManifestValidator:
         if portable_dlc is not None:
             if not isinstance(portable_dlc, dict):
                 errors.append("manifest.portable_dlc must be an object")
-            elif not (is_v06 or is_v07 or is_typed_protocol):
+            elif not supports_portable_dlc:
                 errors.append("manifest.portable_dlc activation requires a supported CF-FARP version")
             else:
                 try:
@@ -329,10 +339,10 @@ class ManifestValidator:
                 except PortableDlcValidationError as exc:
                     errors.append(str(exc))
 
-        if is_v07 or is_typed_protocol:
+        if uses_asset_registry:
             asset_registry = manifest.get("asset_registry")
             if not isinstance(asset_registry, str) or not asset_registry.strip():
-                errors.append(f"CF-FARP@{'1.0' if is_v10 else '0.9' if is_v09 else '0.8' if is_v08 else '0.7'} requires manifest.asset_registry")
+                errors.append(f"{protocol_label} requires manifest.asset_registry")
             else:
                 try:
                     bundle = load_asset_bundle(package_path, manifest)

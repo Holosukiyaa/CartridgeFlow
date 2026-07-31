@@ -22,6 +22,45 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from backend.api_models import (
+    AIFlowSelection,
+    AIFlowStewardPayload,
+    AnnotationSavePayload,
+    AuthoringSimulationPayload,
+    CartridgeAssetPayload,
+    CartridgeCloneToDevPayload,
+    CartridgeImportPayload,
+    CartridgePackagePayload,
+    CartridgeRunControl,
+    CartridgeRunCreate,
+    DevFlowCreate,
+    DevFlowFileSave,
+    DevFlowFilesPayload,
+    EdgeSavePayload,
+    FlowAnalysisPayload,
+    InteractionComponentPayload,
+    LLMAssignmentsPayload,
+    LLMCodexImportPayload,
+    LLMDetectPayload,
+    LLMImportTextPayload,
+    LLMProviderPayload,
+    LLMSimpleProviderPayload,
+    LLMTestPayload,
+    LayoutSavePayload,
+    McpOperationCreatePayload,
+    McpSourcePatchPayload,
+    McpSourceReplacePayload,
+    McpToolPayload,
+    NodeCreatePayload,
+    NodeDeletePayload,
+    NodeUpdatePayload,
+    PendingInteractionAnswerPayload,
+    SandboxHostRequestPayload,
+    StudioCredentialPayload,
+    StudioResourcesPayload,
+    UploadTextPayload,
+)
+
 from core.cartridge import CartridgeRegistry, CartridgeRunner
 from core.cartridge.validator import ManifestValidationError
 from core.data_paths import (
@@ -50,7 +89,6 @@ from core.cartridge.assets import (
     write_component,
 )
 from core.lab import DevFlowManager, FlowGraphBuilder
-from core.lab.todo import parse_todo_markdown
 from core.llm.config_manager import ensure_llm_config
 from core.runtime.errors import RuntimeFailure, build_runtime_error, write_diagnostic
 from core.studio.environment import ensure_local_credentials
@@ -60,12 +98,13 @@ from core.protocol import (
     apply_protocol_certification_label,
     build_compatibility_report,
     build_protocol_certification_report,
+    has_protocol_feature,
     load_protocol_release_catalog,
     load_base_implementation,
 )
 
 ensure_data_layout(ROOT)
-PRODUCT_VERSION = (ROOT / "VERSION").read_text(encoding="utf-8").strip().removeprefix("CartridgeFlowLite-").removeprefix("CartridgeFlow-")
+PRODUCT_VERSION = (ROOT / "VERSION").read_text(encoding="utf-8").strip().removeprefix("CartridgeFlow-")
 
 MAX_UPLOAD_TEXT_BYTES = 16 * 1024 * 1024
 MAX_CARTRIDGE_ARCHIVE_BYTES = 128 * 1024 * 1024
@@ -308,267 +347,14 @@ def write_flow_layout_log(cartridge_id: str, graph: dict, reason: str):
         fh.write(_json.dumps(log_entry, ensure_ascii=False) + "\n")
 
 
-class CartridgeRunCreate(BaseModel):
-    cartridge_id: str
-    inputs: dict = Field(default_factory=dict)
-    test_mode: dict | None = None
-
-
-class CartridgeRunControl(BaseModel):
-    action: str
-    target_node: str | None = None
-    confirm_side_effect: bool = False
-    feedback: dict = Field(default_factory=dict)
-
-
-class PendingInteractionAnswerPayload(BaseModel):
-    values: dict = Field(default_factory=dict)
-    answer: str | None = None
-    action_id: str | None = None
-    input_revision: str | int | None = None
-    idempotency_key: str | None = None
-    draft_hash: str | None = None
-
-
-class SandboxHostRequestPayload(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
-    schema_: str = Field(alias="schema")
-    type: str
-    request_id: str
-    channel_id: str
-    run_id: str
-    cartridge_id: str
-    node_id: str
-    component_id: str
-    interaction_id: str
-    nonce: str
-    payload: dict = Field(default_factory=dict)
-
-class DevFlowCreate(BaseModel):
-    flow_id: str
-    name: str
-    description: str = ""
-
-
-class AuthoringSimulationPayload(BaseModel):
-    keep_temporary_cartridge: bool = False
-
-
-class CartridgeCloneToDevPayload(BaseModel):
-    new_id: str
-    name: str = ""
-    description: str = ""
-
-
-class DevFlowFileSave(BaseModel):
-    content: str
-
-
-class DevFlowFilesPayload(BaseModel):
-    files: dict = Field(default_factory=dict)
-
-
-class FlowAnalysisPayload(DevFlowFilesPayload):
-    target: str = "draft"
-
-
-class AIFlowSelection(BaseModel):
-    node_ids: list[str] = Field(default_factory=list)
-    edge_ids: list[str] = Field(default_factory=list)
-    field_paths: list[str] = Field(default_factory=list)
-
-
-class AIFlowStewardPayload(BaseModel):
-    message: str
-    mode: str = "guided"
-    view: str = "engineering"
-    revision: str = ""
-    tool: str = "none"
-    selection: AIFlowSelection = Field(default_factory=AIFlowSelection)
-    scope_policy: str = "selected_and_direct_edges"
-
-
-class CartridgeAssetPayload(BaseModel):
-    id: str
-    kind: str
-    path: str
-    media_type: str
-    content: str = ""
-    encoding: str = "utf-8"
-
-
-class InteractionComponentPayload(BaseModel):
-    component: dict = Field(default_factory=dict)
-
-
-class LLMProviderPayload(BaseModel):
-    id: str = ""
-    name: str = ""
-    api_type: str = "openai"
-    base_url: str = ""
-    api_key: str = ""
-    default_model: str = ""
-    wire_api: str = "chat_completions"
-    capabilities: list[str] = Field(default_factory=list)
-    available_models: list[str] = Field(default_factory=list)
-    adapter_profile: str = "standard"
-    enabled: bool = True
-    timeout: int = 120
-
-
-class LLMAssignmentsPayload(BaseModel):
-    version: int = 1
-    defaults: dict = Field(default_factory=dict)
-    cartridges: dict = Field(default_factory=dict)
-    nodes: dict = Field(default_factory=dict)
-
-
-class LLMTestPayload(BaseModel):
-    provider_id: str
-    model: str = ""
-    prompt: str = "OK"
-    vision: bool = False
-
-
-class LLMDetectPayload(BaseModel):
-    provider_id: str = ""
-    base_url: str = ""
-    api_key: str = ""
-    preferred_model: str = ""
-
-
-class LLMImportTextPayload(BaseModel):
-    content: str
-
-
-class LLMCodexImportPayload(BaseModel):
-    config_toml: str
-    auth_json: dict = Field(default_factory=dict)
-
-
-class LLMSimpleProviderPayload(BaseModel):
-    provider: str
-    api_key: str
-    base_url: str = ""
-    model: str = ""
-
-
-class StudioResourcesPayload(BaseModel):
-    model_config = ConfigDict(extra="allow")
-
-    version: int = 1
-    tools: list[dict] = Field(default_factory=list)
-    bindings: dict = Field(default_factory=dict)
-
-
-class StudioCredentialPayload(BaseModel):
-    key: str = ""
-    label: str = ""
-    value: str = ""
-    secret: bool = True
-
-
-class NodeDeletePayload(BaseModel):
-    files: dict = Field(default_factory=dict)
-
-
-class NodeUpdatePayload(BaseModel):
-    files: dict = Field(default_factory=dict)
-    title: str | None = None
-    type: str | None = None
-    action: str | None = None
-    next: str | None = None
-    kind: str | None = None
-    executor: str | None = None
-    effect: str | None = None
-    display_name: str | None = None
-    component_ref: str | None = None
-    interaction_mode: str | None = None
-    input_binding: dict | None = None
-    action_routes: dict | None = None
-    output: str | None = None
-    display: dict | None = None
-    input_kind: str | None = None
-    source: str | None = None
-    input_schema: dict | str | None = None
-    output_contract: str | None = None
-    decision_contract: dict | None = None
-    decision_test_mode: str | None = None
-    mock_decision_envelope: dict | None = None
-    primary_output: str | None = None
-    tool_binding: str | None = None
-    allowed_tools: list[str] | None = None
-    mcp_binding: dict | None = None
-    failure_policy: str | None = None
-    permission: str | None = None
-    audit_log: bool | None = None
-    endpoint: str | None = None
-    timeout_ms: int | None = None
-    agent: str | None = None
-    tools: list[dict] | None = None
-    params: dict | None = None
-    model_role: str | None = None
-    layout: dict | None = None
-    inputs: dict | None = None
-    outputs: dict | None = None
-
-
-class NodeCreatePayload(BaseModel):
-    files: dict = Field(default_factory=dict)
-    template_id: str
-    node_id: str
-    title: str | None = None
-    after_node_id: str | None = None
-    insert_mode: str = "insert"
-
-
-class LayoutSavePayload(BaseModel):
-    files: dict = Field(default_factory=dict)
-    layout: dict = Field(default_factory=dict)  # {node_id: {"x": int, "y": int}}
-
-
-class EdgeSavePayload(BaseModel):
-    files: dict = Field(default_factory=dict)
-    edges: list[dict] = Field(default_factory=list)  # [{"from": "a", "to": "b"}]
-
-
-class AnnotationSavePayload(BaseModel):
-    annotations: list[dict] = Field(default_factory=list)
-
-
-class McpToolPayload(BaseModel):
-    id: str = ""
-    name: str = ""
-    type: str = "builtin"
-    server: str = "filesystem"
-    tool: str = ""
-    description: str = ""
-    default_params: dict = Field(default_factory=dict)
-    params_schema: dict = Field(default_factory=dict)
-    required: bool = False
-    contract: dict = Field(default_factory=dict)
-    enabled: bool = True
-
-
-class McpSourcePatchPayload(BaseModel):
-    expected_source_digest: str
-    graph: dict = Field(default_factory=dict)
-
-
-class McpOperationCreatePayload(BaseModel):
-    expected_source_digest: str
-    operation: dict = Field(default_factory=dict)
-
-
-class McpSourceReplacePayload(BaseModel):
-    expected_source_digest: str
-    source: str
-
-
 def _is_typed_root_flow(root_flow: dict) -> bool:
     protocol = root_flow.get("protocol") if isinstance(root_flow.get("protocol"), dict) else {}
-    return protocol.get("id") == "CF-FARP" and str(protocol.get("version")) in {"0.8", "0.9"}
+    return has_protocol_feature(
+        str(protocol.get("id") or ""),
+        str(protocol.get("version") or ""),
+        "typed_control_edges",
+        ROOT,
+    )
 
 
 def _edge_scope(edge: dict) -> str:
@@ -642,17 +428,6 @@ def _ensure_typed_node_contracts(root_flow: dict, state: dict) -> None:
             state["outputs"] = {}
 
 
-class UploadTextPayload(BaseModel):
-    filename: str = "upload.txt"
-    content: str = ""
-
-
-class CartridgeImportPayload(BaseModel):
-    filename: str = "cartridge.cartridge.zip"
-    content_base64: str = ""
-    install_mode: str = "keep_existing"
-
-
 def _validate_cartridge_archive_members(members, extract_dir: Path) -> None:
     import stat as _stat
 
@@ -690,10 +465,6 @@ def _validate_cartridge_archive_members(members, extract_dir: Path) -> None:
         total_size += max(0, int(member.file_size))
         if total_size > MAX_CARTRIDGE_TOTAL_UNCOMPRESSED_BYTES:
             raise HTTPException(status_code=413, detail="Cartridge zip expands beyond the allowed size")
-
-
-class CartridgePackagePayload(BaseModel):
-    package_mode: str = "dev"
 
 
 @app.post("/api/uploads/file")
@@ -762,38 +533,6 @@ def get_studio_conformance():
             "command": "python scripts/run_conformance.py",
         }
     return {"available": True, "report": report}
-
-
-@app.get("/api/studio/todo")
-def get_studio_todo():
-    todo_path = ROOT / "docs" / "planning" / "TODO.md"
-    template_path = ROOT / "docs" / "planning" / "TODO_TEMPLATE.md"
-    source_path = todo_path if todo_path.is_file() else template_path
-    if not source_path.is_file():
-        raise HTTPException(status_code=404, detail="TODO.md and TODO_TEMPLATE.md are missing")
-    result = parse_todo_markdown(source_path.read_text(encoding="utf-8"))
-    return {
-        **result,
-        "source": source_path.name,
-        "file_url": "/api/studio/todo/file",
-        "template_url": "/api/studio/todo/template",
-    }
-
-
-@app.get("/api/studio/todo/file")
-def get_studio_todo_file():
-    todo_path = ROOT / "docs" / "planning" / "TODO.md"
-    if not todo_path.is_file():
-        raise HTTPException(status_code=404, detail="TODO.md is missing")
-    return FileResponse(todo_path, media_type="text/markdown; charset=utf-8")
-
-
-@app.get("/api/studio/todo/template")
-def get_studio_todo_template():
-    template_path = ROOT / "docs" / "planning" / "TODO_TEMPLATE.md"
-    if not template_path.is_file():
-        raise HTTPException(status_code=404, detail="TODO_TEMPLATE.md is missing")
-    return FileResponse(template_path, media_type="text/markdown; charset=utf-8")
 
 
 @app.get("/api/runtimes")
@@ -2318,7 +2057,7 @@ def _editable_mcp_source_context(cartridge_id: str, node_id: str) -> tuple[dict,
     source = source_path.read_text(encoding="utf-8")
     source_model = parse_mcp_python_file(source_path, display_path=entry)
     if not source_model.get("ok"):
-        raise HTTPException(status_code=409, detail={"code": "MCP_SOURCE_INVALID", "message": "MCP source does not pass the v0.9 static parser", "findings": source_model.get("findings") or []})
+        raise HTTPException(status_code=409, detail={"code": "MCP_SOURCE_INVALID", "message": "MCP source does not pass the protocol static parser", "findings": source_model.get("findings") or []})
     if source_model.get("node_id") != node_id:
         raise HTTPException(status_code=409, detail={"code": "MCP_NODE_ID_MISMATCH", "message": "MCP source node_id does not match the requested node"})
     return cartridge, manifest, descriptor, source_path, source, source_model
@@ -2685,11 +2424,15 @@ def analyze_lab_flow(cartridge_id: str, payload: FlowAnalysisPayload):
         from core.lab.flow_analyzer import ANALYSIS_TARGETS, analyze_flow
         if payload.target not in ANALYSIS_TARGETS:
             raise HTTPException(status_code=400, detail="target must be draft, dev, preview, production, package, or publish")
+        root_flow = preview.get("root_flow") or {}
+        protocol = root_flow.get("protocol") if isinstance(root_flow.get("protocol"), dict) else {}
+        catalog = load_protocol_release_catalog(ROOT)
         return analyze_flow(
-            preview.get("root_flow") or {},
+            root_flow,
             preview,
             target=payload.target,
             base=load_base_implementation(ROOT),
+            runtime_adapter=catalog.runtime_adapter(str(protocol.get("id") or ""), str(protocol.get("version") or "")),
         )
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))

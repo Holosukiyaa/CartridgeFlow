@@ -9,6 +9,7 @@ class BaseManifestError(ValueError):
 
 
 BASE_IMPLEMENTATION_PATH = Path("config/base/BASE_IMPLEMENTATION.json")
+_ADAPTER_STATUSES = {"partial", "supported"}
 
 
 def load_base_implementation(root: str | Path) -> dict:
@@ -47,9 +48,49 @@ def validate_base_implementation(data: dict) -> None:
             raise BaseManifestError(f"base.supported_protocols[{index}] must be an object")
         if not item.get("id") or not item.get("version"):
             raise BaseManifestError(f"base.supported_protocols[{index}] requires id and version")
+    adapters = data.get("supported_protocol_adapters", [])
+    if not isinstance(adapters, list):
+        raise BaseManifestError("base.supported_protocol_adapters must be an array")
+    adapter_ids: set[str] = set()
+    for index, item in enumerate(adapters):
+        if not isinstance(item, dict):
+            raise BaseManifestError(f"base.supported_protocol_adapters[{index}] must be an object")
+        adapter_id = item.get("id")
+        if not isinstance(adapter_id, str) or not adapter_id.strip():
+            raise BaseManifestError(f"base.supported_protocol_adapters[{index}].id is required")
+        if adapter_id in adapter_ids:
+            raise BaseManifestError(f"base.supported_protocol_adapters duplicates {adapter_id}")
+        adapter_ids.add(adapter_id)
+        if item.get("status") not in _ADAPTER_STATUSES:
+            raise BaseManifestError(f"base.supported_protocol_adapters[{index}].status is invalid")
     for field in ["profiles", "capabilities", "tool_packs"]:
         if not isinstance(data.get(field), list):
             raise BaseManifestError(f"base.{field} must be an array")
         for index, value in enumerate(data.get(field) or []):
             if not isinstance(value, str) or not value.strip():
                 raise BaseManifestError(f"base.{field}[{index}] must be a non-empty string")
+
+
+def protocol_adapter_status(base: dict, adapter_id: str | None) -> str | None:
+    if not adapter_id:
+        return None
+    for item in base.get("supported_protocol_adapters") or []:
+        if isinstance(item, dict) and item.get("id") == adapter_id:
+            status = item.get("status")
+            return str(status) if status in _ADAPTER_STATUSES else None
+    return None
+
+
+def supports_protocol_release(base: dict, release: dict | None) -> bool:
+    """Resolve Base support from an implementation adapter, then legacy exact versions."""
+    if not isinstance(release, dict):
+        return False
+    adapter = release.get("runtime_adapter")
+    if protocol_adapter_status(base, str(adapter) if adapter else None):
+        return True
+    expected = (str(release.get("id") or ""), str(release.get("version") or ""))
+    return any(
+        isinstance(item, dict)
+        and (str(item.get("id") or ""), str(item.get("version") or "")) == expected
+        for item in base.get("supported_protocols") or []
+    )

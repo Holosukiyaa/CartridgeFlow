@@ -77,15 +77,11 @@ class CleanBaseHygieneTests(unittest.TestCase):
 
     def test_documentation_has_canonical_entry_points(self):
         expected = (
-            ROOT / "docs" / "README.md",
-            ROOT / "docs" / "overview" / "PROJECT_STRUCTURE.md",
             ROOT / "docs" / "development" / "FILE_INVENTORY.md",
-            ROOT / "docs" / "architecture" / "PORTABLE_DLC_ARCHITECTURE.md",
-            ROOT / "docs" / "planning" / "ROADMAP.md",
-            ROOT / "docs" / "planning" / "TODO.md",
-            ROOT / "docs" / "planning" / "TODO_TEMPLATE.md",
-            ROOT / "docs" / "protocol" / "governance" / "GOVERNANCE.md",
             ROOT / "protocol" / "README.md",
+            ROOT / "protocol" / "governance" / "GOVERNANCE.md",
+            ROOT / "protocol" / "base" / "0.2" / "release.json",
+            ROOT / "protocol" / "flow-authoring" / "1.0" / "README.md",
         )
 
         self.assertTrue(all(path.is_file() for path in expected))

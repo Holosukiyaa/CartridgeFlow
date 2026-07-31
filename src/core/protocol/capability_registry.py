@@ -15,15 +15,13 @@ class ProtocolRegistry:
         self.root = Path(root)
         self.protocol_dir = self.root / "protocol"
         self.base_dir = self.protocol_dir / "base"
-        self.vocabulary_dir = self.protocol_dir / "vocabulary"
-        self.tooling_dir = self.protocol_dir / "tooling"
         self.overlay_dirs = [Path(item) for item in (overlay_dirs or [])]
         self.release_catalog: ProtocolReleaseCatalog = load_protocol_release_catalog(self.root)
         self.protocols = self._load_protocols()
         self.protocol_history = self._load_protocol_history()
-        self.profiles = self._load_versioned_id_set("profiles", "profiles")
-        self.capabilities = self._load_versioned_id_set("capabilities", "capabilities")
-        self.tool_packs = self._load_id_set(self.tooling_dir / "tool_packs.json", "tool_packs")
+        self.profiles = self._load_catalog_id_set("profiles", "profiles")
+        self.capabilities = self._load_catalog_id_set("capabilities", "capabilities")
+        self.tool_packs = self._load_base_tool_packs()
 
     def validate_base(self, base: dict) -> list[dict]:
         findings: list[dict] = []
@@ -55,7 +53,7 @@ class ProtocolRegistry:
     def _load_protocols(self) -> set[tuple[str, str]]:
         result = {(item["id"], item["version"]) for item in self.release_catalog.releases}
         result.update((item["id"], item["version"]) for item in self.release_catalog.release_envelopes)
-        for path in self.base_dir.glob("CARTRIDGEFLOW-BASE-*.json"):
+        for path in self.base_dir.glob("*/release.json"):
             data = self._read_json(path)
             if data.get("id") and data.get("version"):
                 result.add((str(data["id"]), str(data["version"])))
@@ -89,25 +87,33 @@ class ProtocolRegistry:
             result.add(item["id"])
         return result
 
-    def _load_versioned_id_set(self, stem: str, key: str) -> set[str]:
-        """Merge the base vocabulary with protocol-version vocabulary snapshots."""
+    def _load_catalog_id_set(self, field: str, key: str) -> set[str]:
+        """Merge vocabularies declared by the versioned release catalog."""
         result: set[str] = set()
-        paths = sorted({
-            *self.vocabulary_dir.glob(f"{stem}*.json"),
-            *self.vocabulary_dir.glob(f"release-envelope-{stem}-*.json"),
-        })
+        releases = [*self.release_catalog.releases, *self.release_catalog.release_envelopes]
+        paths = sorted({self.protocol_dir / str(release[field]) for release in releases})
         if not paths:
-            raise ProtocolRegistryError(f"protocol vocabulary file not found: {stem}.json")
+            raise ProtocolRegistryError(f"protocol catalog does not declare any {field} files")
         for path in paths:
             data = self._read_json(path)
             items = data.get(key)
             if not isinstance(items, list):
-                raise ProtocolRegistryError(f"protocol/{path.name}.{key} must be an array")
+                raise ProtocolRegistryError(f"{path.relative_to(self.root)}.{key} must be an array")
             for index, item in enumerate(items):
                 if not isinstance(item, dict) or not isinstance(item.get("id"), str) or not item.get("id").strip():
-                    raise ProtocolRegistryError(f"protocol/{path.name}.{key}[{index}].id is required")
+                    raise ProtocolRegistryError(f"{path.relative_to(self.root)}.{key}[{index}].id is required")
                 result.add(item["id"])
         return result
+
+    def _load_base_tool_packs(self) -> set[str]:
+        base_contract = self.release_catalog.data["base_contract"]
+        version = str(base_contract["version"])
+        release_path = self.base_dir / version / "release.json"
+        release = self._read_json(release_path)
+        tool_packs_file = release.get("tool_packs_file")
+        if not isinstance(tool_packs_file, str) or not tool_packs_file:
+            raise ProtocolRegistryError(f"{release_path.relative_to(self.root)}.tool_packs_file is required")
+        return self._load_id_set(self.protocol_dir / tool_packs_file, "tool_packs")
 
     def _read_json(self, path: Path) -> dict:
         if not path.is_file():

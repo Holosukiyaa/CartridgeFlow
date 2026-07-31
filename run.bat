@@ -15,12 +15,12 @@ if not exist "%ROOT%src\frontend\node_modules\.bin\vite.cmd" goto bootstrap
 :launch
 python "%ROOT%scripts\launch.py"
 set "EXIT_CODE=%ERRORLEVEL%"
-if not "%EXIT_CODE%"=="0" echo CartridgeFlowLite exited with code %EXIT_CODE%.
+if not "%EXIT_CODE%"=="0" echo CartridgeFlow exited with code %EXIT_CODE%.
 pause
 exit /b %EXIT_CODE%
 
 :bootstrap
-echo Installing CartridgeFlowLite dependencies with the system Python and Node.js...
+echo Installing CartridgeFlow dependencies with the system Python and Node.js...
 powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%scripts\bootstrap.ps1"
 if errorlevel 1 goto setup_failed
 goto launch

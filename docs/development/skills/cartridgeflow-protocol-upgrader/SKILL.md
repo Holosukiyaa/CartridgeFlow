@@ -11,9 +11,9 @@ Use this skill to make versioned protocol changes without silently breaking exis
 
 Before editing, read:
 
-- `docs/protocol/governance/GOVERNANCE.md`
-- The current source protocol files in `docs/protocol/`
-- The machine-readable registry in `protocol/`
+- `protocol/governance/GOVERNANCE.md`
+- The current version directory under `protocol/`
+- `protocol/catalog/release_manifest.json`
 - `config/base/BASE_IMPLEMENTATION.json`
 - `references/upgrade-checklist.md` when applying an upgrade, not merely discussing one.
 
@@ -33,11 +33,11 @@ Use an in-place documentation patch only for spelling, clarification that does n
 ## Upgrade Workflow
 
 1. Preserve existing protocol meaning. Do not rewrite v0.1 to mean v0.2.
-2. Create a new source document under `docs/protocol/flow-authoring/`, for example `CARTRIDGEFLOW_FLOW_AUTHORING_RUNTIME_PROTOCOL_v0.2.md`.
-3. Add a machine-readable protocol file under `protocol/releases/`, for example `protocol/releases/CF-FARP-0.2.json`.
-4. Add new capability/profile vocabulary to `protocol/vocabulary/capabilities.json` and `protocol/vocabulary/profiles.json`.
-5. Do not add the new protocol to `config/base/BASE_IMPLEMENTATION.json` until implementation and tests support it.
-6. Update `docs/protocol/governance/GOVERNANCE.md` so future agents see the new protocol.
+2. Create a complete version directory under the appropriate protocol category, for example `protocol/flow-authoring/1.1/` or `protocol/base/0.3/`.
+3. Add its machine-readable `release.json` in the same version directory.
+4. Add version-local `capabilities.json` and `profiles.json` in the same directory when the protocol declares them.
+5. Declare `runtime_adapter` and `features` in both release records. Reuse an existing adapter only when runtime semantics are unchanged; otherwise add a new adapter implementation and then declare it in `config/base/BASE_IMPLEMENTATION.json.supported_protocol_adapters` after tests support it.
+6. Update `protocol/governance/GOVERNANCE.md` so future agents see the new protocol.
 7. Add or update tests proving the registry, docs, and base support declarations are consistent.
 8. Only apply certification labels after the relevant certification report passes.
 

@@ -10,8 +10,8 @@
   background: var(--paper);
 }
 
-.cf-lite-shell,
-.cf-lite-main {
+.cf-workbench-shell,
+.cf-workbench-main {
   width: 100%;
   height: 100dvh;
   min-width: 0;
@@ -1246,7 +1246,7 @@
   line-height: 1.45;
 }
 
-/* Shared controls retained by the Lite workbench. */
+/* Shared controls retained by the workbench. */
 .cf-badge {
   display: inline-flex !important;
   align-items: center !important;

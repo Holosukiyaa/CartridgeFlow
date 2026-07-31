@@ -12,6 +12,7 @@ if str(SOURCE_ROOT) not in sys.path:
     sys.path.insert(0, str(SOURCE_ROOT))
 
 from core.protocol import load_base_implementation, load_protocol_release_catalog
+from core.protocol.base_manifest import supports_protocol_release
 
 
 def audit(root: Path = ROOT) -> list[str]:
@@ -21,16 +22,9 @@ def audit(root: Path = ROOT) -> list[str]:
     root_files = sorted(path.name for path in protocol_dir.iterdir() if path.is_file() and path.name != "README.md")
     if root_files:
         errors.append(f"protocol root must only contain README.md and category directories: {root_files}")
-    for directory in ("base", "catalog", "governance", "releases", "tooling", "vocabulary"):
+    for directory in ("base", "catalog", "flow-authoring", "governance", "release-envelope"):
         if not (protocol_dir / directory).is_dir():
             errors.append(f"protocol/{directory}/ directory is missing")
-
-    protocol_docs = root / "docs" / "protocol"
-    flat_documents = [path.name for path in protocol_docs.glob("*.md") if path.name != "README.md"]
-    if flat_documents:
-        errors.append(f"docs/protocol must not contain flat release documents: {sorted(flat_documents)}")
-    _require_text(protocol_docs / "README.md", "release_manifest.json", errors)
-    _require_text(protocol_docs / "README.md", "release-envelope", errors)
 
     known = {(item["id"], item["version"]) for item in catalog.releases}
     published = {
@@ -46,6 +40,8 @@ def audit(root: Path = ROOT) -> list[str]:
 
     for release in catalog.releases:
         label = f"{release['id']}@{release['version']}"
+        if release["lifecycle"] in {"current", "supported_previous"} and not release.get("runtime_adapter"):
+            errors.append(f"{label}: published releases must declare a runtime_adapter")
         registry_path = protocol_dir / release["registry"]
         if not registry_path.is_file():
             errors.append(f"{label}: registry snapshot is missing: {release['registry']}")
@@ -53,6 +49,9 @@ def audit(root: Path = ROOT) -> list[str]:
         registry = _read_json(registry_path, errors)
         if registry and (str(registry.get("id")), str(registry.get("version"))) != (release["id"], release["version"]):
             errors.append(f"{label}: registry snapshot identity does not match release manifest")
+        for field in ("runtime_adapter", "features"):
+            if field in release and registry and registry.get(field) != release[field]:
+                errors.append(f"{label}: release manifest {field} does not match registry {field}")
         for field, registry_field in (("profiles", "profiles_file"), ("capabilities", "capabilities_file")):
             value = release.get(field)
             if not isinstance(value, str) or not (protocol_dir / value).is_file():
@@ -62,8 +61,8 @@ def audit(root: Path = ROOT) -> list[str]:
         document = release.get("document")
         if document and not (root / document).is_file():
             errors.append(f"{label}: protocol document is missing: {document}")
-        elif document and Path(document).parent != Path("docs/protocol/flow-authoring"):
-            errors.append(f"{label}: protocol document must live under docs/protocol/flow-authoring/")
+        elif document and Path(document).parent != Path("protocol/flow-authoring") / release["version"]:
+            errors.append(f"{label}: protocol document must live under protocol/flow-authoring/{release['version']}/")
 
     envelope_known = {(item["id"], item["version"]) for item in catalog.release_envelopes}
     for release in catalog.release_envelopes:
@@ -84,29 +83,32 @@ def audit(root: Path = ROOT) -> list[str]:
         document = release.get("document")
         if not (root / document).is_file():
             errors.append(f"{label}: protocol document is missing: {document}")
-        elif Path(document).parent != Path("docs/protocol/release-envelope"):
-            errors.append(f"{label}: protocol document must live under docs/protocol/release-envelope/")
+        elif Path(document).parent != Path("protocol/release-envelope") / release["version"]:
+            errors.append(f"{label}: protocol document must live under protocol/release-envelope/{release['version']}/")
 
     envelope_snapshot_keys = {
         (data.get("id"), str(data.get("version")))
-        for path in (protocol_dir / "releases").glob("CF-CRE-*.json")
-        for data in [_read_json(path, errors)]
+        for release in catalog.release_envelopes
+        for data in [_read_json(protocol_dir / release["registry"], errors)]
         if data
     }
     if envelope_snapshot_keys != envelope_known:
         errors.append(f"release envelope manifest and CF-CRE snapshots differ: manifest={sorted(envelope_known)}, snapshots={sorted(envelope_snapshot_keys)}")
 
-    base_registry = _read_json(protocol_dir / "base" / "CARTRIDGEFLOW-BASE-0.2.json", errors)
+    base_contract = catalog.data["base_contract"]
+    base_version = str(base_contract["version"])
+    base_registry = _read_json(protocol_dir / "base" / base_version / "release.json", errors)
     base_document = base_registry.get("document") if base_registry else None
-    if base_document != "docs/protocol/base-contract/CARTRIDGEFLOW_BASE_CONTRACT_v0.2.md":
-        errors.append("CARTRIDGEFLOW-BASE-0.2 document must live under docs/protocol/base-contract/")
+    expected_base_document = f"protocol/base/{base_version}/specification.md"
+    if base_document != expected_base_document:
+        errors.append(f"{base_contract['id']}@{base_version} document must live under protocol/base/{base_version}/")
     elif not (root / base_document).is_file():
         errors.append("CARTRIDGEFLOW-BASE-0.2 document is missing")
 
     snapshot_keys = {
         (data.get("id"), str(data.get("version")))
-        for path in (protocol_dir / "releases").glob("CF-FARP-*.json")
-        for data in [_read_json(path, errors)]
+        for release in catalog.releases
+        for data in [_read_json(protocol_dir / release["registry"], errors)]
         if data
     }
     if snapshot_keys != known:
@@ -136,32 +138,24 @@ def audit(root: Path = ROOT) -> list[str]:
         errors.append(f"Base declares protocols that are not published by release manifest: {sorted(unknown_base)}")
     default = catalog.data["default_for_new_flows"]
     default_key = (str(default["id"]), str(default["version"]))
-    if default_key not in base_supported:
-        errors.append(f"Base must declare the default new-flow release: {default_key[0]}@{default_key[1]}")
+    default_release = catalog.get(*default_key)
+    if not supports_protocol_release(base, default_release):
+        errors.append(f"Base must support the default new-flow release through its adapter or legacy release declaration: {default_key[0]}@{default_key[1]}")
 
     _require_text(root / "src/core/protocol/capability_registry.py", "load_protocol_release_catalog", errors)
     _require_text(root / "src/core/lab/dev_flow.py", "self.default_protocol_version", errors)
     _require_text(root / "src/backend/main.py", "protocol_catalog", errors)
     _require_text(root / "src/frontend/src/pages/FlowWorkbench.tsx", "protocolCatalog", errors)
-    _require_text(root / "docs/protocol/governance/GOVERNANCE.md", "release_manifest.json", errors)
+    _require_text(protocol_dir / "governance/GOVERNANCE.md", "release_manifest.json", errors)
     for document in [
         "AGENT.md",
-        "docs/README.md",
         "protocol/README.md",
-        "docs/protocol/governance/GOVERNANCE.md",
-        "docs/planning/ROADMAP.md",
-        "docs/architecture/FLOW_AUTHORING_ANALYSIS_CONTRACT.md",
-        "docs/architecture/PORTABLE_DLC_ARCHITECTURE.md",
-        "docs/architecture/PERSONAL_RUNTIME_DISTRIBUTION_ARCHITECTURE.md",
+        "protocol/governance/GOVERNANCE.md",
     ]:
         _require_text(root / document, "release_manifest.json", errors)
 
     baseline_headers = {
-        "docs/README.md": "CF-FARP 1.0",
-        "docs/protocol/governance/GOVERNANCE.md": "CF-FARP@1.0",
-        "docs/planning/ROADMAP.md": "CF-FARP@1.0",
-        "docs/architecture/FLOW_AUTHORING_ANALYSIS_CONTRACT.md": "CF-FARP@1.0",
-        "docs/architecture/PORTABLE_DLC_ARCHITECTURE.md": "CF-FARP@1.0",
+        "protocol/governance/GOVERNANCE.md": "CF-FARP@1.0",
     }
     for document, marker in baseline_headers.items():
         header = "\n".join((root / document).read_text(encoding="utf-8").splitlines()[:24])

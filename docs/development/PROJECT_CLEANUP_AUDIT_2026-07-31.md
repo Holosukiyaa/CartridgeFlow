@@ -96,6 +96,7 @@ docs/
     FILE_INVENTORY.md
     PROJECT_CLEANUP_AUDIT_2026-07-31.md
     README.md
+    RUNTIME_TEAM_CF_CRE_FARP_DEVELOPMENT_GUIDE.md
     skills/
       cartridgeflow-flow-author/
         agents/

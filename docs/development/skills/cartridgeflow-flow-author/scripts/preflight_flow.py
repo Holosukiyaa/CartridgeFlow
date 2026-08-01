@@ -34,6 +34,7 @@ def main() -> int:
 
     from core.cartridge.validator import ManifestValidationError, ManifestValidator
     from core.lab.flow_analyzer import analyze_flow
+    from core.protocol import load_base_implementation
     from core.studio.resource_catalog import build_flow_resource_catalog
 
     manifest = _load_json(package / "manifest.json")
@@ -49,7 +50,9 @@ def main() -> int:
     except ManifestValidationError as exc:
         result["manifest"] = {"ok": False, "error": str(exc)}
 
-    analysis = analyze_flow(root_flow, manifest, target="dev")
+    # A v1 execution plan is runnable only relative to this checkout's Base
+    # declaration. Passing no Base makes every v1 cartridge look unsupported.
+    analysis = analyze_flow(root_flow, manifest, target="dev", base=load_base_implementation(repo))
     findings = analysis.get("findings") or []
     result["flow_analysis"] = {
         "blockers": sum(item.get("severity") == "blocker" for item in findings if isinstance(item, dict)),

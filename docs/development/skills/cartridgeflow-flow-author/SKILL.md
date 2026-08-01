@@ -2,12 +2,12 @@
 name: cartridgeflow-flow-author
 description: Create, extend, or repair editable CartridgeFlow development cartridges and root flows. Use when a user asks Codex to turn a business goal into a CartridgeFlow Flow, add process nodes, configure typed data contracts, bind models or MCP/DLC tools, or make a Flow pass the current executable CF-FARP@1.0 validation without repeated trial-and-error.
 metadata:
-  version: "1.2.0"
+  version: "1.9.0"
   protocol_alignment:
     label: "cf-farp-1-0-authoring-verified"
     protocol: "CF-FARP@1.0"
     scope: "skill workflow"
-    evidence: "workbench simulation, v1 conformance, package preflight, and protocol governance audit"
+    evidence: "workbench simulation, v1 conformance, package preflight, protocol governance audit, and end-to-end run verification"
 ---
 
 # CartridgeFlow Flow Author
@@ -31,12 +31,18 @@ Read `protocol/flow-authoring/1.0/README.md` and its listed normative modules be
 2. Identify whether the request creates a new development cartridge, changes an existing business flow, or adds a resource-backed node.
 3. For a new cartridge, use the workbench/API creation path so the asset registry and component files are generated. Do not hand-create a package skeleton.
 4. Model business steps as `states` and `execution_plan.edges`; never create `next`, `control_edges`, action routes, or visual-only executable edges in a v1 Flow. Keep start and terminal nodes locked.
-5. For every `type: process` node in a v1 Flow, declare `inputs`, `outputs`, and an explicit `failure` edge when it may fail; every input needs `required` and exactly one `schema` or `schema_ref`; every output needs a schema and a `store` or `artifact` target.
+5. For every `type: process` node in a v1 Flow, declare `inputs`, `outputs`, and an explicit `failure` edge when it may fail; every input needs `required` and exactly one `schema` or `schema_ref`; every output needs a schema and a nested `target` object whose `type` is `store` or `artifact`. Keep the main chain continuous: every non-terminal state that has a non-failure incoming edge must also have a non-failure outgoing edge. An interaction node (`confirm_checkpoint`) still needs its approval sequence edge to the next state — a lost edge there broke a real cartridge's canvas and run. The final `validate_authored_cartridge.py` reports this as `FLOW_SUCCESSOR_EDGE_MISSING` (warning; a state with no incoming edge may legally end the flow).
+5b. Write a real `description` for every node (`params.description`, shown as 节点职责). This is the most user-visible text on the canvas card — it is what tells the user what this machine does. Write it concretely for THIS node (what it consumes, what it produces, why it exists, what the user gains), never template filler like "根据已有信息做出判断". If the node description is generic, rewrite it until it names this node's specific job. A missing description makes the card fall back to generic copy.
 6. Bind a tool by its manifest tool ID in `allowed_tools`. For a transparent DLC MCP tool, keep the user-facing business node separate from its internal source model; do not add an ID-only business node.
-7. Add models, permissions, failure policies, replay policies, and delivery fields only when the selected node effect requires them. Never invent a successful fallback for a missing external capability.
-8. Run package preflight after each meaningful edit. Resolve blockers before adding more nodes.
-9. Apply a cartridge protocol certification label only through the certification API after its report passes. The skill's `cf-farp-1-0-authoring-verified` metadata proves this workflow was checked; it is not a cartridge certification label.
-10. Run the relevant build and conformance commands before handing off.
+7. Verify runtime semantics before the first run. Inspect the field consumer when a value controls runtime behavior; never use prose placeholders as protocol values. A user-bound model role must declare `model: "configured-locally"`, never `"user-configured"`. Confirm the role and node bindings exist in the resource catalog, and that their provider is enabled and usable before calling the Flow runnable.
+8. Treat a structured `llm_prompt` node as a single-request consumer unless its executor has been inspected and proven otherwise. Aggregate related business values into one typed object upstream; do not provide several required ports and assume the executor will combine them.
+9. Test both paths before handoff: run one valid, non-destructive input and one intentionally invalid, safe input. The latter must traverse the declared failure edge to a terminal node and report only the originating node error; a terminal node must never need an action executor. Interaction nodes (`confirm_checkpoint` and similar) pause the run: answer them through `POST /api/cartridge-runs/{run_id}/pending-interaction/answer` during verification, never by editing the store. Verify the topology cheaply first: run with `test_mode` / `mock` decision envelopes before spending real model calls, then run the real path once for evidence.
+10. Tune every `llm_prompt` node for the actual model before claiming runnable. A real LLM call is always `kind=decision`, `executor=llm`, `effect=none`, with `output_contract=decision_envelope.v1` and explicit `decision_contract.consume`; persist files in a separate deterministic `writes_artifacts` node. Set `llm_options.max_tokens` high enough for reasoning models (their reasoning consumes most of the budget; too small a budget yields `PROVIDER_EMPTY_RESPONSE` with `finish_reason=length`) and `llm_options.timeout_seconds` above the slowest observed inference. Make the prompt's output shape match the consume path exactly and include a precise JSON example. Follow the complete template in `references/authoring-checklist.md`.
+11. Add models, permissions, failure policies, replay policies, and delivery fields only when the selected node effect requires them. Never invent a successful fallback for a missing external capability.
+12. Run package preflight after each meaningful edit. Resolve blockers before adding more nodes.
+13. Run the authored-cartridge validation after the final write. It validates final on-disk text, assets, Flow blockers, resource catalog, and model bindings; do not hand off a package until it reports `"ok": true`.
+14. Apply a cartridge protocol certification label only through the certification API after its report passes. The skill's `cf-farp-1-0-authoring-verified` metadata proves this workflow was checked; it is not a cartridge certification label.
+15. Run the relevant build and conformance commands before handing off.
 
 ## Workbench Simulation
 
@@ -60,6 +66,58 @@ The script validates the manifest, typed flow analysis, and resource catalog for
 
 When this skill is installed outside the repository, point `--repo` at the CartridgeFlow checkout and use the installed script path.
 
+## Runtime Verification
+
+Verify the Flow actually runs before handoff. A clean graph is not evidence that nodes execute. The backend is `uvicorn` without `--reload`: after any `src/` change, restart it or a stale process can report `ACTION_EXECUTOR_MISSING` for a newly registered action even though the source contains it.
+
+End-to-end run through the API:
+
+```powershell
+$run = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8765/api/cartridge-runs -ContentType 'application/json' -Body (@{ cartridge_id = '<cartridge-id>'; inputs = @{ ... } } | ConvertTo-Json -Depth 6)
+```
+
+Then poll `GET /api/cartridge-runs/{run_id}` until `status` leaves `running`; while it is `paused_waiting_user`, approve the pending interaction:
+
+```powershell
+Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8765/api/cartridge-runs/$runId/pending-interaction/answer" -ContentType 'application/json' -Body '{"values":{"approval":"approved"}}'
+```
+
+A passing graph run ends `completed`, but that is not yet successful delivery. Require `delivery.status=delivered`, a primary identity equal to `manifest.delivery.primary_output`, and a passing data chain. For a Store-backed primary output, require a non-empty Delivery result. For an Artifact-backed primary output, require the matching `primary_artifact`, non-empty files under `.data/runtime/runs/<run_id>/artifacts/`, and readable Artifact URLs. Do not trust a green terminal node or an Artifact record without checking the underlying result. Use the final validator with `--run-id` and `--api-url`. The workbench opens the host-owned Run artifact folder through a scoped backend endpoint, so cartridges must emit Artifact references and must not embed local absolute paths. Keep domain-specific quality checks in the cartridge's own tests or DLC, not in this generic skill.
+
+## Node Failure Protocol
+
+Every node failure surfaces through the same envelope - no ad-hoc shapes, no raw exceptions leaking to the API:
+
+- `run.error` / `run.errors[]` and the `lab_node_failed` event carry `runtime_error_envelope.v1`:
+  `{ schema, error_id, code, category, message, node_id, source, retryable, recoverable, recovery_actions, cause_chain, http_status, missing_inputs }`.
+- A declared `failure` edge (execution_plan `failure_route`) absorbs the failure and continues the flow.
+  Without one, the run aborts (`status=failed`) with the envelope in `run.error`.
+
+Stable error codes (declare failure edges for the ones your flow can survive):
+
+- **Input/data**: `INPUT_REQUIRED` (missing required store key), `ARTIFACT_MISSING`, `ARTIFACT_READ_FAILED`, `DELIVERY_OUTPUT_MISSING`, `DECISION_CONSUME_FAILED`
+- **Provider (retryable)**: `PROVIDER_TIMEOUT`, `PROVIDER_RATE_LIMITED`, `PROVIDER_UNAVAILABLE`, `PROVIDER_EMPTY_RESPONSE`, `PROVIDER_AUTH_FAILED`, `PROVIDER_MODEL_UNAVAILABLE`, `PROVIDER_CONFIGURATION_MISSING`
+- **Tool/remote**: `TOOL_TIMEOUT`, `TOOL_EXECUTION_FAILED`, `TOOL_WORKER_CRASHED`, `DEPENDENCY_UNAVAILABLE`
+- **Contract (fix the cartridge)**: `FLOW_CONTRACT_INVALID` (tool not declared / binding unsupported), `ACTION_EXECUTOR_MISSING` (action without executor), `NODE_EXECUTION_FAILED`
+
+Design guidance:
+
+- **Decision/LLM nodes**: output-format drift is normal. Declare a `failure` edge (retry the node or a fallback path) instead of assuming the LLM succeeds first try.
+- **Tool/remote nodes**: timeouts and connectivity are retryable. A failure edge to a retry/degraded path is correct design; `retryable: true` in the envelope tells you so.
+- **Every `type: process` node must declare at least one `failure` edge** (CF-FARP@1.0 `v10_failure_exit_missing` blocker) — this is a protocol requirement, not optional. But **failure exits can share one generic terminal** ("流程失败"): the precise failing node/code/message lives in `run.error` (`runtime_error_envelope.v1`), so per-step failure terminals are redundant. One shared failure terminal keeps the graph readable without losing detail.
+- Every non-terminal node should have a non-failure outgoing edge or a failure edge; a node whose failure is not absorbed aborts the run. `validate_authored_cartridge.py` warns (`FLOW_SUCCESSOR_EDGE_MISSING`) when a node with a non-failure incoming edge has no non-failure outgoing edge.
+- Never pattern-match on the raw `message` string; key off `code` / `recovery_actions`.
+
+## Final Deliverable Validation
+
+Run this after the final package save, after resource and model configuration are in place, and before reporting success:
+
+```powershell
+python docs/development/skills/cartridgeflow-flow-author/scripts/validate_authored_cartridge.py --repo . --package .data/user/dev_cartridges/<cartridge-id> --run-id <completed-run-id> --api-url http://127.0.0.1:8765
+```
+
+This is intentionally stricter than structural preflight. It rejects malformed UTF-8, replacement characters, `???` placeholder corruption, empty visible labels, Flow blockers, unavailable required resources, blocked model bindings, disguised LLM nodes, undeclared primary outputs, empty artifacts, incomplete Delivery snapshots, unreadable Artifact URLs, and broken data chains. A clean graph alone is not evidence that the user can read, run, or receive the cartridge output.
+
 ## Completion
 
-Report the business nodes created, declared resources, validation result, and any external configuration still required. Read `references/authoring-checklist.md` for field patterns and validation commands.
+Report the business nodes created, declared resources, both validation results, and any external configuration still required. Read `references/authoring-checklist.md` for field patterns and validation commands.

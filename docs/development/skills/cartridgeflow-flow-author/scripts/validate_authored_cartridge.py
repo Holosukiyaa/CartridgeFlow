@@ -1,0 +1,449 @@
+#!/usr/bin/env python
+"""Validate the deliverable state of an authored CartridgeFlow package.
+
+This complements ``preflight_flow.py``.  Preflight checks contracts; this
+script also checks the values a user will actually see, plus local resource and
+model bindings that a structural Flow analysis cannot establish by itself.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+from pathlib import Path
+from typing import Any
+
+
+TEXT_EXTENSIONS = {".json", ".md", ".html", ".txt"}
+QUESTION_RUN = re.compile(r"\?{3,}")
+MOJIBAKE_MARKERS = ("\ufffd", "\u00c3", "\u00e2\u20ac", "\u00e2\u20ac\u2122")
+
+
+def load_json(path: Path) -> dict[str, Any]:
+    with path.open(encoding="utf-8") as handle:
+        value = json.load(handle)
+    if not isinstance(value, dict):
+        raise ValueError(f"{path.name} must contain a JSON object")
+    return value
+
+
+def text_findings(package: Path) -> list[dict[str, str]]:
+    findings: list[dict[str, str]] = []
+    for path in package.rglob("*"):
+        if not path.is_file() or path.suffix.lower() not in TEXT_EXTENSIONS:
+            continue
+        relative = path.relative_to(package).as_posix()
+        try:
+            content = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            findings.append({
+                "code": "TEXT_NOT_UTF8",
+                "path": relative,
+                "message": "Text asset is not valid UTF-8.",
+            })
+            continue
+        if QUESTION_RUN.search(content):
+            findings.append({
+                "code": "TEXT_PLACEHOLDER_CORRUPTION",
+                "path": relative,
+                "message": "Found a run of three or more question marks in a user-deliverable file.",
+            })
+        marker = next((item for item in MOJIBAKE_MARKERS if item in content), "")
+        if marker:
+            findings.append({
+                "code": "TEXT_MOJIBAKE_SUSPECTED",
+                "path": relative,
+                "message": "Found a replacement character or common UTF-8 mojibake marker.",
+            })
+    return findings
+
+
+def required_text_findings(manifest: dict[str, Any], root_flow: dict[str, Any]) -> list[dict[str, str]]:
+    findings: list[dict[str, str]] = []
+
+    def require(value: Any, path: str) -> None:
+        if not isinstance(value, str) or not value.strip():
+            findings.append({"code": "TEXT_REQUIRED_MISSING", "path": path, "message": "Required user-facing text is empty."})
+
+    require(manifest.get("name"), "manifest.name")
+    require(manifest.get("description"), "manifest.description")
+    for index, item in enumerate(manifest.get("inputs") or []):
+        if isinstance(item, dict):
+            require(item.get("label"), f"manifest.inputs[{index}].label")
+    for index, item in enumerate(manifest.get("outputs") or []):
+        if isinstance(item, dict):
+            require(item.get("label"), f"manifest.outputs[{index}].label")
+    for index, item in enumerate(manifest.get("mcp_tools") or []):
+        if isinstance(item, dict):
+            require(item.get("name"), f"manifest.mcp_tools[{index}].name")
+            require(item.get("description"), f"manifest.mcp_tools[{index}].description")
+    states = root_flow.get("states") if isinstance(root_flow.get("states"), dict) else {}
+    for node_id, state in states.items():
+        if isinstance(state, dict):
+            require(state.get("title"), f"root_flow.states.{node_id}.title")
+            require(state.get("display_name"), f"root_flow.states.{node_id}.display_name")
+    return findings
+
+
+def execution_plan_findings(root_flow: dict[str, Any]) -> list[dict[str, str]]:
+    """Flag a broken main chain without rejecting protocol-legal dead ends.
+
+    CF-FARP@1.0 allows a state to end the flow with no successful outgoing
+    edge, so this is a warning, not a blocker. It exists because a lost
+    sequence edge (e.g. an interaction node whose approval path was not saved)
+    silently breaks the chain and degrades both the runner and the canvas.
+    """
+    findings: list[dict[str, str]] = []
+    plan = root_flow.get("execution_plan") if isinstance(root_flow.get("execution_plan"), dict) else None
+    if not plan:
+        return findings
+    edges = [edge for edge in plan.get("edges") or [] if isinstance(edge, dict)]
+    states = root_flow.get("states") if isinstance(root_flow.get("states"), dict) else {}
+
+    def is_success(edge: dict) -> bool:
+        return str(edge.get("kind") or "sequence") != "failure"
+
+    with_success_incoming: set[str] = set()
+    for edge in edges:
+        if is_success(edge) and str(edge.get("to") or "") in states:
+            with_success_incoming.add(str(edge.get("to")))
+    for node_id, state in states.items():
+        if not isinstance(state, dict) or str(state.get("type") or "") == "terminal":
+            continue
+        if node_id not in with_success_incoming:
+            continue
+        has_success_outgoing = any(is_success(edge) and str(edge.get("from") or "") == node_id for edge in edges)
+        if not has_success_outgoing:
+            findings.append({
+                "severity": "warning",
+                "code": "FLOW_SUCCESSOR_EDGE_MISSING",
+                "path": f"root_flow.states.{node_id}",
+                "message": (
+                    f"State '{node_id}' has a non-failure incoming edge but no non-failure outgoing edge; "
+                    "the main chain breaks here. Add a sequence edge, or make the state a terminal if this is the flow end."
+                ),
+            })
+    return findings
+
+
+def description_findings(root_flow: dict[str, Any]) -> list[dict[str, str]]:
+    """Flag nodes whose card guidance is generic because no description was written.
+
+    The canvas card shows params.description as the node's "what it does" text;
+    without it the frontend falls back to template copy. This is a warning so a
+    missing description never blocks a runnable package, but it signals the AI
+    should write real per-node guidance.
+    """
+    findings: list[dict[str, str]] = []
+    states = root_flow.get("states") if isinstance(root_flow.get("states"), dict) else {}
+    for node_id, state in states.items():
+        if not isinstance(state, dict):
+            continue
+        if str(state.get("type") or "") == "terminal" or str(node_id) in {"start", "complete"}:
+            continue
+        params = state.get("params") if isinstance(state.get("params"), dict) else {}
+        description = str(params.get("description") or "").strip()
+        if not description:
+            findings.append({
+                "severity": "warning",
+                "code": "NODE_DESCRIPTION_MISSING",
+                "path": f"root_flow.states.{node_id}.params.description",
+                "message": (
+                    f"State '{node_id}' has no description. The canvas card shows this text as the "
+                    "node's guidance; write a concrete one-liner (what it consumes, produces, and why)."
+                ),
+            })
+    return findings
+
+
+def node_semantic_findings(root_flow: dict[str, Any]) -> list[dict[str, str]]:
+    """Reject common runtime-valid but CF-FARP@1.0-invalid node disguises."""
+    findings: list[dict[str, str]] = []
+    states = root_flow.get("states") if isinstance(root_flow.get("states"), dict) else {}
+    for node_id, state in states.items():
+        if not isinstance(state, dict) or state.get("type") != "process":
+            continue
+        kind = str(state.get("kind") or "").strip()
+        executor = str(state.get("executor") or "").strip()
+        effect = str(state.get("effect") or "").strip()
+        path = f"root_flow.states.{node_id}"
+
+        if executor == "llm":
+            if kind != "decision":
+                findings.append({
+                    "code": "LLM_KIND_MISMATCH",
+                    "path": f"{path}.kind",
+                    "message": "A real LLM call must be kind='decision'; do not hide it behind transform or validation.",
+                })
+            if effect != "none":
+                findings.append({
+                    "code": "LLM_EFFECT_MISMATCH",
+                    "path": f"{path}.effect",
+                    "message": "An AI decision must declare effect='none'.",
+                })
+            if state.get("output_contract") != "decision_envelope.v1":
+                findings.append({
+                    "code": "LLM_OUTPUT_CONTRACT_MISSING",
+                    "path": f"{path}.output_contract",
+                    "message": "An AI decision must emit decision_envelope.v1.",
+                })
+            contract = state.get("decision_contract") if isinstance(state.get("decision_contract"), dict) else {}
+            consume = contract.get("consume") if isinstance(contract.get("consume"), dict) else {}
+            consume_path = str(consume.get("path") or "")
+            if contract.get("schema") != "decision_envelope.v1" or not consume:
+                findings.append({
+                    "code": "LLM_DECISION_CONSUME_MISSING",
+                    "path": f"{path}.decision_contract",
+                    "message": "An AI decision needs a decision_envelope.v1 contract and explicit consume projection.",
+                })
+            elif not (consume_path == "payload" or consume_path.startswith("payload.")):
+                findings.append({
+                    "code": "LLM_DECISION_CONSUME_PATH_INVALID",
+                    "path": f"{path}.decision_contract.consume.path",
+                    "message": "Decision consume.path must be 'payload' or start with 'payload.'.",
+                })
+
+        required_effect = {"input": "writes_store", "transfer": "writes_store"}.get(kind)
+        if required_effect and effect != required_effect:
+            findings.append({
+                "code": "NODE_EFFECT_MISMATCH",
+                "path": f"{path}.effect",
+                "message": f"A {kind} node must declare effect='{required_effect}'.",
+            })
+    return findings
+
+
+def delivery_contract_findings(manifest: dict[str, Any], root_flow: dict[str, Any]) -> list[dict[str, str]]:
+    delivery = manifest.get("delivery") if isinstance(manifest.get("delivery"), dict) else {}
+    primary_output = str(delivery.get("primary_output") or "").strip()
+    if not primary_output:
+        return []
+
+    produced_identities: set[str] = set()
+    states = root_flow.get("states") if isinstance(root_flow.get("states"), dict) else {}
+    for state in states.values():
+        if not isinstance(state, dict):
+            continue
+        params = state.get("params") if isinstance(state.get("params"), dict) else {}
+        artifact_id = str(params.get("artifact_id") or "").strip()
+        if artifact_id:
+            produced_identities.add(artifact_id)
+        outputs = state.get("outputs") if isinstance(state.get("outputs"), dict) else {}
+        for output in outputs.values():
+            if not isinstance(output, dict):
+                continue
+            target = output.get("target") if isinstance(output.get("target"), dict) else {}
+            identity = target.get("artifact_id") if target.get("type") == "artifact" else target.get("key")
+            if identity:
+                produced_identities.add(str(identity))
+
+    if primary_output in produced_identities:
+        return []
+    return [{
+        "code": "DELIVERY_PRIMARY_OUTPUT_UNDECLARED",
+        "path": "manifest.delivery.primary_output",
+        "message": f"Primary output '{primary_output}' has no declared Store or Artifact producer.",
+    }]
+
+
+def declared_output_types(root_flow: dict[str, Any]) -> dict[str, str]:
+    identities: dict[str, str] = {}
+    states = root_flow.get("states") if isinstance(root_flow.get("states"), dict) else {}
+    for state in states.values():
+        if not isinstance(state, dict):
+            continue
+        params = state.get("params") if isinstance(state.get("params"), dict) else {}
+        artifact_id = str(params.get("artifact_id") or "").strip()
+        if artifact_id:
+            identities[artifact_id] = "artifact"
+        outputs = state.get("outputs") if isinstance(state.get("outputs"), dict) else {}
+        for output in outputs.values():
+            if not isinstance(output, dict):
+                continue
+            target = output.get("target") if isinstance(output.get("target"), dict) else {}
+            target_type = str(target.get("type") or "").strip()
+            identity = target.get("artifact_id") if target_type == "artifact" else target.get("key")
+            if identity and target_type in {"store", "artifact"}:
+                identities[str(identity)] = target_type
+    return identities
+
+
+def runtime_delivery_findings(
+    repo: Path,
+    run_id: str,
+    *,
+    api_url: str | None = None,
+    expected_primary_output: str | None = None,
+    expected_primary_type: str | None = None,
+) -> list[dict[str, str]]:
+    findings: list[dict[str, str]] = []
+    normalized_id = str(run_id or "").strip()
+    if not normalized_id or Path(normalized_id).name != normalized_id:
+        return [{"code": "RUN_ID_INVALID", "path": "run_id", "message": "Run id is invalid."}]
+    runs_root = (repo / ".data" / "runtime" / "runs").resolve()
+    run_dir = (runs_root / normalized_id).resolve()
+    if run_dir.parent != runs_root:
+        return [{"code": "RUN_PATH_INVALID", "path": "run_id", "message": "Run directory escapes the runtime root."}]
+    run_path = run_dir / "run.json"
+    delivery_path = run_dir / "delivery.json"
+    if not run_path.is_file():
+        return [{"code": "RUN_NOT_FOUND", "path": str(run_path), "message": "Run snapshot does not exist."}]
+
+    run = load_json(run_path)
+    if run.get("status") != "completed":
+        findings.append({"code": "RUN_NOT_COMPLETED", "path": "run.status", "message": f"Run status is '{run.get('status')}'."})
+    if run.get("errors"):
+        findings.append({"code": "RUN_HAS_ERRORS", "path": "run.errors", "message": "Completed run still contains runtime errors."})
+    data_chain = run.get("data_chain") if isinstance(run.get("data_chain"), dict) else {}
+    if data_chain and data_chain.get("passed") is not True:
+        findings.append({"code": "RUN_DATA_CHAIN_FAILED", "path": "run.data_chain", "message": data_chain.get("summary") or "Run data chain did not pass."})
+    if not delivery_path.is_file():
+        findings.append({"code": "DELIVERY_SNAPSHOT_MISSING", "path": str(delivery_path), "message": "Delivery snapshot does not exist."})
+        return findings
+
+    delivery = load_json(delivery_path)
+    if delivery.get("status") != "delivered":
+        findings.append({"code": "DELIVERY_NOT_READY", "path": "delivery.status", "message": f"Delivery status is '{delivery.get('status')}'."})
+    primary_output = str(delivery.get("primary_output") or "").strip()
+    primary_artifact = delivery.get("primary_artifact") if isinstance(delivery.get("primary_artifact"), dict) else {}
+    if not primary_output or (expected_primary_output and primary_output != expected_primary_output):
+        findings.append({"code": "DELIVERY_PRIMARY_OUTPUT_MISSING", "path": "delivery.primary_output", "message": "Delivery primary_output is missing or differs from the Manifest contract."})
+    if expected_primary_type == "artifact":
+        if str(primary_artifact.get("artifact_id") or "") != primary_output:
+            findings.append({"code": "DELIVERY_PRIMARY_ARTIFACT_MISSING", "path": "delivery.primary_artifact", "message": "Artifact-backed primary output has no matching primary_artifact."})
+    elif primary_artifact:
+        if str(primary_artifact.get("artifact_id") or "") != primary_output:
+            findings.append({"code": "DELIVERY_PRIMARY_ARTIFACT_MISMATCH", "path": "delivery.primary_artifact", "message": "Delivery primary_artifact does not match primary_output."})
+    elif delivery.get("result") in (None, "", [], {}):
+        findings.append({"code": "DELIVERY_PRIMARY_RESULT_MISSING", "path": "delivery.result", "message": "Store-backed primary output has no non-empty delivery result."})
+
+    artifacts = [item for item in delivery.get("artifacts") or [] if isinstance(item, dict)]
+    artifacts_root = (run_dir / "artifacts").resolve()
+    for index, artifact in enumerate(artifacts):
+        raw_path = str(artifact.get("path") or artifact.get("name") or "").strip()
+        artifact_path = Path(raw_path)
+        if not artifact_path.is_absolute():
+            artifact_path = artifacts_root / artifact_path.name
+        artifact_path = artifact_path.resolve()
+        item_path = f"delivery.artifacts[{index}]"
+        if artifact_path.parent != artifacts_root:
+            findings.append({"code": "ARTIFACT_PATH_INVALID", "path": item_path, "message": "Artifact path escapes the run artifact directory."})
+            continue
+        if not artifact_path.is_file() or artifact_path.stat().st_size <= 0:
+            findings.append({"code": "ARTIFACT_EMPTY", "path": item_path, "message": f"Artifact '{artifact.get('name')}' is missing or empty."})
+            continue
+        if api_url:
+            artifact_url = str(artifact.get("url") or "").strip()
+            if not artifact_url:
+                findings.append({"code": "ARTIFACT_URL_MISSING", "path": item_path, "message": "Artifact has no browser-accessible URL."})
+            else:
+                resolved_url = urllib.parse.urljoin(api_url.rstrip("/") + "/", artifact_url)
+                try:
+                    request = urllib.request.Request(resolved_url, headers={"Range": "bytes=0-0"})
+                    with urllib.request.urlopen(request, timeout=10) as response:
+                        if not response.read(1):
+                            findings.append({"code": "ARTIFACT_URL_EMPTY", "path": item_path, "message": f"Artifact URL returned no bytes: {artifact_url}"})
+                except (urllib.error.HTTPError, urllib.error.URLError, OSError) as exc:
+                    findings.append({"code": "ARTIFACT_URL_UNREACHABLE", "path": item_path, "message": f"Artifact URL is not readable: {exc}"})
+    return findings
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Validate an authored CartridgeFlow package before handoff.")
+    parser.add_argument("--repo", default=".", help="CartridgeFlow repository root")
+    parser.add_argument("--package", required=True, help="Cartridge package directory")
+    parser.add_argument("--run-id", help="Also verify one completed local run and its delivery artifacts")
+    parser.add_argument("--api-url", help="Also require each delivered Artifact URL to return real bytes")
+    args = parser.parse_args()
+
+    repo = Path(args.repo).resolve()
+    package = Path(args.package).resolve()
+    if not (repo / "src" / "core").is_dir():
+        parser.error(f"--repo is not a CartridgeFlow checkout: {repo}")
+    if not package.is_dir():
+        parser.error(f"--package does not exist: {package}")
+    sys.path.insert(0, str(repo / "src"))
+
+    from core.cartridge.validator import ManifestValidationError, ManifestValidator
+    from core.lab.flow_analyzer import analyze_flow
+    from core.lab.node_executor import SUPPORTED_ACTIONS
+    from core.llm.config_manager import build_model_binding_report
+    from core.protocol import load_base_implementation
+    from core.studio.resource_catalog import build_flow_resource_catalog
+
+    manifest = load_json(package / "manifest.json")
+    root_entry = str((manifest.get("root_flow") or {}).get("entry") or "root.flow.json")
+    root_flow = load_json(package / root_entry)
+    findings: list[dict[str, Any]] = []
+    try:
+        ManifestValidator().validate_package(package, manifest)
+    except ManifestValidationError as exc:
+        findings.append({"code": "MANIFEST_INVALID", "path": "manifest.json", "message": str(exc)})
+
+    analysis = analyze_flow(root_flow, manifest, target="dev", base=load_base_implementation(repo))
+    for item in analysis.get("findings") or []:
+        if isinstance(item, dict) and item.get("severity") == "blocker":
+            findings.append({"code": "FLOW_ANALYSIS_BLOCKER", "path": item.get("path", "root.flow.json"), "message": item.get("message", "Flow analysis blocker")})
+
+    states = root_flow.get("states") if isinstance(root_flow.get("states"), dict) else {}
+    for node_id, state in states.items():
+        if not isinstance(state, dict) or state.get("type") != "process":
+            continue
+        action = str(state.get("action") or "").strip()
+        if action and action not in SUPPORTED_ACTIONS:
+            findings.append({
+                "code": "ACTION_EXECUTOR_MISSING",
+                "path": f"root_flow.states.{node_id}.action",
+                "message": f"No runtime executor is registered for action '{action}'.",
+            })
+
+    catalog = build_flow_resource_catalog(repo, manifest, root_flow, package_path=package)
+    for item in catalog.get("findings") or []:
+        if isinstance(item, dict) and item.get("severity") == "blocker":
+            findings.append({"code": "RESOURCE_CATALOG_BLOCKER", "path": item.get("path", "resources"), "message": item.get("message", "Resource catalog blocker")})
+
+    model_report = build_model_binding_report(manifest, root_flow)
+    for item in model_report.get("items") or []:
+        if isinstance(item, dict) and item.get("status") == "blocked":
+            findings.append({"code": "MODEL_BINDING_BLOCKED", "path": f"llm_recipe.roles.{item.get('id', '')}", "message": item.get("message", "Model binding blocked")})
+
+    findings.extend(required_text_findings(manifest, root_flow))
+    findings.extend(text_findings(package))
+    findings.extend(execution_plan_findings(root_flow))
+    findings.extend(description_findings(root_flow))
+    findings.extend(node_semantic_findings(root_flow))
+    findings.extend(delivery_contract_findings(manifest, root_flow))
+    if args.run_id:
+        manifest_delivery = manifest.get("delivery") if isinstance(manifest.get("delivery"), dict) else {}
+        expected_primary_output = str(manifest_delivery.get("primary_output") or "").strip()
+        output_types = declared_output_types(root_flow)
+        findings.extend(runtime_delivery_findings(
+            repo,
+            args.run_id,
+            api_url=args.api_url,
+            expected_primary_output=expected_primary_output or None,
+            expected_primary_type=output_types.get(expected_primary_output),
+        ))
+    blockers = [item for item in findings if item.get("severity") != "warning"]
+    warnings = [item for item in findings if item.get("severity") == "warning"]
+    result = {
+        "cartridge_id": manifest.get("id"),
+        "package": str(package),
+        "ok": not blockers,
+        "finding_count": len(findings),
+        "blocker_count": len(blockers),
+        "warning_count": len(warnings),
+        "findings": findings,
+    }
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0 if not blockers else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+

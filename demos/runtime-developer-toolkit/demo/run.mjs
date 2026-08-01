@@ -147,8 +147,21 @@ async function executeNode(state, nodeId, store, mock, runDirectory, tools) {
     const targets = Object.values(state.outputs || {})
     const storeTarget = targets.map((target) => target?.target).find((target) => target?.type === 'store')
     const storeKey = storeTarget?.key || output
+    // decision_contract.consume unwraps the envelope payload (payload_path).
+    const contract = state.decision_contract || {}
+    const consume = contract.consume || {}
+    const unwrap = (envelope) => {
+      if (consume.mode !== 'payload_path' || !consume.path || !envelope || typeof envelope !== 'object') return envelope
+      let value = envelope
+      for (const part of consume.path.split('.')) {
+        if (value == null || typeof value !== 'object') return envelope
+        value = value[part]
+      }
+      return value === undefined ? envelope : value
+    }
     if (mock) {
-      store[storeKey] = { status: 'resolved', value: `mock response for ${nodeId}` }
+      const offline = contract.offline_decision || {}
+      store[storeKey] = unwrap(offline) ?? offline
       return
     }
     const baseUrl = process.env.CF_RUNTIME_MODEL_BASE_URL
@@ -162,7 +175,12 @@ async function executeNode(state, nodeId, store, mock, runDirectory, tools) {
     })
     if (!response.ok) fail(`model API returned HTTP ${response.status}`)
     const body = await response.json()
-    store[storeKey] = body.choices?.[0]?.message?.content ?? body
+    const content = body.choices?.[0]?.message?.content
+    let envelope = body
+    if (typeof content === 'string' && content.trim()) {
+      try { envelope = JSON.parse(content) } catch { envelope = body }
+    }
+    store[storeKey] = unwrap(envelope)
     return
   }
   // MCP write node
@@ -212,7 +230,7 @@ async function executeNode(state, nodeId, store, mock, runDirectory, tools) {
     const variables = params.variables && typeof params.variables === 'object' ? params.variables : {}
     for (const [placeholder, storeKey] of Object.entries(variables)) {
       const value = store[storeKey]
-      if (value === undefined) fail(`render_template missing store value: ${placeholder}(${storeKey})`)
+      if (value === undefined || value === null) fail(`render_template missing store value: ${placeholder}(${storeKey})`)
       const text = typeof value === 'string' ? value : JSON.stringify(value, null, 2)
       template = template.split(`{{${placeholder}}}`).join(text)
     }
@@ -227,6 +245,10 @@ async function executeNode(state, nodeId, store, mock, runDirectory, tools) {
       .filter((key) => typeof key === 'string')
     const fromKey = state.params?.input || state.params?.from || preset.from || preset.source || preset.items
       || (inputBindings.length === 1 ? inputBindings[0] : undefined)
+    if (!fromKey && !Object.keys(state.outputs || {}).some((name) => (state.outputs[name]?.target || {}).type === 'artifact')) {
+      return
+    }
+    if (!fromKey) fail(`pass_result has no resolvable input source (params.input/preset/items or single inputs binding)`)
     const value = typeof fromKey === 'string' && fromKey.includes(',')
       ? Object.fromEntries(fromKey.split(',').map((key) => [key.trim(), store[key.trim()]]).filter(([, v]) => v !== undefined))
       : store[fromKey]
@@ -305,6 +327,7 @@ async function executeFlow(manifest, flow, runDirectory, mock) {
     if (!state) fail(`execution plan references unknown state: ${current}`)
     trace.push(current)
     if (state.type === 'terminal') {
+      recordLog({ event: 'node_started', node: current, action: 'terminal', status: 'running' })
       recordLog({ event: 'node_completed', node: current, action: 'terminal', status: 'completed' })
       recordLog({ event: 'run_completed', status: 'completed' })
       return { status: 'completed', trace, store, nodeLogs }
@@ -434,12 +457,14 @@ async function main(args) {
   console.log(`status  : ${execution.status}`)
   console.log('--- node execution list ---')
   let index = 0
-  for (const entry of execution.nodeLogs || []) {
+  const logs = execution.nodeLogs || []
+  for (const entry of logs) {
     if (!entry.event.startsWith('node_') && !entry.event.startsWith('branch_node_')) continue
     if (!entry.event.endsWith('_started')) continue
     index += 1
     const action = entry.action || ''
-    const output = entry.output ? ` -> ${entry.output}` : ''
+    const completed = logs.find((item) => item.node === entry.node && item.event === entry.event.replace('_started', '_completed'))
+    const output = completed?.output ? ` -> ${completed.output}` : ''
     console.log(`[${String(index).padStart(2, ' ')}] ${entry.node} (${action})${output}`)
   }
   console.log('--- artifacts ---')
@@ -449,6 +474,11 @@ async function main(args) {
 }
 
 main(process.argv.slice(2)).catch((error) => {
+  try {
+    const runRoot = resolve(process.argv.find((value, index) => index === process.argv.indexOf('run') + 2) || '.')
+    mkdirSync(runRoot, { recursive: true })
+    writeFileSync(join(runRoot, 'run-log.jsonl'), `${JSON.stringify({ ts: new Date().toISOString(), event: 'run_failed', status: 'failed', reason: error.message })}\n`, 'utf8')
+  } catch { /* log write is best-effort */ }
   console.error(JSON.stringify({ ok: false, error: error.message }, null, 2))
   process.exitCode = 1
 })

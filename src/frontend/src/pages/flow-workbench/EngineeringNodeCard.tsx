@@ -83,7 +83,7 @@ function EngineeringResourceCard({ node, model, selected, onSelect }: {
       <dl className="cf-engineering-resource-meta">
         {resource.metadata.map((item) => <div key={item.label}><dt>{item.label}</dt><dd title={item.value}>{item.value}</dd></div>)}
       </dl>
-      <footer><FileCode2 aria-hidden="true" /><span>分析投影，仅用于工程视图</span></footer>
+      <footer><FileCode2 aria-hidden="true" /><span>分析投影</span></footer>
     </article>
   )
 }

@@ -99,7 +99,7 @@ export function AIFlowStewardPanel({
               onToolChange('pointer')
             }}
             disabled={!engineering}
-            title={engineering ? '拖到节点或连线上，或启用后直接点击' : '切换到工程视图后使用'}
+            title={engineering ? '拖到节点或连线上，或启用后直接点击' : ''}
           >
             <MousePointer2 aria-hidden="true" /><span>拖拽指针</span>
           </button>
@@ -108,12 +108,12 @@ export function AIFlowStewardPanel({
             className={tool === 'lasso' ? 'active' : ''}
             onClick={() => onToolChange(tool === 'lasso' ? 'none' : 'lasso')}
             disabled={!engineering}
-            title={engineering ? '在画布空白处拖动，框选一段流程' : '切换到工程视图后使用'}
+            title={engineering ? '在画布空白处拖动，框选一段流程' : ''}
           >
             <Scan aria-hidden="true" /><span>框选工具</span>
           </button>
         </div>
-        <p>{engineering ? '把专业对象直接指出来，管家会读取节点、连线和字段关系。' : '成果视图可直接对话；精确定位请切换到工程视图。'}</p>
+        <p>{engineering ? '把专业对象直接指出来，管家会读取节点、连线和字段关系。' : '在画布空白处拖动，框选一段流程。'}</p>
       </section>
 
       <div className={`cf-ai-steward-selection ${context.selection.node_ids.length || context.selection.edge_ids.length || context.selection.field_paths.length ? 'has-selection' : ''}`}>

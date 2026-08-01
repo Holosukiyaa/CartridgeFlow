@@ -1049,7 +1049,7 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
     const source = nodeById.get(sourceId)
     const target = nodeById.get(targetId)
     if (!source || !target) return '节点不存在，无法连接'
-    if (isEngineeringResourceNode(source) || isEngineeringResourceNode(target)) return '资源依赖仅用于工程视图，不能写入 Root Flow 控制流'
+    if (isEngineeringResourceNode(source) || isEngineeringResourceNode(target)) return '资源依赖不能写入 Root Flow 控制流'
     if (sourceId === targetId) return '不能连接到自身'
     if (isStartNode(target, targetId)) return '开始节点不能作为链路目标'
     if (source.type === 'terminal' && !isStartNode(source, sourceId)) return '结尾节点不能再接出链路'

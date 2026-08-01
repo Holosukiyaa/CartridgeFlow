@@ -98,7 +98,7 @@ function verifyArchive(archivePath, trustPath) {
   for (const name of files.keys()) {
     if (!CONTROL_FILES.has(name) && !name.startsWith('signatures/') && !listed.has(name)) fail(`archive file is not listed in hashes.json: ${name}`)
   }
-  const payloadEntries = hashes.files.filter((entry) => entry.path.startsWith('payload/')).sort((left, right) => left.path.localeCompare(right.path))
+  const payloadEntries = hashes.files.filter((entry) => entry.path.startsWith('payload/')).sort((left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0))
   if (sha256(Buffer.from(canonicalPayloadEntries(payloadEntries), 'utf8')) !== release.payload?.digest) fail('payload digest does not match hashes.json')
   const descriptor = (release.signatures || []).find((item) => item?.role === 'publisher')
   if (!descriptor || descriptor.algorithm !== 'ed25519' || !ID.test(descriptor.key_id || '') || !files.has(descriptor.path)) fail('archive has no valid publisher signature descriptor')
@@ -186,7 +186,7 @@ async function executeNode(state, nodeId, store, mock, runDirectory, tools) {
       store[key] = { approval: 'approved', feedback: '' }
       console.log(`[review] ${state.title || nodeId}: auto-approved (mock)`)
     } else {
-      console.log(`[review] ${state.title || nodeId}: pending interaction at ${key} (interactive review is not implemented in the minimal demo)`)
+      fail(`review node ${state.title || nodeId} requires interactive approval, which the minimal demo does not implement; run with --mock to auto-approve`)
     }
     return
   }

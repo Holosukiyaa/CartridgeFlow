@@ -197,6 +197,9 @@ def _walk_sensitive(value, prefix: str = "", parent: str = ""):
             is_protocol_key = (
                 str(key).casefold() == "key"
                 and parent in _PROTOCOL_KEY_PARENTS
+                and isinstance(child, str)
+                and 0 < len(child) <= 64
+                and re.fullmatch(r"[A-Za-z0-9_.:\-]+", child) is not None
             )
             if str(key).casefold() in SENSITIVE_KEYS and not is_protocol_key:
                 yield path, child

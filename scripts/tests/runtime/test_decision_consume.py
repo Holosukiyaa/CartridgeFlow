@@ -69,9 +69,12 @@ class DecisionConsumeTests(unittest.TestCase):
             result = LabNodeExecutor().execute("decide", state, state_doc, run, ".")
 
         self.assertTrue(result["failed"])
-        self.assertEqual("blocked", result["decision_status"])
-        self.assertEqual("llm_empty_response", result["decision_envelope"]["issues"][0]["code"])
+        self.assertEqual("PROVIDER_EMPTY_RESPONSE", result["error_code"])
+        self.assertEqual("blocked", result.get("decision_status"))
         self.assertEqual("length", result["llm_response_meta"]["finish_reason"])
+        # Empty assistant content returns early (no decision_envelope envelope);
+        # the provider code must stay retryable under node retry policies.
+        self.assertNotIn("decision_envelope", result)
 
     def test_live_decision_resolves_the_selected_role_for_the_current_node(self):
         state_doc = {"context": {"store": {"context_pack": {"goal": "build short drama"}}}}

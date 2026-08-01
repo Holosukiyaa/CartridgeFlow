@@ -475,7 +475,8 @@ async function main(args) {
 
 main(process.argv.slice(2)).catch((error) => {
   try {
-    const runRoot = resolve(process.argv.find((value, index) => index === process.argv.indexOf('run') + 2) || '.')
+    const positional = process.argv.slice(2).filter((value) => !value.startsWith('--'))
+    const runRoot = resolve(positional[2] || '.')
     mkdirSync(runRoot, { recursive: true })
     writeFileSync(join(runRoot, 'run-log.jsonl'), `${JSON.stringify({ ts: new Date().toISOString(), event: 'run_failed', status: 'failed', reason: error.message })}\n`, 'utf8')
   } catch { /* log write is best-effort */ }

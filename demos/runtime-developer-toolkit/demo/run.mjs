@@ -58,7 +58,7 @@ function readZip(archivePath) {
     const localExtraLength = bytes.readUInt16LE(localOffset + 28)
     const start = localOffset + 30 + localNameLength + localExtraLength
     const compressed = bytes.subarray(start, start + compressedSize)
-    const value = compression === 0 ? compressed : compression === 8 ? inflateRawSync(compressed) : fail(`unsupported ZIP compression for ${name}`)
+    const value = compression === 0 ? compressed : compression === 8 ? inflateRawSync(compressed, { maxOutputLength: 64 * 1024 * 1024 }) : fail(`unsupported ZIP compression for ${name}`)
     if (value.length !== uncompressedSize) fail(`ZIP size mismatch for ${name}`)
     files.set(name, value)
   }

@@ -202,20 +202,25 @@ def review_binding_findings(root_flow: dict[str, Any]) -> list[dict[str, str]]:
                 src_outputs = src_node.get("outputs") if isinstance(src_node.get("outputs"), dict) else {}
                 contract_out = src_outputs.get(out_name)
                 target = contract_out.get("target") if isinstance(contract_out, dict) else None
-                if not isinstance(contract_out, dict) or not isinstance(target, dict) or not str(target.get("type") or "").strip() or not str(target.get("key") or "").strip():
+                target_type = str(target.get("type") or "").strip() if isinstance(target, dict) else ""
+                identity_ok = (
+                    isinstance(target, dict)
+                    and target_type in {"store", "artifact"}
+                    and bool(str(target.get("key") if target_type == "store" else target.get("artifact_id") or "").strip())
+                )
+                if not identity_ok:
                     findings.append({
                         "severity": "warning",
                         "code": "REVIEW_BINDING_UNRESOLVED",
                         "path": f"root_flow.states.{node_id}.inputs.{port}.binding",
                         "message": (
                             f"Review node '{node_id}' input '{port}' binds '{src_id}:{out_name}' but "
-                            f"'{src_id}.outputs.{out_name}' declares no valid target contract (the "
-                            "runtime treats a missing or malformed target as undeclared). The review "
-                            "screen shows nothing. Declare the output with a target (store key or "
-                            "artifact) on the source node first."
+                            f"'{src_id}.outputs.{out_name}' declares no valid target contract (store "
+                            "needs key, artifact needs artifact_id; the runtime treats a missing or "
+                            "malformed target as undeclared). The review screen shows nothing."
                         ),
                     })
-                elif target.get("type") == "artifact":
+                elif target_type == "artifact":
                     findings.append({
                         "severity": "info",
                         "code": "REVIEW_BINDING_ARTIFACT",

@@ -380,8 +380,8 @@ async function executeFlow(manifest, flow, runDirectory, mock) {
     }
     if (!current) fail(`state ${trace.at(-1)} has no sequence successor`)
   }
-  recordLog({ event: 'run_completed', status: 'completed' })
-  return { status: 'completed', trace, store, nodeLogs }
+  recordLog({ event: 'run_failed', status: 'failed', reason: 'execution plan exceeded its bounded step count' })
+  fail('execution plan exceeded its bounded step count')
 }
 
 async function main(args) {

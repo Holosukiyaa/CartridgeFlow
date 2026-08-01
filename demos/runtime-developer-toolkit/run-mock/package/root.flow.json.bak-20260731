@@ -1,0 +1,777 @@
+{
+ "schema_version": "1.0",
+ "id": "dev.ai-video-daily.root",
+ "name": "AI 视频日报根流程",
+ "mode": "lifecycle",
+ "cartridge_id": "dev.ai-video-daily",
+ "protocol": {
+  "id": "CF-FARP",
+  "version": "1.0"
+ },
+ "start": "start",
+ "states": {
+  "start": {
+   "type": "control",
+   "title": "开始日报",
+   "display_name": "开始日报",
+   "locked": true,
+   "layout": {
+    "x": 101,
+    "y": 859
+   }
+  },
+  "select_news": {
+   "type": "process",
+   "kind": "decision",
+   "executor": "llm",
+   "effect": "none",
+   "action": "llm_prompt",
+   "title": "筛选三条科技新闻",
+   "display_name": "筛选三条科技新闻",
+   "model_role": "editor",
+   "output": "news_selection",
+   "output_contract": "decision_envelope.v1",
+   "system_prompt": "You are a careful Chinese technology video news editor. Select only facts supported by the supplied RSS content and return the requested decision envelope JSON.",
+   "prompt": "Select exactly three distinct technology stories from the supplied RSS excerpts. Return only valid decision_envelope.v1 JSON: status resolved and payload.decision.selected_news. Each story must include title, source, url, published_at, selection_reason, tags, concise summary. Do not use Markdown. Do not invent facts or URLs. Keep the entire response below 1200 tokens.",
+   "decision_contract": {
+    "schema": "decision_envelope.v1",
+    "allowed_statuses": [
+     "resolved",
+     "blocked"
+    ],
+    "consume": {
+     "mode": "payload_path",
+     "path": "payload",
+     "as": "selected_news",
+     "required": true,
+     "on_missing": "fail_closed"
+    }
+   },
+   "inputs": {
+    "rss": {
+     "required": true,
+     "schema": {
+      "type": "object"
+     },
+     "binding": {
+      "source": "node_output",
+      "node_id": "bundle_rss",
+      "output": "rss_bundle"
+     }
+    }
+   },
+   "outputs": {
+    "news_selection": {
+     "schema": {
+      "type": "object"
+     },
+     "target": {
+      "type": "store",
+      "key": "news_selection"
+     }
+    }
+   },
+   "layout": {
+    "x": 2016,
+    "y": 781
+   },
+   "llm_options": {
+    "timeout_seconds": 45,
+    "max_tokens": 1400
+   }
+  },
+  "fact_check": {
+   "type": "process",
+   "kind": "validation",
+   "executor": "llm",
+   "effect": "none",
+   "action": "llm_prompt",
+   "title": "核对关键事实",
+   "display_name": "核对关键事实",
+   "model_role": "editor",
+   "output": "fact_check_report",
+   "system_prompt": "You are a cautious fact checker. Use only the supplied selected RSS stories. Separate confirmed facts, source claims, uncertainty, and missing evidence.",
+   "prompt": "Create a structured fact check report for the selected stories. Preserve source URLs and flag every unsupported claim.",
+   "inputs": {
+    "selected": {
+     "required": true,
+     "schema": {
+      "type": "object"
+     },
+     "binding": {
+      "source": "node_output",
+      "node_id": "select_news",
+      "output": "news_selection"
+     }
+    }
+   },
+   "outputs": {
+    "fact_check_report": {
+     "schema": {
+      "type": "object"
+     },
+     "target": {
+      "type": "store",
+      "key": "fact_check_report"
+     }
+    }
+   },
+   "layout": {
+    "x": 2500,
+    "y": 781
+   },
+   "llm_options": {
+    "timeout_seconds": 45,
+    "max_tokens": 1800
+   }
+  },
+  "draft_script": {
+   "type": "process",
+   "kind": "transform",
+   "executor": "llm",
+   "effect": "writes_artifacts",
+   "action": "llm_prompt",
+   "title": "生成脚本与分镜",
+   "display_name": "生成脚本与分镜",
+   "model_role": "editor",
+   "output": "daily_brief",
+   "permission": "write_run_artifacts",
+   "failure_policy": "fail_closed",
+   "audit_log": true,
+   "replay_policy": "new_revision",
+   "system_prompt": "Write a concise Chinese vertical-video daily brief for 60 to 90 seconds. Do not state unverified claims as facts. Keep source attribution and risk notes.",
+   "prompt": "Using the fact check report, create a 1080x1920 video brief with headline, spoken script, source links, and structured storyboard. Do not invent visual assets, media parameters, or publication results.",
+   "inputs": {
+    "facts": {
+     "required": true,
+     "schema": {
+      "type": "object"
+     },
+     "binding": {
+      "source": "node_output",
+      "node_id": "fact_check",
+      "output": "fact_check_report"
+     }
+    }
+   },
+   "outputs": {
+    "daily_brief": {
+     "schema": {
+      "type": "object"
+     },
+     "target": {
+      "type": "artifact",
+      "artifact_id": "daily_brief",
+      "type_name": "markdown",
+      "mime_type": "text/markdown",
+      "name": "daily_brief.md"
+     }
+    }
+   },
+   "layout": {
+    "x": 2984,
+    "y": 742
+   },
+   "llm_options": {
+    "timeout_seconds": 75,
+    "max_tokens": 3000
+   }
+  },
+  "human_review": {
+   "type": "process",
+   "kind": "human_gate",
+   "executor": "human",
+   "effect": "none",
+   "action": "confirm_checkpoint",
+   "title": "人工审核",
+   "display_name": "人工审核",
+   "component_ref": "review.daily_brief",
+   "interaction_mode": "review",
+   "params": {
+    "output": "approval",
+    "interaction": {
+     "store_key": "approval",
+     "input_schema": {
+      "type": "object"
+     }
+    }
+   },
+   "inputs": {
+    "brief": {
+     "required": true,
+     "schema": {
+      "type": "object"
+     },
+     "binding": {
+      "source": "node_output",
+      "node_id": "draft_script",
+      "output": "daily_brief"
+     }
+    },
+    "video": {
+     "required": true,
+     "schema": {
+      "type": "object"
+     },
+     "binding": {
+      "source": "node_output",
+      "node_id": "render_video",
+      "output": "video_render"
+     }
+    }
+   },
+   "outputs": {
+    "approval": {
+     "schema": {
+      "type": "object"
+     },
+     "target": {
+      "type": "store",
+      "key": "approval"
+     }
+    }
+   },
+   "layout": {
+    "x": 3952,
+    "y": 1184
+   }
+  },
+  "delivery_ready": {
+   "type": "process",
+   "kind": "delivery",
+   "executor": "deterministic",
+   "effect": "none",
+   "action": "collect_artifacts",
+   "title": "交付发布准备材料",
+   "display_name": "交付发布准备材料",
+   "params": {
+    "output": "daily_brief"
+   },
+   "inputs": {
+    "brief": {
+     "required": true,
+     "schema": {
+      "type": "object"
+     },
+     "binding": {
+      "source": "node_output",
+      "node_id": "draft_script",
+      "output": "daily_brief"
+     }
+    },
+    "approval": {
+     "required": true,
+     "schema": {
+      "type": "object"
+     },
+     "binding": {
+      "source": "node_output",
+      "node_id": "human_review",
+      "output": "approval"
+     }
+    }
+   },
+   "outputs": {
+    "delivery": {
+     "schema": {
+      "type": "object"
+     },
+     "target": {
+      "type": "store",
+      "key": "delivery"
+     }
+    }
+   },
+   "layout": {
+    "x": 80,
+    "y": 100
+   }
+  },
+  "complete": {
+   "type": "terminal",
+   "title": "内容包已交付",
+   "display_name": "内容包已交付",
+   "locked": true,
+   "layout": {
+    "x": 585,
+    "y": 178
+   }
+  },
+  "selection_failed": {
+   "type": "terminal",
+   "title": "选题失败",
+   "display_name": "选题失败",
+   "locked": true,
+   "layout": {
+    "x": 2500,
+    "y": 1228
+   }
+  },
+  "fact_check_failed": {
+   "type": "terminal",
+   "title": "事实核对失败",
+   "display_name": "事实核对失败",
+   "locked": true,
+   "layout": {
+    "x": 2984,
+    "y": 1267
+   }
+  },
+  "script_failed": {
+   "type": "terminal",
+   "title": "脚本生成失败",
+   "display_name": "脚本生成失败",
+   "locked": true,
+   "layout": {
+    "x": 3468,
+    "y": 834
+   }
+  },
+  "review_failed": {
+   "type": "terminal",
+   "title": "人工审核失败",
+   "display_name": "人工审核失败",
+   "locked": true,
+   "layout": {
+    "x": 4436,
+    "y": 1250
+   }
+  },
+  "delivery_failed": {
+   "type": "terminal",
+   "title": "交付准备失败",
+   "display_name": "交付准备失败",
+   "locked": true,
+   "layout": {
+    "x": 564,
+    "y": 470
+   }
+  },
+  "collect_run_context": {
+   "type": "process",
+   "kind": "input",
+   "executor": "deterministic",
+   "effect": "none",
+   "action": "collect_inputs",
+   "title": "确认日报运行参数",
+   "display_name": "确认日报运行参数",
+   "params": {
+    "output": "daily_request",
+    "fields": [
+     "edition_date",
+     "focus_topics"
+    ],
+    "defaults": {
+     "edition_date": {
+      "type": "current_date",
+      "timezone": "Asia/Shanghai"
+     }
+    }
+   },
+   "outputs": {
+    "daily_request": {
+     "schema": {
+      "type": "object"
+     },
+     "target": {
+      "type": "store",
+      "key": "daily_request"
+     }
+    }
+   },
+   "layout": {
+    "x": 564,
+    "y": 812
+   }
+  },
+  "fetch_trusted_rss": {
+   "type": "process",
+   "kind": "mcp_read",
+   "executor": "mcp",
+   "effect": "read_only",
+   "action": "tool_call",
+   "title": "获取可信科技 RSS",
+   "display_name": "获取可信科技 RSS",
+   "allowed_tools": [
+    "rss_ars",
+    "rss_techcrunch",
+    "rss_theverge",
+    "rss_wired",
+    "rss_engadget"
+   ],
+   "mcp_binding": {
+    "mode": "read_only",
+    "allowed_tools": [
+     "rss_ars",
+     "rss_techcrunch",
+     "rss_theverge",
+     "rss_wired",
+     "rss_engadget"
+    ]
+   },
+   "failure_policy": "fail_closed",
+   "replay_policy": "safe",
+   "params": {
+    "output": "rss_fetch_results",
+    "tools": [
+     {
+      "type": "remote",
+      "server": "rss",
+      "tool": "fetch_ars",
+      "mcp_tool_id": "rss_ars",
+      "params": {},
+      "output": "rss_ars",
+      "enabled": true
+     },
+     {
+      "type": "remote",
+      "server": "rss",
+      "tool": "fetch_techcrunch",
+      "mcp_tool_id": "rss_techcrunch",
+      "params": {},
+      "output": "rss_techcrunch",
+      "enabled": true
+     },
+     {
+      "type": "remote",
+      "server": "rss",
+      "tool": "fetch_theverge",
+      "mcp_tool_id": "rss_theverge",
+      "params": {},
+      "output": "rss_theverge",
+      "enabled": true
+     },
+     {
+      "type": "remote",
+      "server": "rss",
+      "tool": "fetch_wired",
+      "mcp_tool_id": "rss_wired",
+      "params": {},
+      "output": "rss_wired",
+      "enabled": true
+     },
+     {
+      "type": "remote",
+      "server": "rss",
+      "tool": "fetch_engadget",
+      "mcp_tool_id": "rss_engadget",
+      "params": {},
+      "output": "rss_engadget",
+      "enabled": true
+     }
+    ]
+   },
+   "outputs": {
+    "rss_fetch_results": {
+     "schema": {
+      "type": "object"
+     },
+     "target": {
+      "type": "store",
+      "key": "rss_fetch_results"
+     }
+    }
+   },
+   "layout": {
+    "x": 1048,
+    "y": 759
+   }
+  },
+  "bundle_rss": {
+   "type": "process",
+   "kind": "transfer",
+   "executor": "deterministic",
+   "effect": "none",
+   "action": "pass_result",
+   "title": "汇聚 RSS 与运行上下文",
+   "display_name": "汇聚 RSS 与运行上下文",
+   "params": {
+    "items": "daily_request,rss_ars,rss_techcrunch,rss_theverge,rss_wired,rss_engadget",
+    "output": "rss_bundle",
+    "preset_config": {
+     "items": "daily_request,rss_ars,rss_techcrunch,rss_theverge,rss_wired,rss_engadget",
+     "output_name": "rss_bundle",
+     "max_chars_per_item": 2000
+    }
+   },
+   "outputs": {
+    "rss_bundle": {
+     "schema": {
+      "type": "object"
+     },
+     "target": {
+      "type": "store",
+      "key": "rss_bundle"
+     }
+    }
+   },
+   "layout": {
+    "x": 1532,
+    "y": 812
+   }
+  },
+  "input_failed": {
+   "type": "terminal",
+   "title": "运行参数无效",
+   "display_name": "运行参数无效",
+   "locked": true,
+   "layout": {
+    "x": 1048,
+    "y": 1250
+   }
+  },
+  "rss_fetch_failed": {
+   "type": "terminal",
+   "title": "可信 RSS 获取失败",
+   "display_name": "可信 RSS 获取失败",
+   "locked": true,
+   "layout": {
+    "x": 2016,
+    "y": 1228
+   }
+  },
+  "render_video": {
+   "type": "process",
+   "kind": "transform",
+   "executor": "deterministic",
+   "effect": "writes_artifacts",
+   "action": "render_video_brief",
+   "title": "渲染并检查竖屏视频",
+   "display_name": "渲染并检查竖屏视频",
+   "permission": "write_run_artifacts",
+   "failure_policy": "fail_closed",
+   "replay_policy": "new_revision",
+   "params": {
+    "output": "video_render",
+    "preset_config": {
+     "voice": "zh-CN-XiaoxiaoNeural"
+    }
+   },
+   "inputs": {
+    "brief": {
+     "required": true,
+     "schema": {
+      "type": "string"
+     },
+     "binding": {
+      "source": "node_output",
+      "node_id": "draft_script",
+      "output": "daily_brief"
+     }
+    }
+   },
+   "outputs": {
+    "video_render": {
+     "schema": {
+      "type": "object"
+     },
+     "target": {
+      "type": "store",
+      "key": "video_render"
+     }
+    }
+   },
+   "layout": {
+    "x": 3468,
+    "y": 1176
+   }
+  },
+  "video_render_failed": {
+   "type": "terminal",
+   "title": "视频渲染失败",
+   "display_name": "视频渲染失败",
+   "locked": true,
+   "layout": {
+    "x": 3952,
+    "y": 1658
+   }
+  }
+ },
+ "execution_plan": {
+  "schema": "cartridgeflow.execution_plan.v1",
+  "entry": "start",
+  "edges": [
+   {
+    "id": "start_collect",
+    "kind": "sequence",
+    "from": "start",
+    "to": "collect_run_context"
+   },
+   {
+    "id": "collect_fetch",
+    "kind": "sequence",
+    "from": "collect_run_context",
+    "to": "fetch_trusted_rss"
+   },
+   {
+    "id": "fetch_bundle",
+    "kind": "sequence",
+    "from": "fetch_trusted_rss",
+    "to": "bundle_rss"
+   },
+   {
+    "id": "bundle_select",
+    "kind": "sequence",
+    "from": "bundle_rss",
+    "to": "select_news"
+   },
+   {
+    "id": "select_facts",
+    "kind": "sequence",
+    "from": "select_news",
+    "to": "fact_check"
+   },
+   {
+    "id": "facts_script",
+    "kind": "sequence",
+    "from": "fact_check",
+    "to": "draft_script"
+   },
+   {
+    "id": "delivery_complete",
+    "kind": "sequence",
+    "from": "delivery_ready",
+    "to": "complete"
+   },
+   {
+    "id": "input_failure",
+    "kind": "failure",
+    "from": "collect_run_context",
+    "to": "input_failed",
+    "failure": {
+     "id": "input_error",
+     "causes": [
+      "exception",
+      "validation"
+     ]
+    }
+   },
+   {
+    "id": "fetch_failure",
+    "kind": "failure",
+    "from": "fetch_trusted_rss",
+    "to": "rss_fetch_failed",
+    "failure": {
+     "id": "fetch_error",
+     "causes": [
+      "exception",
+      "resource",
+      "timeout"
+     ]
+    }
+   },
+   {
+    "id": "bundle_failure",
+    "kind": "failure",
+    "from": "bundle_rss",
+    "to": "rss_fetch_failed",
+    "failure": {
+     "id": "bundle_error",
+     "causes": [
+      "exception",
+      "validation"
+     ]
+    }
+   },
+   {
+    "id": "select_failure",
+    "kind": "failure",
+    "from": "select_news",
+    "to": "selection_failed",
+    "failure": {
+     "id": "select_error",
+     "causes": [
+      "exception",
+      "resource",
+      "timeout",
+      "validation"
+     ]
+    }
+   },
+   {
+    "id": "facts_failure",
+    "kind": "failure",
+    "from": "fact_check",
+    "to": "fact_check_failed",
+    "failure": {
+     "id": "facts_error",
+     "causes": [
+      "exception",
+      "resource",
+      "timeout",
+      "validation"
+     ]
+    }
+   },
+   {
+    "id": "script_failure",
+    "kind": "failure",
+    "from": "draft_script",
+    "to": "script_failed",
+    "failure": {
+     "id": "script_error",
+     "causes": [
+      "exception",
+      "resource",
+      "timeout",
+      "validation"
+     ]
+    }
+   },
+   {
+    "id": "review_failure",
+    "kind": "failure",
+    "from": "human_review",
+    "to": "review_failed",
+    "failure": {
+     "id": "review_error",
+     "causes": [
+      "exception",
+      "timeout",
+      "cancelled"
+     ]
+    }
+   },
+   {
+    "id": "script_render",
+    "kind": "sequence",
+    "from": "draft_script",
+    "to": "render_video"
+   },
+   {
+    "id": "render_review",
+    "kind": "sequence",
+    "from": "render_video",
+    "to": "human_review"
+   },
+   {
+    "id": "render_failure",
+    "kind": "failure",
+    "from": "render_video",
+    "to": "video_render_failed",
+    "failure": {
+     "id": "video_render_error",
+     "causes": [
+      "exception",
+      "resource",
+      "timeout",
+      "validation"
+     ]
+    }
+   },
+   {
+    "id": "delivery_failure",
+    "kind": "failure",
+    "from": "delivery_ready",
+    "to": "delivery_failed",
+    "failure": {
+     "id": "delivery_error",
+     "causes": [
+      "exception",
+      "validation"
+     ]
+    }
+   }
+  ]
+ }
+}

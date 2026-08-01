@@ -184,16 +184,26 @@ def _scan_text_content(root: Path, forbidden: list[dict]) -> None:
                     ))
 
 
-def _walk_sensitive(value, prefix: str = ""):
+# Protocol-owned store-target fields that legitimately use the word "key":
+# outputs.<name>.target.key and inputs.<name>.binding.key are store key names
+# declared by the flow author, not credentials.
+_PROTOCOL_KEY_PARENTS = {"target", "binding"}
+
+
+def _walk_sensitive(value, prefix: str = "", parent: str = ""):
     if isinstance(value, dict):
         for key, child in value.items():
             path = f"{prefix}.{key}" if prefix else str(key)
-            if str(key).casefold() in SENSITIVE_KEYS:
+            is_protocol_key = (
+                str(key).casefold() == "key"
+                and parent in _PROTOCOL_KEY_PARENTS
+            )
+            if str(key).casefold() in SENSITIVE_KEYS and not is_protocol_key:
                 yield path, child
-            yield from _walk_sensitive(child, path)
+            yield from _walk_sensitive(child, path, parent=str(key))
     elif isinstance(value, list):
         for index, child in enumerate(value):
-            yield from _walk_sensitive(child, f"{prefix}[{index}]")
+            yield from _walk_sensitive(child, f"{prefix}[{index}]", parent=parent)
 
 
 def _safe_package_file(root: Path, relative: str) -> Path | None:

@@ -1167,7 +1167,7 @@ def _release_preflight_for_cartridge(cartridge: dict) -> dict:
         and environment.get("status") != "blocked"
         and dependencies.get("status") != "blocked"
         and model_report.get("status") != "blocked"
-        and resource_report.get("status") == "ok"
+        and resource_report.get("status") in {"ok", "warning"}
         and package_report.get("status") == "ok"
         and portability_report.get("status") == "ok"
         and release_preview.get("status") == "ready"

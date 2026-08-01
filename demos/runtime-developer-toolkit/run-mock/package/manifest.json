@@ -1,0 +1,388 @@
+{
+    "schema_version": "1.0",
+    "id": "dev.ai-video-daily",
+    "name": "AI 视频日报",
+    "version": "0.1.0",
+    "kind": "runtime_cartridge",
+    "category": "content_workflow",
+    "description": "基于本机配置的可信科技 RSS 来源，生成可追溯的视频日报内容包，并在人工审核后交付发布准备材料。",
+    "publisher": {
+        "id": "local",
+        "name": "Local Developer",
+        "type": "local",
+        "verified": false
+    },
+    "branding": {
+        "tags": [
+            "ai-video",
+            "daily",
+            "rss",
+            "trusted-sources",
+            "reference",
+            "v0-content-validation"
+        ]
+    },
+    "welcome": {
+        "type": "markdown",
+        "entry": "assets/welcome.md"
+    },
+    "root_flow": {
+        "entry": "root.flow.json",
+        "mode": "lifecycle",
+        "required": true
+    },
+    "asset_registry": "assets/registry.json",
+    "interaction_components": "assets/components.json",
+    "base_contract": {
+        "id": "CARTRIDGEFLOW-BASE",
+        "version": "0.2"
+    },
+    "runtime_contract": {
+        "protocol": "CF-FARP",
+        "protocol_version": "1.0",
+        "required_profiles": [
+            "runtime_core",
+            "flow_analysis",
+            "execution_plan_runtime",
+            "dynamic_decision_runtime",
+            "interaction_runtime",
+            "tool_transparency"
+        ],
+        "recommended_profiles": [
+            "testbench_core",
+            "dev_authoring"
+        ],
+        "required_capabilities": [
+            "manifest_load",
+            "manifest_validate",
+            "runtime_contract_parse",
+            "compatibility_report",
+            "root_flow_execution",
+            "structured_io_contract",
+            "explicit_input_binding",
+            "basic_node_execution",
+            "unified_process_node",
+            "process_node_kind_parse",
+            "process_executor_contract",
+            "process_effect_contract",
+            "decision_process",
+            "decision_envelope_v1",
+            "decision_envelope_validate",
+            "decision_consume_contract",
+            "decision_consume_projection",
+            "llm_live_mode",
+            "mcp_read_process",
+            "model_recipe_binding",
+            "builtin_tool_call",
+            "artifact_collect",
+            "delivery_readiness_check",
+            "runtime_error_envelope_v1",
+            "runtime_state_machine",
+            "checkpoint_persistence",
+            "runtime_retry_policy",
+            "runtime_checkpoint_resume",
+            "side_effect_replay_guard",
+            "execution_plan_v1_authoring",
+            "execution_plan_static_conformance",
+            "execution_plan_compile",
+            "execution_plan_sequence_contract",
+            "execution_plan_wait_contract",
+            "execution_plan_failure_contract",
+            "execution_plan_token_ledger"
+        ],
+        "optional_capabilities": [
+            "artifact_preview",
+            "testbench_run"
+        ],
+        "required_tools": [],
+        "optional_tools": []
+    },
+    "delivery_readiness": {
+        "level": "production",
+        "certification_target": "CF-FARP@1.0",
+        "notes": "本机可信 RSS 驱动选题；脚本经 Edge TTS、Pillow 和 FFmpeg 生成可解码的竖屏 MP4，渲染失败会阻止审核与交付。"
+    },
+    "runtime": {
+        "type": "lab",
+        "adapter": "builtin:lab"
+    },
+    "workspace": {
+        "type": "none",
+        "required": false,
+        "open_policy": "manual"
+    },
+    "environment": {
+        "os": [
+            "windows",
+            "macos",
+            "linux"
+        ],
+        "requires": []
+    },
+    "permissions": [
+        {
+            "id": "access_network",
+            "reason": "访问本机配置的只读 RSS Connector，以获取可信科技来源。",
+            "required": true,
+            "level": "safe"
+        }
+    ],
+    "dependencies": [],
+    "mcp_tools": [
+        {
+            "id": "rss_ars",
+            "name": "获取 Ars Technica Technology Lab RSS",
+            "type": "remote",
+            "server": "rss",
+            "tool": "fetch_ars",
+            "resource_role": "rss_ars",
+            "transparency": "contract_only",
+            "description": "通过本机绑定的只读 Connector 获取 Ars Technica Technology Lab 的公开 RSS。",
+            "default_params": {},
+            "required": true,
+            "enabled": true,
+            "contract": {
+                "side_effect": "read_only",
+                "idempotent": true,
+                "timeout_ms": 30000,
+                "retry_policy": {
+                    "max_attempts": 2,
+                    "initial_delay_seconds": 0.5,
+                    "max_delay_seconds": 2,
+                    "total_timeout_seconds": 45
+                },
+                "capability": "rss.read"
+            }
+        },
+        {
+            "id": "rss_techcrunch",
+            "name": "获取 TechCrunch RSS",
+            "type": "remote",
+            "server": "rss",
+            "tool": "fetch_techcrunch",
+            "resource_role": "rss_techcrunch",
+            "transparency": "contract_only",
+            "description": "通过本机绑定的只读 Connector 获取 TechCrunch 的公开 RSS。",
+            "default_params": {},
+            "required": true,
+            "enabled": true,
+            "contract": {
+                "side_effect": "read_only",
+                "idempotent": true,
+                "timeout_ms": 30000,
+                "retry_policy": {
+                    "max_attempts": 2,
+                    "initial_delay_seconds": 0.5,
+                    "max_delay_seconds": 2,
+                    "total_timeout_seconds": 45
+                },
+                "capability": "rss.read"
+            }
+        },
+        {
+            "id": "rss_theverge",
+            "name": "获取 The Verge RSS",
+            "type": "remote",
+            "server": "rss",
+            "tool": "fetch_theverge",
+            "resource_role": "rss_theverge",
+            "transparency": "contract_only",
+            "description": "通过本机绑定的只读 Connector 获取 The Verge 的公开 RSS。",
+            "default_params": {},
+            "required": true,
+            "enabled": true,
+            "contract": {
+                "side_effect": "read_only",
+                "idempotent": true,
+                "timeout_ms": 30000,
+                "retry_policy": {
+                    "max_attempts": 2,
+                    "initial_delay_seconds": 0.5,
+                    "max_delay_seconds": 2,
+                    "total_timeout_seconds": 45
+                },
+                "capability": "rss.read"
+            }
+        },
+        {
+            "id": "rss_wired",
+            "name": "获取 WIRED RSS",
+            "type": "remote",
+            "server": "rss",
+            "tool": "fetch_wired",
+            "resource_role": "rss_wired",
+            "transparency": "contract_only",
+            "description": "通过本机绑定的只读 Connector 获取 WIRED 的公开 RSS。",
+            "default_params": {},
+            "required": true,
+            "enabled": true,
+            "contract": {
+                "side_effect": "read_only",
+                "idempotent": true,
+                "timeout_ms": 30000,
+                "retry_policy": {
+                    "max_attempts": 2,
+                    "initial_delay_seconds": 0.5,
+                    "max_delay_seconds": 2,
+                    "total_timeout_seconds": 45
+                },
+                "capability": "rss.read"
+            }
+        },
+        {
+            "id": "rss_engadget",
+            "name": "获取 Engadget RSS",
+            "type": "remote",
+            "server": "rss",
+            "tool": "fetch_engadget",
+            "resource_role": "rss_engadget",
+            "transparency": "contract_only",
+            "description": "通过本机绑定的只读 Connector 获取 Engadget 的公开 RSS。",
+            "default_params": {},
+            "required": true,
+            "enabled": true,
+            "contract": {
+                "side_effect": "read_only",
+                "idempotent": true,
+                "timeout_ms": 30000,
+                "retry_policy": {
+                    "max_attempts": 2,
+                    "initial_delay_seconds": 0.5,
+                    "max_delay_seconds": 2,
+                    "total_timeout_seconds": 45
+                },
+                "capability": "rss.read"
+            }
+        }
+    ],
+    "llm_recipe": {
+        "schema": "cartridgeflow.llm_recipe.v1",
+        "roles": [
+            {
+                "id": "editor",
+                "label": "科技视频日报编辑",
+                "required": true,
+                "capability": "text_reasoning",
+                "api_type": "openai",
+                "wire_api": "chat_completions",
+                "model": "configured-locally"
+            }
+        ]
+    },
+    "resource_requirements": [
+        {
+            "role": "rss_ars",
+            "required": true,
+            "kinds": [
+                "remote_api"
+            ],
+            "capabilities": [
+                "network.fetch",
+                "rss.read"
+            ],
+            "constraints": {
+                "read_only": true
+            }
+        },
+        {
+            "role": "rss_techcrunch",
+            "required": true,
+            "kinds": [
+                "remote_api"
+            ],
+            "capabilities": [
+                "network.fetch",
+                "rss.read"
+            ],
+            "constraints": {
+                "read_only": true
+            }
+        },
+        {
+            "role": "rss_theverge",
+            "required": true,
+            "kinds": [
+                "remote_api"
+            ],
+            "capabilities": [
+                "network.fetch",
+                "rss.read"
+            ],
+            "constraints": {
+                "read_only": true
+            }
+        },
+        {
+            "role": "rss_wired",
+            "required": true,
+            "kinds": [
+                "remote_api"
+            ],
+            "capabilities": [
+                "network.fetch",
+                "rss.read"
+            ],
+            "constraints": {
+                "read_only": true
+            }
+        },
+        {
+            "role": "rss_engadget",
+            "required": true,
+            "kinds": [
+                "remote_api"
+            ],
+            "capabilities": [
+                "network.fetch",
+                "rss.read"
+            ],
+            "constraints": {
+                "read_only": true
+            }
+        }
+    ],
+    "inputs": [
+        {
+            "id": "edition_date",
+            "label": "日报日期",
+            "type": "date",
+            "required": true,
+            "runtime_default": {
+                "type": "current_date",
+                "timezone": "Asia/Shanghai"
+            }
+        },
+        {
+            "id": "focus_topics",
+            "label": "关注主题",
+            "type": "textarea",
+            "required": true,
+            "default": "AI、模型、芯片、开发工具"
+        }
+    ],
+    "outputs": [
+        {
+            "id": "daily_video",
+            "label": "已审核的竖屏视频日报",
+            "type": "video",
+            "required": true
+        }
+    ],
+    "artifacts": {
+        "store_policy": "run_scoped",
+        "visibility_default": "user",
+        "allowed_types": [
+            "document",
+            "json",
+            "text",
+            "video",
+            "audio",
+            "image"
+        ]
+    },
+    "delivery": {
+        "type": "summary_with_artifacts",
+        "primary_output": "daily_video",
+        "show_artifacts": true
+    }
+}

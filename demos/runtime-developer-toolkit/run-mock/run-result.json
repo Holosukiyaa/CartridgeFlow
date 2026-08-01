@@ -1,0 +1,41 @@
+{
+  "release_id": "local:dev.ai-video-daily@0.1.0+sha256:1361759ee379134645caee0c934d21230a06dc48c2080825e32b74b673c02166",
+  "installed": "package",
+  "status": "completed",
+  "trace": [
+    "start",
+    "collect_run_context",
+    "fetch_trusted_rss",
+    "bundle_rss",
+    "select_news",
+    "fact_check",
+    "draft_script",
+    "persist_daily_brief",
+    "render_video",
+    "human_review",
+    "delivery_ready",
+    "complete"
+  ],
+  "store": {
+    "news_selection": {
+      "status": "resolved",
+      "value": "mock response for select_news"
+    },
+    "fact_check_decision": {
+      "status": "resolved",
+      "value": "mock response for fact_check"
+    },
+    "script_decision": {
+      "status": "resolved",
+      "value": "mock response for draft_script"
+    },
+    "daily_brief": {
+      "path": "artifacts/daily_brief.md",
+      "bytes": 2
+    },
+    "approval": {
+      "approval": "approved",
+      "feedback": ""
+    }
+  }
+}

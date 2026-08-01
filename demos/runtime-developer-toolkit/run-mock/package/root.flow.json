@@ -1,0 +1,838 @@
+{
+ "schema_version": "1.0",
+ "id": "dev.ai-video-daily.root",
+ "name": "AI 视频日报根流程",
+ "mode": "lifecycle",
+ "cartridge_id": "dev.ai-video-daily",
+ "protocol": {
+  "id": "CF-FARP",
+  "version": "1.0"
+ },
+ "start": "start",
+ "states": {
+  "start": {
+   "type": "control",
+   "title": "开始日报",
+   "display_name": "开始日报",
+   "locked": true,
+   "layout": {
+    "x": 80,
+    "y": 175
+   }
+  },
+  "select_news": {
+   "type": "process",
+   "kind": "decision",
+   "executor": "llm",
+   "effect": "none",
+   "action": "llm_prompt",
+   "title": "筛选三条科技新闻",
+   "display_name": "筛选三条科技新闻",
+   "model_role": "editor",
+   "output": "news_selection",
+   "output_contract": "decision_envelope.v1",
+   "system_prompt": "You are a careful Chinese technology video news editor. Select only facts supported by the supplied RSS content and return the requested decision envelope JSON.",
+   "prompt": "Select exactly three distinct technology stories from the supplied RSS excerpts.\n\nReturn ONLY one valid JSON object matching this exact structure (no Markdown, no text before or after):\n{\"schema\":\"decision_envelope.v1\",\"status\":\"resolved\",\"summary\":\"一句话说明本次选稿\",\"payload\":{\"selected_news\":[{\"title\":\"标题\",\"source\":\"来源名称\",\"url\":\"https://...\",\"published_at\":\"YYYY-MM-DD\",\"selection_reason\":\"选择理由\",\"tags\":[\"标签\"],\"concise_summary\":\"80字以内摘要\"}]}}\n\nRequirements:\n- payload.selected_news must contain exactly 3 items.\n- Each story must include title, source, url, published_at, selection_reason, tags, concise_summary.\n- Do not use Markdown. Do not invent facts or URLs. Use ASCII double quotes only.\n- Keep the entire response below 1200 tokens.",
+   "decision_contract": {
+    "schema": "decision_envelope.v1",
+    "allowed_statuses": [
+     "resolved",
+     "blocked"
+    ],
+    "consume": {
+     "mode": "payload_path",
+     "path": "payload",
+     "as": "selected_news",
+     "required": true,
+     "on_missing": "fail_closed"
+    }
+   },
+   "inputs": {
+    "rss": {
+     "required": true,
+     "schema": {
+      "type": "object"
+     },
+     "binding": {
+      "source": "node_output",
+      "node_id": "bundle_rss",
+      "output": "rss_bundle"
+     }
+    }
+   },
+   "outputs": {
+    "news_selection": {
+     "schema": {
+      "type": "object"
+     },
+     "target": {
+      "type": "store",
+      "key": "news_selection"
+     }
+    }
+   },
+   "layout": {
+    "x": 1974,
+    "y": 699
+   },
+   "llm_options": {
+    "timeout_seconds": 150,
+    "max_tokens": 20000
+   },
+   "params": {
+    "description": "从合并后的 RSS 材料中挑选最值得做的 3 条科技新闻（结合本期焦点话题），按视频选题标准排序——这是全流程的选题决策点，选错方向后面全部白做。"
+   }
+  },
+  "fact_check": {
+   "type": "process",
+   "kind": "decision",
+   "executor": "llm",
+   "effect": "none",
+   "action": "llm_prompt",
+   "title": "核对关键事实",
+   "display_name": "核对关键事实",
+   "model_role": "editor",
+   "output": "fact_check_decision",
+   "output_contract": "decision_envelope.v1",
+   "system_prompt": "You are a cautious fact checker. Use only the supplied selected RSS stories. Separate confirmed facts, source claims, uncertainty, and missing evidence.",
+   "prompt": "Create a structured fact check report for exactly the supplied stories. Return ONLY one valid JSON object with this shape: {\"schema\":\"decision_envelope.v1\",\"status\":\"resolved\",\"summary\":\"一句话核对结论\",\"payload\":{\"fact_check_report\":{\"stories\":[{\"title\":\"标题\",\"source_url\":\"https://...\",\"confirmed_facts\":[\"事实\"],\"source_claims\":[\"来源主张\"],\"uncertainties\":[\"不确定项\"],\"safe_for_script\":true}],\"high_risk_issues\":[]}}}. Preserve every source URL, flag unsupported claims, do not add Markdown, and do not invent facts.",
+   "decision_contract": {
+    "schema": "decision_envelope.v1",
+    "allowed_statuses": [
+     "resolved",
+     "blocked"
+    ],
+    "consume": {
+     "mode": "payload_path",
+     "path": "payload.fact_check_report",
+     "as": "fact_check_report",
+     "required": true,
+     "on_missing": "fail_closed"
+    }
+   },
+   "inputs": {
+    "selected": {
+     "required": true,
+     "schema": {
+      "type": "object"
+     },
+     "binding": {
+      "source": "store",
+      "key": "selected_news"
+     }
+    }
+   },
+   "outputs": {
+    "fact_check_decision": {
+     "schema": {
+      "type": "object"
+     },
+     "target": {
+      "type": "store",
+      "key": "fact_check_decision"
+     }
+    }
+   },
+   "layout": {
+    "x": 2458,
+    "y": 1110
+   },
+   "llm_options": {
+    "timeout_seconds": 150,
+    "max_tokens": 20000
+   },
+   "params": {
+    "description": "逐条核对 3 条选题的关键事实：数字、日期、主体、消息来源是否可靠；把可疑点明确标出，防止视频把错误信息发出去。"
+   }
+  },
+  "draft_script": {
+   "type": "process",
+   "kind": "decision",
+   "executor": "llm",
+   "effect": "none",
+   "action": "llm_prompt",
+   "title": "生成脚本与分镜",
+   "display_name": "生成脚本与分镜",
+   "model_role": "editor",
+   "output": "script_decision",
+   "output_contract": "decision_envelope.v1",
+   "failure_policy": "fail_closed",
+   "system_prompt": "Write a concise Chinese vertical-video daily brief for 60 to 90 seconds. Do not state unverified claims as facts. Keep source attribution and risk notes.",
+   "prompt": "Using the fact check report, return ONLY one valid JSON object with this shape: {\"schema\":\"decision_envelope.v1\",\"status\":\"resolved\",\"summary\":\"一句话成稿说明\",\"payload\":{\"daily_brief\":\"完整 Markdown 文稿\"}}. The daily_brief string must contain sections named 视频标题, 口播脚本, 分镜, 来源链接, 风险说明; target 60 to 90 seconds and 1080x1920. Escape line breaks correctly inside the JSON string. Do not invent visual assets, media parameters, facts, URLs, or publication results.",
+   "decision_contract": {
+    "schema": "decision_envelope.v1",
+    "allowed_statuses": [
+     "resolved",
+     "blocked"
+    ],
+    "consume": {
+     "mode": "payload_path",
+     "path": "payload.daily_brief",
+     "as": "daily_brief_text",
+     "required": true,
+     "on_missing": "fail_closed"
+    }
+   },
+   "inputs": {
+    "facts": {
+     "required": true,
+     "schema": {
+      "type": "object"
+     },
+     "binding": {
+      "source": "store",
+      "key": "fact_check_report"
+     }
+    }
+   },
+   "outputs": {
+    "script_decision": {
+     "schema": {
+      "type": "object"
+     },
+     "target": {
+      "type": "store",
+      "key": "script_decision"
+     }
+    },
+    "daily_brief": {
+     "schema": {
+      "type": "string"
+     },
+     "target": {
+      "type": "store",
+      "key": "daily_brief"
+     }
+    }
+   },
+   "layout": {
+    "x": 2966,
+    "y": 1195
+   },
+   "llm_options": {
+    "timeout_seconds": 150,
+    "max_tokens": 20000
+   },
+   "params": {
+    "description": "把通过核对的新闻写成口播脚本和分镜（标题、旁白、画面提示），控制语速与时长，让内容适合竖屏短视频播出。"
+   }
+  },
+  "persist_daily_brief": {
+   "type": "process",
+   "kind": "transform",
+   "executor": "deterministic",
+   "effect": "writes_artifacts",
+   "action": "pass_result",
+   "title": "保存日报脚本产物",
+   "display_name": "保存日报脚本产物",
+   "output": "daily_brief",
+   "permission": "write_run_artifacts",
+   "failure_policy": "fail_closed",
+   "audit_log": true,
+   "replay_policy": "new_revision",
+   "inputs": {
+    "brief": {
+     "required": true,
+     "schema": {
+      "type": "string",
+      "minLength": 1
+     },
+     "binding": {
+      "source": "store",
+      "key": "daily_brief_text"
+     }
+    }
+   },
+   "outputs": {
+    "daily_brief": {
+     "schema": {
+      "type": "object"
+     },
+     "target": {
+      "type": "artifact",
+      "artifact_id": "daily_brief",
+      "type_name": "markdown",
+      "mime_type": "text/markdown",
+      "name": "daily_brief.md"
+     }
+    }
+   },
+   "layout": {
+    "x": 3426,
+    "y": 1304
+   },
+   "params": {
+    "description": "把 AI 已决议的 Markdown 文稿确定性写成 daily_brief Artifact，固定产物身份和来源，供视频渲染、审核与交付共同引用。"
+   }
+  },
+  "human_review": {
+   "type": "process",
+   "kind": "human_gate",
+   "executor": "human",
+   "effect": "writes_store",
+   "action": "confirm_checkpoint",
+   "title": "人工审核",
+   "display_name": "人工审核",
+   "component_ref": "review.daily_brief",
+   "interaction_mode": "review",
+   "params": {
+    "output": "approval",
+    "interaction": {
+     "store_key": "approval",
+     "input_schema": {
+      "type": "object"
+     },
+     "prompt": "请审核下方日报脚本与渲染结果：确认标题准确、口播无事实错误后点「提交并继续」进入视频交付；需要修改请驳回并说明原因。"
+    },
+    "description": "同时展示日报脚本与已渲染视频，等待人工确认内容、画面和声音质量；只有明确批准后才允许生成最终交付记录。"
+   },
+   "inputs": {
+    "brief": {
+     "required": true,
+     "schema": {
+      "type": "object"
+     },
+     "binding": {
+      "source": "store",
+      "key": "daily_brief_text"
+     }
+    },
+    "video": {
+     "required": true,
+     "schema": {
+      "type": "object"
+     },
+     "binding": {
+      "source": "node_output",
+      "node_id": "render_video",
+      "output": "video_render"
+     }
+    }
+   },
+   "outputs": {
+    "approval": {
+     "schema": {
+      "type": "object"
+     },
+     "target": {
+      "type": "store",
+      "key": "approval"
+     }
+    }
+   },
+   "layout": {
+    "x": 4394,
+    "y": 1277
+   }
+  },
+  "delivery_ready": {
+   "type": "process",
+   "kind": "delivery",
+   "executor": "deterministic",
+   "effect": "writes_store",
+   "action": "collect_artifacts",
+   "title": "交付发布准备材料",
+   "display_name": "交付发布准备材料",
+   "params": {
+    "output": "daily_brief",
+    "description": "汇总已批准的日报脚本、成品视频、审核答案和产物清单，形成可追溯的最终交付记录。"
+   },
+   "inputs": {
+    "brief": {
+     "required": true,
+     "schema": {
+      "type": "object"
+     },
+     "binding": {
+      "source": "node_output",
+      "node_id": "persist_daily_brief",
+      "output": "daily_brief"
+     }
+    },
+    "approval": {
+     "required": true,
+     "schema": {
+      "type": "object"
+     },
+     "binding": {
+      "source": "node_output",
+      "node_id": "human_review",
+      "output": "approval"
+     }
+    },
+    "video": {
+     "required": true,
+     "schema": {
+      "type": "object"
+     },
+     "binding": {
+      "source": "node_output",
+      "node_id": "render_video",
+      "output": "video_render"
+     }
+    }
+   },
+   "outputs": {
+    "delivery": {
+     "schema": {
+      "type": "object"
+     },
+     "target": {
+      "type": "store",
+      "key": "delivery"
+     }
+    }
+   },
+   "layout": {
+    "x": 4868,
+    "y": 1300
+   }
+  },
+  "complete": {
+   "type": "terminal",
+   "title": "内容包已交付",
+   "display_name": "内容包已交付",
+   "locked": true,
+   "layout": {
+    "x": 5440,
+    "y": 1251
+   }
+  },
+  "collect_run_context": {
+   "type": "process",
+   "kind": "input",
+   "executor": "user",
+   "effect": "writes_store",
+   "action": "collect_inputs",
+   "title": "确认日报运行参数",
+   "display_name": "确认日报运行参数",
+   "params": {
+    "output": "daily_request",
+    "fields": [
+     "edition_date",
+     "focus_topics"
+    ],
+    "defaults": {
+     "edition_date": {
+      "type": "current_date",
+      "timezone": "Asia/Shanghai"
+     }
+    },
+    "description": "先收集今天的日期和本期想聚焦的科技话题，整理成统一参数（daily_request）供全流程使用——你不填写的话整个流程无法开始。"
+   },
+   "outputs": {
+    "daily_request": {
+     "schema": {
+      "type": "object"
+     },
+     "target": {
+      "type": "store",
+      "key": "daily_request"
+     }
+    }
+   },
+   "layout": {
+    "x": 522,
+    "y": 100
+   }
+  },
+  "fetch_trusted_rss": {
+   "type": "process",
+   "kind": "mcp_read",
+   "executor": "mcp",
+   "effect": "read_only",
+   "action": "tool_call",
+   "title": "获取可信科技 RSS",
+   "display_name": "获取可信科技 RSS",
+   "allowed_tools": [
+    "rss_ars",
+    "rss_techcrunch",
+    "rss_theverge",
+    "rss_wired",
+    "rss_engadget"
+   ],
+   "mcp_binding": {
+    "mode": "read_only",
+    "allowed_tools": [
+     "rss_ars",
+     "rss_techcrunch",
+     "rss_theverge",
+     "rss_wired",
+     "rss_engadget"
+    ]
+   },
+   "failure_policy": "fail_closed",
+   "replay_policy": "safe",
+   "params": {
+    "output": "rss_fetch_results",
+    "tools": [
+     {
+      "type": "remote",
+      "server": "rss",
+      "tool": "fetch_ars",
+      "mcp_tool_id": "rss_ars",
+      "params": {},
+      "output": "rss_ars",
+      "enabled": true
+     },
+     {
+      "type": "remote",
+      "server": "rss",
+      "tool": "fetch_techcrunch",
+      "mcp_tool_id": "rss_techcrunch",
+      "params": {},
+      "output": "rss_techcrunch",
+      "enabled": true
+     },
+     {
+      "type": "remote",
+      "server": "rss",
+      "tool": "fetch_theverge",
+      "mcp_tool_id": "rss_theverge",
+      "params": {},
+      "output": "rss_theverge",
+      "enabled": true
+     },
+     {
+      "type": "remote",
+      "server": "rss",
+      "tool": "fetch_wired",
+      "mcp_tool_id": "rss_wired",
+      "params": {},
+      "output": "rss_wired",
+      "enabled": true
+     },
+     {
+      "type": "remote",
+      "server": "rss",
+      "tool": "fetch_engadget",
+      "mcp_tool_id": "rss_engadget",
+      "params": {},
+      "output": "rss_engadget",
+      "enabled": true
+     }
+    ],
+    "description": "并行抓取 5 个可信科技源（Ars Technica、TechCrunch、The Verge、WIRED、Engadget）的今日 RSS 原文，保存为后续筛选的候选材料；只读取，不修改任何外部数据。"
+   },
+   "outputs": {
+    "rss_fetch_results": {
+     "schema": {
+      "type": "object"
+     },
+     "target": {
+      "type": "store",
+      "key": "rss_fetch_results"
+     }
+    }
+   },
+   "layout": {
+    "x": 1006,
+    "y": 360
+   }
+  },
+  "bundle_rss": {
+   "type": "process",
+   "kind": "transfer",
+   "executor": "deterministic",
+   "effect": "writes_store",
+   "action": "pass_result",
+   "title": "汇聚 RSS 与运行上下文",
+   "display_name": "汇聚 RSS 与运行上下文",
+   "params": {
+    "items": "daily_request,rss_ars,rss_techcrunch,rss_theverge,rss_wired,rss_engadget",
+    "output": "rss_bundle",
+    "preset_config": {
+     "items": "daily_request,rss_ars,rss_techcrunch,rss_theverge,rss_wired,rss_engadget",
+     "output_name": "rss_bundle",
+     "max_chars_per_item": 2000
+    },
+    "description": "把 RSS 原文和你的运行参数合并成一个结构化材料包（rss_bundle），让后续 AI 只面对一份整齐的输入，而不是多源零散 XML。"
+   },
+   "outputs": {
+    "rss_bundle": {
+     "schema": {
+      "type": "object"
+     },
+     "target": {
+      "type": "store",
+      "key": "rss_bundle"
+     }
+    }
+   },
+   "layout": {
+    "x": 1490,
+    "y": 858
+   }
+  },
+  "render_video": {
+   "type": "process",
+   "kind": "transform",
+   "executor": "deterministic",
+   "effect": "writes_artifacts",
+   "action": "render_video_brief",
+   "title": "渲染并检查竖屏视频",
+   "display_name": "渲染并检查竖屏视频",
+   "permission": "write_run_artifacts",
+   "failure_policy": "fail_closed",
+   "replay_policy": "new_revision",
+   "params": {
+    "output": "video_render",
+    "preset_config": {
+     "voice": "zh-CN-XiaoxiaoNeural"
+    },
+    "artifact_id": "daily_video",
+    "description": "用 Edge TTS 把口播稿合成语音，生成封面图，再用 FFmpeg 合成竖屏 MP4 并校验文件可用——产出最终可发布的视频文件。"
+   },
+   "inputs": {
+    "brief": {
+     "required": true,
+     "schema": {
+      "type": "object"
+     },
+     "binding": {
+      "source": "node_output",
+      "node_id": "persist_daily_brief",
+      "output": "daily_brief"
+     }
+    }
+   },
+   "outputs": {
+    "video_render": {
+     "schema": {
+      "type": "object"
+     },
+     "target": {
+      "type": "store",
+      "key": "video_render"
+     }
+    }
+   },
+   "layout": {
+    "x": 3910,
+    "y": 1268
+   }
+  },
+  "flow_failed": {
+   "type": "terminal",
+   "title": "流程失败",
+   "display_name": "流程失败",
+   "kind": "terminal",
+   "layout": {
+    "x": 2940,
+    "y": 367
+   }
+  }
+ },
+ "execution_plan": {
+  "schema": "cartridgeflow.execution_plan.v1",
+  "entry": "start",
+  "edges": [
+   {
+    "id": "bundle_select",
+    "kind": "sequence",
+    "from": "bundle_rss",
+    "to": "select_news"
+   },
+   {
+    "id": "collect_fetch",
+    "kind": "sequence",
+    "from": "collect_run_context",
+    "to": "fetch_trusted_rss"
+   },
+   {
+    "id": "input_failure",
+    "kind": "failure",
+    "from": "collect_run_context",
+    "to": "flow_failed",
+    "failure": {
+     "id": "input_error",
+     "causes": [
+      "exception",
+      "validation"
+     ]
+    }
+   },
+   {
+    "id": "delivery_complete",
+    "kind": "sequence",
+    "from": "delivery_ready",
+    "to": "complete"
+   },
+   {
+    "id": "delivery_failure",
+    "kind": "failure",
+    "from": "delivery_ready",
+    "to": "flow_failed",
+    "failure": {
+     "id": "delivery_error",
+     "causes": [
+      "exception",
+      "validation"
+     ]
+    }
+   },
+   {
+    "id": "script_persist",
+    "kind": "sequence",
+    "from": "draft_script",
+    "to": "persist_daily_brief"
+   },
+   {
+    "id": "persist_render",
+    "kind": "sequence",
+    "from": "persist_daily_brief",
+    "to": "render_video"
+   },
+   {
+    "id": "persist_failure",
+    "kind": "failure",
+    "from": "persist_daily_brief",
+    "to": "flow_failed",
+    "failure": {
+     "id": "persist_error",
+     "causes": [
+      "exception",
+      "validation"
+     ]
+    }
+   },
+   {
+    "id": "script_failure",
+    "kind": "failure",
+    "from": "draft_script",
+    "to": "flow_failed",
+    "failure": {
+     "id": "script_error",
+     "causes": [
+      "exception",
+      "resource",
+      "timeout",
+      "validation"
+     ]
+    }
+   },
+   {
+    "id": "facts_script",
+    "kind": "sequence",
+    "from": "fact_check",
+    "to": "draft_script"
+   },
+   {
+    "id": "facts_failure",
+    "kind": "failure",
+    "from": "fact_check",
+    "to": "flow_failed",
+    "failure": {
+     "id": "facts_error",
+     "causes": [
+      "exception",
+      "resource",
+      "timeout",
+      "validation"
+     ]
+    }
+   },
+   {
+    "id": "fetch_bundle",
+    "kind": "sequence",
+    "from": "fetch_trusted_rss",
+    "to": "bundle_rss"
+   },
+   {
+    "id": "fetch_failure",
+    "kind": "failure",
+    "from": "fetch_trusted_rss",
+    "to": "flow_failed",
+    "failure": {
+     "id": "fetch_error",
+     "causes": [
+      "exception",
+      "resource",
+      "timeout"
+     ]
+    }
+   },
+   {
+    "id": "review_delivery",
+    "kind": "sequence",
+    "from": "human_review",
+    "to": "delivery_ready"
+   },
+   {
+    "id": "review_failure",
+    "kind": "failure",
+    "from": "human_review",
+    "to": "flow_failed",
+    "failure": {
+     "id": "review_error",
+     "causes": [
+      "exception",
+      "timeout",
+      "cancelled"
+     ]
+    }
+   },
+   {
+    "id": "render_review",
+    "kind": "sequence",
+    "from": "render_video",
+    "to": "human_review"
+   },
+   {
+    "id": "render_failure",
+    "kind": "failure",
+    "from": "render_video",
+    "to": "flow_failed",
+    "failure": {
+     "id": "video_render_error",
+     "causes": [
+      "exception",
+      "resource",
+      "timeout",
+      "validation"
+     ]
+    }
+   },
+   {
+    "id": "select_facts",
+    "kind": "sequence",
+    "from": "select_news",
+    "to": "fact_check"
+   },
+   {
+    "id": "select_failure",
+    "kind": "failure",
+    "from": "select_news",
+    "to": "flow_failed",
+    "failure": {
+     "id": "select_error",
+     "causes": [
+      "exception",
+      "resource",
+      "timeout",
+      "validation"
+     ]
+    }
+   },
+   {
+    "id": "start_collect",
+    "kind": "sequence",
+    "from": "start",
+    "to": "collect_run_context"
+   },
+   {
+    "id": "bundle_failure",
+    "kind": "failure",
+    "from": "bundle_rss",
+    "to": "flow_failed",
+    "failure": {
+     "id": "bundle_error",
+     "causes": [
+      "exception",
+      "validation"
+     ]
+    }
+   }
+  ]
+ }
+}

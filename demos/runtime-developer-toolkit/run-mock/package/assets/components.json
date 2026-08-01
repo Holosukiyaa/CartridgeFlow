@@ -1,0 +1,61 @@
+{
+  "schema": "cartridgeflow.interaction_components.v1",
+  "components": [
+    {
+      "id": "welcome.panel",
+      "version": "1.0.0",
+      "runtime": "passive",
+      "entry": {
+        "type": "asset",
+        "ref": "asset:ui.welcome"
+      },
+      "supported_modes": [
+        "display"
+      ],
+      "input_schema": {
+        "type": "object"
+      },
+      "actions": [],
+      "host_capabilities": []
+    },
+    {
+      "id": "review.daily_brief",
+      "version": "1.0.0",
+      "runtime": "passive",
+      "entry": {
+        "ref": "asset:ui.daily_review",
+        "type": "asset"
+      },
+      "supported_modes": [
+        "review"
+      ],
+      "input_schema": {
+        "type": "object"
+      },
+      "actions": [
+        {
+          "label": "批准",
+          "id": "approve",
+          "payload_schema": {
+            "type": "object"
+          }
+        },
+        {
+          "label": "退回修订",
+          "id": "revise",
+          "payload_schema": {
+            "type": "object"
+          }
+        },
+        {
+          "label": "取消",
+          "id": "cancel",
+          "payload_schema": {
+            "type": "object"
+          }
+        }
+      ],
+      "host_capabilities": []
+    }
+  ]
+}

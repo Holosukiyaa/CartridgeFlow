@@ -1,0 +1,12 @@
+{
+  "name": "cartridgeflow-runtime-handoff-node",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "check": "node --check run.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

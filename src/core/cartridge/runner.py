@@ -60,6 +60,46 @@ def _truncate_preview(value, limit=2000):
     return text[:limit] + "...(truncated)" if len(text) > limit else text
 
 
+NODE_RETRY_EXCLUDED_CODES = {
+    "INPUT_REQUIRED",
+    "FLOW_CONTRACT_INVALID",
+    "ACTION_EXECUTOR_MISSING",
+    "ARTIFACT_MISSING",
+    "DELIVERY_OUTPUT_MISSING",
+    "PROVIDER_CONFIGURATION_MISSING",
+    "REPLAY_CONFIRMATION_REQUIRED",
+}
+
+
+def _node_retry_policy(state: dict) -> dict | None:
+    """Node-level retry policy from state.retry_policy / params.retry_policy /
+    params.preset_config.retry_policy (same field semantics as tool contracts)."""
+    params = state.get("params") if isinstance(state.get("params"), dict) else {}
+    preset = params.get("preset_config") if isinstance(params.get("preset_config"), dict) else {}
+    policy = (
+        state.get("retry_policy")
+        or params.get("retry_policy")
+        or preset.get("retry_policy")
+    )
+    if not isinstance(policy, dict):
+        return None
+    try:
+        max_attempts = max(1, min(5, int(policy.get("max_attempts") or 1)))
+    except (TypeError, ValueError):
+        max_attempts = 1
+    try:
+        initial_delay = max(0.0, min(30.0, float(policy.get("initial_delay_seconds") or 0.0)))
+    except (TypeError, ValueError):
+        initial_delay = 0.0
+    try:
+        max_delay = max(initial_delay, min(60.0, float(policy.get("max_delay_seconds") or initial_delay)))
+    except (TypeError, ValueError):
+        max_delay = initial_delay
+    if max_attempts < 1:
+        return None
+    return {"max_attempts": max_attempts, "initial_delay_seconds": initial_delay, "max_delay_seconds": max_delay}
+
+
 def _resolve_input_preview(input_key, state, store):
     """Normalize a node's input reference into (display_key, preview_value).
 
@@ -553,19 +593,55 @@ class CartridgeRunner:
                         event_type = "lab_node_cancelled"
                         event_msg = f"节点 {state_name_} 已随运行取消"
                     elif result.get("failed"):
-                        lab_failed = True
-                        error_envelope = self._record_node_failure(run, run_dir, state_name_, result)
-                        if result.get("paused"):
-                            store.pop("_pending_interaction", None)
-                        if abort_on_failed or result.get("paused"):
-                            _state_doc["context"]["_abort_flow"] = {
-                                "state": state_name_,
-                                "reason": error_envelope["message"],
-                                "error_id": error_envelope["error_id"],
-                                "action": result.get("action"),
+                        retry_policy = _node_retry_policy(state_)
+                        active_token = None
+                        if retry_policy:
+                            token_ledger = (_state_doc.get("execution") or {}).get("tokens") or []
+                            candidates = [
+                                t for t in token_ledger
+                                if t.get("node_id") == state_name_ and t.get("status") in {"running", "ready"}
+                            ]
+                            if candidates:
+                                active_token = max(candidates, key=lambda t: int(t.get("created_sequence") or 0))
+                        error_code = str(result.get("error_code") or "")
+                        can_retry = (
+                            retry_policy is not None
+                            and active_token is not None
+                            and error_code not in NODE_RETRY_EXCLUDED_CODES
+                            and int(active_token.get("attempt") or 1) < int(retry_policy.get("max_attempts") or 1)
+                        )
+                        if can_retry:
+                            next_attempt = int(active_token.get("attempt") or 1) + 1
+                            delay = min(
+                                float(retry_policy.get("max_delay_seconds") or 0.0),
+                                float(retry_policy.get("initial_delay_seconds") or 0.0) * next_attempt,
+                            )
+                            if delay > 0:
+                                import time as _time
+                                _time.sleep(delay)
+                            _state_doc["context"]["_retry_token"] = {
+                                "attempt": next_attempt,
+                                "last_error": {
+                                    "code": error_code,
+                                    "message": str(result.get("error") or "node failed")[:400],
+                                },
                             }
-                        event_type = "lab_node_failed"
-                        event_msg = f"节点 {state_name_} 执行失败：{error_envelope['message']}"
+                            event_type = "lab_node_retrying"
+                            event_msg = f"节点 {state_name_} 失败（{error_code}）；重试 {next_attempt}/{retry_policy['max_attempts']}"
+                        else:
+                            lab_failed = True
+                            error_envelope = self._record_node_failure(run, run_dir, state_name_, result)
+                            if result.get("paused"):
+                                store.pop("_pending_interaction", None)
+                            if abort_on_failed or result.get("paused"):
+                                _state_doc["context"]["_abort_flow"] = {
+                                    "state": state_name_,
+                                    "reason": error_envelope["message"],
+                                    "error_id": error_envelope["error_id"],
+                                    "action": result.get("action"),
+                                }
+                            event_type = "lab_node_failed"
+                            event_msg = f"节点 {state_name_} 执行失败：{error_envelope['message']}"
                     elif result.get("paused") and result.get("pause_status") == "paused_waiting_user":
                         pending = result.get("pending_interaction") if isinstance(result.get("pending_interaction"), dict) else {}
                         pending["node_id"] = state_name_
@@ -1942,19 +2018,55 @@ class CartridgeRunner:
                         event_type = "lab_node_cancelled"
                         event_msg = f"Node {state_name_} cancelled with its run"
                     elif result.get("failed"):
-                        lab_failed = True
-                        error_envelope = self._record_node_failure(run, run_dir, state_name_, result)
-                        if result.get("paused"):
-                            store.pop("_pending_interaction", None)
-                        if abort_on_failed or result.get("paused"):
-                            _state_doc["context"]["_abort_flow"] = {
-                                "state": state_name_,
-                                "reason": error_envelope["message"],
-                                "error_id": error_envelope["error_id"],
-                                "action": result.get("action"),
+                        retry_policy = _node_retry_policy(state_)
+                        active_token = None
+                        if retry_policy:
+                            token_ledger = (_state_doc.get("execution") or {}).get("tokens") or []
+                            candidates = [
+                                t for t in token_ledger
+                                if t.get("node_id") == state_name_ and t.get("status") in {"running", "ready"}
+                            ]
+                            if candidates:
+                                active_token = max(candidates, key=lambda t: int(t.get("created_sequence") or 0))
+                        error_code = str(result.get("error_code") or "")
+                        can_retry = (
+                            retry_policy is not None
+                            and active_token is not None
+                            and error_code not in NODE_RETRY_EXCLUDED_CODES
+                            and int(active_token.get("attempt") or 1) < int(retry_policy.get("max_attempts") or 1)
+                        )
+                        if can_retry:
+                            next_attempt = int(active_token.get("attempt") or 1) + 1
+                            delay = min(
+                                float(retry_policy.get("max_delay_seconds") or 0.0),
+                                float(retry_policy.get("initial_delay_seconds") or 0.0) * next_attempt,
+                            )
+                            if delay > 0:
+                                import time as _time
+                                _time.sleep(delay)
+                            _state_doc["context"]["_retry_token"] = {
+                                "attempt": next_attempt,
+                                "last_error": {
+                                    "code": error_code,
+                                    "message": str(result.get("error") or "node failed")[:400],
+                                },
                             }
-                        event_type = "lab_node_failed"
-                        event_msg = f"Node {state_name_} failed: {error_envelope['message']}"
+                            event_type = "lab_node_retrying"
+                            event_msg = f"Node {state_name_} failed ({error_code}); retrying attempt {next_attempt}/{retry_policy['max_attempts']}"
+                        else:
+                            lab_failed = True
+                            error_envelope = self._record_node_failure(run, run_dir, state_name_, result)
+                            if result.get("paused"):
+                                store.pop("_pending_interaction", None)
+                            if abort_on_failed or result.get("paused"):
+                                _state_doc["context"]["_abort_flow"] = {
+                                    "state": state_name_,
+                                    "reason": error_envelope["message"],
+                                    "error_id": error_envelope["error_id"],
+                                    "action": result.get("action"),
+                                }
+                            event_type = "lab_node_failed"
+                            event_msg = f"Node {state_name_} failed: {error_envelope['message']}"
                     elif result.get("paused") and result.get("pause_status") == "paused_waiting_user":
                         pending = result.get("pending_interaction") if isinstance(result.get("pending_interaction"), dict) else {}
                         pending["node_id"] = state_name_

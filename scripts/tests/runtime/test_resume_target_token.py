@@ -78,6 +78,7 @@ def plan_flow():
                 "inputs": {"topic": {"required": True, "schema": {"type": "object"}, "binding": {"source": "store", "key": "topic"}}},
                 "outputs": {"draft_out": {"schema": {"type": "object"}, "target": {"type": "store", "key": "draft_text"}}},
                 "llm_options": {"max_tokens": 20000, "timeout_seconds": 30},
+                "retry_policy": {"max_attempts": 3, "initial_delay_seconds": 0, "max_delay_seconds": 0},
                 "params": {"description": "draft the article"},
             },
             "review": {
@@ -257,6 +258,65 @@ class ResumeTargetTokenTests(unittest.TestCase):
             state_doc = self.runner._read_json(self.runner.runs_dir / run["run_id"] / "root_flow_state.json")
             tokens = [t for t in state_doc["execution"]["tokens"] if t.get("node_id") == "revise"]
             self.assertEqual(tokens, [], "approve path must not schedule revise")
+
+
+    def test_node_retry_policy_retries_failed_llm_node(self):
+        """A node-level retry_policy re-schedules a failed LLM node: first call
+        returns empty content (PROVIDER_EMPTY_RESPONSE), the retry succeeds."""
+        calls = {"n": 0}
+
+        async def flaky_chat(_cfg, _messages, **kwargs):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return {"content": "", "meta": {"finish_reason": "length"}}
+            return {
+                "content": json.dumps({
+                    "schema": "decision_envelope.v1",
+                    "status": "resolved",
+                    "summary": "mock",
+                    "payload": {"draft": "DRAFT"},
+                }),
+                "meta": {"finish_reason": "stop"},
+            }
+
+        cfg = ModelConfig(
+            provider_id="test-provider", model="test-model", api_key="test-key",
+            base_url="https://example.test", timeout=30, max_tokens=20000,
+        )
+        with mock.patch("core.llm.config_manager.resolve_model", return_value=cfg), \
+                mock.patch("core.llm.chat", side_effect=flaky_chat):
+            run = self.runner.create_run("test.runtime.resume-target-token", {"topic": "T"})
+        self.assertEqual(run["status"], "paused_waiting_user")
+        self.assertEqual(calls["n"], 2, "node-level retry must re-invoke the LLM")
+        state_doc = self.runner._read_json(self.runner.runs_dir / run["run_id"] / "root_flow_state.json")
+        draft_token = next(
+            (t for t in state_doc["execution"]["tokens"] if t.get("node_id") == "draft"),
+            None,
+        )
+        self.assertIsNotNone(draft_token)
+        self.assertEqual(draft_token["attempt"], 2, "retried token must record attempt 2")
+        self.assertNotEqual(draft_token["status"], "failed")
+
+    def test_node_retry_policy_exhausts_into_failure_edge(self):
+        """After max_attempts the node fails for real and follows the failure edge."""
+        calls = {"n": 0}
+
+        async def always_empty(_cfg, _messages, **kwargs):
+            calls["n"] += 1
+            return {"content": "", "meta": {"finish_reason": "length"}}
+
+        cfg = ModelConfig(
+            provider_id="test-provider", model="test-model", api_key="test-key",
+            base_url="https://example.test", timeout=30, max_tokens=20000,
+        )
+        with mock.patch("core.llm.config_manager.resolve_model", return_value=cfg), \
+                mock.patch("core.llm.chat", side_effect=always_empty):
+            run = self.runner.create_run("test.runtime.resume-target-token", {"topic": "T"})
+        self.assertEqual(run["status"], "failed")
+        self.assertEqual(calls["n"], 3, "retry_policy max_attempts=3 must bound the attempts")
+        err = run.get("error") or {}
+        self.assertEqual(err.get("code"), "PROVIDER_EMPTY_RESPONSE")
+        self.assertEqual(err.get("node_id"), "draft")
 
 
 if __name__ == "__main__":

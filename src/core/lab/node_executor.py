@@ -1336,12 +1336,25 @@ class LabNodeExecutor:
         if output_contract == "decision_envelope.v1":
             if used_llm and not str(result_text or "").strip():
                 finish_reason = str(llm_response_meta.get("finish_reason") or "unknown")
-                envelope = make_blocked_decision_envelope(
-                    "llm_empty_response",
-                    f"LLM returned empty assistant content (finish_reason={finish_reason}).",
-                )
-            else:
-                envelope = self._decision_envelope_from_result(result_text, decision_contract, fallback)
+                return {
+                    "action": "llm_prompt",
+                    "output": output_key,
+                    "length": 0,
+                    "used_llm": True,
+                    "fallback": fallback,
+                    "provider_id": provider_id,
+                    "model": model,
+                    "provider_error": provider_error,
+                    "llm_response_meta": llm_response_meta,
+                    "test_mode": run.get("test_mode") or {},
+                    "decision_test_mode": decision_test_mode,
+                    "output_contract": "decision_envelope.v1",
+                    "decision_status": "blocked",
+                    "failed": True,
+                    "error_code": "PROVIDER_EMPTY_RESPONSE",
+                    "error": f"LLM returned empty assistant content (finish_reason={finish_reason}).",
+                }
+            envelope = self._decision_envelope_from_result(result_text, decision_contract, fallback)
             if force_live_confirmation and envelope.get("status") == "resolved":
                 envelope = self._collaboration_confirmation_envelope(envelope, decision_contract, params, output_key)
             if envelope.get("status") == "needs_user_input":
@@ -1401,6 +1414,14 @@ class LabNodeExecutor:
                         for item in issues[:5]
                         if isinstance(item, dict)
                     ) or str(envelope.get("summary") or "Decision blocked")
+                if any(
+                    str(item.get("code") or "") == "llm_empty_response"
+                    for item in (envelope.get("issues") or [])
+                    if isinstance(item, dict)
+                ):
+                    # Empty assistant content is a provider condition, not a
+                    # contract violation: retryable under node retry policies.
+                    result["error_code"] = "PROVIDER_EMPTY_RESPONSE"
             if fallback and not str(fallback).startswith("mock"):
                 result["failed"] = True
                 result["degraded"] = True

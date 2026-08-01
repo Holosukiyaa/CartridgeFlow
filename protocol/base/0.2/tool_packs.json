@@ -10,6 +10,11 @@
       "id": "builtin.media",
       "type": "builtin",
       "servers": ["media"]
+    },
+    {
+      "id": "remote.rss",
+      "type": "remote",
+      "servers": ["rss"]
     }
   ]
 }

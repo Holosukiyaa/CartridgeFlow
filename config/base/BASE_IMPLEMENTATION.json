@@ -227,7 +227,8 @@
     "execution_plan_source_digest_guard"
   ],
   "tool_packs": [
-    "builtin.filesystem"
+    "builtin.filesystem",
+    "remote.rss"
   ],
   "conformance": {
     "status": "partial",

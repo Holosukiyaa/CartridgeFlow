@@ -11,6 +11,7 @@ from pathlib import Path
 from core.data_paths import RUNS_DIR
 from core.runtime.manager import RuntimeManager
 from core.runtime.errors import RuntimeFailure, build_runtime_error, error_from_node_result, write_diagnostic
+from core.lab.node_executor import NodeActionError
 from core.runtime.checkpoints import CheckpointManager
 from core.runtime.state_machine import assert_transition, transition
 from core.extensions import cancel_worker_calls_for_run
@@ -37,12 +38,14 @@ def now_iso() -> str:
 def _executable_edges(root_flow: dict) -> list[dict]:
     protocol = root_flow.get("protocol") if isinstance(root_flow.get("protocol"), dict) else {}
     has_execution_plan = isinstance(root_flow.get("execution_plan"), dict) and root_flow["execution_plan"].get("schema") == "cartridgeflow.execution_plan.v1"
+    if has_execution_plan:
+        return [edge for edge in (root_flow["execution_plan"].get("edges") or []) if isinstance(edge, dict)]
     is_typed_protocol = has_protocol_feature(
         str(protocol.get("id") or ""),
         str(protocol.get("version") or ""),
         "typed_control_edges",
     )
-    source = [] if has_execution_plan else root_flow.get("control_edges") if is_typed_protocol else root_flow.get("edges")
+    source = root_flow.get("control_edges") if is_typed_protocol else root_flow.get("edges")
     return [
         edge for edge in (source or [])
         if isinstance(edge, dict) and (not is_typed_protocol or edge.get("kind") in {"control", "branch", "action_route", "failure_route"})
@@ -76,7 +79,21 @@ class CartridgeRunner:
             input_id = str(item.get("id") or "").strip()
             if not input_id:
                 continue
-            if input_id not in normalized and "default" in item:
+            if input_id in normalized:
+                continue
+            runtime_default = item.get("runtime_default") if isinstance(item.get("runtime_default"), dict) else {}
+            if runtime_default.get("type") == "current_date":
+                timezone_name = str(runtime_default.get("timezone") or "UTC")
+                try:
+                    from zoneinfo import ZoneInfo
+
+                    normalized[input_id] = datetime.now(ZoneInfo(timezone_name)).date().isoformat()
+                except Exception:
+                    from datetime import timedelta, timezone
+
+                    current_zone = timezone(timedelta(hours=8)) if timezone_name == "Asia/Shanghai" else None
+                    normalized[input_id] = datetime.now(current_zone).date().isoformat()
+            elif "default" in item:
                 normalized[input_id] = item.get("default")
         return normalized
 
@@ -423,7 +440,7 @@ class CartridgeRunner:
 
                 try:
                     if state_.get("action") == "tool_call" and not self._is_v02_mcp_process(state_) and not normalized_probe_range and not self._tool_has_process_parent(root_flow, state_name_):
-                        raise RuntimeError("工具节点必须直接挂在 AI 处理节点之后；请把 MCP/filesystem 工具节点连接到 action=llm_prompt 的处理节点后面。")
+                        raise NodeActionError("FLOW_CONTRACT_INVALID", "工具节点必须直接挂在 AI 处理节点之后；请把 MCP/filesystem 工具节点连接到 action=llm_prompt 的处理节点后面。")
                     if self._is_llm_process(state_):
                         self._append_event(
                             run_id,
@@ -445,6 +462,26 @@ class CartridgeRunner:
                     skipped = result.get("skipped", False)
                     output_key = result.get("output")
                     output_value = _truncate(store.get(output_key)) if output_key and output_key in store else None
+                    declared_artifacts = self._materialize_declared_artifacts(
+                        run, run_dir, state_name_, state_, store
+                    )
+                    if declared_artifacts:
+                        run["artifacts"] = self._merge_artifacts(run.get("artifacts", []), declared_artifacts)
+                        _state_doc["context"]["artifacts"] = run["artifacts"]
+                        result["artifacts"] = self._merge_artifacts(result.get("artifacts", []), declared_artifacts)
+                    elif self._declares_artifact_output(state_):
+                        result.update({
+                            "failed": True,
+                            "error_code": "ARTIFACT_MISSING",
+                            "error": "Artifact-output node completed without materializing its declared output.",
+                        })
+                    rendered_artifacts = self._collect_result_path_artifacts(
+                        run, run_dir, state_name_, result
+                    )
+                    if rendered_artifacts:
+                        run["artifacts"] = self._merge_artifacts(run.get("artifacts", []), rendered_artifacts)
+                        _state_doc["context"]["artifacts"] = run["artifacts"]
+                        result["artifacts"] = self._merge_artifacts(result.get("artifacts", []), rendered_artifacts)
                     if result.get("action") in {"tool_call", "remote_call"}:
                         tool_results = result.get("tool_results") or []
                         artifacts = self._collect_tool_artifacts(run, run_dir, state_name_, tool_results)
@@ -555,6 +592,15 @@ class CartridgeRunner:
             run["pending_interaction"] = paused.get("pending_interaction") or run.get("pending_interaction") or {}
         else:
             run.pop("pending_interaction", None)
+        if not cancelled and not failed and not paused and not normalized_probe_range and self._manifest_delivery_output_missing(manifest, state_doc, run):
+            failure = {
+                "action": "delivery_guard",
+                "failed": True,
+                "error_code": "DELIVERY_OUTPUT_MISSING",
+                "error": "The manifest primary output was not produced by the completed flow.",
+            }
+            self._record_node_failure(run, run_dir, state_doc.get("current_state") or "delivery", failure)
+            failed = True
         target_status = (
             "cancelled" if cancelled
             else "failed" if failed
@@ -563,6 +609,8 @@ class CartridgeRunner:
             else "completed"
         )
         self._set_run_status(run, target_status, "root_flow_finished")
+        if target_status == "completed" and not normalized_probe_range:
+            self._persist_delivery_snapshot(run, run_dir, manifest, state_doc)
         run["updated_at"] = now_iso()
         state_doc["context"]["artifacts"] = run.get("artifacts", [])
         # 数据链体检：聚合各节点运行时如实上报的缺失 input 键（唯一依据执行器真实解析行为）。
@@ -958,14 +1006,27 @@ class CartridgeRunner:
         probe_edges: list[dict] = []
         seen_edges: set[tuple[str, str]] = set()
 
-        is_typed_protocol = (
+        is_execution_plan = (
             isinstance(root_flow.get("execution_plan"), dict)
             and root_flow["execution_plan"].get("schema") == "cartridgeflow.execution_plan.v1"
-        ) or self._has_release_feature(
+        )
+        is_typed_protocol = is_execution_plan or self._has_release_feature(
             str((root_flow.get("protocol") or {}).get("id") or ""),
             str((root_flow.get("protocol") or {}).get("version") or ""),
             "typed_control_edges",
         )
+
+        # A v1 probe may stop before the normal terminal, but it must retain
+        # every selected process node's declared failure exit to stay valid.
+        if is_execution_plan:
+            for edge in root_flow["execution_plan"].get("edges") or []:
+                if not isinstance(edge, dict) or edge.get("kind") != "failure":
+                    continue
+                source = str(edge.get("from") or "")
+                target = str(edge.get("to") or "")
+                if source in node_id_set and target in source_states:
+                    node_id_set.add(target)
+                    filtered_states[target] = deepcopy(source_states[target])
 
         def _keep_edge(source: str, target: str, original: dict | None = None) -> None:
             if source not in node_id_set or target not in node_id_set:
@@ -998,7 +1059,13 @@ class CartridgeRunner:
 
         filtered["start"] = probe_range["start_node_id"]
         filtered["states"] = filtered_states
-        if is_typed_protocol:
+        if is_execution_plan:
+            plan = filtered.setdefault("execution_plan", {})
+            plan["entry"] = probe_range["start_node_id"]
+            plan["edges"] = probe_edges
+            filtered.pop("edges", None)
+            filtered.pop("control_edges", None)
+        elif is_typed_protocol:
             filtered.pop("edges", None)
             filtered["control_edges"] = probe_edges
         else:
@@ -1046,6 +1113,78 @@ class CartridgeRunner:
                     artifacts.append(artifact)
         return artifacts
 
+    def _collect_result_path_artifacts(self, run: dict, run_dir: Path, state_name: str, result: dict) -> list[dict]:
+        paths = result.get("artifact_paths") if isinstance(result.get("artifact_paths"), list) else []
+        artifacts: list[dict] = []
+        for path in paths:
+            artifact = self._artifact_from_path(
+                run,
+                run_dir,
+                state_name,
+                {
+                    "server": "media",
+                    "tool": result.get("action") or "render",
+                    "artifact_id": result.get("artifact_id"),
+                },
+                Path(str(path)),
+                artifacts,
+            )
+            if artifact:
+                artifacts.append(artifact)
+        return artifacts
+
+    def _declares_artifact_output(self, state: dict) -> bool:
+        outputs = state.get("outputs") if isinstance(state.get("outputs"), dict) else {}
+        return any(
+            isinstance(contract, dict)
+            and isinstance(contract.get("target"), dict)
+            and contract["target"].get("type") == "artifact"
+            for contract in outputs.values()
+        )
+
+    def _materialize_declared_artifacts(
+        self,
+        run: dict,
+        run_dir: Path,
+        state_name: str,
+        state: dict,
+        store: dict,
+    ) -> list[dict]:
+        """Persist typed Flow artifact outputs into the current run's artifact set."""
+        outputs = state.get("outputs") if isinstance(state.get("outputs"), dict) else {}
+        artifacts: list[dict] = []
+        for output_name, contract in outputs.items():
+            if not isinstance(contract, dict):
+                continue
+            target = contract.get("target") if isinstance(contract.get("target"), dict) else {}
+            if target.get("type") != "artifact" or output_name not in store:
+                continue
+            artifact_id = str(target.get("artifact_id") or output_name)
+            mime_type = str(target.get("mime_type") or "application/json")
+            artifact_type = str(target.get("type_name") or "document")
+            suffix = ".md" if mime_type == "text/markdown" else ".json" if "json" in mime_type else ".txt"
+            filename = self._unique_artifact_name(
+                run.get("artifacts", []) + artifacts,
+                str(target.get("name") or f"{artifact_id}{suffix}"),
+            )
+            value = store[output_name]
+            if value is None or (isinstance(value, str) and not value.strip()):
+                continue
+            content = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, indent=2)
+            artifact = self.artifact_manager.create_text_artifact(
+                run,
+                run_dir,
+                artifact_id,
+                filename,
+                content,
+                artifact_type=artifact_type,
+                mime_type=mime_type,
+            )
+            artifact["display_path"] = f"artifacts/{filename}"
+            artifact["source"] = {**(artifact.get("source") or {}), "node_id": state_name, "output": output_name}
+            artifacts.append(artifact)
+        return artifacts
+
     def _artifact_paths_from_tool_result(self, result: dict) -> list[Path]:
         candidates = []
         for key in ["path", "video_path", "audio_path", "project_path", "preview_path"]:
@@ -1083,7 +1222,7 @@ class CartridgeRunner:
                 shutil.copy2(resolved, snapshot_path)
             artifact = self.artifact_manager.make_artifact(
                 run,
-                f"{state_name}_{len(run.get('artifacts', [])) + len(pending) + 1}",
+                str(tool_result.get("artifact_id") or f"{state_name}_{len(run.get('artifacts', [])) + len(pending) + 1}"),
                 name,
                 snapshot_path,
                 self._artifact_type_for_path(resolved),
@@ -1814,6 +1953,15 @@ class CartridgeRunner:
             run["pending_interaction"] = paused.get("pending_interaction") or run.get("pending_interaction") or {}
         else:
             run.pop("pending_interaction", None)
+        if not cancelled and not failed and not paused and not normalized_probe_range and self._manifest_delivery_output_missing(manifest, state_doc, run):
+            failure = {
+                "action": "delivery_guard",
+                "failed": True,
+                "error_code": "DELIVERY_OUTPUT_MISSING",
+                "error": "The manifest primary output was not produced by the completed flow.",
+            }
+            self._record_node_failure(run, run_dir, state_doc.get("current_state") or "delivery", failure)
+            failed = True
         target_status = (
             "cancelled" if cancelled
             else "failed" if failed
@@ -1822,6 +1970,8 @@ class CartridgeRunner:
             else "completed"
         )
         self._set_run_status(run, target_status, "root_flow_finished")
+        if target_status == "completed" and not normalized_probe_range:
+            self._persist_delivery_snapshot(run, run_dir, manifest, state_doc)
         run["updated_at"] = now_iso()
         state_doc["context"]["artifacts"] = run.get("artifacts", [])
         data_chain = self._summarize_data_chain(run_id, state_doc, normalized_probe_range)
@@ -2698,6 +2848,59 @@ class CartridgeRunner:
             "actions": actions,
             "created_at": now_iso(),
         }
+
+    def _manifest_delivery_output_missing(self, manifest: dict, state_doc: dict, run: dict) -> bool:
+        delivery_contract = manifest.get("delivery") if isinstance(manifest.get("delivery"), dict) else {}
+        primary_output = str(delivery_contract.get("primary_output") or "").strip()
+        if not primary_output:
+            return False
+        store = ((state_doc.get("context") or {}).get("store") or {}) if isinstance(state_doc, dict) else {}
+        value = store.get(primary_output) if isinstance(store, dict) else None
+        if value not in (None, "", [], {}):
+            return False
+        return not any(
+            primary_output in {
+                str(item.get("artifact_id") or ""),
+                str(item.get("name") or ""),
+                Path(str(item.get("name") or "")).stem,
+            }
+            for item in run.get("artifacts") or []
+            if isinstance(item, dict)
+        )
+
+    def _persist_delivery_snapshot(self, run: dict, run_dir: Path, manifest: dict, state_doc: dict) -> dict:
+        delivery = self._create_initial_delivery(run, manifest)
+        contract = manifest.get("delivery") if isinstance(manifest.get("delivery"), dict) else {}
+        primary_output = str(contract.get("primary_output") or "").strip()
+        store = ((state_doc.get("context") or {}).get("store") or {}) if isinstance(state_doc, dict) else {}
+        primary_artifact = next((
+            item for item in run.get("artifacts") or []
+            if isinstance(item, dict) and primary_output in {
+                str(item.get("artifact_id") or ""),
+                str(item.get("name") or ""),
+                Path(str(item.get("name") or "")).stem,
+            }
+        ), None)
+        workflow_result = store.get(primary_output) if isinstance(store, dict) else None
+        if workflow_result in (None, "", [], {}) and isinstance(store, dict):
+            workflow_result = store.get("delivery")
+        delivery.update({
+            "status": "delivered",
+            "primary_output": primary_output,
+            "primary_artifact": primary_artifact,
+            "result": workflow_result,
+        })
+        run["delivery"] = delivery
+        self._write_json(run_dir / "delivery.json", delivery)
+        self._append_event(
+            run["run_id"],
+            run["cartridge_id"],
+            "delivery_finalized",
+            str(run.get("current_state") or "complete"),
+            "Delivery snapshot finalized",
+            {"primary_output": primary_output, "artifact_count": len(delivery.get("artifacts") or [])},
+        )
+        return delivery
 
     def _append_event(self, run_id: str, cartridge_id: str, event_type: str, state: str, message: str, data: dict):
         event = {

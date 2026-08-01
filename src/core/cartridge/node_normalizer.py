@@ -53,6 +53,7 @@ CONTRACT_FIELDS = {
     "failure_route",
     "system_prompt",
     "prompt",
+    "llm_options",
 }
 
 

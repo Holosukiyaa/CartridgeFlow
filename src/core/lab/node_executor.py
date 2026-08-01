@@ -16,6 +16,8 @@ import asyncio
 import hashlib
 import json
 import re
+import subprocess
+import sys
 import time
 from datetime import datetime
 from pathlib import Path
@@ -26,6 +28,26 @@ from core.protocol import parse_decision_envelope, validate_decision_envelope, v
 from core.protocol.features import has_protocol_feature
 from core.protocol.decision_envelope import make_blocked_decision_envelope, make_mock_decision_envelope
 from core.runtime.state_machine import assert_transition
+
+SUPPORTED_ACTIONS = frozenset({
+    "collect_inputs", "show_welcome", "show_ui", "render_ui", "show_result",
+    "render_interaction", "llm_prompt", "tool_call", "remote_call", "pass_result",
+    "save_context", "confirm_checkpoint", "collect_artifacts", "render_video_brief", "custom_action",
+})
+
+
+class NodeActionError(RuntimeError):
+    """Structured node failure raised inside executors.
+
+    Converted by execute() into a failed result with a stable error_code,
+    so every node failure surfaces the same shape to runners, events and the
+    skill that authored the flow (see runtime_error_envelope.v1).
+    """
+
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+        self.message = message
 
 
 class LabNodeExecutor:
@@ -94,11 +116,24 @@ class LabNodeExecutor:
     def execute(self, state_name: str, state: dict, state_doc: dict, run: dict, run_dir) -> dict:
         state = normalize_runtime_node(state)
         store = state_doc["context"].setdefault("store", {})
+        if state.get("type") == "terminal":
+            return {"action": "terminal", "completed": True, "terminal": True}
         params = dict(state.get("params") or {})
         if state.get("tools") and not params.get("tools"):
             params["tools"] = state.get("tools")
         params, structured_keys = self._prepare_structured_inputs(state_name, params, store, run)
-        params = self._prepare_protocol_runtime(state, params, store, run)
+        # Protocol/contract preparation failures (undeclared tools, invalid
+        # tool plans, unsupported bindings) propagate as NodeActionError so
+        # callers see the rejection; the runner maps them to a stable
+        # error_code envelope via classify_exception. Clean up staged
+        # _cf_input:* keys on that path so stale inputs never leak to
+        # downstream nodes.
+        try:
+            params = self._prepare_protocol_runtime(state, params, store, run)
+        except NodeActionError:
+            for key in structured_keys:
+                store.pop(key, None)
+            raise
         params["_node_id"] = state_name
         action = state.get("action") or ""
         preset_config = params.get("preset_config") or {}
@@ -116,6 +151,8 @@ class LabNodeExecutor:
             "pass_result": self._pass_result,
             "save_context": self._save_context,
             "confirm_checkpoint": self._confirm_checkpoint,
+            "collect_artifacts": self._collect_artifacts,
+            "render_video_brief": self._render_video_brief,
             "custom_action": self._custom_action,
         }
 
@@ -135,7 +172,6 @@ class LabNodeExecutor:
                     "error_code": "ACTION_EXECUTOR_MISSING",
                     "error": f"action '{action}' 暂无执行器，节点未执行",
                 }
-
             if isinstance(result, dict) and self._pending_missing:
                 # 去重保序
                 seen = set()
@@ -154,6 +190,13 @@ class LabNodeExecutor:
                     result["error_code"] = "INPUT_REQUIRED"
                     result["error"] = "Required inputs are missing: " + ", ".join(str(item.get("key")) for item in required_missing)
             return result
+        except NodeActionError as exc:
+            return {
+                "action": action,
+                "failed": True,
+                "error_code": exc.code,
+                "error": exc.message,
+            }
         finally:
             for key in structured_keys:
                 store.pop(key, None)
@@ -262,7 +305,7 @@ class LabNodeExecutor:
         mcp_binding = params.get("mcp_binding") if isinstance(params.get("mcp_binding"), dict) else {}
         allowed_tools = self._split_keys(params.get("allowed_tools")) or self._split_keys(mcp_binding.get("allowed_tools"))
         if not allowed_tools:
-            raise RuntimeError(f"{kind} requires allowed_tools before execution")
+            raise NodeActionError("FLOW_CONTRACT_INVALID", f"{kind} requires allowed_tools before execution")
 
         manifest_tools = {
             str(tool.get("id")): tool
@@ -271,13 +314,13 @@ class LabNodeExecutor:
         }
         missing = [tool_id for tool_id in allowed_tools if tool_id not in manifest_tools]
         if missing:
-            raise RuntimeError(f"{kind} references undeclared manifest tools: {', '.join(missing)}")
+            raise NodeActionError("FLOW_CONTRACT_INVALID", f"{kind} references undeclared manifest tools: {', '.join(missing)}")
 
         if kind == "mcp_read":
             for tool_id in allowed_tools:
                 side_effect = self._tool_side_effect(manifest_tools.get(tool_id) or {})
                 if side_effect not in {"", "none", "read_only", "environment_probe"}:
-                    raise RuntimeError(f"mcp_read cannot execute side-effecting tool: {tool_id}")
+                    raise NodeActionError("FLOW_CONTRACT_INVALID", f"mcp_read cannot execute side-effecting tool: {tool_id}")
 
         effect = str(runtime.get("effect") or params.get("effect") or "").strip()
         tool_binding = str(params.get("tool_binding") or "").strip()
@@ -291,7 +334,7 @@ class LabNodeExecutor:
             blockers = [item for item in findings if item.get("severity") == "blocker"]
             if blockers:
                 codes = ", ".join(item.get("code", "tool_plan_invalid") for item in blockers)
-                raise RuntimeError(f"tool_plan.v1 validation failed: {codes}")
+                raise NodeActionError("TOOL_EXECUTION_FAILED", f"tool_plan.v1 validation failed: {codes}")
             preset_config["mcp_tool_id"] = plan.get("tool_id")
             params["tool_params"] = dict(plan.get("params") or {})
             if plan.get("expected_output") and not params.get("output"):
@@ -302,7 +345,7 @@ class LabNodeExecutor:
         if selected_tool_id:
             selected_tool_id = str(selected_tool_id).strip()
             if selected_tool_id not in allowed_tools:
-                raise RuntimeError(f"{kind} selected tool is not allowed: {selected_tool_id}")
+                raise NodeActionError("FLOW_CONTRACT_INVALID", f"{kind} selected tool is not allowed: {selected_tool_id}")
         elif not params.get("tools") and allowed_tools:
             preset_config["mcp_tool_id"] = allowed_tools[0]
 
@@ -313,9 +356,9 @@ class LabNodeExecutor:
                     continue
                 tool_id = self._tool_id_for_call(tool, manifest_tools)
                 if not tool_id:
-                    raise RuntimeError(f"{kind} tool calls must reference manifest tools by mcp_tool_id or matching server/tool")
+                    raise NodeActionError("FLOW_CONTRACT_INVALID", f"{kind} tool calls must reference manifest tools by mcp_tool_id or matching server/tool")
                 if tool_id not in allowed_tools:
-                    raise RuntimeError(f"{kind} tool is not allowed: {tool_id}")
+                    raise NodeActionError("FLOW_CONTRACT_INVALID", f"{kind} tool is not allowed: {tool_id}")
 
         params["preset_config"] = preset_config
         return params
@@ -324,7 +367,7 @@ class LabNodeExecutor:
         preset_config = params.get("preset_config") or {}
         input_key = params.get("input") or preset_config.get("source") or preset_config.get("from")
         if not input_key:
-            raise RuntimeError("from_tool_plan requires input key")
+            raise NodeActionError("FLOW_CONTRACT_INVALID", "from_tool_plan requires input key")
         value = store.get(input_key)
         if isinstance(value, dict):
             return value
@@ -332,10 +375,10 @@ class LabNodeExecutor:
             try:
                 parsed = json.loads(value)
             except json.JSONDecodeError as exc:
-                raise RuntimeError(f"tool_plan input is not valid JSON: {input_key}") from exc
+                raise NodeActionError("TOOL_EXECUTION_FAILED", f"tool_plan input is not valid JSON: {input_key}") from exc
             if isinstance(parsed, dict):
                 return parsed
-        raise RuntimeError(f"tool_plan input is missing or not an object: {input_key}")
+        raise NodeActionError("TOOL_EXECUTION_FAILED", f"tool_plan input is missing or not an object: {input_key}")
 
     def _tool_id_for_call(self, tool: dict, manifest_tools: dict[str, dict]) -> str:
         explicit = str(tool.get("mcp_tool_id") or tool.get("tool_id") or "").strip()
@@ -820,8 +863,12 @@ class LabNodeExecutor:
                 return item
         return None
 
-    def _read_input(self, input_key: str, store: dict, required: bool = True) -> str:
-        parts = [k.strip() for k in input_key.split(",") if k.strip()]
+    def _read_input(self, input_key, store: dict, required: bool = True) -> str:
+        # _prepare_structured_inputs sets params["input"] to a list when a node
+        # has several required structured ports; normalize before splitting.
+        if isinstance(input_key, list):
+            input_key = ",".join(str(key) for key in input_key)
+        parts = [k.strip() for k in str(input_key).split(",") if k.strip()]
         chunks = []
         for key in parts:
             found = False
@@ -856,10 +903,33 @@ class LabNodeExecutor:
             "user_input"
         )
         inputs = run.get("inputs") or {}
+        defaults = params.get("defaults") if isinstance(params.get("defaults"), dict) else {}
+
+        def resolve_default(field: str):
+            value = defaults.get(field)
+            if not isinstance(value, dict) or value.get("type") != "current_date":
+                return ""
+            timezone_name = str(value.get("timezone") or "UTC")
+            try:
+                from datetime import datetime, timedelta, timezone
+                from zoneinfo import ZoneInfo
+
+                return datetime.now(ZoneInfo(timezone_name)).date().isoformat()
+            except Exception:
+                # Windows Python installations commonly omit the IANA tzdata
+                # bundle. Keep the declared product timezone deterministic.
+                if timezone_name == "Asia/Shanghai":
+                    return datetime.now(timezone(timedelta(hours=8))).date().isoformat()
+                return datetime.now().astimezone().date().isoformat()
+
         if isinstance(fields, str):
             fields = [f.strip() for f in fields.split(",") if f.strip()]
         if isinstance(fields, list) and fields:
-            collected = {field: inputs.get(field, "") for field in fields if isinstance(field, str)}
+            collected = {
+                field: inputs.get(field) or resolve_default(field)
+                for field in fields
+                if isinstance(field, str)
+            }
         else:
             collected = dict(inputs)
         store[output_key] = collected
@@ -927,7 +997,7 @@ class LabNodeExecutor:
     def _render_interaction(self, params: dict, store: dict, run: dict, _run_dir) -> dict:
         package_path = run.get("package_path")
         if not package_path:
-            raise RuntimeError("interaction node requires a cartridge package path")
+            raise NodeActionError("FLOW_CONTRACT_INVALID", "interaction node requires a cartridge package path")
         manifest = {
             "id": run.get("cartridge_id"),
             "version": run.get("cartridge_version"),
@@ -941,10 +1011,10 @@ class LabNodeExecutor:
         component_id = str(params.get("component_ref") or "").strip()
         component = (bundle.get("component_by_id") or {}).get(component_id)
         if not component:
-            raise RuntimeError(f"interaction component not found: {component_id}")
+            raise NodeActionError("FLOW_CONTRACT_INVALID", f"interaction component not found: {component_id}")
         mode = str(params.get("interaction_mode") or "display").strip()
         if mode not in component.get("supported_modes", []):
-            raise RuntimeError(f"interaction mode is not supported by {component_id}: {mode}")
+            raise NodeActionError("FLOW_CONTRACT_INVALID", f"interaction mode is not supported by {component_id}: {mode}")
         asset = (bundle.get("asset_by_id") or {}).get(component.get("entry_asset_id")) or {}
         html = materialize_passive_html(str(asset.get("content") or ""), bundle) if component.get("runtime") == "passive" else ""
         bindings = self._resolve_interaction_bindings(params.get("input_binding"), store, run)
@@ -979,7 +1049,7 @@ class LabNodeExecutor:
             if isinstance(item, dict) and item.get("id") in action_routes
         }
         if not declared_actions:
-            raise RuntimeError("collect/review interaction requires at least one routed component action")
+            raise NodeActionError("FLOW_CONTRACT_INVALID", "collect/review interaction requires at least one routed component action")
         input_schema = self._interaction_schema(bundle, component.get("input_schema"))
         action_schemas = {
             action_id: self._interaction_schema(bundle, action.get("payload_schema"))
@@ -1041,16 +1111,16 @@ class LabNodeExecutor:
         try:
             parsed = json.loads(str(asset.get("content") or "{}"))
         except json.JSONDecodeError as exc:
-            raise RuntimeError(f"interaction schema asset is invalid JSON: {reference}") from exc
+            raise NodeActionError("FLOW_CONTRACT_INVALID", f"interaction schema asset is invalid JSON: {reference}") from exc
         if not isinstance(parsed, dict):
-            raise RuntimeError(f"interaction schema asset must contain an object: {reference}")
+            raise NodeActionError("FLOW_CONTRACT_INVALID", f"interaction schema asset must contain an object: {reference}")
         return parsed
 
     def _resolve_interaction_bindings(self, raw, store: dict, run: dict) -> dict:
         if raw is None:
             return {}
         if not isinstance(raw, dict):
-            raise RuntimeError("interaction input_binding must be an object")
+            raise NodeActionError("FLOW_CONTRACT_INVALID", "interaction input_binding must be an object")
         resolved = {}
         for name, reference in raw.items():
             reference = str(reference or "")
@@ -1065,7 +1135,7 @@ class LabNodeExecutor:
                     None,
                 )
             else:
-                raise RuntimeError(f"unsupported interaction binding: {reference}")
+                raise NodeActionError("FLOW_CONTRACT_INVALID", f"unsupported interaction binding: {reference}")
         return resolved
 
     def _llm_prompt(self, params: dict, store: dict, run: dict, _run_dir) -> dict:
@@ -1199,6 +1269,17 @@ class LabNodeExecutor:
                 if role_binding.get("model"):
                     resolve_options["model"] = role_binding["model"]
                 cfg = resolve_model(**resolve_options)
+                llm_options = params.get("llm_options") if isinstance(params.get("llm_options"), dict) else {}
+                if "timeout_seconds" in llm_options:
+                    try:
+                        cfg.timeout = max(10, min(180, int(llm_options["timeout_seconds"])))
+                    except (TypeError, ValueError):
+                        pass
+                if "max_tokens" in llm_options:
+                    try:
+                        cfg.max_tokens = max(128, min(65_536, int(llm_options["max_tokens"])))
+                    except (TypeError, ValueError):
+                        pass
                 provider_id = cfg.provider_id
                 model = cfg.model
                 if not cfg.api_key:
@@ -1306,6 +1387,23 @@ class LabNodeExecutor:
                 result["error"] = "The configured model provider was unavailable; offline output is diagnostic only."
             return result
 
+        if used_llm and not str(result_text or "").strip():
+            finish_reason = str(llm_response_meta.get("finish_reason") or "unknown")
+            return {
+                "action": "llm_prompt",
+                "output": output_key,
+                "length": 0,
+                "used_llm": True,
+                "fallback": fallback,
+                "provider_id": provider_id,
+                "model": model,
+                "provider_error": provider_error,
+                "llm_response_meta": llm_response_meta,
+                "failed": True,
+                "error_code": "PROVIDER_EMPTY_RESPONSE",
+                "error": f"LLM returned empty assistant content (finish_reason={finish_reason}).",
+            }
+
         store[output_key] = result_text
         result = {
             "action": "llm_prompt",
@@ -1316,6 +1414,7 @@ class LabNodeExecutor:
             "provider_id": provider_id,
             "model": model,
             "provider_error": provider_error,
+            "llm_response_meta": llm_response_meta,
         }
         if fallback and not str(fallback).startswith("mock"):
             result.update({
@@ -1802,6 +1901,10 @@ class LabNodeExecutor:
         mapping_str = preset_config.get("mapping") or ""
         items_key = preset_config.get("items") or ""
         merge_output = preset_config.get("output_name") or to_key
+        try:
+            max_chars_per_item = max(0, min(100_000, int(preset_config.get("max_chars_per_item") or 0)))
+        except (TypeError, ValueError):
+            max_chars_per_item = 0
 
         if mapping_str:
             for line in mapping_str.strip().splitlines():
@@ -1815,12 +1918,21 @@ class LabNodeExecutor:
         if items_key and merge_output:
             keys = [k.strip() for k in items_key.split(",") if k.strip()]
             merged: dict = {}
+            truncated_keys: list[str] = []
             for key in keys:
                 if key in store:
                     val = store[key]
+                    if isinstance(val, str) and max_chars_per_item and len(val) > max_chars_per_item:
+                        val = val[:max_chars_per_item]
+                        truncated_keys.append(key)
                     merged[key] = val if isinstance(val, (str, dict, list)) else str(val)
             store[merge_output] = merged
-            return {"action": "pass_result", "merge": keys, "output": merge_output}
+            return {
+                "action": "pass_result",
+                "merge": keys,
+                "output": merge_output,
+                "truncated_keys": truncated_keys,
+            }
 
         if from_key and to_key:
             val = store.get(from_key)
@@ -1829,6 +1941,177 @@ class LabNodeExecutor:
             return {"action": "pass_result", "from": from_key, "to": to_key, "ok": val is not None}
 
         return {"action": "pass_result", "skipped": True, "reason": "未指定有效 from/to 或 mapping"}
+
+    def _collect_artifacts(self, params: dict, store: dict, run: dict, _run_dir) -> dict:
+        """Create a deterministic delivery record from declared Flow inputs."""
+        output_key = str(params.get("output") or "delivery")
+        aliases = params.get("_structured_input_aliases") if isinstance(params.get("_structured_input_aliases"), dict) else {}
+        delivered = {
+            name: store[alias]
+            for name, alias in aliases.items()
+            if isinstance(name, str) and isinstance(alias, str) and alias in store
+        }
+        if not delivered:
+            for key in self._split_keys(params.get("input")):
+                if key in store:
+                    delivered[key] = store[key]
+        record = {
+            "status": "ready",
+            "items": delivered,
+            "artifacts": list(run.get("artifacts") or []),
+        }
+        store[output_key] = record
+        return {
+            "action": "collect_artifacts",
+            "output": output_key,
+            "item_keys": list(delivered.keys()),
+            "artifact_count": len(record["artifacts"]),
+        }
+
+    def _render_video_brief(self, params: dict, store: dict, run: dict, run_dir) -> dict:
+        """Render a narrated vertical MP4 from an approved daily brief.
+
+        This is intentionally a local, deterministic media step: Edge TTS
+        supplies only speech, Pillow creates the single visual template, and
+        FFmpeg produces and decodes the final MP4 before it is reported.
+        """
+        aliases = params.get("_structured_input_aliases") if isinstance(params.get("_structured_input_aliases"), dict) else {}
+        source_key = next(iter(aliases.values()), None) or params.get("input")
+        brief = store.get(source_key) if isinstance(source_key, str) else None
+        if isinstance(brief, dict) and brief.get("path"):
+            try:
+                artifact_path = Path(str(brief["path"])).resolve()
+                artifacts_root = (Path(run_dir) / "artifacts").resolve()
+                if artifact_path != artifacts_root and artifacts_root not in artifact_path.parents:
+                    raise ValueError("daily brief artifact path escapes the current run")
+                brief = artifact_path.read_text(encoding="utf-8")
+            except Exception as exc:
+                return {"action": "render_video_brief", "failed": True, "error_code": "ARTIFACT_READ_FAILED", "error": str(exc)}
+        if not isinstance(brief, str) or not brief.strip():
+            return {"action": "render_video_brief", "failed": True, "error_code": "INPUT_REQUIRED", "error": "Video render requires a non-empty daily brief."}
+
+        output_key = str(params.get("output") or "video_render")
+        artifact_id = str(params.get("artifact_id") or "daily_video")
+        preset = params.get("preset_config") if isinstance(params.get("preset_config"), dict) else {}
+        voice = str(preset.get("voice") or "zh-CN-XiaoxiaoNeural")
+        render_dir = Path(run_dir) / "render"
+        artifacts_dir = Path(run_dir) / "artifacts"
+        render_dir.mkdir(parents=True, exist_ok=True)
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
+        narration = self._video_narration(brief)
+        title = self._video_title(brief)
+        cover_path = render_dir / "daily_cover.png"
+        voice_path = render_dir / "daily_voice.mp3"
+        video_path = artifacts_dir / "daily_video.mp4"
+        try:
+            self._write_video_cover(cover_path, title, narration)
+            self._run_media_command([
+                sys.executable, "-m", "edge_tts", "--voice", voice,
+                "--text", narration, "--write-media", str(voice_path),
+            ], "TTS generation", timeout_seconds=300)
+            if not voice_path.is_file() or voice_path.stat().st_size < 1024:
+                raise RuntimeError("TTS did not produce a usable audio file")
+            ffmpeg = self._ffmpeg_binary()
+            self._run_media_command([
+                ffmpeg, "-y", "-loop", "1", "-i", str(cover_path), "-i", str(voice_path),
+                "-c:v", "libx264", "-tune", "stillimage", "-r", "30", "-pix_fmt", "yuv420p",
+                "-c:a", "aac", "-b:a", "128k", "-shortest", "-movflags", "+faststart", str(video_path),
+            ], "MP4 rendering")
+            if not video_path.is_file() or video_path.stat().st_size < 4096:
+                raise RuntimeError("FFmpeg did not produce a usable MP4 file")
+            self._run_media_command([ffmpeg, "-v", "error", "-i", str(video_path), "-f", "null", "-"], "MP4 decode check")
+        except Exception as exc:
+            return {"action": "render_video_brief", "failed": True, "error_code": "VIDEO_RENDER_FAILED", "error": str(exc)}
+
+        store[output_key] = {"video_path": str(video_path), "title": title, "voice": voice}
+        return {
+            "action": "render_video_brief",
+            "output": output_key,
+            "artifact_paths": [str(video_path)],
+            "artifact_id": artifact_id,
+            "video_path": str(video_path),
+            "voice": voice,
+        }
+
+    def _ffmpeg_binary(self) -> str:
+        try:
+            import imageio_ffmpeg
+
+            return imageio_ffmpeg.get_ffmpeg_exe()
+        except Exception as exc:
+            raise RuntimeError("FFmpeg is required for video rendering but is unavailable") from exc
+
+    def _run_media_command(self, command: list[str], label: str, timeout_seconds: float = 180) -> None:
+        # TTS on long narration (up to 5000 chars, mixed CN/EN) routinely exceeds
+        # 3 minutes over the network; keep a generous cap for it.
+        completed = subprocess.run(command, capture_output=True, text=True, timeout=timeout_seconds, check=False)
+        if completed.returncode != 0:
+            detail = (completed.stderr or completed.stdout or "unknown error").strip().replace("\n", " ")
+            raise RuntimeError(f"{label} failed: {detail[:500]}")
+
+    def _video_title(self, brief: str) -> str:
+        titled = re.search(r"视频标题[^\n]*\n+(?:\s*\*\*)?([^\n*]+)", brief)
+        if titled:
+            return titled.group(1).strip().strip("「」\"'")[:52]
+        for line in brief.splitlines():
+            cleaned = re.sub(r"^[#>*\s]+|[*`]+$", "", line).strip()
+            cleaned = re.sub(r"^[^\w\u4e00-\u9fff]+", "", cleaned)
+            if cleaned and "视频标题" not in cleaned and len(cleaned) <= 52:
+                return cleaned.strip("「」\"'")
+        return "AI 科技视频日报"
+
+    def _video_narration(self, brief: str) -> str:
+        section = re.search(r"口播脚本.*?\n(.*?)(?:\n## |\n---|\Z)", brief, flags=re.S)
+        content = section.group(1) if section else brief
+        lines = []
+        for line in content.splitlines():
+            line = re.sub(r"^\s*(?:[-*>]|\*\*|\d+[、.])\s*", "", line).strip()
+            line = re.sub(r"【[^】]+】|\[[^\]]+\]|\*+|`+", "", line)
+            if line and not line.startswith("http") and "来源链接" not in line:
+                lines.append(line)
+        narration = " ".join(lines)
+        return narration[:5000] or "今日科技视频日报暂无可用口播内容。"
+
+    def _write_video_cover(self, path: Path, title: str, narration: str) -> None:
+        try:
+            from PIL import Image, ImageDraw, ImageFont
+        except ImportError as exc:
+            raise RuntimeError("Pillow is required for video cover generation") from exc
+        image = Image.new("RGB", (1080, 1920), "#10161f")
+        draw = ImageDraw.Draw(image)
+        font_path = next((candidate for candidate in (
+            "C:/Windows/Fonts/msyh.ttc", "C:/Windows/Fonts/msyhbd.ttc", "C:/Windows/Fonts/simhei.ttf"
+        ) if Path(candidate).is_file()), "")
+        if not font_path:
+            raise RuntimeError("A Chinese-capable system font is required for video rendering")
+        title_font = ImageFont.truetype(font_path, 64)
+        body_font = ImageFont.truetype(font_path, 34)
+        small_font = ImageFont.truetype(font_path, 28)
+        draw.rectangle((64, 86, 1016, 98), fill="#31d0aa")
+        draw.text((70, 148), "AI 科技视频日报", font=small_font, fill="#8ce5d0")
+        self._draw_wrapped_text(draw, title, 70, 260, 940, title_font, "#f6f8fb", 92, max_lines=4)
+        summary = re.sub(r"\s+", " ", narration)[:230]
+        self._draw_wrapped_text(draw, summary, 70, 780, 940, body_font, "#c6d0dd", 58, max_lines=8)
+        draw.text((70, 1740), "来源与风险说明见视频描述", font=small_font, fill="#8a9bad")
+        draw.text((70, 1800), "CartridgeFlow", font=small_font, fill="#31d0aa")
+        image.save(path)
+
+    def _draw_wrapped_text(self, draw, text: str, x: int, y: int, width: int, font, fill: str, line_height: int, max_lines: int) -> None:
+        line = ""
+        lines: list[str] = []
+        for character in text:
+            trial = line + character
+            if draw.textbbox((0, 0), trial, font=font)[2] > width and line:
+                lines.append(line)
+                line = character
+                if len(lines) >= max_lines:
+                    break
+            else:
+                line = trial
+        if line and len(lines) < max_lines:
+            lines.append(line)
+        for index, value in enumerate(lines):
+            draw.text((x, y + index * line_height), value, font=font, fill=fill)
 
     def _save_context(self, params: dict, store: dict, _run: dict, _run_dir) -> dict:
         preset_config = params.get("preset_config") or {}
@@ -1869,17 +2152,32 @@ class LabNodeExecutor:
             if store_key not in store and test_mode == "mock_resolved":
                 store[store_key] = interaction.get("offline_answer") if isinstance(interaction.get("offline_answer"), dict) else {"approval": "approve"}
             if store_key not in store:
+                question = {
+                    "prompt": str(interaction.get("prompt") or message),
+                    "input_schema": interaction.get("input_schema") or {"type": "object", "properties": {"approval": {"type": "string"}}},
+                    "store_key": store_key,
+                }
+                # Attach what the user is actually reviewing: the node's bound
+                # inputs (e.g. the drafted daily brief) are staged in the store
+                # under _cf_input aliases by _prepare_structured_inputs.
+                review_parts: list[str] = []
+                for alias in [params.get("input"), params.get("optional_input")]:
+                    if not isinstance(alias, str) or alias not in store:
+                        continue
+                    value = store[alias]
+                    if value is None or value == "":
+                        continue
+                    text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, indent=2)
+                    review_parts.append(text)
+                if review_parts:
+                    question["review_content"] = "\n\n---\n\n".join(review_parts)
                 pending = {
                     "schema": "pending_interaction.v1",
                     "interaction_id": str(interaction.get("id") or f"human_gate_{uuid.uuid4().hex[:12]}"),
                     "run_id": _run.get("run_id"),
                     "node_output": params.get("output") or "human_gate_result",
                     "status": "waiting_user",
-                    "question": {
-                        "prompt": str(interaction.get("prompt") or message),
-                        "input_schema": interaction.get("input_schema") or {"type": "object", "properties": {"approval": {"type": "string"}}},
-                        "store_key": store_key,
-                    },
+                    "question": question,
                     "resume": {"policy": str(interaction.get("resume_policy") or "resume_same_node")},
                 }
                 if interaction.get("ui_extension"):

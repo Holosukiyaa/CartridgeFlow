@@ -42,6 +42,8 @@ ERROR_CATALOG: dict[str, ErrorSpec] = {
     "TOOL_EXECUTION_FAILED": ErrorSpec("tool", "工具没有完成当前节点要求的操作。", False, True, ("inspect_tool", "retry_node"), 422),
     "PERMISSION_DENIED": ErrorSpec("permission", "当前操作缺少必要权限。", False, True, ("review_permissions",), 403),
     "ARTIFACT_MISSING": ErrorSpec("artifact", "运行需要的产物不存在或已经失效。", False, True, ("rebuild_artifact", "retry_source_node"), 404),
+    "ARTIFACT_READ_FAILED": ErrorSpec("artifact", "读取或解析产物失败，无法继续加工。", False, True, ("inspect_artifact", "rebuild_artifact", "retry_source_node"), 422),
+    "VIDEO_RENDER_FAILED": ErrorSpec("artifact", "视频渲染链路（语音/封面/编码）没有产出可用视频。", False, True, ("inspect_render_log", "edit_preset_config", "retry_node"), 422),
     "DELIVERY_OUTPUT_MISSING": ErrorSpec("artifact", "流程结束时没有生成声明的主要交付结果。", False, True, ("inspect_source_node", "retry_source_node"), 422),
     "DEPENDENCY_UNAVAILABLE": ErrorSpec("dependency", "运行依赖的外部能力当前不可用。", True, True, ("check_dependency", "retry_node"), 503),
     "FLOW_CONTRACT_INVALID": ErrorSpec("flow", "流程或节点配置不符合当前运行契约。", False, True, ("edit_flow", "validate_flow"), 422),
@@ -141,6 +143,10 @@ def error_from_node_result(result: dict, *, run_id: str, node_id: str, source: s
 def classify_exception(exception: Exception | None, source: str = "runtime") -> str:
     if exception is None:
         return "INTERNAL_UNEXPECTED"
+    # Structured failures (e.g. NodeActionError) carry a stable code — trust it.
+    code = getattr(exception, "code", None)
+    if code in ERROR_CATALOG:
+        return code
     status_code = getattr(exception, "status_code", None)
     lowered_source = str(source).lower()
     lowered = str(exception).lower()
@@ -151,7 +157,7 @@ def classify_exception(exception: Exception | None, source: str = "runtime") -> 
     if status_code == 404 and ("provider" in lowered_source or "llm" in lowered_source):
         return "PROVIDER_MODEL_UNAVAILABLE"
     if status_code == 429:
-        return "PROVIDER_RATE_LIMITED"
+        return "PROVIDER_RATE_LIMITED" if "provider" in lowered_source or "llm" in lowered_source else "DEPENDENCY_UNAVAILABLE"
     if isinstance(exception, (TimeoutError,)) or "timed out" in lowered or "timeout" in lowered:
         return "PROVIDER_TIMEOUT" if "provider" in lowered_source or "llm" in lowered_source else "TOOL_TIMEOUT"
     if status_code in {500, 502, 503, 504} and ("provider" in lowered_source or "llm" in lowered_source):

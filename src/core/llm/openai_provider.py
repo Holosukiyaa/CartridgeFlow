@@ -18,7 +18,9 @@ async def openai_chat(
 ) -> dict:
     from openai import AsyncOpenAI
 
-    async with AsyncOpenAI(api_key=cfg.api_key, base_url=cfg.base_url, timeout=cfg.timeout) as client:
+    # Flow nodes own retry policy. SDK retries multiply a single node timeout
+    # into several minutes and make cancellation appear unresponsive.
+    async with AsyncOpenAI(api_key=cfg.api_key, base_url=cfg.base_url, timeout=cfg.timeout, max_retries=0) as client:
         kwargs = {"model": cfg.model, "messages": messages, "temperature": cfg.temperature, "max_tokens": cfg.max_tokens}
         if tools:
             kwargs["tools"] = tools

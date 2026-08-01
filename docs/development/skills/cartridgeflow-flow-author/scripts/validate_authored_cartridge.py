@@ -200,12 +200,20 @@ def flow_start_entry_findings(root_flow: dict[str, Any]) -> list[dict[str, str]]
             "path": f"root_flow.start={start_decl}",
             "message": f"顶层 start 指向 {start_decl}，但 states 中无此节点。",
         })
-    if "start" not in states:
+    if str(start_decl or "").strip() == "start" and "start" not in states:
         findings.append({
             "code": "FLOW_START_ENTRY_MISSING",
             "severity": "blocker",
             "path": "root_flow.states.start",
-            "message": "states 缺少 start 节点（type 应为 control，不是 terminal）。",
+            "message": "states 缺少顶层 start 指向的节点（入口节点 type 应为 control，不是 terminal）。",
+        })
+    entry_state = states.get(str(start_decl or "").strip())
+    if isinstance(entry_state, dict) and entry_state.get("type") == "terminal":
+        findings.append({
+            "code": "FLOW_START_ENTRY_MISSING",
+            "severity": "blocker",
+            "path": f"root_flow.states.{start_decl}.type",
+            "message": f"入口节点 {start_decl} 的 type 是 terminal——应为 control，否则运行时空跑（所有节点被判不可达后直接完成）。",
         })
     return findings
 

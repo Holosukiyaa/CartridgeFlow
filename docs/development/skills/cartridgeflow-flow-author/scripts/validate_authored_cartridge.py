@@ -213,7 +213,7 @@ def review_binding_findings(root_flow: dict[str, Any]) -> list[dict[str, str]]:
                             "with a target (store key) on the source node first."
                         ),
                     })
-                elif (contract_out.get("target") or {}).get("type") == "artifact":
+                elif isinstance(contract_out.get("target"), dict) and contract_out.get("target", {}).get("type") == "artifact":
                     findings.append({
                         "severity": "info",
                         "code": "REVIEW_BINDING_ARTIFACT",
@@ -224,6 +224,17 @@ def review_binding_findings(root_flow: dict[str, Any]) -> list[dict[str, str]]:
                             "content. Prefer binding a store text key written upstream."
                         ),
                     })
+            elif source == "artifact":
+                findings.append({
+                    "severity": "info",
+                    "code": "REVIEW_BINDING_ARTIFACT",
+                    "path": f"root_flow.states.{node_id}.inputs.{port}.binding",
+                    "message": (
+                        f"Review node '{node_id}' input '{port}' binds an artifact resource — the "
+                        "review screen would show a descriptor, not the content. Prefer binding a "
+                        "store text key written upstream."
+                    ),
+                })
             elif source == "store" and not (binding.get("key") or binding.get("store_key")):
                 findings.append({
                     "severity": "warning",
@@ -321,6 +332,8 @@ def interaction_prompt_findings(root_flow: dict[str, Any]) -> list[dict[str, str
             prompt = str(interaction.get("prompt") or "").strip()
         if not prompt:
             prompt = str(params.get("condition") or "").strip()
+        if not prompt:
+            prompt = str(preset.get("message") or "").strip()
         if not prompt:
             findings.append({
                 "severity": "warning",

@@ -31,6 +31,8 @@ node_modules/
 /.agents/
 /skills-lock.json
 /test_output/
+/output/
+/\.reasonix/
 /logs/
 /temp/
 /.playwright-cli/

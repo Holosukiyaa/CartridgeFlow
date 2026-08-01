@@ -253,6 +253,56 @@ class ProcessNodeExecutionTests(unittest.TestCase):
         self.assertEqual("collect_inputs", result["action"])
         self.assertEqual({"episode_id": "ep_001", "goal": "open with a chase"}, state_doc["context"]["store"]["brief"])
 
+    def test_input_process_resolves_current_date_when_omitted(self):
+        state_doc = {"context": {"store": {}}}
+        state = {
+            "type": "process",
+            "kind": "input",
+            "action": "collect_inputs",
+            "params": {
+                "output": "brief",
+                "fields": ["edition_date"],
+                "defaults": {"edition_date": {"type": "current_date", "timezone": "Asia/Shanghai"}},
+            },
+        }
+        LabNodeExecutor().execute("collect", state, state_doc, {"inputs": {}}, ".")
+        self.assertRegex(state_doc["context"]["store"]["brief"]["edition_date"], r"^\d{4}-\d{2}-\d{2}$")
+
+    def test_delivery_process_collects_declared_outputs_and_artifacts(self):
+        state_doc = {"context": {"store": {}}}
+        state = {
+            "type": "process", "kind": "delivery", "executor": "deterministic", "effect": "none",
+            "action": "collect_artifacts",
+            "inputs": {
+                "brief": {"required": True, "binding": {"source": "constant", "value": {"script": "ready"}}},
+                "approval": {"required": True, "binding": {"source": "constant", "value": {"status": "approved"}}},
+            },
+            "outputs": {"delivery": {"target": {"type": "store", "key": "delivery"}}},
+        }
+        result = LabNodeExecutor().execute("deliver", state, state_doc, {"artifacts": [{"name": "preview.mp4"}]}, ".")
+        self.assertEqual("collect_artifacts", result["action"])
+        self.assertEqual({"brief", "approval"}, set(state_doc["context"]["store"]["delivery"]["items"]))
+        self.assertEqual([{"name": "preview.mp4"}], state_doc["context"]["store"]["delivery"]["artifacts"])
+
+    def test_video_render_action_is_registered(self):
+        result = LabNodeExecutor().execute(
+            "render",
+            {"type": "process", "action": "render_video_brief", "params": {"output": "video"}},
+            {"context": {"store": {}}},
+            {"run_id": "test_video", "artifacts": []},
+            ".",
+        )
+        self.assertEqual("render_video_brief", result["action"])
+        self.assertEqual("INPUT_REQUIRED", result["error_code"])
+
+    def test_node_llm_options_are_preserved_for_runtime_budgeting(self):
+        normalized = normalize_runtime_node({
+            "type": "process",
+            "kind": "decision",
+            "llm_options": {"timeout_seconds": 45, "max_tokens": 1200},
+        })
+        self.assertEqual({"timeout_seconds": 45, "max_tokens": 1200}, normalized["params"]["llm_options"])
+
     def test_transfer_process_passes_result(self):
         state_doc = {"context": {"store": {"brief": {"episode_id": "ep_001"}}}}
         state = {

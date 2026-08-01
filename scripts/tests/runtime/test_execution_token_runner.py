@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "src"))
 
 from core.cartridge.runner import CartridgeRunner
+from core.lab.node_executor import LabNodeExecutor
 from core.runtime.errors import RuntimeFailure
 
 
@@ -360,6 +361,191 @@ class ExecutionTokenRunnerTests(unittest.TestCase):
             self.assertEqual(["charge", "failed"], calls)
             events = runner.get_events("run_effect")
             self.assertNotIn("run_recovery_started", [event["type"] for event in events])
+
+    def test_failure_terminal_does_not_create_a_second_executor_error(self):
+        flow = _flow(
+            {
+                "work": {"type": "process", "action": "missing_action"},
+                "failed": {"type": "terminal"},
+            },
+            [
+                {"id": "work_failed", "kind": "failure", "from": "work", "to": "failed", "failure": {"id": "work_error", "causes": ["exception"]}},
+            ],
+            "work",
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runner = _runner(Path(temp_dir), flow)
+            run = runner.create_run("test.execution.tokens", run_id="run_failure_terminal")
+
+            self.assertEqual("failed", run["status"])
+            self.assertEqual("failed", run["current_state"])
+            self.assertEqual("ACTION_EXECUTOR_MISSING", run["error"]["code"])
+            self.assertEqual(1, len(run["errors"]))
+            self.assertEqual("work", run["errors"][0]["node_id"])
+
+    def test_v1_probe_range_rewrites_execution_plan_entry_and_edges(self):
+        flow = _flow(
+            {
+                "start": {"type": "control"},
+                "fetch": {"type": "process", "kind": "mcp_read"},
+                "bundle": {"type": "process", "kind": "transfer"},
+                "select": {"type": "process", "kind": "decision"},
+                "fetch_failed": {"type": "terminal"},
+            },
+            [
+                {"id": "start_fetch", "kind": "sequence", "from": "start", "to": "fetch"},
+                {"id": "fetch_bundle", "kind": "sequence", "from": "fetch", "to": "bundle"},
+                {"id": "bundle_select", "kind": "sequence", "from": "bundle", "to": "select"},
+                {"id": "fetch_failure", "kind": "failure", "from": "fetch", "to": "fetch_failed", "failure": {"id": "fetch_error", "causes": ["exception"]}},
+            ],
+            "start",
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runner = _runner(Path(temp_dir), flow)
+            probe = runner._build_probe_root_flow(flow, {
+                "start_node_id": "fetch",
+                "end_node_id": "bundle",
+                "node_ids": ["fetch", "bundle"],
+            })
+
+            self.assertEqual("fetch", probe["execution_plan"]["entry"])
+            self.assertEqual(["fetch_bundle", "fetch_failure"], [edge["id"] for edge in probe["execution_plan"]["edges"]])
+            self.assertIn("fetch_failed", probe["states"])
+            self.assertNotIn("control_edges", probe)
+
+    def test_pass_result_can_bound_each_merged_text_value(self):
+        executor = LabNodeExecutor(ROOT)
+        state_doc = {"context": {"store": {"first": "abcdef", "second": "xyz"}}}
+        result = executor.execute(
+            "bundle",
+            {
+                "type": "process",
+                "action": "pass_result",
+                "params": {"preset_config": {"items": "first,second", "output_name": "bundle", "max_chars_per_item": 4}},
+            },
+            state_doc,
+            {},
+            ROOT,
+        )
+
+        self.assertEqual({"first": "abcd", "second": "xyz"}, state_doc["context"]["store"]["bundle"])
+        self.assertEqual(["first"], result["truncated_keys"])
+
+    def test_declared_artifact_output_is_materialized_into_the_run(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            runner = _runner(root, _flow({"complete": {"type": "terminal"}}, [], "complete"))
+            run = {"run_id": "run_artifact", "runtime": {"type": "lab"}, "artifacts": []}
+            run_dir = root / ".data" / "runtime" / "runs" / run["run_id"]
+            artifacts = runner._materialize_declared_artifacts(
+                run,
+                run_dir,
+                "draft",
+                {
+                    "outputs": {
+                        "daily_brief": {
+                            "target": {
+                                "type": "artifact",
+                                "artifact_id": "daily_brief",
+                                "name": "daily_brief.md",
+                                "type_name": "markdown",
+                                "mime_type": "text/markdown",
+                            }
+                        }
+                    }
+                },
+                {"daily_brief": "# Daily brief"},
+            )
+
+            self.assertEqual("daily_brief", artifacts[0]["artifact_id"])
+            self.assertEqual("daily_brief.md", artifacts[0]["name"])
+            self.assertEqual("# Daily brief", (run_dir / "artifacts" / "daily_brief.md").read_text(encoding="utf-8"))
+
+    def test_empty_declared_text_artifact_is_not_materialized(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            runner = _runner(root, _flow({"complete": {"type": "terminal"}}, [], "complete"))
+            run = {"run_id": "run_empty_artifact", "runtime": {"type": "lab"}, "artifacts": []}
+            run_dir = root / ".data" / "runtime" / "runs" / run["run_id"]
+            artifacts = runner._materialize_declared_artifacts(
+                run,
+                run_dir,
+                "draft",
+                {
+                    "outputs": {
+                        "daily_brief": {
+                            "target": {
+                                "type": "artifact",
+                                "artifact_id": "daily_brief",
+                                "name": "daily_brief.md",
+                                "type_name": "markdown",
+                                "mime_type": "text/markdown",
+                            }
+                        }
+                    }
+                },
+                {"daily_brief": "   "},
+            )
+
+            self.assertEqual([], artifacts)
+            self.assertFalse((run_dir / "artifacts" / "daily_brief.md").exists())
+
+    def test_result_path_artifact_keeps_declared_identity(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            runner = _runner(root, _flow({"complete": {"type": "terminal"}}, [], "complete"))
+            run = {"run_id": "run_video_artifact", "runtime": {"type": "lab"}, "artifacts": []}
+            run_dir = root / ".data" / "runtime" / "runs" / run["run_id"]
+            video_path = root / "daily_video.mp4"
+            video_path.write_bytes(b"not-a-real-video-but-a-real-file")
+
+            artifacts = runner._collect_result_path_artifacts(
+                run,
+                run_dir,
+                "render_video",
+                {
+                    "action": "render_video_brief",
+                    "artifact_paths": [str(video_path)],
+                    "artifact_id": "daily_video",
+                },
+            )
+
+            self.assertEqual("daily_video", artifacts[0]["artifact_id"])
+            self.assertEqual("daily_video.mp4", artifacts[0]["name"])
+
+    def test_delivery_snapshot_uses_manifest_primary_artifact(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            runner = _runner(root, _flow({"complete": {"type": "terminal"}}, [], "complete"))
+            run_dir = root / ".data" / "runtime" / "runs" / "run_delivery"
+            run = {
+                "run_id": "run_delivery",
+                "cartridge_id": "test.execution.tokens",
+                "inputs": {},
+                "current_state": "complete",
+                "artifacts": [{"artifact_id": "daily_video", "name": "daily_video.mp4", "url": "/video"}],
+            }
+            manifest = {"delivery": {"type": "summary_with_artifacts", "primary_output": "daily_video"}}
+            state_doc = {"context": {"store": {"delivery": {"status": "ready"}}}}
+
+            self.assertFalse(runner._manifest_delivery_output_missing(manifest, state_doc, run))
+            delivery = runner._persist_delivery_snapshot(run, run_dir, manifest, state_doc)
+
+            self.assertEqual("delivered", delivery["status"])
+            self.assertEqual("daily_video", delivery["primary_artifact"]["artifact_id"])
+            self.assertEqual({"status": "ready"}, delivery["result"])
+            self.assertEqual("daily_video", runner.get_delivery(run["run_id"])["primary_output"])
+
+    def test_delivery_guard_rejects_missing_manifest_primary_output(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            runner = _runner(root, _flow({"complete": {"type": "terminal"}}, [], "complete"))
+            manifest = {"delivery": {"primary_output": "daily_video"}}
+            self.assertTrue(runner._manifest_delivery_output_missing(
+                manifest,
+                {"context": {"store": {"delivery": {"status": "ready"}}}},
+                {"artifacts": []},
+            ))
 
 
 if __name__ == "__main__":

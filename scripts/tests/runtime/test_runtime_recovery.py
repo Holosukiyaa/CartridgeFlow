@@ -203,7 +203,8 @@ class RuntimeRecoveryTests(unittest.TestCase):
             self.assertEqual("failed", run["status"])
             self.assertEqual("DELIVERY_OUTPUT_MISSING", run["error"]["code"])
 
-    def test_required_local_resource_role_blocks_before_run(self):
+    @patch("core.studio.resource_resolver.load_resources", return_value={"version": 1, "tools": [], "bindings": {"roles": {}, "tools": {}}})
+    def test_required_local_resource_role_blocks_before_run(self, _mock_load_resources):
         manifest = self._safe_manifest()
         manifest["id"] = "test.missing-resource-fixture"
         manifest["resource_requirements"] = [{"role": "required_fixture", "kinds": ["remote_api"], "required": True}]

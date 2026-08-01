@@ -33,6 +33,30 @@ def decision_state(mock_envelope, consume=None):
 
 
 class DecisionConsumeTests(unittest.TestCase):
+    def test_empty_live_generation_fails_without_writing_output(self):
+        state_doc = {"context": {"store": {"context_pack": {"goal": "write a daily brief"}}}}
+        run = {"inputs": {}, "run_id": "run_test", "cartridge_id": "test.runtime.consume"}
+        state = {
+            "type": "process",
+            "kind": "transform",
+            "executor": "llm",
+            "action": "llm_prompt",
+            "input": "context_pack",
+            "output": "daily_brief",
+            "model_role": "editor",
+            "llm_options": {"max_tokens": 20000},
+        }
+        config = ModelConfig(provider_id="test", model="test-model", api_key="test-key")
+        response = {"content": "", "meta": {"finish_reason": "length", "reasoning_content_length": 20000}}
+        with patch("core.llm.config_manager.resolve_model", return_value=config), patch("core.llm.chat", new=AsyncMock(return_value=response)):
+            result = LabNodeExecutor().execute("draft", state, state_doc, run, ".")
+
+        self.assertTrue(result["failed"])
+        self.assertEqual("PROVIDER_EMPTY_RESPONSE", result["error_code"])
+        self.assertEqual("length", result["llm_response_meta"]["finish_reason"])
+        self.assertNotIn("daily_brief", state_doc["context"]["store"])
+        self.assertEqual(20000, config.max_tokens)
+
     def test_empty_live_llm_response_is_reported_explicitly(self):
         state_doc = {"context": {"store": {"context_pack": {"goal": "build short drama"}}}}
         run = {"inputs": {}, "run_id": "run_test", "cartridge_id": "test.runtime.consume"}

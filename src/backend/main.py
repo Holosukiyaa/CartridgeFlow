@@ -405,19 +405,37 @@ def _flow_edges(root_flow: dict) -> list[dict]:
 def _write_flow_edges(root_flow: dict, edges: list[dict]) -> None:
     if _is_execution_plan_root_flow(root_flow):
         plan = root_flow.setdefault("execution_plan", {"schema": "cartridgeflow.execution_plan.v1", "entry": root_flow.get("start")})
+        previous = {
+            (str(item.get("from") or ""), str(item.get("to") or "")): item
+            for item in (plan.get("edges") or [])
+            if isinstance(item, dict) and item.get("from") and item.get("to")
+        }
         normalized = []
         seen = set()
         for edge in edges:
             source = str(edge.get("from") or edge.get("source") or "").strip()
             target = str(edge.get("to") or edge.get("target") or "").strip()
-            kind = str(edge.get("kind") or "sequence")
-            if not source or not target or source == target or kind != "sequence":
+            if not source or not target or source == target:
                 continue
             key = (source, target)
             if key in seen:
                 continue
             seen.add(key)
-            normalized.append({"id": str(edge.get("id") or f"{source}_{target}"), "kind": "sequence", "from": source, "to": target})
+            prior = previous.get(key) or {}
+            # The frontend sends edges without a `kind`; recover the author kind
+            # from the previous facts or from the visual scope so failure edges
+            # are never rewritten as sequence edges.
+            kind = str(edge.get("kind") or prior.get("kind") or ("failure" if str(edge.get("scope") or "") == "failure" else "sequence"))
+            item: dict = {
+                "id": str(edge.get("id") or prior.get("id") or f"{source}_{target}"),
+                "kind": kind,
+                "from": source,
+                "to": target,
+            }
+            failure_detail = edge.get("failure") if isinstance(edge.get("failure"), dict) else prior.get("failure")
+            if kind == "failure" and isinstance(failure_detail, dict):
+                item["failure"] = failure_detail
+            normalized.append(item)
         plan["schema"] = "cartridgeflow.execution_plan.v1"
         plan["entry"] = str(plan.get("entry") or root_flow.get("start") or "")
         plan["edges"] = normalized
@@ -3497,6 +3515,36 @@ def get_cartridge_run_events(run_id: str):
 def get_cartridge_run_artifacts(run_id: str):
     run = runner.get_run(run_id)
     return {"items": run.get("artifacts", [])}
+
+
+@app.post("/api/cartridge-runs/{run_id}/artifacts/open-directory")
+def open_cartridge_run_artifacts_directory(run_id: str):
+    normalized_id = str(run_id or "").strip()
+    if not normalized_id or Path(normalized_id).name != normalized_id:
+        raise HTTPException(status_code=400, detail="Invalid run id")
+    try:
+        runner.get_run(normalized_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+    runs_root = runner.runs_dir.resolve()
+    run_directory = (runs_root / normalized_id).resolve()
+    if run_directory.parent != runs_root:
+        raise HTTPException(status_code=403, detail="Run directory is outside the runtime workspace")
+    artifacts_directory = (run_directory / "artifacts").resolve()
+    if artifacts_directory.parent != run_directory:
+        raise HTTPException(status_code=403, detail="Artifact directory is outside the run workspace")
+    if not artifacts_directory.is_dir():
+        raise HTTPException(status_code=404, detail="Artifact directory not found")
+    try:
+        _open_directory(artifacts_directory)
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"Unable to open artifact directory: {exc}")
+    return {
+        "ok": True,
+        "run_id": normalized_id,
+        "path": f".data/runtime/runs/{normalized_id}/artifacts",
+    }
 
 
 @app.get("/api/cartridge-runs/{run_id}/artifacts/{artifact_path:path}/preview")

@@ -223,5 +223,79 @@ class ApiSurfaceTests(unittest.TestCase):
         self.assertEqual("no-store", response.headers["cache-control"])
 
 
+    def test_execution_plan_edge_save_preserves_failure_facts(self):
+        """保存可视化连线不得把 failure 边改写成 sequence 边或丢失其详情。"""
+        root_flow = {
+            "id": "edges.root",
+            "start": "start",
+            "protocol": {"id": "CF-FARP", "version": "1.0"},
+            "execution_plan": {
+                "schema": "cartridgeflow.execution_plan.v1",
+                "entry": "start",
+                "edges": [
+                    {"id": "start_run", "kind": "sequence", "from": "start", "to": "run"},
+                    {"id": "run_failure", "kind": "failure", "from": "run", "to": "failed",
+                     "failure": {"id": "run_error", "causes": ["exception", "timeout"]}},
+                ],
+            },
+            "states": {
+                "start": {"type": "control"},
+                "run": {"type": "process", "action": "tool_call"},
+                "failed": {"type": "terminal"},
+            },
+        }
+        # 前端只传 from/to/scope，不携带 kind
+        frontend_edges = [
+            {"from": "start", "to": "run", "scope": "root"},
+            {"from": "run", "to": "failed", "scope": "failure"},
+        ]
+        backend_main._write_flow_edges(root_flow, frontend_edges)
+        saved = root_flow["execution_plan"]["edges"]
+        by_pair = {(edge["from"], edge["to"]): edge for edge in saved}
+        sequence = by_pair[("start", "run")]
+        failure = by_pair[("run", "failed")]
+        self.assertEqual("sequence", sequence["kind"])
+        self.assertEqual("start_run", sequence["id"])
+        self.assertEqual("failure", failure["kind"])
+        self.assertEqual("run_failure", failure["id"])
+        self.assertEqual({"id": "run_error", "causes": ["exception", "timeout"]}, failure["failure"])
+
+    def test_execution_plan_edge_save_full_payload_keeps_failure_kinds(self):
+        """全量保存（前端语义）时，传入的 failure 边保持 kind，不被改写为 sequence。"""
+        root_flow = {
+            "id": "edges.root",
+            "start": "start",
+            "protocol": {"id": "CF-FARP", "version": "1.0"},
+            "execution_plan": {
+                "schema": "cartridgeflow.execution_plan.v1",
+                "entry": "start",
+                "edges": [
+                    {"id": "start_a", "kind": "sequence", "from": "start", "to": "a"},
+                    {"id": "a_b", "kind": "sequence", "from": "a", "to": "b"},
+                    {"id": "a_fail", "kind": "failure", "from": "a", "to": "fail",
+                     "failure": {"id": "a_error", "causes": ["exception"]}},
+                ],
+            },
+            "states": {
+                "start": {"type": "control"},
+                "a": {"type": "process", "action": "tool_call"},
+                "b": {"type": "terminal"},
+                "fail": {"type": "terminal"},
+            },
+        }
+        frontend_edges = [
+            {"from": "start", "to": "a", "scope": "root"},
+            {"from": "a", "to": "b", "scope": "root"},
+            {"from": "a", "to": "fail", "scope": "failure"},
+        ]
+        backend_main._write_flow_edges(root_flow, frontend_edges)
+        saved = root_flow["execution_plan"]["edges"]
+        by_pair = {(edge["from"], edge["to"]): edge for edge in saved}
+        self.assertEqual({"start_a", "a_b", "a_fail"}, {edge["id"] for edge in saved})
+        self.assertEqual("failure", by_pair[("a", "fail")]["kind"])
+        self.assertEqual({"id": "a_error", "causes": ["exception"]}, by_pair[("a", "fail")]["failure"])
+        self.assertEqual("sequence", by_pair[("a", "b")]["kind"])
+
+
 if __name__ == "__main__":
     unittest.main()

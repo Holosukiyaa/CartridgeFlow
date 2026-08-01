@@ -611,6 +611,7 @@ def main() -> int:
     findings.extend(execution_plan_findings(root_flow))
     findings.extend(description_findings(root_flow))
     findings.extend(review_binding_findings(root_flow))
+    findings.extend(review_route_findings(root_flow))
     findings.extend(llm_budget_findings(root_flow))
     findings.extend(failure_terminal_findings(root_flow))
     findings.extend(interaction_prompt_findings(root_flow))

@@ -1313,7 +1313,18 @@ class LabNodeExecutor:
                             for item in probe.get("issues") or []
                         ):
                             try:
-                                response2 = _chat_once()
+                                retry_messages = [
+                                    *messages,
+                                    {
+                                        "role": "user",
+                                        "content": (
+                                            "你上一次的输出不是合法 JSON（解析失败）。请重新输出，"
+                                            "只输出一个合法 JSON 对象，不要 Markdown 代码块标记，"
+                                            "不要任何解释文字，严格使用 ASCII 双引号。"
+                                        ),
+                                    },
+                                ]
+                                response2 = _chat_once() if False else asyncio.run(chat(cfg, retry_messages, agent_name="lab_node", phase="flow_node"))
                                 result_text2 = response2.get("content", "")
                                 if str(result_text2 or "").strip():
                                     result_text = result_text2

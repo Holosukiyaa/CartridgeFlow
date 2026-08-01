@@ -1664,7 +1664,12 @@ class CartridgeRunner:
             "status": "answered",
         }
         run.setdefault("answered_interactions", []).append({**answer_record, "value": answer_value})
-        resolved_resume = self._resolve_answer_resume(pending.get("resume"), answer_value)
+        resolved_resume = self._resolve_answer_resume(pending.get("resume"), answer_value, run_id=run_id)
+        if resolved_resume.pop("_route_exhausted", False):
+            # Bounded route reached its limit: treat this answer as approval so
+            # the flow exits the review loop (loop edge sees empty feedback).
+            if isinstance(answer_value, dict):
+                store[store_key] = {**answer_value, "approval": "approved", "feedback": ""}
         pending["resume"] = resolved_resume
         self._apply_resume_store_effects(resolved_resume, answer_value, store)
         run.pop("pending_interaction", None)
@@ -2203,7 +2208,7 @@ class CartridgeRunner:
         self._write_json(run_dir / "run.json", run)
         return run
 
-    def _resolve_answer_resume(self, resume: dict | None, answer_value) -> dict:
+    def _resolve_answer_resume(self, resume: dict | None, answer_value, run_id: str = "") -> dict:
         base_resume = dict(resume) if isinstance(resume, dict) else {}
         if base_resume.get("policy") == "resume_by_action_route":
             action_id = str(answer_value.get("action_id") or "") if isinstance(answer_value, dict) else ""
@@ -2219,12 +2224,27 @@ class CartridgeRunner:
         routes = base_resume.get("answer_routes")
         if not isinstance(routes, list):
             return base_resume
+        run_id = str(run_id or "")
         for route in routes:
             if not isinstance(route, dict):
                 continue
             matcher = route.get("match") if isinstance(route.get("match"), dict) else {}
             if not self._answer_route_matches(answer_value, matcher):
                 continue
+            max_attempts = route.get("max_attempts")
+            if max_attempts is not None:
+                try:
+                    max_attempts = int(max_attempts)
+                except (TypeError, ValueError):
+                    max_attempts = 0
+                if max_attempts > 0 and self._route_hit_count(run_id, matcher) >= max_attempts:
+                    # Route exhausted (e.g. too many rejections): fall through to
+                    # the next route / default resume. The caller rewrites the
+                    # answer into an approve-like value so the flow exits the loop.
+                    resolved = dict(base_resume)
+                    resolved.pop("answer_routes", None)
+                    resolved["_route_exhausted"] = True
+                    return resolved
             resolved = dict(base_resume)
             resolved.pop("answer_routes", None)
             for key in (
@@ -2239,6 +2259,22 @@ class CartridgeRunner:
                     resolved[key] = route[key]
             return resolved
         return base_resume
+
+    def _route_hit_count(self, run_id: str, matcher: dict) -> int:
+        """Count how many times this answer route was taken, from answered_interactions
+        history of the current run. Used by route.max_attempts to bound loops
+        such as review-reject cycles."""
+        run = self.get_run(run_id) if run_id else {}
+        if not run:
+            return 0
+        count = 0
+        for item in run.get("answered_interactions") or []:
+            value = item.get("value") if isinstance(item, dict) else None
+            if isinstance(value, dict) and value.get("value") is not None:
+                value = value.get("value")
+            if self._answer_route_matches(value, matcher):
+                count += 1
+        return count
 
     def _answer_route_matches(self, answer_value, matcher: dict) -> bool:
         field = str(matcher.get("field") or "").strip()

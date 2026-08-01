@@ -328,5 +328,80 @@ class ResumeTargetTokenTests(unittest.TestCase):
         self.assertEqual(err.get("node_id"), "draft")
 
 
+    def test_route_max_attempts_bounds_reject_loop(self):
+        """answer_routes rejected route with max_attempts=2: the third rejection
+        falls through to the default resume (approve-like exit to package)."""
+        flow = plan_flow()
+        routes = flow["states"]["review"]["params"]["interaction"]["answer_routes"]
+        routes[0]["max_attempts"] = 2
+        tmp2 = tempfile.TemporaryDirectory()
+        registry = _Registry(Path(tmp2.name), plan_manifest(), flow)
+        runner = CartridgeRunner(Path(tmp2.name), registry)
+        base = load_base_implementation(ROOT)
+        runner.build_compatibility_report = lambda manifest, root_flow=None, package_path=None, analysis_target="dev", base=base: build_compatibility_report(base, manifest, root_flow or flow)
+
+        cfg = ModelConfig(
+            provider_id="test-provider", model="test-model", api_key="test-key",
+            base_url="https://example.test", timeout=30, max_tokens=20000,
+        )
+
+        async def fake_chat(_cfg, _messages, **kwargs):
+            payload = {"draft": "DRAFT"}
+            if _messages and "revise" in str(_messages[-1].get("content") or "").lower():
+                payload = {"rev": "REVISED"}
+            return {
+                "content": json.dumps({"schema": "decision_envelope.v1", "status": "resolved", "summary": "m", "payload": payload}),
+                "meta": {"finish_reason": "stop"},
+            }
+
+        with mock.patch("core.llm.config_manager.resolve_model", return_value=cfg), \
+                mock.patch("core.llm.chat", side_effect=fake_chat):
+            run = runner.create_run("test.runtime.resume-target-token", {"topic": "T"})
+            self.assertEqual(run["status"], "paused_waiting_user")
+            # 驳回 1
+            run = runner.answer_pending_interaction(run["run_id"], {"approval": "rejected", "feedback": "f1"})
+            self.assertEqual(run["status"], "paused_waiting_user", "first rejection resumes to revise and re-pauses")
+            # 驳回 2（max_attempts 内）
+            run = runner.answer_pending_interaction(run["run_id"], {"approval": "rejected", "feedback": "f2"})
+            self.assertEqual(run["status"], "paused_waiting_user", "second rejection still within max_attempts")
+            # 驳回 3（超限 -> 走默认 resume_same_node -> approval 保留 -> loop exit -> package）
+            run = runner.answer_pending_interaction(run["run_id"], {"approval": "rejected", "feedback": "f3"})
+            self.assertEqual(run["status"], "completed", "route exhausted: fall through to exit")
+            self.assertEqual(run["current_state"], "complete")
+        tmp2.cleanup()
+
+
+    def test_llm_retry_appends_corrective_prompt(self):
+        """On parse failure the automatic retry sends an extra corrective
+        user message instead of repeating the identical prompt."""
+        prompts = []
+
+        async def drift_chat(_cfg, _messages, **kwargs):
+            prompts.append(str(_messages[-1].get("content") or ""))
+            if len(prompts) == 1:
+                # malformed JSON: valid object followed by 60 chars of garbage
+                # (beyond the 40-char tail-trim tolerance)
+                return {
+                    "content": '{"schema":"decision_envelope.v1","status":"resolved","summary":"m","payload":{"draft":"DRAFT"}}' + "x" * 60,
+                    "meta": {"finish_reason": "stop"},
+                }
+            return {
+                "content": json.dumps({"schema": "decision_envelope.v1", "status": "resolved", "summary": "m", "payload": {"draft": "DRAFT"}}),
+                "meta": {"finish_reason": "stop"},
+            }
+
+        cfg = ModelConfig(
+            provider_id="test-provider", model="test-model", api_key="test-key",
+            base_url="https://example.test", timeout=30, max_tokens=20000,
+        )
+        with mock.patch("core.llm.config_manager.resolve_model", return_value=cfg), \
+                mock.patch("core.llm.chat", side_effect=drift_chat):
+            run = self.runner.create_run("test.runtime.resume-target-token", {"topic": "T"})
+        self.assertEqual(run["status"], "paused_waiting_user", "retry recovered from malformed JSON")
+        self.assertEqual(len(prompts), 2)
+        self.assertIn("合法 JSON", prompts[1], "second attempt must carry a corrective hint")
+        self.assertNotEqual(prompts[0], prompts[1])
+
+
 if __name__ == "__main__":
     unittest.main()

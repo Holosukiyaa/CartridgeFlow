@@ -1,4 +1,5 @@
 # Flow Authoring Checklist
+
 ## New Development Cartridge
 
 Create through `POST /api/lab/flows` or the workbench's **新建卡带** action. The manager creates `manifest.json`, `root.flow.json`, `assets/registry.json`, and `assets/components.json` together.
@@ -167,3 +168,4 @@ npm --prefix src/frontend run build
 ```
 
 Resolve analyzer blockers instead of bypassing a contract. Warnings are still design evidence and should be explained at handoff.
+

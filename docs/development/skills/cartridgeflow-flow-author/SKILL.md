@@ -2,7 +2,7 @@
 name: cartridgeflow-flow-author
 description: Create, extend, or repair editable CartridgeFlow development cartridges and root flows. Use when a user asks Codex to turn a business goal into a CartridgeFlow Flow, add process nodes, configure typed data contracts, bind models or MCP/DLC tools, or make a Flow pass the current executable CF-FARP@1.0 validation without repeated trial-and-error.
 metadata:
-  version: "1.9.0"
+  version: "2.0.0"
   protocol_alignment:
     label: "cf-farp-1-0-authoring-verified"
     protocol: "CF-FARP@1.0"
@@ -32,6 +32,7 @@ Read `protocol/flow-authoring/1.0/README.md` and its listed normative modules be
 3. For a new cartridge, use the workbench/API creation path so the asset registry and component files are generated. Do not hand-create a package skeleton.
 4. Model business steps as `states` and `execution_plan.edges`; never create `next`, `control_edges`, action routes, or visual-only executable edges in a v1 Flow. Keep start and terminal nodes locked.
 5. For every `type: process` node in a v1 Flow, declare `inputs`, `outputs`, and an explicit `failure` edge when it may fail; every input needs `required` and exactly one `schema` or `schema_ref`; every output needs a schema and a nested `target` object whose `type` is `store` or `artifact`. Keep the main chain continuous: every non-terminal state that has a non-failure incoming edge must also have a non-failure outgoing edge. An interaction node (`confirm_checkpoint`) still needs its approval sequence edge to the next state — a lost edge there broke a real cartridge's canvas and run. The final `validate_authored_cartridge.py` reports this as `FLOW_SUCCESSOR_EDGE_MISSING` (warning; a state with no incoming edge may legally end the flow).
+5a. For a `confirm_checkpoint` (人工审核) node, bind what the user actually reviews: its `inputs` must reference **text content already declared as an output contract** (or a store key the upstream wrote), never an artifact id you have not declared in `outputs.target`. The runtime attaches the bound values to the pending question as `review_content` — a binding to an undeclared output silently renders an empty review screen. In practice: upstream `outputs` need a `daily_brief`-style entry with `target: {type: store, key: ...}` before the review node binds it, and the review `binding` should point at the text (store key) rather than an artifact descriptor.
 5b. Write a real `description` for every node (`params.description`, shown as 节点职责). This is the most user-visible text on the canvas card — it is what tells the user what this machine does. Write it concretely for THIS node (what it consumes, what it produces, why it exists, what the user gains), never template filler like "根据已有信息做出判断". If the node description is generic, rewrite it until it names this node's specific job. A missing description makes the card fall back to generic copy.
 6. Bind a tool by its manifest tool ID in `allowed_tools`. For a transparent DLC MCP tool, keep the user-facing business node separate from its internal source model; do not add an ID-only business node.
 7. Verify runtime semantics before the first run. Inspect the field consumer when a value controls runtime behavior; never use prose placeholders as protocol values. A user-bound model role must declare `model: "configured-locally"`, never `"user-configured"`. Confirm the role and node bindings exist in the resource catalog, and that their provider is enabled and usable before calling the Flow runnable.
@@ -121,3 +122,4 @@ This is intentionally stricter than structural preflight. It rejects malformed U
 ## Completion
 
 Report the business nodes created, declared resources, both validation results, and any external configuration still required. Read `references/authoring-checklist.md` for field patterns and validation commands.
+

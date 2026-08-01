@@ -481,19 +481,8 @@ class CartridgeRunner:
                             return f"{label}: validation_ok=false; {issues[:3]}"
                     return str(result_.get("error") or "node failed")
 
-                if isinstance(input_key, list):
-                    # Multi-port nodes (e.g. confirm_checkpoint with brief+video)
-                    # stage each bound input under its own _cf_input alias; the
-                    # preview shows the first available value with all key names.
-                    preview_keys = ",".join(str(k) for k in input_key)
-                    preview_value = None
-                    for alias in input_key:
-                        if isinstance(alias, str) and store.get(alias) not in (None, ""):
-                            preview_value = store.get(alias)
-                            break
-                    input_key, input_value = preview_keys, _truncate(preview_value)
-                else:
-                    input_value = _truncate(store.get(input_key)) if input_key and input_key in store else None
+                if input_key and not isinstance(input_key, list) and input_key in store:
+                    input_value = _truncate(store.get(input_key))
 
                 try:
                     if state_.get("action") == "tool_call" and not self._is_v02_mcp_process(state_) and not normalized_probe_range and not self._tool_has_process_parent(root_flow, state_name_):

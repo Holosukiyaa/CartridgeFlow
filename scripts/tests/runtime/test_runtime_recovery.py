@@ -385,5 +385,26 @@ class RuntimeRecoveryTests(unittest.TestCase):
             self.assertEqual("run_interrupted", runner.get_events("run_interrupted")[-1]["type"])
 
 
+    def test_store_backed_primary_output_delivers_store_value(self):
+        """manifest.delivery.primary_output may reference a store key: the
+        delivery snapshot carries the store value as its result."""
+        manifest = {
+            "id": "test.recovery", "version": "1.0.0",
+            "inputs": [{"id": "source", "required": True}],
+            "outputs": [{"id": "final", "type": "text", "required": True}],
+            "delivery": {"type": "summary", "primary_output": "final", "show_artifacts": False},
+            "runtime": {"type": "none"},
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            runner = _runner(Path(tmp), self._safe_flow(), manifest)
+            run = runner.create_run("test.recovery", {"source": "hello"})
+            self.assertEqual(run["status"], "completed")
+            delivery = run.get("delivery") or {}
+            self.assertEqual(delivery.get("status"), "delivered")
+            self.assertEqual(delivery.get("primary_output"), "final")
+            self.assertEqual(delivery.get("result"), {"source": "hello"}, "store-backed primary output must surface in delivery.result")
+
+
+
 if __name__ == "__main__":
     unittest.main()

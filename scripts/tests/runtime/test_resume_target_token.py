@@ -403,5 +403,15 @@ class ResumeTargetTokenTests(unittest.TestCase):
         self.assertNotEqual(prompts[0], prompts[1])
 
 
+    def test_paused_run_cancels_to_cancelled_status(self):
+        """A paused review run can be cancelled through control_with_options."""
+        p1, p2 = self._mock_llm()
+        with p1, p2:
+            run = self.runner.create_run("test.runtime.resume-target-token", {"topic": "T"})
+            self.assertEqual(run["status"], "paused_waiting_user")
+            cancelled = self.runner.control_with_options(run["run_id"], "cancel")
+            self.assertEqual(cancelled["status"], "cancelled")
+
+
 if __name__ == "__main__":
     unittest.main()

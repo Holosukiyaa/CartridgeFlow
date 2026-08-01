@@ -201,19 +201,21 @@ def review_binding_findings(root_flow: dict[str, Any]) -> list[dict[str, str]]:
                     continue
                 src_outputs = src_node.get("outputs") if isinstance(src_node.get("outputs"), dict) else {}
                 contract_out = src_outputs.get(out_name)
-                if not isinstance(contract_out, dict) or "target" not in contract_out:
+                target = contract_out.get("target") if isinstance(contract_out, dict) else None
+                if not isinstance(contract_out, dict) or not isinstance(target, dict) or not str(target.get("type") or "").strip() or not str(target.get("key") or "").strip():
                     findings.append({
                         "severity": "warning",
                         "code": "REVIEW_BINDING_UNRESOLVED",
                         "path": f"root_flow.states.{node_id}.inputs.{port}.binding",
                         "message": (
                             f"Review node '{node_id}' input '{port}' binds '{src_id}:{out_name}' but "
-                            f"'{src_id}.outputs.{out_name}' declares no target contract. The runtime "
-                            "cannot resolve it and the review screen shows nothing. Declare the output "
-                            "with a target (store key) on the source node first."
+                            f"'{src_id}.outputs.{out_name}' declares no valid target contract (the "
+                            "runtime treats a missing or malformed target as undeclared). The review "
+                            "screen shows nothing. Declare the output with a target (store key or "
+                            "artifact) on the source node first."
                         ),
                     })
-                elif isinstance(contract_out.get("target"), dict) and contract_out.get("target", {}).get("type") == "artifact":
+                elif target.get("type") == "artifact":
                     findings.append({
                         "severity": "info",
                         "code": "REVIEW_BINDING_ARTIFACT",

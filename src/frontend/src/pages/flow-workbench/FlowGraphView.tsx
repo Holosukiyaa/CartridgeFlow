@@ -34,6 +34,9 @@ import { EngineeringNodeCard } from './EngineeringNodeCard.tsx'
 import { buildEngineeringDataRelations, buildEngineeringNodeModels, engineeringControlHandleId, engineeringHandleId, isEngineeringResourceNode, type EngineeringDataRelation, type EngineeringEdgeVisibility, type EngineeringNodeRenderModel } from './engineeringNode.ts'
 import { buildOutcomeNodeModels, plainOutcomeFieldLabel, type OutcomeNodeRenderModel } from './flowNodeView.ts'
 
+/** 资源节点连线到 Root Flow 控制流的拒绝提示（供 UI 与静态断言共用，防止文案漂移） */
+export const RESOURCE_EDGE_REJECT_MESSAGE = '资源依赖不能写入 Root Flow 控制流'
+
 type FlowGraphNode = Node<Record<string, unknown>>
 type FlowGraphEdge = Edge<Record<string, unknown>>
 type DataRelation = { from: string; to: string; key: string; kind?: 'data' | 'dependency'; label?: string; fromField?: string; toField?: string; expression?: string; source?: string }
@@ -1049,7 +1052,7 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
     const source = nodeById.get(sourceId)
     const target = nodeById.get(targetId)
     if (!source || !target) return '节点不存在，无法连接'
-    if (isEngineeringResourceNode(source) || isEngineeringResourceNode(target)) return '资源依赖不能写入 Root Flow 控制流'
+    if (isEngineeringResourceNode(source) || isEngineeringResourceNode(target)) return RESOURCE_EDGE_REJECT_MESSAGE
     if (sourceId === targetId) return '不能连接到自身'
     if (isStartNode(target, targetId)) return '开始节点不能作为链路目标'
     if (source.type === 'terminal' && !isStartNode(source, sourceId)) return '结尾节点不能再接出链路'

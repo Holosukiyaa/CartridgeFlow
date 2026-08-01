@@ -52,6 +52,9 @@ Read `protocol/flow-authoring/1.0/README.md` and its listed normative modules be
 11. Add models, permissions, failure policies, replay policies, and delivery fields only when the selected node effect requires them. Never invent a successful fallback for a missing external capability.
 12. Run package preflight after each meaningful edit. Resolve blockers before adding more nodes.
 13. Run the authored-cartridge validation after the final write. It validates final on-disk text, assets, Flow blockers, resource catalog, and model bindings; do not hand off a package until it reports `"ok": true`.
+14. The root flow must declare the top-level wiring exactly like the template: `"start": "start"`, `protocol {id: CF-FARP, version: 1.0}`, `cartridge_id`, and a `start` state of `type: control` (NOT terminal). Missing `start` passes preflight but makes the runnable execute an empty run (structure check flags every node unreachable and finishes). `validate_authored_cartridge.py` now reports `FLOW_START_ENTRY_MISSING` (blocker) for this.
+15. Give every `llm_prompt` node a node-level `retry_policy` (`{"max_attempts": 3, "initial_delay_seconds": 5, "max_delay_seconds": 30}`). Real reasoning models intermittently return `PROVIDER_EMPTY_RESPONSE` (finish_reason=length) — the engine auto-retries with the policy (verified in production: two real retries rescued a three.js scene run). `validate_authored_cartridge.py` warns `LLM_RETRY_POLICY_MISSING` when absent. For heavy code generation, `max_tokens: 20000` can still truncate — use 30000 with an explicit "output only the code, no analysis" prompt.
+
 14. Apply a cartridge protocol certification label only through the certification API after its report passes. The skill's `cf-farp-1-0-authoring-verified` metadata proves this workflow was checked; it is not a cartridge certification label.
 15. Run the relevant build and conformance commands before handing off.
 

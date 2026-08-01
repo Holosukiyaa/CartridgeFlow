@@ -175,6 +175,70 @@ def review_route_findings(root_flow: dict[str, Any]) -> list[dict[str, str]]:
     return findings
 
 
+def flow_start_entry_findings(root_flow: dict[str, Any]) -> list[dict[str, str]]:
+    """Detect root flows whose top-level entry wiring is missing.
+
+    A v1 root flow must declare ``start`` (top-level) and a ``start`` state;
+    without them the runnable performs a structure check that flags every
+    node as unreachable and finishes without executing anything (a silent
+    no-op run). Preflight/static conformance do not always catch this.
+    """
+    findings: list[dict[str, str]] = []
+    states = root_flow.get("states") if isinstance(root_flow.get("states"), dict) else {}
+    start_decl = root_flow.get("start")
+    if not str(start_decl or "").strip():
+        findings.append({
+            "code": "FLOW_START_ENTRY_MISSING",
+            "severity": "blocker",
+            "path": "root_flow.start",
+            "message": "root flow 缺少顶层 start 入口声明（如 start: start）——运行时会空跑（所有节点被判不可达后直接完成）。",
+        })
+    elif start_decl not in states:
+        findings.append({
+            "code": "FLOW_START_ENTRY_MISSING",
+            "severity": "blocker",
+            "path": f"root_flow.start={start_decl}",
+            "message": f"顶层 start 指向 {start_decl}，但 states 中无此节点。",
+        })
+    if "start" not in states:
+        findings.append({
+            "code": "FLOW_START_ENTRY_MISSING",
+            "severity": "blocker",
+            "path": "root_flow.states.start",
+            "message": "states 缺少 start 节点（type 应为 control，不是 terminal）。",
+        })
+    return findings
+
+
+def llm_retry_policy_findings(root_flow: dict[str, Any]) -> list[dict[str, str]]:
+    """Warn when an llm_prompt node has no node-level retry_policy.
+
+    Real LLM calls intermittently return PROVIDER_EMPTY_RESPONSE
+    (finish_reason=length on reasoning models). Without retry_policy the
+    node fails immediately and follows the failure edge; with it the engine
+    re-schedules automatically (max_attempts/backoff). Treat retry_policy as
+    required on every LLM decision node.
+    """
+    findings: list[dict[str, str]] = []
+    states = root_flow.get("states") if isinstance(root_flow.get("states"), dict) else {}
+    for node_id, state in states.items():
+        if not isinstance(state, dict):
+            continue
+        if state.get("action") != "llm_prompt":
+            continue
+        params = state.get("params") if isinstance(state.get("params"), dict) else {}
+        preset = params.get("preset_config") if isinstance(params.get("preset_config"), dict) else {}
+        has_policy = bool(state.get("retry_policy") or params.get("retry_policy") or preset.get("retry_policy"))
+        if not has_policy:
+            findings.append({
+                "code": "LLM_RETRY_POLICY_MISSING",
+                "severity": "warning",
+                "path": f"root_flow.states.{node_id}.retry_policy",
+                "message": f"LLM 节点 {node_id} 没有 retry_policy——真实模型调用偶发空响应（PROVIDER_EMPTY_RESPONSE），建议配置 max_attempts>=3 让引擎自动重试。",
+            })
+    return findings
+
+
 def description_findings(root_flow: dict[str, Any]) -> list[dict[str, str]]:
     """Flag nodes whose card guidance is generic because no description was written.
 
@@ -654,6 +718,8 @@ def main() -> int:
     findings.extend(text_findings(package))
     findings.extend(execution_plan_findings(root_flow))
     findings.extend(description_findings(root_flow))
+    findings.extend(flow_start_entry_findings(root_flow))
+    findings.extend(llm_retry_policy_findings(root_flow))
     findings.extend(review_binding_findings(root_flow))
     findings.extend(review_route_findings(root_flow))
     findings.extend(llm_budget_findings(root_flow))

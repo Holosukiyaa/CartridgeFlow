@@ -237,8 +237,9 @@ class ResumeTargetTokenTests(unittest.TestCase):
             # review token completed 且无 transition_pending（不走成功出边绕过）
             review_token = max((t for t in tokens if t.get("node_id") == "review"), key=lambda t: int(t.get("created_sequence") or 0))
             self.assertNotIn("transition_pending", review_token)
-            # 血缘：resume token 继承 parent/via_edge，并发出 created 事件
-            self.assertEqual(revise_tokens[0]["parent_token_ids"], [review_token["token_id"]])
+            # 血缘：resume token 继承 parent（首次暂停的 review token）/via_edge，并发出 created 事件
+            first_review = min((t for t in tokens if t.get("node_id") == "review"), key=lambda t: int(t.get("created_sequence") or 0))
+            self.assertEqual(revise_tokens[0]["parent_token_ids"], [first_review["token_id"]])
             self.assertEqual(revise_tokens[0]["via_edge_id"], "review_loop")
             created = [
                 e for e in self.runner.get_events(run["run_id"])

@@ -43,39 +43,100 @@ function resourceDimensions(node: FlowNode): FlowNodeDimensions {
   return { width: 300, height: 206 + titleAllowance }
 }
 
+/**
+ * Estimates the height (px) of the recipe block rendered by EngineeringNodeCard
+ * (buildEngineeringRecipe). Kept local to nodeModel to avoid an import cycle
+ * (engineeringNode imports nodeModel). Rules mirror buildEngineeringRecipe:
+ * each item is one row (~17px) plus a title/padding base; long values wrap.
+ */
+function estimateEngineeringRecipeHeight(node: FlowNode): number {
+  if (node.scope === 'engineering_resource') return 0
+  const action = String(node.action || '')
+  const params = (node.params || {}) as Record<string, unknown>
+  const raw = (node.data && typeof node.data === 'object' ? node.data : {}) as Record<string, unknown>
+  const wrapRows = (value: unknown) => {
+    if (value == null) return 0
+    const text = typeof value === 'string' ? value : JSON.stringify(value)
+    // dd clamps at 4 lines (see .cf-engineering-recipe dd -webkit-line-clamp);
+    // values may contain explicit newlines (multi-line prompts).
+    const lines = text.split('\n').slice(0, 4)
+    const rows = lines.reduce((sum, line) => sum + Math.max(1, Math.ceil(line.length / 20)), 0)
+    return Math.min(4, rows)
+  }
+  let rows = 0
+  if (action === 'llm_prompt') {
+    rows += 2 // 模型角色 + 模型参数
+    const system = raw.system_prompt || params.system_prompt
+    const prompt = raw.prompt || params.prompt || params.target || params.format
+    if (system) rows += wrapRows(system)
+    if (prompt) rows += wrapRows(prompt)
+    const contract = node.decision_contract as { consume?: { path?: string } } | undefined
+    if (contract?.consume?.path) rows += 1 // 输出结构
+  } else if (action === 'tool_call' || action === 'remote_call' || action === 'mcp_read') {
+    const tools = [node.tool_binding, node.mcp_binding, node.allowed_tools].filter(Boolean)
+    rows += 1 // 调用工具
+    if (tools.length) rows += Math.ceil(String(tools[0]).length / 24)
+    // 信源地址（studio 资源解析后每个工具渲染 name+url 两行）
+    const toolList = Array.isArray(params.tools) ? params.tools : []
+    if (toolList.length) rows += toolList.length * 2
+    if (params.resource_role || node.tool_binding) rows += 1 // 资源角色
+    if (node.endpoint || params.endpoint) rows += 1 // 远端地址
+    if (node.timeout_ms) rows += 1 // 超时
+  } else if (action === 'render_video_brief') {
+    rows += 2 // 语音 + 输出
+  } else if (action === 'pass_result') {
+    rows += 2 + wrapRows(params.items || params.input) // 合并键(可能长) + 输出键
+  } else if (action === 'collect_inputs') {
+    rows += 1 + wrapRows(params.fields)
+    if (params.defaults) rows += 1 + wrapRows(params.defaults)
+  } else if (action === 'confirm_checkpoint') {
+    const interaction = params.interaction as { prompt?: string } | undefined
+    rows += 1 + wrapRows(interaction?.prompt || params.message || params.title) // 审核键 + 审核提示(可长)
+  } else if (action === 'collect_artifacts') {
+    rows += 1 + wrapRows(params.input) + 1 // 输入来源(可长) + 交付输出
+  } else {
+    rows += 1 + wrapRows(params) // 参数 JSON
+  }
+  if (rows <= 0) return 0
+  return 36 + rows * 19 // title/padding base + row height (dd 11px/1.5 + dl gap)
+}
+
 export function getFlowNodeDimensions(
   node: FlowNode,
   viewMode: FlowNodeViewMode,
-  context: { incoming?: number; outgoing?: number } = {},
+  _context: { incoming?: number; outgoing?: number } = {},
 ): FlowNodeDimensions {
   if (viewMode === 'compact') return FLOW_NODE_DIMENSIONS.compact
   if (viewMode === 'engineering' && isEngineeringResource(node)) return resourceDimensions(node)
 
   const inputs = countEntries(node.inputs) + countEntries(node.input_binding) + (node.input_schema ? 1 : 0)
   const outputs = countEntries(node.outputs) + (node.output || node.primary_output || node.output_contract ? 1 : 0)
-  const bindings = [node.component_ref, node.tool_binding, node.mcp_binding, node.allowed_tools?.length].filter(Boolean).length
-  const execution = [node.kind, node.executor, node.action, node.effect, node.model_role, node.endpoint].filter(Boolean).length
-  const routes = countEntries(node.action_routes) + Number(context.outgoing || 0) + (node.next ? 1 : 0)
-  const policies = [node.timeout_ms, node.failure_policy, node.permission, node.audit_log].filter((value) => value !== undefined && value !== null && value !== '').length
-  const sections = [inputs, outputs, bindings, execution, routes, policies].filter(Boolean)
+  // Only input/output sections render on the engineering card (data-chain
+  // ports); bindings/execution/routes/policies live in the detail panel.
+  const sections = [inputs, outputs].filter(Boolean)
   const boundary = isBoundaryNodeForDimensions(node)
-  const visibleSections = sections.slice(0, boundary ? 2 : 5)
-  const fieldRows = visibleSections.reduce((total, count) => total + Math.min(3, count), 0)
-  const moreRows = visibleSections.filter((count) => count > 3).length
+  // Every section and every field is shown (no hidden info) — estimate them all.
+  const visibleSections = sections
+  const fieldRows = visibleSections.reduce((total, count) => total + count, 0)
+  const moreRows = 0
 
   if (viewMode === 'engineering') {
-    const height = 91 + visibleSections.length * 27 + fieldRows * 17 + moreRows * 16
+    const recipeHeight = estimateEngineeringRecipeHeight(node)
+    // Guided copy block (recipe strip + what + tip) absorbed from the outcome view.
+    const guidedHeight = 78
+    // Conservative estimate: recipe rows wrap long values (see .cf-engineering-recipe dd),
+    // sections render up to 3 field rows each. The wrapper height must fit all content.
+    const height = 106 + visibleSections.length * 27 + fieldRows * 17 + moreRows * 16 + recipeHeight + guidedHeight
     return {
       width: boundary ? 292 : 334,
-      height: Math.max(boundary ? 196 : 246, Math.min(boundary ? 278 : 544, height)),
+      height: Math.max(boundary ? 196 : 246, height),
     }
   }
 
-  const detailedRows = Math.min(4, inputs || Number(context.incoming || 0) || 1) + Math.min(4, outputs || Number(context.outgoing || 0) || 1)
-  const height = 224 + detailedRows * 28 + (node.params?.description || node.params?.purpose ? 30 : 0)
+  const height = 356 + (node.params?.description || node.params?.purpose ? 24 : 0)
   return {
     width: boundary ? 368 : 440,
-    height: Math.max(boundary ? 286 : 346, Math.min(536, height)),
+    height: Math.max(boundary ? 240 : 388, Math.min(440, height)),
   }
 }
 
@@ -767,7 +828,16 @@ export function buildBalancedLayout(graph: FlowGraph, options: FlowLayoutOptions
     if (!hasSavedPosition) hasCompleteSavedLayout = false
     if (hasSavedPosition) layout[node.id] = { x: saved!.x, y: saved!.y }
   })
-  if (hasCompleteSavedLayout) return layout
+  if (hasCompleteSavedLayout) {
+    // Saved positions may predate node-size changes (e.g. taller recipe blocks);
+    // re-resolve collisions with the current estimated sizes so stacked nodes
+    // don't overlap, without rewriting the user's saved coordinates.
+    return resolveLayoutCollisions(layout, {
+      rowGap: metrics.viewMode === 'detailed' ? 84 : 60,
+      xTolerance: metrics.width + 16,
+      nodeDimensions: options.nodeDimensions,
+    })
+  }
   const automatic = buildAutoAlignLayout(graph, options)
   graph.nodes.forEach((node) => {
     if (!layout[node.id]) layout[node.id] = automatic[node.id] || { x: node.x, y: node.y }

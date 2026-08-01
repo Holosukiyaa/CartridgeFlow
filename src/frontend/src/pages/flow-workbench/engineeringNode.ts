@@ -1,5 +1,6 @@
 import type { FlowEdge, FlowEngineeringRelation, FlowFiles, FlowGraph, FlowNode } from '../../api.ts'
-import { buildFlowNodeCardView, compactNodeValue, getNodePreflightIssues } from './flowNodeView.ts'
+import type { StudioToolResource } from '../../api.types.ts'
+import { buildFlowNodeCardView, buildOutcomeNodeCardView, compactNodeValue, getNodePreflightIssues } from './flowNodeView.ts'
 import { getProtocolEffect, getProtocolExecutor, getProtocolKind } from './nodeModel.ts'
 import type { NodeRunState } from './runState.ts'
 
@@ -293,11 +294,6 @@ function planEdgeScope(kind: string) {
   return 'root'
 }
 
-function planEdgeKindLabel(kind: string, transition: string) {
-  if (transition === 'loop_exit') return '循环退出'
-  return ({ sequence: '顺序', fork: '并行分叉', join: '合流', loop: '循环', batch: '批处理', wait: '等待', failure: '失败处理' } as Record<string, string>)[kind] || kind
-}
-
 function buildExecutionPlanEdges(relations: FlowEngineeringRelation[]): FlowEdge[] {
   return relations.flatMap((source) => {
     const relation = source as ExecutionPlanRelation
@@ -311,7 +307,7 @@ function buildExecutionPlanEdges(relations: FlowEngineeringRelation[]): FlowEdge
       from,
       to,
       scope: planEdgeScope(planEdgeKind),
-      label: `计划边 ${planEdgeId} · ${planEdgeKindLabel(planEdgeKind, transition)}`,
+      label: transition === 'loop_exit' ? '循环退出' : planEdgeId,
       plan_edge_id: planEdgeId,
       plan_edge_kind: planEdgeKind,
       plan_transition: transition,
@@ -496,8 +492,8 @@ export function engineeringHandleId(direction: 'source' | 'target', field: strin
   return `engineering-${direction}-${encodeURIComponent(field)}`
 }
 
-export function engineeringControlHandleId(direction: 'source' | 'target') {
-  return `engineering-control-${direction}`
+export function engineeringControlHandleId(direction: 'source' | 'target', side: 'left' | 'right' | 'top' | 'bottom' = 'left') {
+  return `engineering-control-${direction}-${side}`
 }
 
 function buildLegacyEngineeringDataRelations(graph: FlowGraph): EngineeringDataRelation[] {
@@ -661,10 +657,18 @@ function buildEngineeringNodeViewFromParts(
   outgoingEdges: FlowEdge[],
   source: EngineeringNodeSource,
   analysisFindings = getNodePreflightIssues(graph, node.id),
+  toolCatalog?: Map<string, StudioToolResource>,
 ) {
   const presentation = buildFlowNodeCardView(node, runState, { incomingEdges, outgoingEdges, analysisFindings })
+  const guided = buildOutcomeNodeCardView(node, runState, { incomingEdges, outgoingEdges, analysisFindings })
+  // An authored description is the real guidance for users; the template copy
+  // is only a fallback so the card never looks empty.
+  const authoredDescription = String((node.params as Record<string, unknown> | undefined)?.description || '').trim()
   return {
     ...presentation,
+    what: authoredDescription || guided.what,
+    beginnerTip: guided.beginnerTip,
+    remoteSources: resolveRemoteSources(node, toolCatalog),
     sections: buildEngineeringSections(node, graph, { incoming: incomingEdges, outgoing: outgoingEdges }),
     source,
     raw: JSON.stringify(node, null, 2),
@@ -672,11 +676,49 @@ function buildEngineeringNodeViewFromParts(
   }
 }
 
+export type EngineeringRemoteSource = {
+  name: string
+  url: string
+}
+
+// Resolve a node's referenced remote tools (server/tool pairs in params.tools or
+// mcp_binding) to concrete endpoints from the studio resource catalog, so the
+// recipe shows the real addresses instead of opaque tool ids.
+function resolveRemoteSources(node: FlowNode, toolCatalog?: Map<string, StudioToolResource>): EngineeringRemoteSource[] {
+  if (!toolCatalog || toolCatalog.size === 0) return []
+  const found: EngineeringRemoteSource[] = []
+  const push = (server: string | undefined, tool: string | undefined) => {
+    if (!server || !tool) return
+    const resource = toolCatalog.get(`${server}/${tool}`)
+    if (resource?.endpoint) {
+      found.push({ name: resource.name || tool, url: resource.endpoint })
+    }
+  }
+  const params = (node.params || {}) as Record<string, unknown>
+  const tools = params.tools
+  if (Array.isArray(tools)) {
+    for (const item of tools) {
+      if (!item || typeof item !== 'object') continue
+      const record = item as Record<string, unknown>
+      push(String(record.server || ''), String(record.tool || ''))
+    }
+  }
+  const mcpBinding = node.mcp_binding as { server?: string } | undefined
+  if (mcpBinding?.server) {
+    const allowed = node.allowed_tools || (node.mcp_binding as Record<string, unknown>).allowed_tools
+    if (Array.isArray(allowed)) {
+      for (const toolId of allowed) push(mcpBinding.server, String(toolId))
+    }
+  }
+  return found
+}
+
 export function buildEngineeringNodeModels(
   graph: FlowGraph,
   files: FlowFiles,
   runStates: Map<string, NodeRunState> | undefined,
   dataRelations: EngineeringDataRelation[],
+  toolCatalog?: Map<string, StudioToolResource>,
 ) {
   const incomingByNode = new Map<string, FlowEdge[]>()
   const outgoingByNode = new Map<string, FlowEdge[]>()
@@ -711,6 +753,7 @@ export function buildEngineeringNodeModels(
         outgoingByNode.get(node.id) || [],
         sourceByNode.get(node.id)!,
         getNodePreflightIssues(graph, node.id),
+        toolCatalog,
       ),
       resource: isEngineeringResourceNode(node) ? buildEngineeringResourceView(node) : undefined,
       connectedFields: new Set([...connectedInputs, ...connectedOutputs]),
@@ -721,4 +764,86 @@ export function buildEngineeringNodeModels(
     })
   })
   return models
+}
+
+export type EngineeringRecipeItem = {
+  label: string
+  value: string
+  mono?: boolean
+  /** Long/prose values (prompts, JSON, URLs) get a distinct text-block style. */
+  long?: boolean
+}
+
+function recipeValue(value: unknown, limit = 5000): string {
+  if (value === undefined || value === null) return ''
+  const text = typeof value === 'string' ? value : JSON.stringify(value)
+  if (!text) return ''
+  const normalized = text.replace(/\s+/g, ' ').trim()
+  return normalized.length > limit ? `${normalized.slice(0, limit)}...` : normalized
+}
+
+function recipeTools(node: FlowNode): string[] {
+  const params = (node.params || {}) as Record<string, unknown>
+  const paramsTools = Array.isArray(params.tools) ? params.tools : []
+  const declared = [...(node.tools || []), ...paramsTools]
+    .filter((tool): tool is { server?: string; tool?: string } => Boolean(tool && typeof tool === 'object'))
+  const names = declared.map((tool) => [tool.server, tool.tool].filter(Boolean).join('.'))
+  return [...new Set(names)].filter(Boolean)
+}
+
+/** Builds the "how this machine works" recipe for a node, by action. */
+export function buildEngineeringRecipe(node: FlowNode): EngineeringRecipeItem[] {
+  const action = String(node.action || '')
+  const params = node.params || {}
+  // Prompt/options live on the raw state record (node.data), not on FlowNode.
+  const raw = node.data && typeof node.data === 'object' ? node.data as Record<string, unknown> : {}
+  const items: EngineeringRecipeItem[] = []
+  const push = (label: string, value: unknown, mono = false) => {
+    const text = recipeValue(value)
+    if (text) items.push({ label, value: text, mono, long: text.length > 80 || text.includes('\n') })
+  }
+
+  if (action === 'llm_prompt') {
+    push('模型角色', node.model_role || params.model_role, true)
+    const llm = (params.llm_options || raw.llm_options) as Record<string, unknown> | undefined
+    if (llm && (llm.max_tokens || llm.timeout_seconds)) {
+      push('模型参数', `max_tokens ${llm.max_tokens ?? '-'} · timeout ${llm.timeout_seconds ?? '-'}s`, true)
+    }
+    push('系统指令', raw.system_prompt || params.system_prompt)
+    push('处理指令', raw.prompt || params.prompt || params.target || params.format)
+    const contract = node.decision_contract as { consume?: { path?: string; as?: string } } | undefined
+    if (contract?.consume?.path) {
+      push('输出结构', `${contract.consume.path} → ${contract.consume.as || 'output'}`, true)
+    }
+  } else if (action === 'tool_call' || action === 'remote_call' || action === 'mcp_read') {
+    const tools = recipeTools(node)
+    if (tools.length) push('调用工具', tools.join('、'), true)
+    push('资源角色', params.resource_role || node.tool_binding)
+    push('远端地址', node.endpoint || params.endpoint, true)
+    if (node.timeout_ms) push('超时', `${node.timeout_ms} ms`, true)
+  } else if (action === 'render_video_brief') {
+    const preset = params.preset_config as Record<string, unknown> | undefined
+    if (preset?.voice) push('语音', preset.voice, true)
+    push('输出', params.output, true)
+  } else if (action === 'pass_result') {
+    push('合并键', params.items || params.input, true)
+    push('输出键', params.output, true)
+    if (params.max_chars_per_item) push('单条上限', `${params.max_chars_per_item} 字符`, true)
+  } else if (action === 'collect_inputs') {
+    push('采集字段', Array.isArray(params.fields) ? params.fields.join('、') : params.fields, true)
+    const defaults = params.defaults as Record<string, unknown> | undefined
+    if (defaults) push('默认值', JSON.stringify(defaults), true)
+  } else if (action === 'confirm_checkpoint') {
+    const interaction = params.interaction as { store_key?: string; prompt?: string } | undefined
+    push('审核键', interaction?.store_key || params.output, true)
+    push('审核提示', params.message || interaction?.prompt || params.title)
+  } else if (action === 'collect_artifacts') {
+    push('交付输出', params.output, true)
+    push('输入来源', params.input, true)
+  } else {
+    const tools = recipeTools(node)
+    if (tools.length) push('绑定工具', tools.join('、'), true)
+    push('参数', params, true)
+  }
+  return items
 }

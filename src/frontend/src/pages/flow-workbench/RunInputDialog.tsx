@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState, type ChangeEvent } from 'react'
 import { uploadWorkspaceFile } from '../../api.ts'
+import { resolveRunInputDefault } from './inputDefaults.ts'
 
 export function RunInputDialog({
   inputs,
@@ -20,7 +21,7 @@ export function RunInputDialog({
   const [values, setValues] = useState<Record<string, string>>(() => {
     const initial: Record<string, string> = {}
     inputs.forEach((input) => {
-      initial[input.id] = String(input.default || '')
+      initial[input.id] = resolveRunInputDefault(input)
     })
     return initial
   })
@@ -114,6 +115,7 @@ export function RunInputDialog({
                 ) : (
                   <input
                     id={`cf-input-${input.id}`}
+                    type={input.type === 'date' ? 'date' : 'text'}
                     value={values[input.id] || ''}
                     placeholder={input.placeholder || ''}
                     onChange={(event) => setValues((current) => ({ ...current, [input.id]: event.target.value }))}
@@ -131,5 +133,4 @@ export function RunInputDialog({
     </div>
   )
 }
-
 

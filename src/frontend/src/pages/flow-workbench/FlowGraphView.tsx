@@ -18,7 +18,7 @@ import {
   type ReactFlowInstance,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { AlertTriangle, AlignHorizontalSpaceAround, Box, Braces, BrainCircuit, CheckCircle2, CirclePause, FileText, GitBranch, GripVertical, Info, Lock, Maximize, Maximize2, MessageSquare, MessageSquarePlus, MousePointer2, PackageCheck, Plus, Settings, Trash2, Unlock, Wrench, X, ZoomIn, ZoomOut } from 'lucide-react'
+import { AlertTriangle, AlignHorizontalSpaceAround, Box, Braces, BrainCircuit, CheckCircle2, CirclePause, FileText, FolderOpen, GitBranch, GripVertical, Info, Lock, Maximize, Maximize2, MessageSquare, MessageSquarePlus, MousePointer2, PackageCheck, Plus, Settings, Trash2, Unlock, Wrench, X, ZoomIn, ZoomOut } from 'lucide-react'
 import type { AIFlowSelection, FlowAnnotation, FlowEdge, FlowEvent, FlowFiles, FlowGraph, FlowNode, RunResult } from '../../api.ts'
 import { DEFAULT_WORKSPACE_THEME, loadWorkspaceTheme, saveWorkspaceTheme, WORKSPACE_THEME_PRESETS, type WorkspaceTheme } from '../../appearance.ts'
 import { showToast } from '../../toast.tsx'
@@ -434,7 +434,7 @@ function buildRunEdgeStates(graphEdges: FlowEdge[], runEvents: FlowEvent[] = EMP
   return edgeStates
 }
 
-export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engineeringEdgeVisibility = { control: true, data: true, dependency: true, branch: true, failure: true }, engineeringDataRelations: providedEngineeringDataRelations, engineeringNodeModels: providedEngineeringNodeModels, selectedNode, focusNodeId, onSelectNode, onNodeEditorPositionChange, onLayoutSave, autoLayoutOnMount = false, onAutoLayoutComplete, onEdgesSave, onAnnotationsSave, onCreateNode, onDeleteNode, modelPanel, toolPanel, packagePanel, cartridgePanel, protocolInfo = DEFAULT_PROTOCOL_DISPLAY, nodeEditors = [], activeNodeEditorId, onCloseNodeEditor, onCanvasToolChange, requestedCanvasTool, onStewardSelectionChange, compactStatic = false, readOnlyGraph = false, runStatus, nodeRunStates, runEvents, runCompletionVisible = false, runCompletion, onDismissRunCompletion, onOpenRunLog, onOpenPendingInteraction, testProbeState }: {
+export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engineeringEdgeVisibility = { control: true, data: true, dependency: true, branch: true, failure: true }, engineeringDataRelations: providedEngineeringDataRelations, engineeringNodeModels: providedEngineeringNodeModels, selectedNode, focusNodeId, onSelectNode, onNodeEditorPositionChange, onLayoutSave, autoLayoutOnMount = false, onAutoLayoutComplete, onEdgesSave, onAnnotationsSave, onCreateNode, onDeleteNode, modelPanel, toolPanel, packagePanel, cartridgePanel, protocolInfo = DEFAULT_PROTOCOL_DISPLAY, nodeEditors = [], activeNodeEditorId, onCloseNodeEditor, onCanvasToolChange, requestedCanvasTool, onStewardSelectionChange, compactStatic = false, readOnlyGraph = false, runStatus, nodeRunStates, runEvents, runCompletionVisible = false, runCompletion, onDismissRunCompletion, onOpenRunLog, onOpenRunResult, onOpenPendingInteraction, testProbeState }: {
   graph: FlowGraph
   files?: FlowFiles
   displayMode?: DesignDisplayMode
@@ -472,6 +472,7 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
   runCompletion?: RunResult
   onDismissRunCompletion?: () => void
   onOpenRunLog?: (run: RunResult) => void
+  onOpenRunResult?: (run: RunResult) => void
   onOpenPendingInteraction?: () => void
   testProbeState?: FlowNodeProbeState
 }) {
@@ -690,6 +691,9 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
     probeSelectedNodeIds,
     onSelect: onSelectNode,
   }), [edgePortPlan.counts, expandedMainNodeIds, nodeOrder, nodeRunStates, onSelectNode, outcomeNodeModels, probeSelectedNodeIds, testProbeState])
+  // Live material carriers were removed: the running-node highlight plus the
+  // runtime inspector (input/output/artifacts) cover what they showed, without
+  // the translucent ghosting they occasionally left behind.
   const initialFocusId = focusNodeId || graph.nodes.find((node) => node.scope !== 'root')?.id || graph.nodes[0]?.id || null
 
   const CompactCanvasNode = useCallback(({ data }: { data: Record<string, unknown> }) => {
@@ -740,7 +744,9 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
       } as unknown as Record<string, unknown>,
       className: runState ? `cf-runtime-node run-node-${runState.status}` : '',
       deletable: !resource && !node.locked && !isStartNode(node, node.id),
-      style: { width: dimensions.width, height: dimensions.height },
+      // width anchors the layout; height is left to content ("auto") so the node
+      // hugs its recipe/sections data instead of clipping it to an estimate
+      style: { width: dimensions.width, height: 'auto' as const },
     }
   }), [displayMode, graph.nodes, layout, nodeDimensions, nodeRunStates, nodeViewMode])
   const initialEdges: FlowGraphEdge[] = useMemo(() => {
@@ -773,8 +779,8 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
         id: planEdgeId ? `plan-edge-${planEdgeId}-${planTransition || 'transition'}-${edge.from}-${edge.to}` : `edge-${index}-${edge.from}-${edge.to}`,
         source: edge.from,
         target: edge.to,
-        sourceHandle: displayMode === 'engineering' ? engineeringControlHandleId('source') : getPortHandleId('source', ports.sourceSide, ports.sourceIndex),
-        targetHandle: displayMode === 'engineering' ? engineeringControlHandleId('target') : getPortHandleId('target', ports.targetSide, ports.targetIndex),
+        sourceHandle: displayMode === 'engineering' ? engineeringControlHandleId('source', ports.sourceSide) : getPortHandleId('source', ports.sourceSide, ports.sourceIndex),
+        targetHandle: displayMode === 'engineering' ? engineeringControlHandleId('target', ports.targetSide) : getPortHandleId('target', ports.targetSide, ports.targetIndex),
         className: `${displayMode === 'engineering' ? `cf-engineering-control-edge${failureRoute ? ' failure' : branch ? ' branch' : ''}` : ''} ${runActive
           ? isRunActive ? 'cf-run-edge-active' : isRunVisited ? 'cf-run-edge-visited' : 'cf-run-edge-pending'
           : ''}`,
@@ -1646,6 +1652,9 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
           </div>
           {runCompletion && ['paused', 'paused_waiting_user'].includes(runCompletion.status) && onOpenPendingInteraction && <button className="cf-canvas-run-completion-log" type="button" onClick={onOpenPendingInteraction} title="重新打开当前交互"><CirclePause aria-hidden="true" /><span>打开交互</span></button>}
           {runCompletion && <button className="cf-canvas-run-completion-log" type="button" onClick={() => onOpenRunLog?.(runCompletion)} title="查看运行详细日志"><FileText aria-hidden="true" /><span>查看日志</span></button>}
+          {runCompletion && (runCompletion.artifacts?.length || runCompletion.delivery?.artifacts?.length) && onOpenRunResult && (
+            <button className="cf-canvas-run-completion-result" type="button" onClick={() => onOpenRunResult(runCompletion)} title="在系统文件管理器中打开本次产物文件夹"><FolderOpen aria-hidden="true" /><span>打开文件夹</span></button>
+          )}
           <button type="button" onClick={onDismissRunCompletion} title="关闭运行结果" aria-label="关闭运行结果">
             <X aria-hidden="true" />
           </button>

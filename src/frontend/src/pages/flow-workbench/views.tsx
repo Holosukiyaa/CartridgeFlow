@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Box, Button } from '../../ui.tsx'
+import { fetchStudioResources } from '../../api.ts'
 import { AlertTriangle, Bot, Braces, ChevronDown, ChevronUp, ClipboardCopy, Copy, Download, FileOutput, History, PanelRight, Pause, PlayCircle, RefreshCw, Square, SquarePen, X } from 'lucide-react'
 import { fetchFlowResourceCatalog, fetchMcpSource, type AIFlowSelection, type AIFlowStewardContext, type FlowAnnotation, type FlowEdge, type FlowEngineeringRelation, type FlowEvent, type FlowFiles, type FlowGraph, type FlowLabDetail, type FlowNode, type McpSourceResponse, type RunResult, type StudioToolResource } from '../../api.ts'
 import type { CreateNodeHandler, DesignDisplayMode, GraphResult, NodeDraft } from './types.ts'
 import { FlowGraphView, type CanvasTool, type ProtocolDisplayInfo } from './FlowGraphView.tsx'
 import { NodeDetailCard } from './NodeDetailCard.tsx'
-import { getNodePreflightIssues } from './flowNodeView.ts'
+import { buildOutcomeNodeCardView, getNodePreflightIssues } from './flowNodeView.ts'
 import { BrandMark } from './BrandMark.tsx'
 import { NODE_DETAIL_SECTION_BY_ID, nodeDetailId, type NodeDetailSection, type OpenNodeDetail } from './nodeDetails.ts'
 import type { NodeRunState } from './runState.ts'
@@ -33,6 +34,156 @@ function isExecutionPlanV1(files: FlowFiles, graph: FlowGraph) {
   } catch {
     return false
   }
+}
+
+function collectNodeArtifacts(state: NodeRunState): string[] {
+  const found: string[] = []
+  for (const event of state.events || []) {
+    const data = event?.data
+    if (!data || typeof data !== 'object') continue
+    const paths = data.artifact_paths
+    if (Array.isArray(paths)) {
+      for (const item of paths) if (typeof item === 'string' && item) found.push(item)
+    }
+    for (const key of ['video_path', 'video_render', 'audio_path']) {
+      if (typeof data[key] === 'string' && data[key]) found.push(data[key])
+    }
+  }
+  return [...new Set(found)]
+}
+
+type FlowMaterialTrailItem = {
+  node: FlowNode
+  state: NodeRunState
+  order: number
+  current: boolean
+}
+
+// Live material changes along the run, in execution order: what entered each
+// machine and what came out of it. Previously drawn on the canvas as animated
+// carriers; now rendered in the right-hand runtime inspector instead.
+function buildFlowMaterialTrail(
+  graph: FlowGraph,
+  runEvents: FlowEvent[] | undefined,
+  nodeRunStates: Map<string, NodeRunState> | undefined,
+  currentNodeId: string,
+): FlowMaterialTrailItem[] {
+  const states = nodeRunStates || new Map<string, NodeRunState>()
+  const ordered: string[] = []
+  for (const event of runEvents || []) {
+    if (event.type === 'state_entered' && event.state) {
+      const nodeState = states.get(event.state)
+      if (nodeState && nodeState.status !== 'idle' && !ordered.includes(event.state)) ordered.push(event.state)
+    }
+  }
+  // Fall back to graph order for nodes already running before this page loaded.
+  for (const node of graph.nodes) {
+    const nodeState = states.get(node.id)
+    if (nodeState && nodeState.status !== 'idle' && !ordered.includes(node.id)) ordered.push(node.id)
+  }
+  return ordered
+    .map((id, index) => {
+      const node = graph.nodes.find((item) => item.id === id)
+      const nodeState = states.get(id)
+      return node && nodeState ? { node, state: nodeState, order: index + 1, current: id === currentNodeId } : null
+    })
+    .filter((item): item is FlowMaterialTrailItem => Boolean(item))
+}
+
+function compactRuntimeValue(value: unknown, fallback: string, max = 4000) {
+  if (value === undefined || value === null || value === '') return fallback
+  const text = typeof value === 'string' ? value : JSON.stringify(value)
+  const normalized = text.replace(/\s+/g, ' ').trim()
+  return normalized.length > max ? `${normalized.slice(0, max)}...` : normalized
+}
+
+function RuntimeNodeInspector({ node, state, runEvents, nodeRunStates, graph, onOpenPendingInteraction }: { node: FlowNode; state: NodeRunState; runEvents?: FlowEvent[]; nodeRunStates?: Map<string, NodeRunState>; graph: FlowGraph; onOpenPendingInteraction?: () => void }) {
+  const view = buildOutcomeNodeCardView(node, state)
+  const statusLabel = state.status === 'paused' ? '等待人工继续' : state.status === 'running' ? '正在处理' : '正在准备'
+  const artifacts = collectNodeArtifacts(state)
+  const materialTrail = buildFlowMaterialTrail(graph, runEvents, nodeRunStates, node.id)
+  // The current node is expanded by default; other nodes collapse to a summary
+  // row. Users can manually expand/collapse any node.
+  const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set())
+  const [expandedManualIds, setExpandedManualIds] = useState<Set<string>>(new Set())
+  const toggleMaterialItem = (nodeId: string, current: boolean) => {
+    if (current) {
+      setCollapsedIds((currentSet) => {
+        const next = new Set(currentSet)
+        if (next.has(nodeId)) next.delete(nodeId); else next.add(nodeId)
+        return next
+      })
+    } else {
+      setExpandedManualIds((currentSet) => {
+        const next = new Set(currentSet)
+        if (next.has(nodeId)) next.delete(nodeId); else next.add(nodeId)
+        return next
+      })
+    }
+  }
+  return (
+    <aside className="cf-runtime-node-inspector" aria-live="polite" aria-label="当前运行节点详情">
+      <header>
+        <span className={`cf-runtime-node-status ${state.status}`}><i aria-hidden="true" />{statusLabel}</span>
+        <div><strong title={view.title}>{view.title}</strong><code>{node.id}</code></div>
+      </header>
+      <section className="cf-runtime-node-recipe">
+        <span>配方</span>
+        <b>{view.inputs[0]?.label || '输入物料'}</b><em>{'->'}</em><b>{view.kindLabel}</b><em>{'->'}</em><b>{view.outputs[0]?.label || '处理结果'}</b>
+      </section>
+      <section className="cf-runtime-node-purpose"><span>正在做什么</span><p>{view.what}</p></section>
+      {materialTrail.length > 0 && (
+        <section className="cf-runtime-node-materials">
+        <span>物料流转 · 实时</span>
+        <ol>
+          {materialTrail.map((item) => {
+            const current = item.current
+            const expanded = current ? !collapsedIds.has(item.node.id) : expandedManualIds.has(item.node.id)
+            const summary = item.state.outputKey
+              ? `${item.state.outputKey}: ${compactRuntimeValue(item.state.outputValue, '')}`
+              : item.state.status === 'running' ? '处理中…' : item.state.status
+            return (
+              <li key={item.node.id} className={`${current ? 'current' : ''} ${expanded ? 'expanded' : 'collapsed'}`}>
+                <button
+                  type="button"
+                  className="cf-runtime-material-toggle"
+                  onClick={() => toggleMaterialItem(item.node.id, current)}
+                  aria-expanded={expanded}
+                >
+                  <span className="order">{String(item.order).padStart(2, '0')}</span>
+                  <b title={item.node.display_name || item.node.title}>{item.node.display_name || item.node.title}</b>
+                  <small title={summary}>{summary}</small>
+                  <ChevronDown className="chevron" aria-hidden="true" />
+                </button>
+                {expanded && (
+                  <div className="cf-runtime-material-body">
+                    <div className="enter"><em>进入前</em><code>{item.state.inputKey || '—'}</code><p>{compactRuntimeValue(item.state.inputValue, '等待物料到达', 12000)}</p></div>
+                    <div className="exit"><em>处理后</em><code>{item.state.outputKey || '—'}</code><p>{item.state.status === 'running' ? '处理中…' : compactRuntimeValue(item.state.outputValue, '本节点未产出', 12000)}</p></div>
+                  </div>
+                )}
+              </li>
+            )
+          })}
+        </ol>
+      </section>
+      )}
+      <section className="cf-runtime-node-data">
+        {state.status === 'paused' && state.pendingInteraction && (
+          <div className="cf-runtime-node-approval">
+            <span>需要你的审核</span>
+            <p>{state.pendingInteraction.question?.prompt || '当前流程在人工关卡暂停，确认后才会继续。'}</p>
+            {onOpenPendingInteraction && <button type="button" onClick={onOpenPendingInteraction}>打开审核</button>}
+          </div>
+        )}
+        <div><span>当前输入{state.inputKey ? ` · ${state.inputKey}` : ''}</span><pre>{compactRuntimeValue(state.inputValue, '等待上游物料到达', 12000)}</pre></div>
+        <div><span>当前产出{state.outputKey ? ` · ${state.outputKey}` : ''}</span><pre>{compactRuntimeValue(state.outputValue, state.status === 'running' ? '处理尚未完成' : '等待本节点产出', 12000)}</pre></div>
+        {artifacts.length > 0 && (
+          <div className="artifacts"><span>本次产物</span>{artifacts.map((path) => <pre key={path} title={path}>{path}</pre>)}</div>
+        )}
+        {state.errorMsg && <div className="error"><span>运行异常</span><pre>{state.errorMsg}</pre></div>}
+      </section>
+    </aside>
+  )
 }
 
 export function WorkbenchHeader({
@@ -106,7 +257,7 @@ export function DesignView({
   graph, editable, files, flowId, selectedNode, focusNodeId, openNodeEditors,
   onSelectNode, onGuideNodeEditor, onCloseNodeEditor, onToggleNodeEditorPin, onNodeEditorPositionChange, onCloseUnpinnedNodeEditors, onLayoutSave, autoLayoutOnMount, onAutoLayoutComplete, onEdgesSave, onAnnotationsSave, onCreateNode, onDeleteNode, onFilesChange, onSaved,
   engineeringResourceLayout, onEngineeringResourceLayoutSave,
-  modelPanel, toolPanel, packagePanel, cartridgePanel, runStatus, nodeRunStates, runEvents, runCompletionVisible, runCompletion, onDismissRunCompletion, onOpenRunLog, onOpenPendingInteraction,
+  modelPanel, toolPanel, packagePanel, cartridgePanel, runStatus, nodeRunStates, runEvents, runCompletionVisible, runCompletion, onDismissRunCompletion, onOpenRunLog, onOpenRunResult, onOpenPendingInteraction,
   protocolInfo,
 }: {
   graph: FlowGraph
@@ -145,12 +296,33 @@ export function DesignView({
   runCompletion?: RunResult
   onDismissRunCompletion?: () => void
   onOpenRunLog?: (run: RunResult) => void
+  onOpenRunResult?: (run: RunResult) => void
   onOpenPendingInteraction?: () => void
 }) {
   const [engineeringInspectorOpen, setEngineeringInspectorOpen] = useState(false)
   const [stewardOpen, setStewardOpen] = useState(false)
-  const [displayMode, setDisplayMode] = useState<DesignDisplayMode>('engineering')
+  // Guided and engineering views merged: the engineering card now carries the
+  // guided copy (what / tip / recipe strip), so a single mode remains.
+  const displayMode: DesignDisplayMode = 'engineering'
   const [canvasTool, setCanvasTool] = useState<CanvasTool>('select')
+  // Studio resource catalog: lets node recipes show concrete remote endpoints
+  // (e.g. RSS feed URLs) instead of opaque tool ids.
+  const [studioTools, setStudioTools] = useState<StudioToolResource[]>([])
+  useEffect(() => {
+    let active = true
+    void fetchStudioResources().then((data) => {
+      if (!active) return
+      setStudioTools(Array.isArray(data?.tools) ? data.tools : [])
+    }).catch(() => { /* resources stay empty; recipes degrade to tool ids */ })
+    return () => { active = false }
+  }, [])
+  const toolCatalog = useMemo(() => {
+    const catalog = new Map<string, StudioToolResource>()
+    for (const resource of studioTools) {
+      if (resource.server && resource.tool) catalog.set(`${resource.server}/${resource.tool}`, resource)
+    }
+    return catalog
+  }, [studioTools])
   const [stewardRevision, setStewardRevision] = useState('')
   const [stewardSelection, setStewardSelection] = useState<AIFlowSelection>({ node_ids: [], edge_ids: [], field_paths: [] })
   const [engineeringUnlocked, setEngineeringUnlocked] = useState(false)
@@ -334,6 +506,17 @@ export function DesignView({
   })
 
   const engineering = displayMode === 'engineering'
+  const runIsActive = ['created', 'running', 'retrying', 'recovering', 'rolling_back', 'paused', 'paused_waiting_user'].includes(runStatus || '')
+  const activeRuntimeNode = useMemo(() => {
+    if (!runIsActive) return null
+    const states = nodeRunStates || new Map<string, NodeRunState>()
+    const latestEventNodeId = [...(runEvents || [])].reverse().find((event) => event.type === 'state_entered' && event.state)?.state
+    const latestState = latestEventNodeId ? states.get(latestEventNodeId) : undefined
+    const latestIsActive = latestState?.status === 'running' || latestState?.status === 'paused'
+    const liveId = latestIsActive ? latestEventNodeId : [...states.entries()].find(([_, state]) => state.status === 'running' || state.status === 'paused')?.[0]
+    return liveId ? graph.nodes.find((node) => node.id === liveId) || null : null
+  }, [graph.nodes, nodeRunStates, runEvents, runIsActive])
+  const activeRuntimeState = activeRuntimeNode ? nodeRunStates?.get(activeRuntimeNode.id) : undefined
   const stewardTool = canvasTool === 'steward-pointer' ? 'pointer' : canvasTool === 'steward-lasso' ? 'lasso' : 'none'
   const stewardContext = useMemo<AIFlowStewardContext>(() => ({
     tool: stewardTool,
@@ -382,8 +565,8 @@ export function DesignView({
     relation.kind === 'dependency' ? edgeVisibility.dependency : edgeVisibility.data
   )), [edgeVisibility.data, edgeVisibility.dependency, engineeringDataRelations])
   const engineeringNodeModels = useMemo(
-    () => engineering ? buildEngineeringNodeModels(engineeringGraph, files, nodeRunStates, visibleEngineeringRelations) : new Map(),
-    [engineering, engineeringGraph, files, nodeRunStates, visibleEngineeringRelations],
+    () => engineering ? buildEngineeringNodeModels(engineeringGraph, files, nodeRunStates, visibleEngineeringRelations, toolCatalog) : new Map(),
+    [engineering, engineeringGraph, files, nodeRunStates, visibleEngineeringRelations, toolCatalog],
   )
   const canvasGraph = executionPlanV1 || engineering ? engineeringGraph : graph
   const persistBusinessLayout = useCallback(async (layout: Record<string, { x: number; y: number }>) => {
@@ -418,14 +601,11 @@ export function DesignView({
   }, [engineering, engineeringGraph.nodes, onEngineeringResourceLayoutSave])
   const emptyNodeEditors = useMemo(() => [], [])
   return (
-    <div className={`cf-design-studio ${engineering ? 'engineering-mode' : 'outcome-mode'} ${engineeringInspectorOpen && engineering ? 'inspector-open' : ''} ${stewardOpen ? 'ai-steward-open' : ''} ${nodeEditors.length ? 'drawer-open' : ''}`}>
+    <div className={`cf-design-studio ${engineering ? 'engineering-mode' : 'outcome-mode'} ${engineeringInspectorOpen && engineering ? 'inspector-open' : ''} ${activeRuntimeNode && activeRuntimeState ? 'runtime-inspector-open' : ''} ${stewardOpen ? 'ai-steward-open' : ''} ${nodeEditors.length ? 'drawer-open' : ''}`}>
       <div className="cf-design-main">
         <div className="cf-design-modebar">
           <div className={`cf-design-canvas-status ${canvasTool === 'connect' ? 'active' : ''}`} aria-live="polite"><i />{canvasTool === 'connect' ? '连线模式' : '选择模式'}</div>
-          <div className="cf-design-view-switch" role="tablist" aria-label="设计视图">
-            <button type="button" className={engineering ? 'active' : ''} onClick={() => setDisplayMode('engineering')} role="tab" aria-selected={engineering}><Braces aria-hidden="true" />工程视图</button>
-            <button type="button" className={!engineering ? 'active' : ''} onClick={() => setDisplayMode('outcome')} role="tab" aria-selected={!engineering}><span className="cf-view-dot" />引导视图</button>
-          </div>
+          <div className="cf-design-view-badge"><Braces aria-hidden="true" />工程视图</div>
           {engineering && <div className="cf-engineering-legend" aria-label="工程关系筛选">
             {([
               ['control', '主流程'],
@@ -481,12 +661,13 @@ export function DesignView({
           runCompletion={runCompletion}
           onDismissRunCompletion={onDismissRunCompletion}
           onOpenRunLog={onOpenRunLog}
+          onOpenRunResult={onOpenRunResult}
           onOpenPendingInteraction={onOpenPendingInteraction}
         />
         {engineering && mcpOverlayOpen && mcpTool && <McpTransparencyOverlay flowId={flowId} tool={mcpTool} source={mcpSource} loading={mcpLoading} error={mcpError} initialTab={mcpOverlayTab} onClose={() => setMcpOverlayOpen(false)} onSaved={(result) => onFilesChange(result.files)} />}
         </Box>
       </div>
-      {engineering && engineeringInspectorOpen && <EngineeringInspector
+      {activeRuntimeNode && activeRuntimeState ? <RuntimeNodeInspector node={activeRuntimeNode} state={activeRuntimeState} runEvents={runEvents} nodeRunStates={nodeRunStates} graph={graph} onOpenPendingInteraction={onOpenPendingInteraction} /> : engineering && engineeringInspectorOpen && <EngineeringInspector
         node={selectedNode}
         graph={engineeringGraph}
         view={selectedNode ? engineeringNodeModels.get(selectedNode.id)?.view || null : null}
@@ -584,7 +765,7 @@ export function RunHistoryPanel({ runs, selectedRunId, busy = false, onSelect, o
                 <div className="cf-canvas-history-summary"><span>摘要</span><p>{summary}</p></div>
                 <div className="cf-canvas-history-actions">
                   <button type="button" className={hasFailureLog ? 'is-error' : ''} onClick={() => onOpenLog(run)}>{hasFailureLog ? <AlertTriangle aria-hidden="true" /> : <History aria-hidden="true" />}{hasFailureLog ? '查看错误日志' : '查看日志'}</button>
-                  <button type="button" disabled={run.status !== 'completed' && !artifactCount} title={artifactCount ? `打开主要产物（共 ${artifactCount} 个）` : run.status === 'completed' ? '打开本次运行的页面结果' : '本次运行没有可打开的产物'} onClick={() => onOpenArtifacts(run)}><FileOutput aria-hidden="true" />打开产物</button>
+                  <button type="button" disabled={!artifactCount} title={artifactCount ? `在系统文件管理器中打开产物文件夹（共 ${artifactCount} 个）` : '本次运行没有可打开的产物'} onClick={() => onOpenArtifacts(run)}><FileOutput aria-hidden="true" />打开产物文件夹</button>
                 </div>
               </div>}
             </article>

@@ -1,7 +1,8 @@
 import { memo, type DragEvent, type ReactNode } from 'react'
-import { ArrowDownToLine, ArrowLeftRight, Bot, Braces, CheckCircle2, Cloud, CornerUpRight, Database, FileCheck2, Flag, GitBranch, PackageCheck, PanelTop, Play, Route, Search, ShieldCheck, Shuffle, UserCheck, Wrench } from 'lucide-react'
+import { ArrowDownToLine, ArrowLeftRight, ArrowRight, Bot, Braces, CheckCircle2, Cloud, Database, FileCheck2, Flag, GitBranch, PackageCheck, PanelTop, Play, Route, Search, ShieldCheck, Shuffle, UserCheck, Wrench } from 'lucide-react'
 import type { FlowNode } from '../../api.ts'
 import { getNodePalette, type FlowNodeViewMode } from './nodeModel.ts'
+import { buildEngineeringRecipe } from './engineeringNode.ts'
 import { FlowNodePorts, type PortCounts } from './FlowNodePorts.tsx'
 import { buildFlowNodeCardView, buildOutcomeNodeCardView, type OutcomeNodeCardView } from './flowNodeView.ts'
 import type { NodeRunState } from './runState.ts'
@@ -81,22 +82,34 @@ function DetailedNodeContent({ node, order, view, runState }: Pick<FlowNodeCardP
         <span className={`flow-node-status status-${runState?.status || view.configHealth}`}>{view.runStatusLabel}</span>
         <p className="flow-node-beginner-tip"><b>提示：</b>{view.beginnerTip}</p>
       </header>
+      <section className="flow-node-recipe" aria-label="节点处理配方">
+        <span className="flow-node-recipe-label">配方</span>
+        <span className="flow-node-recipe-item input" title={view.inputs.map((item) => item.label).join('、')}>{view.inputs[0]?.label || '输入物料'}</span>
+        <ArrowRight aria-hidden="true" />
+        <span className="flow-node-recipe-action" title={view.what}>{view.kindLabel}</span>
+        <ArrowRight aria-hidden="true" />
+        <span className="flow-node-recipe-item output" title={view.outputs.map((item) => item.label).join('、')}>{view.outputs[0]?.label || '处理结果'}</span>
+      </section>
+      {(() => {
+        const recipe = buildEngineeringRecipe(node)
+        if (!recipe.length) return null
+        return (
+          <section className="flow-node-recipe-detail" aria-label="处理配方明细">
+            <dl>
+              {recipe.map((item) => (
+                <div key={item.label} title={item.value}>
+                  <dt>{item.label}</dt>
+                  <dd className={item.mono ? 'mono' : ''}>{item.value}</dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+        )
+      })()}
       <section className="flow-node-outcome-band summary">
         <h4><GitBranch />做什么</h4>
         <p title={view.what}>{view.what}</p>
         {view.primaryIssue && <small className={`flow-node-issue ${view.primaryIssue.severity}`} title={view.primaryIssue.message}>{view.primaryIssue.origin === 'runtime_preflight' ? (view.primaryIssue.severity === 'blocker' ? '运行前阻断' : '运行前提醒') : '配置提示'} · {view.primaryIssue.message}</small>}
-      </section>
-      <section className="flow-node-outcome-band fields input-fields">
-        <h4><FileCheck2 />输入什么</h4>
-        <dl>
-          {view.inputs.map((item) => <div key={`${item.label}:${item.value}`}><dt>{item.label}</dt><dd title={item.value}>{item.value}</dd></div>)}
-        </dl>
-      </section>
-      <section className="flow-node-outcome-band fields output-fields">
-        <h4><CornerUpRight />输出什么</h4>
-        <dl>
-          {view.outputs.map((item) => <div key={`${item.label}:${item.value}`}><dt>{item.label}</dt><dd title={item.value}>{item.value}</dd></div>)}
-        </dl>
       </section>
     </div>
   )

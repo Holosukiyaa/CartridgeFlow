@@ -242,6 +242,30 @@
 }
 
 .cf-pending-interaction,
+.cf-pending-review-content {
+  min-width: 0;
+  margin-top: 8px;
+  display: grid;
+  gap: 4px;
+}
+.cf-pending-review-content > span {
+  color: #6b7882;
+  font-size: 11px;
+  font-weight: 720;
+}
+.cf-pending-review-content pre {
+  margin: 0;
+  max-height: 46vh;
+  padding: 8px 10px;
+  overflow: auto;
+  border: 1px solid #e1e7e8;
+  border-radius: 5px;
+  background: #fbfcfc;
+  color: #3d4a54;
+  font: 11px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .cf-pending-card {
   display: flex;
   flex-direction: column;

@@ -1,11 +1,24 @@
-import { memo } from 'react'
+import { memo, type ReactNode } from 'react'
 import { AlertTriangle, Bot, Box, Check, CircleDot, Cloud, Database, FileCode2, LoaderCircle, PanelTop, Play, Route, ShieldCheck, Wrench } from 'lucide-react'
 import { Handle, Position } from '@xyflow/react'
 import type { FlowNode } from '../../api.ts'
 import { getNodePalette } from './nodeModel.ts'
 import type { NodeRunState } from './runState.ts'
 import type { PortCounts } from './FlowNodePorts.tsx'
-import { engineeringControlHandleId, engineeringHandleId, type EngineeringNodeRenderModel } from './engineeringNode.ts'
+import { buildEngineeringRecipe, engineeringControlHandleId, engineeringHandleId, type EngineeringNodeRenderModel } from './engineeringNode.ts'
+
+// Break long URLs at punctuation (/, ., ?, &, =, #, -, _) so the browser wraps
+// at natural boundaries instead of splitting a hostname mid-word.
+function insertUrlBreaks(url: string): ReactNode[] {
+  const parts = url.split(/([\/\.?&=#_-])/g)
+  const nodes: ReactNode[] = []
+  parts.forEach((part, index) => {
+    if (!part) return
+    nodes.push(part)
+    if (index < parts.length - 1) nodes.push(<wbr key={`w${index}`} />)
+  })
+  return nodes
+}
 
 function NodeKindIcon({ iconKey }: { iconKey: string }) {
   if (iconKey === 'start') return <Play aria-hidden="true" />
@@ -92,13 +105,19 @@ export const EngineeringNodeCard = memo(function EngineeringNodeCard({
   runState?: NodeRunState
   onSelect: (node: FlowNode) => void
 }) {
-  const { view, connectedFields, connectedInputs, connectedOutputs, dependencyInputs, dependencyOutputs } = model
+  const { view, connectedInputs, connectedOutputs, dependencyInputs, dependencyOutputs } = model
   if (model.resource) return <EngineeringResourceCard node={node} model={model} selected={selected} onSelect={onSelect} />
   const palette = getNodePalette(node)
-  const boundary = node.id === 'start' || node.id === 'complete' || node.action === 'complete' || node.action === 'end'
-  const sections = view.sections.filter((section) => section.fields.length).slice(0, boundary ? 2 : 5)
-  const hasIncomingControl = Object.values(counts.incoming).some(Boolean)
-  const hasOutgoingControl = Object.values(counts.outgoing).some(Boolean)
+  // Only input/output sections stay on the card (they carry the data-chain
+  // ports); bindings/execution/routes/policies live in the detail panel.
+  const sections = view.sections.filter((section) => (section.id === 'inputs' || section.id === 'outputs') && section.fields.length)
+  const recipe = buildEngineeringRecipe(node)
+  const PORT_SIDE_POSITION: Record<'left' | 'right' | 'top' | 'bottom', Position> = {
+    left: Position.Left,
+    right: Position.Right,
+    top: Position.Top,
+    bottom: Position.Bottom,
+  }
   const statusIcon = runState?.status === 'running'
     ? <LoaderCircle className="spin" aria-hidden="true" />
     : view.configHealth === 'blocked'
@@ -112,8 +131,12 @@ export const EngineeringNodeCard = memo(function EngineeringNodeCard({
       data-node-id={node.id}
       onClick={() => onSelect(node)}
     >
-      {hasIncomingControl && <Handle type="target" position={Position.Left} id={engineeringControlHandleId('target')} className="cf-engineering-control-port in" />}
-      {hasOutgoingControl && <Handle type="source" position={Position.Right} id={engineeringControlHandleId('source')} className="cf-engineering-control-port out" />}
+      {(Object.keys(counts.incoming) as Array<keyof typeof counts.incoming>).filter((side) => counts.incoming[side] > 0).map((side) => (
+        <Handle key={`in-${side}`} type="target" position={PORT_SIDE_POSITION[side]} id={engineeringControlHandleId('target', side)} className={`cf-engineering-control-port in side-${side}`} />
+      ))}
+      {(Object.keys(counts.outgoing) as Array<keyof typeof counts.outgoing>).filter((side) => counts.outgoing[side] > 0).map((side) => (
+        <Handle key={`out-${side}`} type="source" position={PORT_SIDE_POSITION[side]} id={engineeringControlHandleId('source', side)} className={`cf-engineering-control-port out side-${side}`} />
+      ))}
       <header>
         <span className="cf-engineering-node-order">{node.scope === 'engineering_resource' ? 'R' : String(order).padStart(2, '0')}</span>
         <div>
@@ -124,11 +147,34 @@ export const EngineeringNodeCard = memo(function EngineeringNodeCard({
           {statusIcon}
         </span>
       </header>
+      <div className="cf-engineering-guided">
+        <p className="cf-engineering-guided-what" title={view.what}>{view.what}</p>
+        <small className="cf-engineering-guided-tip"><i>提示</i>{view.beginnerTip}</small>
+      </div>
+      {recipe.length > 0 && (
+        <section className="cf-engineering-recipe" aria-label="处理配方">
+          <h5 className="cf-engineering-recipe-title">配方</h5>
+          <dl>
+            {recipe.map((item) => (
+              <div key={item.label} title={item.value}>
+                <dt>{item.label}</dt>
+                <dd className={`${item.mono ? 'mono' : ''}${item.long ? ' long' : ''}`}>{item.value}</dd>
+              </div>
+            ))}
+          </dl>
+          {view.remoteSources && view.remoteSources.length > 0 && (
+            <div className="cf-engineering-recipe-sources">
+              <dt>信源地址</dt>
+              {view.remoteSources.map((source) => (
+                <dd key={source.url} className="source" title={`${source.name} · ${source.url}`}><b>{source.name}</b><code>{insertUrlBreaks(source.url)}</code></dd>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
       <div className="cf-engineering-node-sections">
         {sections.map((section) => {
-          const connected = section.fields.filter((field) => connectedFields.has(field.key))
-          const unconnected = section.fields.filter((field) => !connectedFields.has(field.key))
-          const visibleFields = [...connected, ...unconnected.slice(0, Math.max(0, 3 - connected.length))]
+          const visibleFields = section.fields
           return (
           <section key={section.id} data-section={section.id}>
             <h4>{section.label}<span>{section.fields.length}</span></h4>
@@ -147,7 +193,6 @@ export const EngineeringNodeCard = memo(function EngineeringNodeCard({
                 </div>
               )
             })}
-            {section.fields.length > visibleFields.length && <small className="cf-engineering-more">另有 {section.fields.length - visibleFields.length} 个字段</small>}
           </section>
           )
         })}

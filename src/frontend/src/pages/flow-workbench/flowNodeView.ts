@@ -630,7 +630,7 @@ function outcomeTitle(node: FlowNode, kind: NodeSemanticKind) {
   return title || '处理这一步'
 }
 
-function outcomeCopy(node: FlowNode, kind: NodeSemanticKind) {
+export function outcomeCopy(node: FlowNode, kind: NodeSemanticKind) {
   const searchable = `${node.id} ${node.display_name || node.title || ''} ${node.action || ''}`.toLowerCase()
   if (kind === 'start') return ['流程从这里开始，接收用户输入。', '这是整个流程的起点。']
   if (kind === 'terminal') return ['把整理好的回复交给用户，然后结束本次流程。', '用户最终看到的内容从这里交付。']

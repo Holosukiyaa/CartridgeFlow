@@ -50,6 +50,11 @@ export const fetchCartridgeRun = (runId: string) =>
 export const fetchCartridgeRunEvents = (runId: string) =>
   api<{ items: FlowEvent[] }>(`/api/cartridge-runs/${runId}/events`)
 
+export const openCartridgeRunArtifactsDirectory = (runId: string) =>
+  api<{ ok: boolean; run_id: string; path: string }>(`/api/cartridge-runs/${encodeURIComponent(runId)}/artifacts/open-directory`, {
+    method: 'POST',
+  })
+
 export const controlCartridgeRun = (
   runId: string,
   action: 'cancel' | 'pause' | 'resume' | 'retry_current_node' | 'resume_checkpoint' | 'rollback_to_node' | 'restart_run',

@@ -13,6 +13,7 @@ import {
   fetchMcpTools,
   fetchCartridgeRun,
   fetchCartridgeRunEvents,
+  openCartridgeRunArtifactsDirectory,
   saveFlowEdges,
   saveFlowAnnotations,
   saveFlowLayout,
@@ -85,31 +86,13 @@ function findRunResultHtml(runEvents: FlowEvent[]) {
   return ''
 }
 
-function primaryRunArtifact(run: RunResult) {
-  const artifacts = run.delivery?.artifacts?.length ? run.delivery.artifacts : run.artifacts || []
-  const priority = ['video', 'audio', 'image', 'html', 'markdown', 'json', 'text']
-  return artifacts
-    .filter((artifact) => artifact?.url || artifact?.name)
-    .slice()
-    .sort((left, right) => {
-      const leftRank = priority.indexOf(String(left.type || '').toLowerCase())
-      const rightRank = priority.indexOf(String(right.type || '').toLowerCase())
-      return (leftRank < 0 ? priority.length : leftRank) - (rightRank < 0 ? priority.length : rightRank)
-    })[0]
-}
-
-function openRunArtifact(run: RunResult) {
-  const artifact = primaryRunArtifact(run)
-  if (!artifact) return false
-  const url = artifact.url || `/api/cartridge-runs/${encodeURIComponent(run.run_id)}/artifacts/${encodeURIComponent(artifact.name)}/preview`
-  const link = document.createElement('a')
-  link.href = url
-  link.target = '_blank'
-  link.rel = 'noopener noreferrer'
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
-  return true
+async function openRunArtifactsDirectory(run: RunResult) {
+  try {
+    const result = await openCartridgeRunArtifactsDirectory(run.run_id)
+    showToast({ title: '已打开产物文件夹', description: result.path, type: 'success' })
+  } catch (error: any) {
+    showToast({ title: '打开产物文件夹失败', description: error?.message || String(error), type: 'error' })
+  }
 }
 
 export default function FlowWorkbench({ flowId, onSwitchFlow }: {
@@ -152,6 +135,37 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
     ? latestRun
     : undefined
   const selectedRunId = selectedHistoryRunId || runs[0]?.run_id || ''
+  // Follow an active run continuously, including runs started outside this page
+  // (e.g. the API or another tab). Without this the canvas freezes on the last
+  // polled state and looks stuck even though the run is progressing.
+  useEffect(() => {
+    const runId = activeRuntimeRun?.run_id
+    if (!runId) return
+    let cancelled = false
+    const tick = async () => {
+      if (cancelled) return
+      try {
+        const [runData, eventData] = await Promise.all([
+          fetchCartridgeRun(runId),
+          fetchCartridgeRunEvents(runId),
+        ])
+        if (cancelled) return
+        setRuns((current) => [runData, ...current.filter((item) => item.run_id !== runId)])
+        setEvents(eventData.items || [])
+        if (['completed', 'failed', 'cancelled', 'interrupted'].includes(runData.status)) {
+          setRunCompletionNotice((current) => current?.runId === runId
+            ? current
+            : { runId, shownAt: Date.now() })
+        }
+      } catch {
+        // transient network error: keep polling
+      }
+    }
+    void tick()
+    const timer = window.setInterval(tick, 2500)
+    return () => { cancelled = true; window.clearInterval(timer) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeRuntimeRun?.run_id])
   const visualRuntimeRun = activeRuntimeRun
     || (runCompletionNotice ? runs.find((run) => run.run_id === runCompletionNotice.runId) : undefined)
   const designRunEvents = useMemo(() => {
@@ -703,6 +717,7 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
             runCompletion={runCompletionNotice ? runs.find((run) => run.run_id === runCompletionNotice.runId) : undefined}
             onDismissRunCompletion={() => setRunCompletionNotice(null)}
             onOpenRunLog={openRunLog}
+            onOpenRunResult={(run) => void openRunArtifactsDirectory(run)}
             onOpenPendingInteraction={() => setDismissedInteractionId('')}
             modelPanel={<ModelManagementPanel flowId={flowId} cartridge={detail.cartridge} graph={detail.graph} />}
             toolPanel={<ToolManagementPanel flowId={flowId} onFlowToolsChange={setFlowResourceTools} />}
@@ -761,18 +776,7 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
                 }
               }}
               onOpenArtifacts={async (run) => {
-                if (openRunArtifact(run)) return
-                try {
-                  const eventData = await fetchCartridgeRunEvents(run.run_id)
-                  const html = findRunResultHtml(eventData.items || [])
-                  if (!html) {
-                    showToast({ title: '本次运行没有可打开的页面产物', type: 'info' })
-                    return
-                  }
-                  setResultModal({ runId: run.run_id, html })
-                } catch (e: any) {
-                  showToast({ title: '读取运行产物失败', description: e.message, type: 'error' })
-                }
+                await openRunArtifactsDirectory(run)
               }}
               onRefresh={async () => {
                 try {

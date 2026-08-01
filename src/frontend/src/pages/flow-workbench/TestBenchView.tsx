@@ -8,6 +8,7 @@ import { FlowGraphView } from './FlowGraphView.tsx'
 import { buildNodeRunStates, extractUiHtml, getProbePayload, type NodeRunState } from './runState.ts'
 import { getProcessDisplayLabel, getProtocolKind } from './nodeModel.ts'
 import { passiveHtmlDocument } from './passiveHtml.ts'
+import { resolveRunInputDefault } from './inputDefaults.ts'
 import './TestBench.css'
 type RunScope = 'full' | 'probe'
 type RecoveryAction = 'retry_current_node' | 'resume_checkpoint' | 'rollback_to_node' | 'restart_run'
@@ -223,7 +224,7 @@ export function RunInputDialog({
   const [values, setValues] = useState<Record<string, string>>(() => {
     const initial: Record<string, string> = {}
     inputs.forEach((input) => {
-      initial[input.id] = String(input.default || '')
+      initial[input.id] = resolveRunInputDefault(input)
     })
     return initial
   })
@@ -317,6 +318,7 @@ export function RunInputDialog({
                 ) : (
                   <input
                     id={`cf-input-${input.id}`}
+                    type={input.type === 'date' ? 'date' : 'text'}
                     value={values[input.id] || ''}
                     placeholder={input.placeholder || ''}
                     onChange={(event) => setValues((current) => ({ ...current, [input.id]: event.target.value }))}
@@ -424,6 +426,12 @@ export function PendingInteractionForm({
         <code>{question.store_key || pending?.interaction_id || 'user_reply'}</code>
       </div>
       <p>{question.prompt || '该节点需要用户输入后继续。'}</p>
+      {question.review_content && (
+        <div className="cf-pending-review-content">
+          <span>待审核内容</span>
+          <pre>{question.review_content}</pre>
+        </div>
+      )}
       {isV2 && pending?.presentation?.html && (
         <iframe ref={presentationFrameRef} className="cf-passive-interaction-frame" title="interaction preview" sandbox="allow-same-origin" srcDoc={passiveHtmlDocument(pending.presentation.html)} onLoad={measurePresentation} />
       )}

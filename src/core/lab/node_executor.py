@@ -1292,14 +1292,14 @@ class LabNodeExecutor:
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": final_prompt},
                     ]
-                    def _chat_once() -> dict:
+                    def _chat_once(chat_messages: list[dict]) -> dict:
                         try:
-                            return asyncio.run(chat(cfg, messages, agent_name="lab_node", phase="flow_node"))
+                            return asyncio.run(chat(cfg, chat_messages, agent_name="lab_node", phase="flow_node"))
                         except RuntimeError:
                             loop = asyncio.get_event_loop()
-                            return loop.run_until_complete(chat(cfg, messages, agent_name="lab_node", phase="flow_node"))
+                            return loop.run_until_complete(chat(cfg, chat_messages, agent_name="lab_node", phase="flow_node"))
 
-                    response = _chat_once()
+                    response = _chat_once(messages)
                     result_text = response.get("content", "")
                     llm_response_meta = response.get("meta") if isinstance(response.get("meta"), dict) else {}
                     used_llm = True
@@ -1324,7 +1324,7 @@ class LabNodeExecutor:
                                         ),
                                     },
                                 ]
-                                response2 = _chat_once() if False else asyncio.run(chat(cfg, retry_messages, agent_name="lab_node", phase="flow_node"))
+                                response2 = _chat_once(retry_messages)
                                 result_text2 = response2.get("content", "")
                                 if str(result_text2 or "").strip():
                                     result_text = result_text2

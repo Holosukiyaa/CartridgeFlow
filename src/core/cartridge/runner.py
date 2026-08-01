@@ -2229,7 +2229,7 @@ class CartridgeRunner:
             if not isinstance(route, dict):
                 continue
             matcher = route.get("match") if isinstance(route.get("match"), dict) else {}
-            if not self._answer_route_matches(answer_value, matcher):
+            if not self._answer_route_matches(self._unwrap_answer_value(answer_value), matcher):
                 continue
             max_attempts = route.get("max_attempts")
             if max_attempts is not None:
@@ -2260,6 +2260,14 @@ class CartridgeRunner:
             return resolved
         return base_resume
 
+    @staticmethod
+    def _unwrap_answer_value(value) -> object:
+        """Strip the pending-interaction v2 envelope from a stored answer so
+        route matching sees the plain answer dict in both v1 and v2."""
+        if isinstance(value, dict) and value.get("value") is not None and "schema" in value:
+            value = value.get("value")
+        return value
+
     def _route_hit_count(self, run_id: str, matcher: dict) -> int:
         """Count how many times this answer route was taken, from answered_interactions
         history of the current run. Used by route.max_attempts to bound loops
@@ -2270,9 +2278,7 @@ class CartridgeRunner:
         count = 0
         for item in run.get("answered_interactions") or []:
             value = item.get("value") if isinstance(item, dict) else None
-            if isinstance(value, dict) and value.get("value") is not None:
-                value = value.get("value")
-            if self._answer_route_matches(value, matcher):
+            if self._answer_route_matches(self._unwrap_answer_value(value), matcher):
                 count += 1
         return count
 

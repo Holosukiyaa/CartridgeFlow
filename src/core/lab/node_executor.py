@@ -2257,8 +2257,13 @@ class LabNodeExecutor:
                     "node_output": params.get("output") or "human_gate_result",
                     "status": "waiting_user",
                     "question": question,
-                    "resume": {"policy": str(interaction.get("resume_policy") or "resume_same_node")},
+                    "resume": {
+                        "policy": str(interaction.get("resume_policy") or "resume_same_node"),
+                    },
                 }
+                for field in ("answer_routes", "replay_from_target", "clear_downstream", "copy_answer_to", "clear_store_keys", "target_node"):
+                    if field in interaction:
+                        pending["resume"][field] = interaction.get(field)
                 if interaction.get("ui_extension"):
                     pending["ui_extension"] = str(interaction.get("ui_extension"))
                 store["_pending_interaction"] = pending

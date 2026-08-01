@@ -1640,6 +1640,29 @@ class CartridgeRunner:
             if policy == "resume_same_node":
                 active["status"] = "ready"
                 active["attempt"] = int(active.get("attempt") or 0) + 1
+            elif policy == "resume_target_node":
+                # Schedule the resume target as a fresh ready token so the
+                # token-driven engine picks it up; marking transition_pending
+                # would instead route the paused token through its success
+                # edges (e.g. a loop edge) and bypass the target node.
+                active["status"] = "completed"
+                sequence = int(execution.get("next_sequence") or 1)
+                execution["next_sequence"] = sequence + 1
+                execution["tokens"].append({
+                    "token_id": f"tok_{sequence:06d}",
+                    "run_id": run_id,
+                    "node_id": start_state,
+                    "attempt": 1,
+                    "status": "ready",
+                    "created_sequence": sequence,
+                    "input_refs": [],
+                    "lineage": {},
+                    "parent_token_ids": [],
+                    "via_edge_id": "",
+                    "checkpoints": [],
+                    "created_at": now_iso(),
+                    "updated_at": now_iso(),
+                })
             else:
                 active["status"] = "completed"
                 active["transition_pending"] = True

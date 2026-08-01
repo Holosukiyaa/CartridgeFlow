@@ -2167,9 +2167,11 @@ class LabNodeExecutor:
                         raw_aliases.extend(alias)
                     elif alias is not None:
                         raw_aliases.append(alias)
+                seen_aliases: set[str] = set()
                 for alias in raw_aliases:
-                    if not isinstance(alias, str) or alias not in store:
+                    if not isinstance(alias, str) or alias in seen_aliases or alias not in store:
                         continue
+                    seen_aliases.add(alias)
                     value = store[alias]
                     if value is None or value == "":
                         continue

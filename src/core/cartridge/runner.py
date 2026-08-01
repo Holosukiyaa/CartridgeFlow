@@ -481,9 +481,6 @@ class CartridgeRunner:
                             return f"{label}: validation_ok=false; {issues[:3]}"
                     return str(result_.get("error") or "node failed")
 
-                if input_key and not isinstance(input_key, list) and input_key in store:
-                    input_value = _truncate(store.get(input_key))
-
                 try:
                     if state_.get("action") == "tool_call" and not self._is_v02_mcp_process(state_) and not normalized_probe_range and not self._tool_has_process_parent(root_flow, state_name_):
                         raise NodeActionError("FLOW_CONTRACT_INVALID", "工具节点必须直接挂在 AI 处理节点之后；请把 MCP/filesystem 工具节点连接到 action=llm_prompt 的处理节点后面。")
@@ -1856,8 +1853,6 @@ class CartridgeRunner:
                             issues = tool_result.get("issues") or []
                             return f"{label}: validation_ok=false; {issues[:3]}"
                     return str(result_.get("error") or "node failed")
-
-                input_value = _truncate(store.get(input_key)) if input_key and input_key in store else None
 
                 try:
                     if state_.get("action") == "tool_call" and not self._is_v02_mcp_process(state_) and not normalized_probe_range and not self._tool_has_process_parent(root_flow, state_name_):

@@ -52,6 +52,50 @@ def _executable_edges(root_flow: dict) -> list[dict]:
     ]
 
 
+
+def _truncate_preview(value, limit=2000):
+    if value is None:
+        return None
+    text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+    return text[:limit] + "...(truncated)" if len(text) > limit else text
+
+
+def _resolve_input_preview(input_key, state, store):
+    """Normalize a node's input reference into (display_key, preview_value).
+
+    Multi-port nodes get a list of _cf_input aliases; nodes that declare inputs
+    on the state top level (CF-FARP v1) get their port names plus the first
+    store-bound value, so the runtime inspector shows real material instead of
+    empty placeholders.
+    """
+    if isinstance(input_key, list):
+        preview_keys = ",".join(str(k) for k in input_key)
+        preview_value = None
+        for alias in input_key:
+            if isinstance(alias, str) and store.get(alias) not in (None, ""):
+                preview_value = store.get(alias)
+                break
+        return preview_keys, _truncate_preview(preview_value)
+    if input_key:
+        return input_key, _truncate_preview(store.get(input_key)) if input_key in store else None
+    top_inputs = state.get("inputs") if isinstance(state.get("inputs"), dict) else {}
+    if top_inputs:
+        display = ",".join(str(port) for port in top_inputs)
+        value = None
+        for contract in top_inputs.values():
+            if not isinstance(contract, dict):
+                continue
+            binding = contract.get("binding") if isinstance(contract.get("binding"), dict) else None
+            if not binding:
+                continue
+            key = binding.get("key") or binding.get("store_key")
+            if key and store.get(key) not in (None, ""):
+                value = store.get(key)
+                break
+        return display, _truncate_preview(value)
+    return input_key, None
+
+
 class CartridgeRunner:
     def __init__(self, root: str | Path, registry):
         self.root = Path(root)
@@ -410,6 +454,7 @@ class CartridgeRunner:
                 failure_policy = state_.get("failure_policy") or params_.get("failure_policy") or preset_config_.get("failure_policy") or "fail_closed"
                 abort_on_failed = bool(state_.get("abort_on_failed") or params_.get("abort_on_failed") or preset_config_.get("abort_on_failed")) or failure_policy not in {"continue_with_report", "skip_with_report"}
                 input_key = params_.get("input") or preset_config_.get("from") or preset_config_.get("source") or preset_config_.get("items")
+                input_key, input_value = _resolve_input_preview(input_key, state_, store)
 
                 def _truncate(val, limit=2000):
                     if val is None:
@@ -436,7 +481,19 @@ class CartridgeRunner:
                             return f"{label}: validation_ok=false; {issues[:3]}"
                     return str(result_.get("error") or "node failed")
 
-                input_value = _truncate(store.get(input_key)) if input_key and input_key in store else None
+                if isinstance(input_key, list):
+                    # Multi-port nodes (e.g. confirm_checkpoint with brief+video)
+                    # stage each bound input under its own _cf_input alias; the
+                    # preview shows the first available value with all key names.
+                    preview_keys = ",".join(str(k) for k in input_key)
+                    preview_value = None
+                    for alias in input_key:
+                        if isinstance(alias, str) and store.get(alias) not in (None, ""):
+                            preview_value = store.get(alias)
+                            break
+                    input_key, input_value = preview_keys, _truncate(preview_value)
+                else:
+                    input_value = _truncate(store.get(input_key)) if input_key and input_key in store else None
 
                 try:
                     if state_.get("action") == "tool_call" and not self._is_v02_mcp_process(state_) and not normalized_probe_range and not self._tool_has_process_parent(root_flow, state_name_):
@@ -1785,6 +1842,7 @@ class CartridgeRunner:
                 failure_policy = state_.get("failure_policy") or params_.get("failure_policy") or preset_config_.get("failure_policy") or "fail_closed"
                 abort_on_failed = bool(state_.get("abort_on_failed") or params_.get("abort_on_failed") or preset_config_.get("abort_on_failed")) or failure_policy not in {"continue_with_report", "skip_with_report"}
                 input_key = params_.get("input") or preset_config_.get("from") or preset_config_.get("source") or preset_config_.get("items")
+                input_key, input_value = _resolve_input_preview(input_key, state_, store)
 
                 def _truncate(val, limit=2000):
                     if val is None:

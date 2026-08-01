@@ -2161,7 +2161,13 @@ class LabNodeExecutor:
                 # inputs (e.g. the drafted daily brief) are staged in the store
                 # under _cf_input aliases by _prepare_structured_inputs.
                 review_parts: list[str] = []
+                raw_aliases: list[object] = []
                 for alias in [params.get("input"), params.get("optional_input")]:
+                    if isinstance(alias, list):
+                        raw_aliases.extend(alias)
+                    elif alias is not None:
+                        raw_aliases.append(alias)
+                for alias in raw_aliases:
                     if not isinstance(alias, str) or alias not in store:
                         continue
                     value = store[alias]

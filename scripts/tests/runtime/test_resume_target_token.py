@@ -189,7 +189,7 @@ class ResumeTargetTokenTests(unittest.TestCase):
             max_tokens=20000,
         )
 
-        def fake_chat(_cfg, _messages, **kwargs):
+        async def fake_chat(_cfg, _messages, **kwargs):
             payload = {"draft": "DRAFT"}
             if _messages and "revise" in str(_messages[-1].get("content") or "").lower():
                 payload = {"rev": "REVISED"}

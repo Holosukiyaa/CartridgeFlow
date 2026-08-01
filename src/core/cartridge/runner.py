@@ -1724,7 +1724,15 @@ class CartridgeRunner:
                 active["status"] = "completed"
                 sequence = int(execution.get("next_sequence") or 1)
                 execution["next_sequence"] = sequence + 1
-                execution["tokens"].append({
+                resume_edge_id = next(
+                    (
+                        str(edge.get("id") or "")
+                        for edge in success_edges
+                        if str(edge.get("to") or "") == start_state
+                    ),
+                    "",
+                )
+                new_token = {
                     "token_id": f"tok_{sequence:06d}",
                     "run_id": run_id,
                     "node_id": start_state,
@@ -1732,13 +1740,28 @@ class CartridgeRunner:
                     "status": "ready",
                     "created_sequence": sequence,
                     "input_refs": [],
-                    "lineage": {},
-                    "parent_token_ids": [],
-                    "via_edge_id": "",
+                    "lineage": deepcopy(active.get("lineage") or {}),
+                    "parent_token_ids": [str(active.get("token_id") or "")],
+                    "via_edge_id": resume_edge_id,
                     "checkpoints": [],
                     "created_at": now_iso(),
                     "updated_at": now_iso(),
-                })
+                }
+                execution["tokens"].append(new_token)
+                self._append_event(
+                    run_id,
+                    cartridge_id,
+                    "execution_token_created",
+                    start_state,
+                    "Resume target token scheduled",
+                    {
+                        "token_id": new_token["token_id"],
+                        "node_id": start_state,
+                        "parent_token_id": active.get("token_id"),
+                        "via_edge_id": resume_edge_id,
+                        "sequence": sequence,
+                    },
+                )
             else:
                 active["status"] = "completed"
                 active["transition_pending"] = True

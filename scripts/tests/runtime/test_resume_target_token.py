@@ -237,6 +237,14 @@ class ResumeTargetTokenTests(unittest.TestCase):
             # review token completed 且无 transition_pending（不走成功出边绕过）
             review_token = max((t for t in tokens if t.get("node_id") == "review"), key=lambda t: int(t.get("created_sequence") or 0))
             self.assertNotIn("transition_pending", review_token)
+            # 血缘：resume token 继承 parent/via_edge，并发出 created 事件
+            self.assertEqual(revise_tokens[0]["parent_token_ids"], [review_token["token_id"]])
+            self.assertEqual(revise_tokens[0]["via_edge_id"], "review_loop")
+            created = [
+                e for e in self.runner.get_events(run["run_id"])
+                if e.get("type") == "execution_token_created" and (e.get("data") or {}).get("node_id") == "revise"
+            ]
+            self.assertEqual(len(created), 1, "resume token must emit an execution_token_created event")
 
             # 第二轮批准：approval 保留 -> loop exit -> package -> complete
             run = self.runner.answer_pending_interaction(

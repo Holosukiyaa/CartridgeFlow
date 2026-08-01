@@ -1,0 +1,259 @@
+"""execution_plan 路径下 resume_target_node 的 ready-token 调度测试（博客驳回循环）"""
+import json
+import shutil
+import tempfile
+import unittest
+from pathlib import Path
+from unittest import mock
+
+from core.cartridge.runner import CartridgeRunner
+from core.llm.config import ModelConfig
+from core.protocol import build_compatibility_report, load_base_implementation
+
+ROOT = Path(__file__).resolve().parents[3]
+
+
+def plan_manifest():
+    return {
+        "id": "test.runtime.resume-target-token",
+        "version": "0.0.1",
+        "base_contract": {"id": "CARTRIDGEFLOW-BASE", "version": "0.2"},
+        "runtime_contract": {
+            "protocol": "CF-FARP",
+            "protocol_version": "1.0",
+            "required_profiles": ["runtime_core", "execution_plan_runtime", "interaction_runtime"],
+            "recommended_profiles": [],
+            "required_capabilities": [
+                "manifest_load",
+                "manifest_validate",
+                "root_flow_execution",
+                "unified_process_node",
+                "execution_plan_v1_authoring",
+                "execution_plan_compile",
+                "execution_plan_sequence_contract",
+                "execution_plan_failure_contract",
+                "decision_process",
+                "decision_envelope_v1",
+                "runtime_state_machine",
+                "checkpoint_persistence",
+                "runtime_error_envelope_v1",
+            ],
+            "optional_capabilities": [],
+            "required_tools": [],
+            "optional_tools": [],
+        },
+        "delivery_readiness": {"level": "dev"},
+        "branding": {"tags": []},
+        "mcp_tools": [],
+        "inputs": [{"id": "topic", "type": "textarea", "required": True}],
+        "outputs": [{"id": "article", "type": "document", "required": True}],
+        "delivery": {"type": "summary_with_artifacts", "primary_output": "article", "show_artifacts": True},
+    }
+
+
+def plan_flow():
+    return {
+        "schema_version": "1.0",
+        "id": "test.runtime.resume-target-token.root",
+        "protocol": {"id": "CF-FARP", "version": "1.0"},
+        "start": "start",
+        "states": {
+            "start": {"type": "control", "title": "start", "locked": True},
+            "collect": {
+                "type": "process", "kind": "input", "executor": "user", "effect": "writes_store",
+                "action": "collect_inputs",
+                "params": {"output": "topic", "fields": ["topic"]},
+                "outputs": {"topic": {"schema": {"type": "object"}, "target": {"type": "store", "key": "topic"}}},
+            },
+            "draft": {
+                "type": "process", "kind": "decision", "executor": "llm", "effect": "none",
+                "action": "llm_prompt", "model_role": "writer", "output": "draft_out",
+                "output_contract": "decision_envelope.v1",
+                "decision_contract": {
+                    "schema": "decision_envelope.v1",
+                    "allowed_statuses": ["resolved"],
+                    "consume": {"mode": "payload_path", "path": "payload.draft", "as": "draft_text", "required": True, "on_missing": "fail_closed"},
+                    "offline_decision": {"schema": "decision_envelope.v1", "status": "resolved", "summary": "mock", "payload": {"draft": "DRAFT"}},
+                },
+                "inputs": {"topic": {"required": True, "schema": {"type": "object"}, "binding": {"source": "store", "key": "topic"}}},
+                "outputs": {"draft_out": {"schema": {"type": "object"}, "target": {"type": "store", "key": "draft_text"}}},
+                "llm_options": {"max_tokens": 20000, "timeout_seconds": 30},
+                "params": {"description": "draft the article"},
+            },
+            "review": {
+                "type": "process", "kind": "human_gate", "executor": "human", "effect": "writes_store",
+                "action": "confirm_checkpoint",
+                "params": {
+                    "output": "approval",
+                    "interaction": {
+                        "store_key": "approval",
+                        "input_schema": {"type": "object", "properties": {"approval": {"type": "string"}, "feedback": {"type": "string"}}, "required": ["approval"]},
+                        "prompt": "review",
+                        "answer_routes": [
+                            {"match": {"field": "approval", "equals": "rejected"}, "policy": "resume_target_node", "target_node": "revise", "clear_store_keys": "approval", "copy_answer_to": "review_feedback"},
+                            {"match": {"field": "approval", "equals": "approved"}, "policy": "resume_same_node"},
+                        ],
+                    },
+                    "description": "review the draft",
+                },
+                "inputs": {"article": {"required": True, "schema": {"type": "object"}, "binding": {"source": "store", "key": "draft_text"}}},
+                "outputs": {"approval": {"schema": {"type": "object"}, "target": {"type": "store", "key": "approval"}}},
+            },
+            "revise": {
+                "type": "process", "kind": "decision", "executor": "llm", "effect": "none",
+                "action": "llm_prompt", "model_role": "writer", "output": "revise_out",
+                "output_contract": "decision_envelope.v1",
+                "decision_contract": {
+                    "schema": "decision_envelope.v1",
+                    "allowed_statuses": ["resolved"],
+                    "consume": {"mode": "payload_path", "path": "payload.rev", "as": "draft_text", "required": True, "on_missing": "fail_closed"},
+                    "offline_decision": {"schema": "decision_envelope.v1", "status": "resolved", "summary": "mock", "payload": {"rev": "REVISED"}},
+                },
+                "inputs": {
+                    "draft": {"required": True, "schema": {"type": "object"}, "binding": {"source": "store", "key": "draft_text"}},
+                    "feedback": {"required": True, "schema": {"type": "object"}, "binding": {"source": "store", "key": "review_feedback"}},
+                },
+                "outputs": {"revise_out": {"schema": {"type": "object"}, "target": {"type": "store", "key": "draft_text"}}},
+                "llm_options": {"max_tokens": 20000, "timeout_seconds": 30},
+                "params": {"description": "revise the draft"},
+            },
+            "package": {
+                "type": "process", "kind": "transform", "executor": "deterministic", "effect": "writes_artifacts",
+                "action": "pass_result", "output": "article", "permission": "write_run_artifacts", "failure_policy": "fail_closed", "audit_log": True, "replay_policy": "new_revision",
+                "inputs": {"article": {"required": True, "schema": {"type": "string", "minLength": 1}, "binding": {"source": "store", "key": "draft_text"}}},
+                "outputs": {"article": {"schema": {"type": "object"}, "target": {"type": "artifact", "artifact_id": "article", "type_name": "markdown", "mime_type": "text/markdown", "name": "article.md"}}},
+                "params": {"description": "package the article"},
+            },
+            "complete": {"type": "terminal", "title": "complete", "kind": "terminal", "locked": True},
+            "flow_failed": {"type": "terminal", "title": "flow_failed", "kind": "terminal"},
+        },
+        "execution_plan": {
+            "schema": "cartridgeflow.execution_plan.v1",
+            "entry": "start",
+            "edges": [
+                {"id": "start_collect", "kind": "sequence", "from": "start", "to": "collect"},
+                {"id": "collect_draft", "kind": "sequence", "from": "collect", "to": "draft"},
+                {"id": "collect_failure", "kind": "failure", "from": "collect", "to": "flow_failed", "failure": {"id": "e1", "causes": ["exception", "validation"]}},
+                {"id": "draft_review", "kind": "sequence", "from": "draft", "to": "review"},
+                {"id": "draft_failure", "kind": "failure", "from": "draft", "to": "flow_failed", "failure": {"id": "e2", "causes": ["exception", "resource", "timeout", "validation"]}},
+                {"id": "review_loop", "kind": "loop", "from": "review", "to": "revise", "loop": {"id": "revision_loop", "max_iterations": 3, "continue_when": "$approval.feedback", "exit_to": "package"}},
+                {"id": "review_failure", "kind": "failure", "from": "review", "to": "flow_failed", "failure": {"id": "e3", "causes": ["exception", "validation"]}},
+                {"id": "revise_review", "kind": "sequence", "from": "revise", "to": "review"},
+                {"id": "revise_failure", "kind": "failure", "from": "revise", "to": "flow_failed", "failure": {"id": "e4", "causes": ["exception", "resource", "timeout", "validation"]}},
+                {"id": "package_complete", "kind": "sequence", "from": "package", "to": "complete"},
+                {"id": "package_failure", "kind": "failure", "from": "package", "to": "flow_failed", "failure": {"id": "e5", "causes": ["exception", "validation"]}},
+            ],
+        },
+    }
+
+
+class _Registry:
+    def __init__(self, temp_dir, manifest, flow):
+        self._temp_dir = temp_dir
+        self._manifest = manifest
+        self._flow = flow
+
+    def get_cartridge(self, cartridge_id):
+        return {
+            "id": cartridge_id,
+            "package_path": str(self._temp_dir),
+            "manifest": self._manifest,
+            "root_flow": self._flow,
+        }
+
+
+class ResumeTargetTokenTests(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.temp_dir = Path(self._tmp.name)
+        self.manifest = plan_manifest()
+        self.flow = plan_flow()
+        self.runner = CartridgeRunner(self.temp_dir, _Registry(self.temp_dir, self.manifest, self.flow))
+        base = load_base_implementation(ROOT)
+        self.runner.build_compatibility_report = lambda manifest, root_flow=None, package_path=None, analysis_target="dev", base=base: build_compatibility_report(base, manifest, root_flow or self.flow)
+        self.runner.mcp_executor = None
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _mock_llm(self):
+        """Stub the LLM provider: draft/revise return resolved envelopes while
+        the human review gate really pauses. Must stay active across answer
+        calls (the revise node calls chat after resume)."""
+        cfg = ModelConfig(
+            provider_id="test-provider",
+            model="test-model",
+            api_key="test-key",
+            base_url="https://example.test",
+            timeout=30,
+            max_tokens=20000,
+        )
+
+        def fake_chat(_cfg, _messages, **kwargs):
+            payload = {"draft": "DRAFT"}
+            if _messages and "revise" in str(_messages[-1].get("content") or "").lower():
+                payload = {"rev": "REVISED"}
+            return {
+                "content": json.dumps({
+                    "schema": "decision_envelope.v1",
+                    "status": "resolved",
+                    "summary": "mock",
+                    "payload": payload,
+                }),
+                "meta": {"finish_reason": "stop"},
+            }
+
+        return mock.patch("core.llm.config_manager.resolve_model", return_value=cfg), mock.patch(
+            "core.llm.chat", side_effect=fake_chat
+        )
+
+    def test_reject_routes_to_revise_via_ready_token(self):
+        p1, p2 = self._mock_llm()
+        with p1, p2:
+            run = self.runner.create_run("test.runtime.resume-target-token", {"topic": "T"})
+            self.assertEqual(run["status"], "paused_waiting_user")
+            self.assertEqual(run["current_state"], "review")
+
+            # 驳回：resume_target_node=revise + clear approval + copy feedback
+            run = self.runner.answer_pending_interaction(
+                run["run_id"],
+                {"approval": "rejected", "feedback": "压缩开头"},
+            )
+            self.assertEqual(run["status"], "paused_waiting_user")
+            self.assertEqual(run["current_state"], "review")
+            state_doc = self.runner._read_json(self.runner.runs_dir / run["run_id"] / "root_flow_state.json")
+            store = state_doc["context"]["store"]
+            self.assertNotIn("approval", store)  # clear_store_keys 生效
+            self.assertIn("review_feedback", store)  # copy_answer_to 生效
+            tokens = state_doc["execution"]["tokens"]
+            revise_tokens = [t for t in tokens if t.get("node_id") == "revise"]
+            self.assertEqual(len(revise_tokens), 1, "resume target must schedule a ready token for revise")
+            self.assertEqual(revise_tokens[0]["status"], "completed", "revise already ran (offline decision) and completed")
+            # review token completed 且无 transition_pending（不走成功出边绕过）
+            review_token = max((t for t in tokens if t.get("node_id") == "review"), key=lambda t: int(t.get("created_sequence") or 0))
+            self.assertNotIn("transition_pending", review_token)
+
+            # 第二轮批准：approval 保留 -> loop exit -> package -> complete
+            run = self.runner.answer_pending_interaction(
+                run["run_id"],
+                {"approval": "approved"},
+            )
+            self.assertEqual(run["status"], "completed")
+            self.assertEqual(run["current_state"], "complete")
+            self.assertIn("article", {a.get("artifact_id") for a in (run.get("artifacts") or [])})
+
+    def test_approve_route_exits_loop(self):
+        p1, p2 = self._mock_llm()
+        with p1, p2:
+            run = self.runner.create_run("test.runtime.resume-target-token", {"topic": "T"})
+            self.assertEqual(run["status"], "paused_waiting_user")
+            run = self.runner.answer_pending_interaction(run["run_id"], {"approval": "approved"})
+            self.assertEqual(run["status"], "completed")
+            self.assertEqual(run["current_state"], "complete")
+            state_doc = self.runner._read_json(self.runner.runs_dir / run["run_id"] / "root_flow_state.json")
+            tokens = [t for t in state_doc["execution"]["tokens"] if t.get("node_id") == "revise"]
+            self.assertEqual(tokens, [], "approve path must not schedule revise")
+
+
+if __name__ == "__main__":
+    unittest.main()

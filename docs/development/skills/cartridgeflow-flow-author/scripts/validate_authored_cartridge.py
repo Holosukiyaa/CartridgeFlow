@@ -206,7 +206,7 @@ def review_binding_findings(root_flow: dict[str, Any]) -> list[dict[str, str]]:
                 identity_ok = (
                     isinstance(target, dict)
                     and target_type in {"store", "artifact"}
-                    and bool(str(target.get("key") if target_type == "store" else target.get("artifact_id") or "").strip())
+                    and bool(str((target.get("key") or "") if target_type == "store" else (target.get("artifact_id") or "")).strip())
                 )
                 if not identity_ok:
                     findings.append({

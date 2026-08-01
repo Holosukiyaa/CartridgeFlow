@@ -209,6 +209,8 @@ def _walk_sensitive(value, prefix: str = "", parent: str = "", grandparent: str 
                 and not child.casefold().startswith((
                     "sk-", "eyj", "ghp_", "gho_", "akia", "xoxb-", "xoxp-",
                     "pk_live", "pk_test", "sk_live", "sk_test",
+                    "github_pat_", "rk_live_", "rk_test_", "hf_", "npm_",
+                    "glpat-", "asia", "aiza", "whsec_", "whcsk_", "xoxr-",
                 ))
             )
             if str(key).casefold() in SENSITIVE_KEYS and not is_protocol_key:

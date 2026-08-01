@@ -259,7 +259,7 @@ async function executeFlow(manifest, flow, runDirectory, mock) {
     // runtime; the production runtime implements fail-closed routing.
   }
   const tools = new Map((manifest.mcp_tools || []).filter((tool) => tool?.id).map((tool) => [tool.id, tool]))
-  const store = {}
+  const store = Object.create(null)
   let current = flow.execution_plan.entry
   const trace = []
   for (let steps = 0; steps < Object.keys(states).length + 5; steps += 1) {

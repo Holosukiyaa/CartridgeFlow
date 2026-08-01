@@ -96,6 +96,36 @@ class PortabilityReportTests(unittest.TestCase):
             checks = {item.get("check") for item in blocked["forbidden"]}
             self.assertIn("sensitive_field", checks, "credential-shaped values under target.key must still be caught")
 
+    def test_credential_prefixes_are_never_exempt(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            created = DevFlowManager(temp_dir).create_flow("demo.prefixkeys", "PrefixKeys")
+            package = Path(created["path"])
+            flow = created["root_flow"]
+            state_id = next(iter(flow["states"]))
+            flow["states"][state_id]["outputs"] = {
+                "out": {
+                    "schema": {"type": "object"},
+                    "target": {"type": "store", "key": "github_pat_abcdef1234567890"},
+                }
+            }
+            (package / "root.flow.json").write_text(json.dumps(flow, ensure_ascii=False), encoding="utf-8")
+
+            blocked = build_portability_report(package, created["manifest"], flow)
+            checks = {item.get("check") for item in blocked["forbidden"]}
+            self.assertIn("sensitive_field", checks, "github_pat_ credential shape must be caught")
+
+    def test_binding_key_outside_protocol_path_is_caught(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            created = DevFlowManager(temp_dir).create_flow("demo.roguekey", "RogueKey")
+            package = Path(created["path"])
+            flow = created["root_flow"]
+            flow["binding"] = {"key": "short-secret-value"}
+            (package / "root.flow.json").write_text(json.dumps(flow, ensure_ascii=False), encoding="utf-8")
+
+            blocked = build_portability_report(package, created["manifest"], flow)
+            checks = {item.get("check") for item in blocked["forbidden"]}
+            self.assertIn("sensitive_field", checks, "binding.key outside inputs/outputs must be caught")
+
     def test_permission_declarations_are_audited(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             created = DevFlowManager(temp_dir).create_flow("demo.permissions", "Permissions")

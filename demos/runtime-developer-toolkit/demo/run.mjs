@@ -1,6 +1,6 @@
 import { createHash, createPublicKey, verify } from 'node:crypto'
 import { inflateRawSync } from 'node:zlib'
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, resolve, sep } from 'node:path'
 
 const CONTROL_FILES = new Set(['release.manifest.json', 'hashes.json'])
@@ -142,8 +142,13 @@ async function executeNode(state, nodeId, store, mock, runDirectory, tools) {
   // Decision (LLM) node
   if (state.type === 'process' && state.kind === 'decision' && state.executor === 'llm') {
     const output = state.output || state.params?.output || 'decision'
+    // Platform semantics: the node's declared outputs.<name>.target.key is the
+    // store key consumers bind to; state.output is only the raw envelope key.
+    const targets = Object.values(state.outputs || {})
+    const storeTarget = targets.map((target) => target?.target).find((target) => target?.type === 'store')
+    const storeKey = storeTarget?.key || output
     if (mock) {
-      store[output] = { status: 'resolved', value: `mock response for ${nodeId}` }
+      store[storeKey] = { status: 'resolved', value: `mock response for ${nodeId}` }
       return
     }
     const baseUrl = process.env.CF_RUNTIME_MODEL_BASE_URL
@@ -157,7 +162,7 @@ async function executeNode(state, nodeId, store, mock, runDirectory, tools) {
     })
     if (!response.ok) fail(`model API returned HTTP ${response.status}`)
     const body = await response.json()
-    store[output] = body.choices?.[0]?.message?.content ?? body
+    store[storeKey] = body.choices?.[0]?.message?.content ?? body
     return
   }
   // MCP write node
@@ -190,10 +195,38 @@ async function executeNode(state, nodeId, store, mock, runDirectory, tools) {
     }
     return
   }
+  // Template assembly: read template asset, substitute {{placeholder}} from store
+  if (state.type === 'process' && state.action === 'render_template') {
+    const params = state.params || {}
+    let template = typeof params.template === 'string' ? params.template : ''
+    const templateFile = params.template_file
+    if (templateFile) {
+      const packageRoot = resolve(runDirectory, 'package')
+      const templatePath = resolve(packageRoot, String(templateFile).replace(/\\/g, '/'))
+      if (templatePath !== packageRoot && !templatePath.startsWith(`${packageRoot}${sep}`)) {
+        fail(`render_template template escapes package dir: ${templateFile}`)
+      }
+      if (!existsSync(templatePath)) fail(`render_template template file not found: ${templateFile}`)
+      template = readFileSync(templatePath, 'utf8')
+    }
+    const variables = params.variables && typeof params.variables === 'object' ? params.variables : {}
+    for (const [placeholder, storeKey] of Object.entries(variables)) {
+      const value = store[storeKey]
+      if (value === undefined) fail(`render_template missing store value: ${placeholder}(${storeKey})`)
+      const text = typeof value === 'string' ? value : JSON.stringify(value, null, 2)
+      template = template.split(`{{${placeholder}}}`).join(text)
+    }
+    store[params.output || 'rendered_template'] = template
+    return
+  }
   // Deterministic pass_result with artifact target
   if (state.type === 'process' && state.action === 'pass_result') {
     const preset = state.params?.preset_config || {}
+    const inputBindings = Object.values(state.inputs || {})
+      .map((input) => input?.binding?.key)
+      .filter((key) => typeof key === 'string')
     const fromKey = state.params?.input || state.params?.from || preset.from || preset.source || preset.items
+      || (inputBindings.length === 1 ? inputBindings[0] : undefined)
     const value = typeof fromKey === 'string' && fromKey.includes(',')
       ? Object.fromEntries(fromKey.split(',').map((key) => [key.trim(), store[key.trim()]]).filter(([, v]) => v !== undefined))
       : store[fromKey]
@@ -260,14 +293,25 @@ async function executeFlow(manifest, flow, runDirectory, mock) {
   }
   const tools = new Map((manifest.mcp_tools || []).filter((tool) => tool?.id).map((tool) => [tool.id, tool]))
   const store = Object.create(null)
+  const nodeLogs = []
   let current = flow.execution_plan.entry
   const trace = []
+  const recordLog = (entry) => {
+    nodeLogs.push({ ts: new Date().toISOString(), ...entry })
+  }
+  recordLog({ event: 'run_started', node: current, action: 'entry', status: 'running' })
   for (let steps = 0; steps < Object.keys(states).length + 5; steps += 1) {
     const state = states[current]
     if (!state) fail(`execution plan references unknown state: ${current}`)
     trace.push(current)
-    if (state.type === 'terminal') return { status: 'completed', trace, store }
+    if (state.type === 'terminal') {
+      recordLog({ event: 'node_completed', node: current, action: 'terminal', status: 'completed' })
+      recordLog({ event: 'run_completed', status: 'completed' })
+      return { status: 'completed', trace, store, nodeLogs }
+    }
+    recordLog({ event: 'node_started', node: current, action: state.action || state.kind || state.type, status: 'running' })
     await executeNode(state, current, store, mock, runDirectory, tools)
+    recordLog({ event: 'node_completed', node: current, action: state.action || state.kind || state.type, status: 'completed', output: state.output || state.params?.output || '' })
     if (state.type !== 'system' && state.type !== 'control' && state.type !== 'process') {
       fail(`minimal runtime does not support node type ${state.type}`)
     }
@@ -287,8 +331,13 @@ async function executeFlow(manifest, flow, runDirectory, mock) {
           branchTrace.push(branchNode)
           const branchState = states[branchNode]
           if (!branchState) fail(`branch references unknown state: ${branchNode}`)
-          if (branchState.type === 'terminal') return { status: 'completed', trace: [...trace, ...branchTrace], store }
+          if (branchState.type === 'terminal') {
+            recordLog({ event: 'run_completed', status: 'completed' })
+            return { status: 'completed', trace: [...trace, ...branchTrace], store, nodeLogs }
+          }
+          recordLog({ event: 'branch_node_started', node: branchNode, branch: forkEdge.fork?.branch || '', action: branchState.action || branchState.kind || branchState.type, status: 'running' })
           await executeNode(branchState, branchNode, store, mock, runDirectory, tools)
+          recordLog({ event: 'branch_node_completed', node: branchNode, branch: forkEdge.fork?.branch || '', action: branchState.action || branchState.kind || branchState.type, status: 'completed', output: branchState.output || branchState.params?.output || '' })
           const branchJoinEdges = joinEdgesByFrom.get(branchNode)
           if (branchJoinEdges && branchJoinEdges.length > 0) {
             branchJoin = branchJoinEdges[0]
@@ -331,7 +380,8 @@ async function executeFlow(manifest, flow, runDirectory, mock) {
     }
     if (!current) fail(`state ${trace.at(-1)} has no sequence successor`)
   }
-  fail('execution plan exceeded its bounded step count')
+  recordLog({ event: 'run_completed', status: 'completed' })
+  return { status: 'completed', trace, store, nodeLogs }
 }
 
 async function main(args) {
@@ -356,8 +406,46 @@ async function main(args) {
   mkdirSync(runRoot, { recursive: true })
   const installed = writePayload(result.files, join(runRoot, 'package'))
   const execution = await executeFlow(result.manifest, result.flow, runRoot, mock)
-  writeFileSync(join(runRoot, 'run-result.json'), `${JSON.stringify({ release_id: result.release.release_id, installed: basename(installed), ...execution }, null, 2)}\n`, 'utf8')
-  console.log(JSON.stringify({ ok: true, release_id: result.release.release_id, ...execution }, null, 2))
+  const artifacts = []
+  const artifactRoot = join(runRoot, 'artifacts')
+  if (existsSync(artifactRoot)) {
+    for (const name of readdirSync(artifactRoot)) {
+      const full = join(artifactRoot, name)
+      if (statSync(full).isFile()) artifacts.push({ name, bytes: statSync(full).size, path: `artifacts/${name}` })
+    }
+  }
+  const runLog = {
+    release_id: result.release.release_id,
+    signer: result.signer,
+    cartridge: `${result.manifest.id}@${result.manifest.version}`,
+    mode: mock ? 'mock' : 'http',
+    started_at: execution.nodeLogs?.[0]?.ts || new Date().toISOString(),
+    artifacts,
+    logs: execution.nodeLogs || [],
+  }
+  writeFileSync(join(runRoot, 'run-log.jsonl'), `${execution.nodeLogs.map((entry) => JSON.stringify(entry)).join('\n')}\n`, 'utf8')
+  writeFileSync(join(runRoot, 'run-result.json'), `${JSON.stringify({ release_id: result.release.release_id, installed: basename(installed), status: execution.status, trace: execution.trace, store: execution.store, artifacts }, null, 2)}\n`, 'utf8')
+  // cmd-list style runtime panel output
+  console.log('=== CartridgeFlow Runtime (demo) ===')
+  console.log(`release : ${runLog.release_id}`)
+  console.log(`signer  : ${runLog.signer}`)
+  console.log(`cartridge: ${runLog.cartridge}`)
+  console.log(`mode    : ${runLog.mode}`)
+  console.log(`status  : ${execution.status}`)
+  console.log('--- node execution list ---')
+  let index = 0
+  for (const entry of execution.nodeLogs || []) {
+    if (!entry.event.startsWith('node_') && !entry.event.startsWith('branch_node_')) continue
+    if (!entry.event.endsWith('_started')) continue
+    index += 1
+    const action = entry.action || ''
+    const output = entry.output ? ` -> ${entry.output}` : ''
+    console.log(`[${String(index).padStart(2, ' ')}] ${entry.node} (${action})${output}`)
+  }
+  console.log('--- artifacts ---')
+  if (artifacts.length === 0) console.log('  (none)')
+  for (const artifact of artifacts) console.log(`  ${artifact.name} (${artifact.bytes} bytes)`)
+  console.log(`log     : run-log.jsonl (${execution.nodeLogs.length} entries)`)
 }
 
 main(process.argv.slice(2)).catch((error) => {

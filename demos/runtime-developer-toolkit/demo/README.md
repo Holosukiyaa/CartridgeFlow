@@ -36,16 +36,57 @@ Nodes:
 - `decision` / `executor=llm`: `--mock` writes a deterministic mock response.
   Without `--mock`, the runner calls an OpenAI-compatible endpoint configured
   through `CF_RUNTIME_MODEL_BASE_URL`, `CF_RUNTIME_MODEL_API_KEY`, and
-  `CF_RUNTIME_MODEL`.
+  `CF_RUNTIME_MODEL`. The result is stored under the node's declared
+  `outputs.<name>.target.key` (the key consumers bind to).
 - `human_gate` / `action=confirm_checkpoint`: `--mock` auto-approves into the
   interaction `store_key` (e.g. `{approval: "approved", feedback: ""}`); the
   real path aborts (fail-closed) — interactive review UI must be implemented by
   the production runtime.
+- `process` / `action=render_template`: reads the template asset from the
+  unpacked `package/` directory and substitutes `{{placeholder}}` values from
+  the store (missing values fail-closed).
 - `process` / `action=pass_result`: writes the declared `outputs` artifact
   target (e.g. `article.md`, `research.md`, `scene.html`) underneath the run
-  directory.
+  directory; the source value comes from `params`/`preset_config` or the single
+  `inputs` binding.
 - `mcp_execute` / `executor=mcp`: the portable `filesystem_write` built-in MCP
   tool writes a run artifact underneath the supplied run directory.
+
+## Runtime panel output and run log
+
+`run` prints a cmd-list style runtime panel (release/signer/cartridge/mode,
+per-node execution list `[n] node (action)`, artifact list) and writes two
+files into the run directory:
+
+- `run-log.jsonl` — one JSON entry per runtime event (run_started,
+  node_started/node_completed, branch_node_started/branch_node_completed,
+  run_completed) with ISO timestamps, node, action and status.
+- `run-result.json` — release id, installed package path, final status,
+  execution trace, store snapshot and artifact list.
+
+## Standalone handoff verification
+
+The demo is fully self-contained (Node built-ins only). To verify a handoff
+package exactly like the runtime team would:
+
+```powershell
+# 1. copy only the demo files + the release archive into a clean directory
+$dir = "$env:TEMP\handoff-verify"
+New-Item -ItemType Directory -Force -Path $dir | Out-Null
+Copy-Item runtime-developer-toolkit/demo/run.mjs $dir/
+Copy-Item runtime-developer-toolkit/demo/mock-model.mjs $dir/
+Copy-Item runtime-developer-toolkit/demo/package.json $dir/
+Copy-Item runtime-developer-toolkit/samples/dev.threejs-arena-0.1.0.cf-cre.zip "$dir/sample.cf-cre.zip"
+Copy-Item runtime-developer-toolkit/samples/trusted_publishers.json $dir/
+
+# 2. run from that directory (no repository access needed)
+cd $dir
+node run.mjs run sample.cf-cre.zip out --trust trusted_publishers.json --mock
+```
+
+Passing means: exit code 0, `out/artifacts/scene.html` produced with real
+content (template assembled, no leftover `{{placeholder}}`), `out/run-log.jsonl`
+written, and no error output on stderr.
 
 `mock-model.mjs` is an explicit OpenAI-compatible test server for the Base
 acceptance cartridge. It proves the model API transport without embedding a

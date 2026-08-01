@@ -512,7 +512,7 @@ class CartridgeRunner:
                         run["artifacts"] = self._merge_artifacts(run.get("artifacts", []), declared_artifacts)
                         _state_doc["context"]["artifacts"] = run["artifacts"]
                         result["artifacts"] = self._merge_artifacts(result.get("artifacts", []), declared_artifacts)
-                    elif self._declares_artifact_output(state_):
+                    elif self._declares_artifact_output(state_) and result.get("action") not in {"tool_call", "remote_call"}:
                         result.update({
                             "failed": True,
                             "error_code": "ARTIFACT_MISSING",
@@ -1885,7 +1885,7 @@ class CartridgeRunner:
                         run["artifacts"] = self._merge_artifacts(run.get("artifacts", []), declared_artifacts)
                         _state_doc["context"]["artifacts"] = run["artifacts"]
                         result["artifacts"] = self._merge_artifacts(result.get("artifacts", []), declared_artifacts)
-                    elif self._declares_artifact_output(state_):
+                    elif self._declares_artifact_output(state_) and result.get("action") not in {"tool_call", "remote_call"}:
                         result.update({
                             "failed": True,
                             "error_code": "ARTIFACT_MISSING",

@@ -1913,13 +1913,17 @@ class LabNodeExecutor:
         - params.variables: {"placeholder": "store_key", ...}
         - params.output: store key to write the assembled text to
         """
-        import re as _re
-
         template = params.get("template") or ""
         template_file = params.get("template_file") or ""
         package_path = str(_run.get("package_path") or ".")
         if template_file:
-            asset_path = Path(package_path) / str(template_file).lstrip("/\\")
+            package_root = Path(package_path).resolve()
+            asset_path = (package_root / str(template_file).lstrip("/\\")).resolve()
+            if asset_path != package_root and package_root not in asset_path.parents:
+                raise NodeActionError(
+                    "FLOW_CONTRACT_INVALID",
+                    f"render_template template file escapes package dir: {template_file}",
+                )
             if not asset_path.is_file():
                 raise NodeActionError(
                     "FLOW_CONTRACT_INVALID",

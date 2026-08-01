@@ -686,8 +686,17 @@ class RootFlowEngine:
             retry = context.get("_retry_token") if isinstance(context.get("_retry_token"), dict) else None
             if retry:
                 context.pop("_retry_token", None)
+                next_attempt = int(retry.get("attempt") or 1)
+                current_attempt = int(token.get("attempt") or 1)
+                if next_attempt <= current_attempt:
+                    # Defensive: a stale/forged retry marker must not loop the
+                    # token beyond its ledger bounds.
+                    self.complete(state_doc, node_id, "failed")
+                    if not route_failure(token, "exception"):
+                        break
+                    continue
                 token["status"] = "ready"
-                token["attempt"] = int(retry.get("attempt") or 1)
+                token["attempt"] = next_attempt
                 token["last_error"] = retry.get("last_error")
                 emit("retrying", token, attempt=token["attempt"])
                 continue

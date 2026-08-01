@@ -1668,8 +1668,12 @@ class CartridgeRunner:
         if resolved_resume.pop("_route_exhausted", False):
             # Bounded route reached its limit: treat this answer as approval so
             # the flow exits the review loop (loop edge sees empty feedback).
+            # Unwrap first so the v2 envelope's inner value is rewritten too.
             if isinstance(answer_value, dict):
-                store[store_key] = {**answer_value, "approval": "approved", "feedback": ""}
+                rewritten = self._unwrap_answer_value(answer_value)
+                if isinstance(rewritten, dict):
+                    rewritten = {**rewritten, "approval": "approved", "feedback": ""}
+                store[store_key] = rewritten
         pending["resume"] = resolved_resume
         self._apply_resume_store_effects(resolved_resume, answer_value, store)
         run.pop("pending_interaction", None)

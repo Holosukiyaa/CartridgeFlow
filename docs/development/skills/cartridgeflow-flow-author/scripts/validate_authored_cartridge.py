@@ -131,6 +131,42 @@ def execution_plan_findings(root_flow: dict[str, Any]) -> list[dict[str, str]]:
     return findings
 
 
+def review_route_findings(root_flow: dict[str, Any]) -> list[dict[str, str]]:
+    """Review nodes (confirm_checkpoint) with answer_routes: a rejected route
+    that does NOT clear the approval store key leaves the next review run
+    auto-approved (store key still present), silently skipping the revision
+    gate. Flag it so authors add clear_store_keys + copy_answer_to."""
+    findings: list[dict[str, Any]] = []
+    for node_id, state in (root_flow.get("states") or {}).items():
+        if not isinstance(state, dict) or state.get("type") != "process" or state.get("action") != "confirm_checkpoint":
+            continue
+        params = state.get("params") if isinstance(state.get("params"), dict) else {}
+        interaction = params.get("interaction") if isinstance(params.get("interaction"), dict) else {}
+        routes = interaction.get("answer_routes")
+        if not isinstance(routes, list):
+            continue
+        for index, route in enumerate(routes):
+            if not isinstance(route, dict):
+                continue
+            matcher = route.get("match") if isinstance(route.get("match"), dict) else {}
+            equals = matcher.get("equals")
+            if equals not in {"rejected", "deny", "no", "disapproved"}:
+                continue
+            if not route.get("clear_store_keys"):
+                findings.append({
+                    "severity": "warning",
+                    "code": "REVIEW_ROUTE_CLEAR_MISSING",
+                    "path": f"root_flow.states.{node_id}.params.interaction.answer_routes[{index}]",
+                    "message": (
+                        f"Review node '{node_id}' rejection route does not clear the approval "
+                        "store key. Without clear_store_keys the next review run sees the old "
+                        "answer and auto-approves, skipping the revision gate. Add "
+                        "clear_store_keys (approval key) and copy_answer_to (feedback key)."
+                    ),
+                })
+    return findings
+
+
 def description_findings(root_flow: dict[str, Any]) -> list[dict[str, str]]:
     """Flag nodes whose card guidance is generic because no description was written.
 

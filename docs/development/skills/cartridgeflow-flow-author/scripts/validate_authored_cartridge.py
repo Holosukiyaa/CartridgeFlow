@@ -186,34 +186,37 @@ def flow_start_entry_findings(root_flow: dict[str, Any]) -> list[dict[str, str]]
     findings: list[dict[str, str]] = []
     states = root_flow.get("states") if isinstance(root_flow.get("states"), dict) else {}
     start_decl = root_flow.get("start")
-    if not str(start_decl or "").strip():
+    if not isinstance(start_decl, str):
+        start_decl = ""
+    start_key = start_decl.strip()
+    if not start_key:
         findings.append({
             "code": "FLOW_START_ENTRY_MISSING",
             "severity": "blocker",
             "path": "root_flow.start",
             "message": "root flow 缺少顶层 start 入口声明（如 start: start）——运行时会空跑（所有节点被判不可达后直接完成）。",
         })
-    elif start_decl not in states:
+    elif start_key not in states:
         findings.append({
             "code": "FLOW_START_ENTRY_MISSING",
             "severity": "blocker",
-            "path": f"root_flow.start={start_decl}",
-            "message": f"顶层 start 指向 {start_decl}，但 states 中无此节点。",
+            "path": f"root_flow.start={start_key}",
+            "message": f"顶层 start 指向 {start_key}，但 states 中无此节点。",
         })
-    if str(start_decl or "").strip() == "start" and "start" not in states:
+    if start_key == "start" and "start" not in states:
         findings.append({
             "code": "FLOW_START_ENTRY_MISSING",
             "severity": "blocker",
             "path": "root_flow.states.start",
             "message": "states 缺少顶层 start 指向的节点（入口节点 type 应为 control，不是 terminal）。",
         })
-    entry_state = states.get(str(start_decl or "").strip())
+    entry_state = states.get(start_key)
     if isinstance(entry_state, dict) and entry_state.get("type") == "terminal":
         findings.append({
             "code": "FLOW_START_ENTRY_MISSING",
             "severity": "blocker",
-            "path": f"root_flow.states.{start_decl}.type",
-            "message": f"入口节点 {start_decl} 的 type 是 terminal——应为 control，否则运行时空跑（所有节点被判不可达后直接完成）。",
+            "path": f"root_flow.states.{start_key}.type",
+            "message": f"入口节点 {start_key} 的 type 是 terminal——应为 control，否则运行时空跑（所有节点被判不可达后直接完成）。",
         })
     return findings
 

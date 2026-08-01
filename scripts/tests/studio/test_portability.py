@@ -54,6 +54,48 @@ class PortabilityReportTests(unittest.TestCase):
             self.assertIn("sensitive_field", checks)
             self.assertIn("local_path", checks)
 
+    def test_protocol_store_keys_are_exempt_but_credentials_are_not(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            created = DevFlowManager(temp_dir).create_flow("demo.storekeys", "StoreKeys")
+            package = Path(created["path"])
+            flow = created["root_flow"]
+            state_id = next(iter(flow["states"]))
+            flow["states"][state_id]["outputs"] = {
+                "out": {
+                    "schema": {"type": "object"},
+                    "target": {"type": "store", "key": "da-queue"},
+                }
+            }
+            flow["states"][state_id]["inputs"] = {
+                "in": {
+                    "required": True,
+                    "schema": {"type": "object"},
+                    "binding": {"source": "store", "key": "research_bundle"},
+                }
+            }
+            (package / "root.flow.json").write_text(json.dumps(flow, ensure_ascii=False), encoding="utf-8")
+
+            report = build_portability_report(package, created["manifest"], flow)
+            checks = {item.get("check") for item in report["forbidden"]}
+            self.assertNotIn("sensitive_field", checks, "protocol store keys must be exempt")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            created = DevFlowManager(temp_dir).create_flow("demo.secretkey", "SecretKey")
+            package = Path(created["path"])
+            flow = created["root_flow"]
+            state_id = next(iter(flow["states"]))
+            flow["states"][state_id]["outputs"] = {
+                "out": {
+                    "schema": {"type": "object"},
+                    "target": {"type": "store", "key": "sk-live-abcdef123456"},
+                }
+            }
+            (package / "root.flow.json").write_text(json.dumps(flow, ensure_ascii=False), encoding="utf-8")
+
+            blocked = build_portability_report(package, created["manifest"], flow)
+            checks = {item.get("check") for item in blocked["forbidden"]}
+            self.assertIn("sensitive_field", checks, "credential-shaped values under target.key must still be caught")
+
     def test_permission_declarations_are_audited(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             created = DevFlowManager(temp_dir).create_flow("demo.permissions", "Permissions")

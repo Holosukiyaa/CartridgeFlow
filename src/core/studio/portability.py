@@ -201,7 +201,7 @@ def _walk_sensitive(value, prefix: str = "", parent: str = ""):
                 and 0 < len(child) <= 64
                 and re.fullmatch(r"[A-Za-z0-9_.:\-]+", child) is not None
                 and not child.casefold().startswith((
-                    "sk-", "eyj", "ghp_", "gho_", "akia", "xox", "da-",
+                    "sk-", "eyj", "ghp_", "gho_", "akia", "xoxb-", "xoxp-",
                     "pk_live", "pk_test", "sk_live", "sk_test",
                 ))
             )

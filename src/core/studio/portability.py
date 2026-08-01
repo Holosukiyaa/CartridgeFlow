@@ -190,13 +190,19 @@ def _scan_text_content(root: Path, forbidden: list[dict]) -> None:
 _PROTOCOL_KEY_PARENTS = {"target", "binding"}
 
 
-def _walk_sensitive(value, prefix: str = "", parent: str = ""):
+_PROTOCOL_KEY_GRANDPARENTS = {"inputs", "outputs"}
+
+
+def _walk_sensitive(value, prefix: str = "", parent: str = "", grandparent: str = "", great_grandparent: str = ""):
     if isinstance(value, dict):
         for key, child in value.items():
             path = f"{prefix}.{key}" if prefix else str(key)
+            # Protocol store-key path is <inputs|outputs>.<name>.binding|target.key,
+            # so the "key" field's great-grandparent must be inputs/outputs.
             is_protocol_key = (
                 str(key).casefold() == "key"
                 and parent in _PROTOCOL_KEY_PARENTS
+                and great_grandparent in _PROTOCOL_KEY_GRANDPARENTS
                 and isinstance(child, str)
                 and 0 < len(child) <= 64
                 and re.fullmatch(r"[A-Za-z0-9_.:\-]+", child) is not None
@@ -207,10 +213,16 @@ def _walk_sensitive(value, prefix: str = "", parent: str = ""):
             )
             if str(key).casefold() in SENSITIVE_KEYS and not is_protocol_key:
                 yield path, child
-            yield from _walk_sensitive(child, path, parent=str(key))
+            yield from _walk_sensitive(
+                child, path,
+                parent=str(key), grandparent=parent, great_grandparent=grandparent,
+            )
     elif isinstance(value, list):
         for index, child in enumerate(value):
-            yield from _walk_sensitive(child, f"{prefix}[{index}]", parent=parent)
+            yield from _walk_sensitive(
+                child, f"{prefix}[{index}]",
+                parent=parent, grandparent=grandparent, great_grandparent=great_grandparent,
+            )
 
 
 def _safe_package_file(root: Path, relative: str) -> Path | None:

@@ -39,8 +39,8 @@ Nodes:
   `CF_RUNTIME_MODEL`.
 - `human_gate` / `action=confirm_checkpoint`: `--mock` auto-approves into the
   interaction `store_key` (e.g. `{approval: "approved", feedback: ""}`); the
-  real path prints a pending-review notice (interactive review UI is left to the
-  production runtime).
+  real path aborts (fail-closed) — interactive review UI must be implemented by
+  the production runtime.
 - `process` / `action=pass_result`: writes the declared `outputs` artifact
   target (e.g. `article.md`, `research.md`, `scene.html`) underneath the run
   directory.

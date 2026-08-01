@@ -269,7 +269,7 @@ demo 实现最小交接范围：
 | `terminal` | 终止节点 | 返回 completed |
 | `decision` + `executor=llm` | 模型节点 | mock 或 OpenAI-compatible HTTP |
 | `mcp_execute` + `executor=mcp` | MCP 节点 | 当前仅支持 `filesystem_write` |
-| `human_gate` + `action=confirm_checkpoint` | 人工审核 | mock 自动批准；真实模式打印提示 |
+| `human_gate` + `action=confirm_checkpoint` | 人工审核 | mock 自动批准；真实模式中止（fail-closed，交互审核需生产实现） |
 | `process` + `action=pass_result` | 确定性产物 | 按 outputs artifact target 落盘 |
 
 | 边 | demo 行为 |

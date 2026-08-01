@@ -99,7 +99,7 @@ node runtime-developer-toolkit/demo/run.mjs run `
 
 - 完整 CF-CRE@1 校验链（哈希、摘要、Ed25519 签名、信任库）。
 - `execution_plan` 边：`sequence`、`loop`（`continue_when` 求值 + `exit_to`）、`fork`/`join`（顺序模拟并行分支 + join 等齐校验）。
-- 节点执行：`llm_prompt`（mock / OpenAI-compatible HTTP）、`confirm_checkpoint`（mock 自动批准；真实模式打印提示）、`pass_result`（artifact 落盘）、`filesystem_write` MCP。
+- 节点执行：`llm_prompt`（mock / OpenAI-compatible HTTP）、`confirm_checkpoint`（mock 自动批准；真实模式中止——交互审核需生产实现）、`pass_result`（artifact 落盘）、`filesystem_write` MCP。
 - `failure` 边与交互式人工审核 UI **不在**最小 demo 范围内——生产运行台必须实现 fail-closed 路由与真实审核交互。
 
 ## 重要限制

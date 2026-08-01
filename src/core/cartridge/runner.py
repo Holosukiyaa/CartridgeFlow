@@ -1878,6 +1878,19 @@ class CartridgeRunner:
                     skipped = result.get("skipped", False)
                     output_key = result.get("output")
                     output_value = _truncate(store.get(output_key)) if output_key and output_key in store else None
+                    declared_artifacts = self._materialize_declared_artifacts(
+                        run, run_dir, state_name_, state_, store
+                    )
+                    if declared_artifacts:
+                        run["artifacts"] = self._merge_artifacts(run.get("artifacts", []), declared_artifacts)
+                        _state_doc["context"]["artifacts"] = run["artifacts"]
+                        result["artifacts"] = self._merge_artifacts(result.get("artifacts", []), declared_artifacts)
+                    elif self._declares_artifact_output(state_):
+                        result.update({
+                            "failed": True,
+                            "error_code": "ARTIFACT_MISSING",
+                            "error": "Artifact-output node completed without materializing its declared output.",
+                        })
                     if result.get("action") in {"tool_call", "remote_call"}:
                         tool_results = result.get("tool_results") or []
                         artifacts = self._collect_tool_artifacts(run, run_dir, state_name_, tool_results)

@@ -31,7 +31,7 @@ from core.runtime.state_machine import assert_transition
 
 SUPPORTED_ACTIONS = frozenset({
     "collect_inputs", "show_welcome", "show_ui", "render_ui", "show_result",
-    "render_interaction", "llm_prompt", "tool_call", "remote_call", "pass_result",
+    "render_interaction", "llm_prompt", "tool_call", "remote_call", "render_template", "pass_result",
     "save_context", "confirm_checkpoint", "collect_artifacts", "render_video_brief", "custom_action",
 })
 
@@ -147,6 +147,7 @@ class LabNodeExecutor:
             "render_interaction": self._render_interaction,
             "llm_prompt": self._llm_prompt,
             "tool_call": self._tool_call,
+            "render_template": self._render_template,
             "remote_call": self._remote_call,
             "pass_result": self._pass_result,
             "save_context": self._save_context,
@@ -1291,14 +1292,34 @@ class LabNodeExecutor:
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": final_prompt},
                     ]
-                    try:
-                        response = asyncio.run(chat(cfg, messages, agent_name="lab_node", phase="flow_node"))
-                    except RuntimeError:
-                        loop = asyncio.get_event_loop()
-                        response = loop.run_until_complete(chat(cfg, messages, agent_name="lab_node", phase="flow_node"))
+                    def _chat_once() -> dict:
+                        try:
+                            return asyncio.run(chat(cfg, messages, agent_name="lab_node", phase="flow_node"))
+                        except RuntimeError:
+                            loop = asyncio.get_event_loop()
+                            return loop.run_until_complete(chat(cfg, messages, agent_name="lab_node", phase="flow_node"))
+
+                    response = _chat_once()
                     result_text = response.get("content", "")
                     llm_response_meta = response.get("meta") if isinstance(response.get("meta"), dict) else {}
                     used_llm = True
+                    # Reasoning models occasionally emit malformed JSON (extra braces,
+                    # unescaped quotes). Output-format drift is normal for LLM nodes, so
+                    # retry once before failing the node.
+                    if output_contract == "decision_envelope.v1" and str(result_text or "").strip():
+                        probe = self._decision_envelope_from_result(result_text, decision_contract, fallback)
+                        if probe.get("status") == "blocked" and any(
+                            "parse_failed" in str(item.get("code") or "")
+                            for item in probe.get("issues") or []
+                        ):
+                            try:
+                                response2 = _chat_once()
+                                result_text2 = response2.get("content", "")
+                                if str(result_text2 or "").strip():
+                                    result_text = result_text2
+                                    llm_response_meta = response2.get("meta") if isinstance(response2.get("meta"), dict) else {}
+                            except Exception:
+                                pass
         except Exception as exc:
             from core.llm.errors import classify_llm_error
 
@@ -1883,6 +1904,52 @@ class LabNodeExecutor:
             lines += ["", "## \u8f93\u51fa\u8def\u5f84", path_map["output_path"]]
         lines += ["", "_\u79bb\u7ebf\u515c\u5e95\u751f\u6210_"]
         return "\n".join(lines)
+
+    def _render_template(self, params: dict, store: dict, _run: dict, _run_dir) -> dict:
+        """Assemble a text output from a template with {{key}} placeholders.
+
+        - params.template: inline template string (when template_file is absent)
+        - params.template_file: cartridge-relative asset path (assets/xxx.html)
+        - params.variables: {"placeholder": "store_key", ...}
+        - params.output: store key to write the assembled text to
+        """
+        import re as _re
+
+        template = params.get("template") or ""
+        template_file = params.get("template_file") or ""
+        package_path = str(_run.get("package_path") or ".")
+        if template_file:
+            asset_path = Path(package_path) / str(template_file).lstrip("/\\")
+            if not asset_path.is_file():
+                raise NodeActionError(
+                    "FLOW_CONTRACT_INVALID",
+                    f"render_template template file not found: {template_file}",
+                )
+            template = asset_path.read_text(encoding="utf-8")
+
+        variables = params.get("variables") if isinstance(params.get("variables"), dict) else {}
+        missing: list[str] = []
+        for placeholder, store_key in variables.items():
+            if store.get(store_key) is None:
+                missing.append(f"{placeholder}({store_key})")
+                continue
+            value = store.get(store_key)
+            text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+            template = template.replace("{{" + placeholder + "}}", text)
+        if missing:
+            raise NodeActionError(
+                "INPUT_REQUIRED",
+                "render_template missing store values: " + ", ".join(missing),
+            )
+
+        output_key = params.get("output") or "rendered_template"
+        store[output_key] = template
+        return {
+            "action": "render_template",
+            "output": output_key,
+            "length": len(template),
+            "template_file": template_file or "",
+        }
 
     def _pass_result(self, params: dict, store: dict, _run: dict, _run_dir) -> dict:
         preset_config = params.get("preset_config") or {}

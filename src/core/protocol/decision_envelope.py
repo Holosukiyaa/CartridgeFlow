@@ -45,12 +45,26 @@ def parse_decision_envelope(value: Any) -> dict | None:
         end = text.rfind("}")
         if start >= 0 and end > start:
             text = text[start:end + 1]
-    for candidate in (text, text.translate(_JSON_QUOTE_TRANSLATION)):
+    def _try_parse(candidate_text: str) -> dict | None:
         try:
-            parsed = json.loads(candidate)
+            parsed = json.loads(candidate_text)
         except json.JSONDecodeError:
-            continue
+            return None
         return parsed if isinstance(parsed, dict) else None
+
+    for candidate in (text, text.translate(_JSON_QUOTE_TRANSLATION)):
+        parsed = _try_parse(candidate)
+        if parsed:
+            return parsed
+        # Reasoning models sometimes append trailing garbage (extra braces,
+        # stray text) after a valid JSON object. Trim from the tail, up to a
+        # small bound, before giving up.
+        for cut in range(1, 41):
+            if len(candidate) <= cut:
+                break
+            parsed = _try_parse(candidate[:-cut])
+            if parsed:
+                return parsed
     return None
 
 

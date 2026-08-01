@@ -2,7 +2,7 @@
 name: cartridgeflow-flow-author
 description: Create, extend, or repair editable CartridgeFlow development cartridges and root flows. Use when a user asks Codex to turn a business goal into a CartridgeFlow Flow, add process nodes, configure typed data contracts, bind models or MCP/DLC tools, or make a Flow pass the current executable CF-FARP@1.0 validation without repeated trial-and-error.
 metadata:
-  version: "2.3.0"
+  version: "2.4.0"
   protocol_alignment:
     label: "cf-farp-1-0-authoring-verified"
     protocol: "CF-FARP@1.0"
@@ -38,6 +38,11 @@ Read `protocol/flow-authoring/1.0/README.md` and its listed normative modules be
     - `loop` edge from the review node: `continue_when: "$approval.feedback"` (non-empty feedback = rejected = keep looping; empty = approved = `exit_to` the packaging node). `$key.field` resolves store values with bool semantics.
     - The revise node must bind its feedback input to the `copy_answer_to` key (e.g. `review_feedback`), not to the cleared approval key.
     - Platform notes (all fixed): `confirm_checkpoint` forwards `answer_routes`/`clear_store_keys`/`copy_answer_to` from `interaction` into the pending resume; `resume_target_node` schedules a fresh ready token for the target (otherwise the token engine skips it); do NOT use `resume_target_node` with `transition_pending` semantics — the paused token would route its success edges (the loop edge) and bypass the target.
+5d. For parallel flows (fork/join), remember:
+    - `fork` edges share one `fork.id` + source and differ by `fork.branch`; every branch needs its own edge.
+    - `join` edges share one `join.id`, target, mode and the FULL `join.branches` set; **each join edge also needs its own `join.branch`** (which branch this edge carries) — forgetting it fails static conformance (`v10_join_contract_invalid`).
+    - Manifest `required_capabilities` must name the mode-specific capability: `execution_plan_join_all_contract` (or `join_any`/`join_keyed`) plus `execution_plan_join_runtime` — there is no generic `execution_plan_join_contract` in the base; declaring a missing name blocks run creation (`compatibility_blocked`).
+    - A `pass_result` node with `preset_config.items` (comma-separated store keys) + `output_name` merges the branch outputs into one bundle for the join consumer.
 5b. Write a real `description` for every node (`params.description`, shown as 节点职责). This is the most user-visible text on the canvas card — it is what tells the user what this machine does. Write it concretely for THIS node (what it consumes, what it produces, why it exists, what the user gains), never template filler like "根据已有信息做出判断". If the node description is generic, rewrite it until it names this node's specific job. A missing description makes the card fall back to generic copy.
 6. Bind a tool by its manifest tool ID in `allowed_tools`. For a transparent DLC MCP tool, keep the user-facing business node separate from its internal source model; do not add an ID-only business node. When a `tool_call`/`remote_call` node runs several tools, the runtime writes each tool result to the store under **that tool's own `output` name** (e.g. `rss_theverge`), not under `params.output` — `params.output` is only a fallback for tools without an output name. Downstream nodes must bind those per-tool store keys (one input port per tool), not `params.output`.
 7. Verify runtime semantics before the first run. Inspect the field consumer when a value controls runtime behavior; never use prose placeholders as protocol values. A user-bound model role must declare `model: "configured-locally"`, never `"user-configured"`. Confirm the role and node bindings exist in the resource catalog, and that their provider is enabled and usable before calling the Flow runnable.

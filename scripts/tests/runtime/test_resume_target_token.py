@@ -180,6 +180,10 @@ class ResumeTargetTokenTests(unittest.TestCase):
         """Stub the LLM provider: draft/revise return resolved envelopes while
         the human review gate really pauses. Must stay active across answer
         calls (the revise node calls chat after resume)."""
+        import core.llm
+        import core.llm.config_manager
+        assert hasattr(core.llm, "chat"), "core.llm.chat must stay patchable (function-local import)"
+        assert hasattr(core.llm.config_manager, "resolve_model"), "resolve_model must stay patchable"
         cfg = ModelConfig(
             provider_id="test-provider",
             model="test-model",

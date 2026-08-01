@@ -161,6 +161,180 @@ def description_findings(root_flow: dict[str, Any]) -> list[dict[str, str]]:
     return findings
 
 
+def review_binding_findings(root_flow: dict[str, Any]) -> list[dict[str, str]]:
+    """Flag review-node (confirm_checkpoint) input bindings that silently render
+    an empty review screen.
+
+    Lesson A3 (AI video daily): the drafted brief binding referenced an output
+    that was never declared in the source node's ``outputs`` contract, so the
+    runtime could not resolve it and ``review_content`` came back empty — the
+    user was asked to confirm an empty screen. Bindings to ``artifact`` targets
+    resolve to a descriptor (path/name) instead of the text the reviewer needs.
+    """
+    findings: list[dict[str, str]] = []
+    states = root_flow.get("states") if isinstance(root_flow.get("states"), dict) else {}
+    for node_id, state in states.items():
+        if not isinstance(state, dict) or str(state.get("action") or "") != "confirm_checkpoint":
+            continue
+        inputs = state.get("inputs") if isinstance(state.get("inputs"), dict) else {}
+        for port, contract in inputs.items():
+            if not isinstance(contract, dict):
+                continue
+            binding = contract.get("binding") if isinstance(contract.get("binding"), dict) else None
+            if not binding:
+                continue
+            source = str(binding.get("source") or "")
+            if source == "node_output":
+                src_id = str(binding.get("node_id") or "")
+                out_name = str(binding.get("output") or "")
+                src_node = states.get(src_id) if isinstance(states.get(src_id), dict) else None
+                if not src_node or not out_name:
+                    findings.append({
+                        "severity": "warning",
+                        "code": "REVIEW_BINDING_UNRESOLVED",
+                        "path": f"root_flow.states.{node_id}.inputs.{port}.binding",
+                        "message": (
+                            f"Review node '{node_id}' input '{port}' references '{src_id}:{out_name}' "
+                            "which cannot be resolved. The review screen will be empty."
+                        ),
+                    })
+                    continue
+                src_outputs = src_node.get("outputs") if isinstance(src_node.get("outputs"), dict) else {}
+                contract_out = src_outputs.get(out_name)
+                if not isinstance(contract_out, dict) or "target" not in contract_out:
+                    findings.append({
+                        "severity": "warning",
+                        "code": "REVIEW_BINDING_UNRESOLVED",
+                        "path": f"root_flow.states.{node_id}.inputs.{port}.binding",
+                        "message": (
+                            f"Review node '{node_id}' input '{port}' binds '{src_id}:{out_name}' but "
+                            f"'{src_id}.outputs.{out_name}' declares no target contract. The runtime "
+                            "cannot resolve it and the review screen shows nothing. Declare the output "
+                            "with a target (store key) on the source node first."
+                        ),
+                    })
+                elif (contract_out.get("target") or {}).get("type") == "artifact":
+                    findings.append({
+                        "severity": "info",
+                        "code": "REVIEW_BINDING_ARTIFACT",
+                        "path": f"root_flow.states.{node_id}.inputs.{port}.binding",
+                        "message": (
+                            f"Review node '{node_id}' input '{port}' binds an artifact output "
+                            f"('{out_name}') — the review screen would show a descriptor, not the "
+                            "content. Prefer binding a store text key written upstream."
+                        ),
+                    })
+            elif source == "store" and not (binding.get("key") or binding.get("store_key")):
+                findings.append({
+                    "severity": "warning",
+                    "code": "REVIEW_BINDING_UNRESOLVED",
+                    "path": f"root_flow.states.{node_id}.inputs.{port}.binding",
+                    "message": f"Review node '{node_id}' input '{port}' store binding has no key.",
+                })
+    return findings
+
+
+def llm_budget_findings(root_flow: dict[str, Any]) -> list[dict[str, str]]:
+    """Flag llm_prompt nodes whose max_tokens is too small for reasoning models.
+
+    Lesson A1: a reasoning model burns most of the budget on reasoning; 8000
+    still failed intermittently with PROVIDER_EMPTY_RESPONSE
+    (finish_reason=length). Prefer 20000.
+    """
+    findings: list[dict[str, str]] = []
+    states = root_flow.get("states") if isinstance(root_flow.get("states"), dict) else {}
+    for node_id, state in states.items():
+        if not isinstance(state, dict) or str(state.get("action") or "") != "llm_prompt":
+            continue
+        params = state.get("params") if isinstance(state.get("params"), dict) else {}
+        llm = state.get("llm_options") if isinstance(state.get("llm_options"), dict) else (
+            params.get("llm_options") if isinstance(params.get("llm_options"), dict) else None
+        )
+        if not llm:
+            continue
+        budget = llm.get("max_tokens")
+        if isinstance(budget, int) and 0 < budget < 20000:
+            findings.append({
+                "severity": "warning",
+                "code": "LLM_BUDGET_LOW",
+                "path": f"root_flow.states.{node_id}.llm_options.max_tokens",
+                "message": (
+                    f"LLM node '{node_id}' caps max_tokens at {budget}. Reasoning models burn most "
+                    "of the budget on reasoning; budgets below 20000 fail intermittently with "
+                    "PROVIDER_EMPTY_RESPONSE (finish_reason=length). Prefer 20000."
+                ),
+            })
+    return findings
+
+
+def failure_terminal_findings(root_flow: dict[str, Any]) -> list[dict[str, str]]:
+    """Suggest sharing one failure terminal instead of one per step.
+
+    Lesson C1: precise failure detail lives in run.error (envelope with
+    node_id/code/message), so per-step failure terminals are redundant.
+    """
+    findings: list[dict[str, str]] = []
+    plan = root_flow.get("execution_plan") if isinstance(root_flow.get("execution_plan"), dict) else None
+    if not plan:
+        return findings
+    states = root_flow.get("states") if isinstance(root_flow.get("states"), dict) else {}
+    targets: set[str] = set()
+    for edge in plan.get("edges") or []:
+        if isinstance(edge, dict) and edge.get("kind") == "failure":
+            targets.add(str(edge.get("to") or ""))
+    failure_terminals = [
+        t for t in targets
+        if isinstance(states.get(t), dict) and str(states[t].get("type") or "") == "terminal" and t != "complete"
+    ]
+    if len(failure_terminals) > 1:
+        findings.append({
+            "severity": "info",
+            "code": "FAILURE_TERMINALS_MULTIPLE",
+            "path": "root_flow.execution_plan.edges",
+            "message": (
+                f"{len(failure_terminals)} failure terminals: {', '.join(sorted(failure_terminals))}. "
+                "Share one generic failure terminal — run.error already carries the precise "
+                "node/code/message."
+            ),
+        })
+    return findings
+
+
+def interaction_prompt_findings(root_flow: dict[str, Any]) -> list[dict[str, str]]:
+    """Flag confirm_checkpoint nodes whose review prompt is the empty default.
+
+    Lesson C3: without an interaction prompt the user sees only '请确认是否继续执行。'
+    — write what they are actually approving.
+    """
+    findings: list[dict[str, str]] = []
+    states = root_flow.get("states") if isinstance(root_flow.get("states"), dict) else {}
+    for node_id, state in states.items():
+        if not isinstance(state, dict) or str(state.get("action") or "") != "confirm_checkpoint":
+            continue
+        params = state.get("params") if isinstance(state.get("params"), dict) else {}
+        preset = params.get("preset_config") if isinstance(params.get("preset_config"), dict) else {}
+        interaction = params.get("interaction") if isinstance(params.get("interaction"), dict) else (
+            preset.get("interaction") if isinstance(preset.get("interaction"), dict) else None
+        )
+        prompt = ""
+        if interaction:
+            prompt = str(interaction.get("prompt") or "").strip()
+        if not prompt:
+            prompt = str(params.get("condition") or "").strip()
+        if not prompt:
+            findings.append({
+                "severity": "warning",
+                "code": "INTERACTION_PROMPT_MISSING",
+                "path": f"root_flow.states.{node_id}.params.interaction.prompt",
+                "message": (
+                    f"Review node '{node_id}' has no interaction prompt — the user sees only the "
+                    "default '请确认是否继续执行。'. Write what they are approving (e.g. the "
+                    "deliverable name and what happens after approval)."
+                ),
+            })
+    return findings
+
+
 def node_semantic_findings(root_flow: dict[str, Any]) -> list[dict[str, str]]:
     """Reject common runtime-valid but CF-FARP@1.0-invalid node disguises."""
     findings: list[dict[str, str]] = []
@@ -416,6 +590,10 @@ def main() -> int:
     findings.extend(text_findings(package))
     findings.extend(execution_plan_findings(root_flow))
     findings.extend(description_findings(root_flow))
+    findings.extend(review_binding_findings(root_flow))
+    findings.extend(llm_budget_findings(root_flow))
+    findings.extend(failure_terminal_findings(root_flow))
+    findings.extend(interaction_prompt_findings(root_flow))
     findings.extend(node_semantic_findings(root_flow))
     findings.extend(delivery_contract_findings(manifest, root_flow))
     if args.run_id:

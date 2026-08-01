@@ -138,7 +138,7 @@ def review_route_findings(root_flow: dict[str, Any]) -> list[dict[str, str]]:
     gate. Flag it so authors add clear_store_keys + copy_answer_to."""
     findings: list[dict[str, Any]] = []
     for node_id, state in (root_flow.get("states") or {}).items():
-        if not isinstance(state, dict) or state.get("type") != "process" or state.get("action") != "confirm_checkpoint":
+        if not isinstance(state, dict) or state.get("action") != "confirm_checkpoint":
             continue
         params = state.get("params") if isinstance(state.get("params"), dict) else {}
         interaction = params.get("interaction") if isinstance(params.get("interaction"), dict) else {}
@@ -149,8 +149,15 @@ def review_route_findings(root_flow: dict[str, Any]) -> list[dict[str, str]]:
             if not isinstance(route, dict):
                 continue
             matcher = route.get("match") if isinstance(route.get("match"), dict) else {}
-            equals = matcher.get("equals")
-            if equals not in {"rejected", "deny", "no", "disapproved"}:
+            equals_raw = matcher.get("equals")
+            equals_values: list[str] = []
+            if isinstance(equals_raw, list):
+                equals_values = [str(item) for item in equals_raw if isinstance(item, (str, int, float, bool))]
+            elif isinstance(equals_raw, str):
+                equals_values = [equals_raw]
+            equals_normalized = {str(v).strip().lower() for v in equals_values if str(v).strip()}
+            is_rejection = bool(equals_normalized & {"rejected", "deny", "no", "disapproved"})
+            if not is_rejection:
                 continue
             if not route.get("clear_store_keys"):
                 findings.append({
@@ -158,7 +165,8 @@ def review_route_findings(root_flow: dict[str, Any]) -> list[dict[str, str]]:
                     "code": "REVIEW_ROUTE_CLEAR_MISSING",
                     "path": f"root_flow.states.{node_id}.params.interaction.answer_routes[{index}]",
                     "message": (
-                        f"Review node '{node_id}' rejection route does not clear the approval "
+                        f"Review node '{node_id}' rejection route (equals matching a rejection "
+                        "value heuristically) does not clear the approval "
                         "store key. Without clear_store_keys the next review run sees the old "
                         "answer and auto-approves, skipping the revision gate. Add "
                         "clear_store_keys (approval key) and copy_answer_to (feedback key)."

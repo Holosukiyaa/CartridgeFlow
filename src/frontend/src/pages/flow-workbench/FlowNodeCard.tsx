@@ -2,7 +2,7 @@ import { memo, type DragEvent, type ReactNode } from 'react'
 import { ArrowDownToLine, ArrowLeftRight, ArrowRight, Bot, Braces, CheckCircle2, Cloud, Database, FileCheck2, Flag, GitBranch, PackageCheck, PanelTop, Play, Route, Search, ShieldCheck, Shuffle, UserCheck, Wrench } from 'lucide-react'
 import type { FlowNode } from '../../api.ts'
 import { getNodePalette, type FlowNodeViewMode } from './nodeModel.ts'
-import { buildEngineeringRecipe } from './engineeringNode.ts'
+import { buildEngineeringRecipe, summarizeEngineeringRecipeItem } from './engineeringNode.ts'
 import { FlowNodePorts, type PortCounts } from './FlowNodePorts.tsx'
 import { buildFlowNodeCardView, buildOutcomeNodeCardView, type OutcomeNodeCardView } from './flowNodeView.ts'
 import type { NodeRunState } from './runState.ts'
@@ -99,7 +99,7 @@ function DetailedNodeContent({ node, order, view, runState }: Pick<FlowNodeCardP
               {recipe.map((item) => (
                 <div key={item.label} title={item.value}>
                   <dt>{item.label}</dt>
-                  <dd className={item.mono ? 'mono' : ''}>{item.value}</dd>
+                  <dd className={item.mono ? 'mono' : ''}>{summarizeEngineeringRecipeItem(item)}</dd>
                 </div>
               ))}
             </dl>

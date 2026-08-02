@@ -369,6 +369,7 @@ export function PendingInteractionForm({
   const [values, setValues] = useState<Record<string, any>>({})
   const [sandboxDraftHash, setSandboxDraftHash] = useState('')
   const [showArtifacts, setShowArtifacts] = useState(false)
+  const [reviewContentMode, setReviewContentMode] = useState<'preview' | 'source'>('preview')
   const presentationFrameRef = useRef<HTMLIFrameElement | null>(null)
   const canSubmitValues = (candidate: Record<string, any>) => Object.keys(properties).every((key) => !required.has(key) || candidate[key] !== undefined && candidate[key] !== '')
   const isConfirmValue = (item: string) => ['approve', 'approved', 'confirm', 'confirmed', 'yes', '通过'].includes(item.trim().toLowerCase())
@@ -399,6 +400,7 @@ export function PendingInteractionForm({
     setValues({})
     setSandboxDraftHash('')
     setShowArtifacts(false)
+    setReviewContentMode('preview')
     const firstAction = pending?.allowed_actions?.[0]
     setSelectedActionId(String(typeof firstAction === 'string' ? firstAction : firstAction?.id || ''))
   }, [pending?.interaction_id])
@@ -419,6 +421,15 @@ export function PendingInteractionForm({
       height: Math.ceil(Math.max(120, Math.min(600, naturalBottom - bodyRect.top + paddingBottom))),
     })
   }
+  const reviewContent = typeof question.review_content === 'string' ? question.review_content : ''
+  const reviewIsHtml = /^\s*(?:<!doctype\s+html|<html\b|<body\b|<(?:main|section|article|div)\b)/i.test(reviewContent)
+  const openReviewPreview = () => {
+    if (!reviewContent) return
+    const url = URL.createObjectURL(new Blob([reviewContent], { type: 'text/html' }))
+    const opened = window.open(url, '_blank', 'noopener,noreferrer')
+    if (!opened) showToast({ title: '预览窗口被浏览器拦截', description: '请允许弹出窗口后再打开预览。', type: 'error' })
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+  }
   return (
     <div className="cf-pending-card">
       <div className="cf-pending-head">
@@ -428,8 +439,17 @@ export function PendingInteractionForm({
       <p>{question.prompt || '该节点需要用户输入后继续。'}</p>
       {question.review_content && (
         <div className="cf-pending-review-content">
-          <span>待审核内容</span>
-          <pre>{question.review_content}</pre>
+          <div className="cf-pending-review-head">
+            <span>{reviewIsHtml ? '待审核页面' : '待审核内容'}</span>
+            {reviewIsHtml && <div className="cf-pending-review-actions">
+              <button type="button" className={reviewContentMode === 'preview' ? 'active' : ''} onClick={() => setReviewContentMode('preview')}>预览</button>
+              <button type="button" className={reviewContentMode === 'source' ? 'active' : ''} onClick={() => setReviewContentMode('source')}>源码</button>
+              <button type="button" onClick={openReviewPreview}>新窗口打开</button>
+            </div>}
+          </div>
+          {reviewIsHtml && reviewContentMode === 'preview'
+            ? <iframe className="cf-pending-review-frame" title="待审核页面预览" sandbox="allow-scripts" srcDoc={reviewContent} />
+            : <pre>{reviewContent}</pre>}
         </div>
       )}
       {isV2 && pending?.presentation?.html && (

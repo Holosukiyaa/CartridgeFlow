@@ -57,7 +57,7 @@ def _truncate_preview(value, limit=2000):
     if value is None:
         return None
     text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
-    return text[:limit] + "...(truncated)" if len(text) > limit else text
+    return text[:limit - 14] + "...(truncated)" if len(text) > limit else text
 
 
 NODE_RETRY_EXCLUDED_CODES = {

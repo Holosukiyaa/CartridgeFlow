@@ -74,6 +74,10 @@ export function DlcSandboxFrame({
       context,
       project: payload,
       artifacts,
+      // sandbox="allow-scripts" 使 iframe 处于 opaque origin，
+      // 任何非 '*' 的 targetOrigin 都会导致消息被浏览器拦截。
+      // 沙箱隔离了存储与凭据访问，消息仅发往该 iframe 的 contentWindow，
+      // 因此使用 '*' 是安全的。
     }, '*')
   }, [artifacts, context, mode, payload, ready, runId])
 

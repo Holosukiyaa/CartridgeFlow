@@ -27,6 +27,8 @@ expect(workbench, /cartridgeflow\.engineering-resource-layout\.v1/, '工程资�
 expect(workbench, /window\.localStorage\.setItem\(engineeringResourceLayoutStorageKey/, '工程资源位置必须在刷新前同步写入本地存储。')
 expect(inspector, /查看连接详情/, '外部 MCP 必须保留连接详情入口。')
 expect(inspector, /查看已知契约/, '不可审计 MCP 必须保留已知契约入口。')
+expect(inspector, /buildTestFixtureView/, '声明 offline_decision 的节点必须识别测试夹具。')
+expect(inspector, /不会发送给真实模型/, '测试夹具面板必须明确不会进入真实模型路径。')
 expect(overlay, /localParsable \? <>[\s\S]*?MCP Python 源码/, '源码编辑器必须只属于本地可解析 MCP 分支。')
 
 if (failures.length) {

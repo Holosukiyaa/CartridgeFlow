@@ -3,10 +3,10 @@
   background: #fff !important;
 }
 
-.cf-engineering-direct-editor { margin: 12px 0 16px; padding: 12px; border: 1px solid #b8c8d0; border-radius: 8px; background: #f8fbfc; }
+.cf-engineering-overview > .cf-engineering-direct-editor { grid-column: 1 / -1; width: auto; margin: 0 0 6px; padding: 12px; border: 1px solid #b8c8d0; border-radius: 6px; background: #f8fbfc; }
 .cf-engineering-direct-editor > header { display: flex; align-items: center; gap: 7px; margin-bottom: 10px; color: #18313c; }
 .cf-engineering-direct-editor > header span { margin-left: auto; color: #6a7d86; font-size: 11px; }
-.cf-engineering-direct-editor-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+.cf-engineering-direct-editor-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 9px; }
 .cf-engineering-direct-editor-grid label { display: grid; gap: 4px; min-width: 0; }
 .cf-engineering-direct-editor-grid label.wide { grid-column: 1 / -1; }
 .cf-engineering-direct-editor-grid label > span { color: #59717c; font-size: 11px; }
@@ -14,6 +14,10 @@
 .cf-engineering-direct-editor-grid textarea { min-height: 56px; resize: vertical; }
 .cf-engineering-direct-editor > footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 .cf-engineering-direct-editor > footer button { display: inline-flex; align-items: center; gap: 5px; }
+.cf-engineering-advanced-editor { margin-top: 12px; border-top: 1px solid #dce5e8; }
+.cf-engineering-advanced-editor summary { min-height: 38px; display: flex; align-items: center; gap: 8px; color: #425965; font-size: 11px; font-weight: 700; cursor: pointer; }
+.cf-engineering-advanced-editor summary small { margin-left: auto; color: #84939b; font: 10px var(--mono); }
+.cf-engineering-advanced-editor[open] summary { margin-bottom: 9px; }
 .cf-workbench-page .react-flow__minimap { z-index: 2 !important; }
 .cf-workbench-page .cf-canvas-tool-panel, .cf-workbench-page .cf-node-template-config, .cf-workbench-page .cf-canvas-tool-rail { z-index: 20 !important; }
 .cf-workbench-page .cf-canvas-settings > .cf-cartridge-definition { display: grid; align-items: stretch; justify-content: initial; }

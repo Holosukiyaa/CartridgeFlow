@@ -86,24 +86,26 @@
   grid-template-columns: minmax(0, 1fr) 360px 344px;
 }
 .cf-workbench-page .cf-design-studio.runtime-inspector-open:not(.ai-steward-open) {
-  grid-template-columns: minmax(0, 1fr) 360px;
+  grid-template-columns: minmax(0, 1fr) 420px;
 }
 .cf-workbench-page .cf-design-studio.runtime-inspector-open.ai-steward-open {
-  grid-template-columns: minmax(0, 1fr) 360px 344px;
+  grid-template-columns: minmax(0, 1fr) 420px 344px;
 }
 .cf-runtime-node-inspector {
   min-width: 0;
   min-height: 0;
   display: grid;
-  /* header / recipe / purpose / material trail / data — the trail is sized by
-     its content; data takes the remaining scrollable space */
-  grid-template-rows: auto auto auto auto minmax(0, 1fr);
+  /* Keep the live material trail as the primary surface. */
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
   overflow: hidden;
   border-left: 1px solid var(--line);
   background: var(--paper-soft);
   box-shadow: -8px 0 20px rgb(var(--cf-accent-rgb) / .05);
 }
 .cf-runtime-node-inspector > header { min-width: 0; padding: 16px; display: grid; gap: 7px; border-bottom: 1px solid var(--line); }
+.cf-runtime-layer-line { min-width: 0; display: flex !important; align-items: center; justify-content: space-between; gap: 8px; }
+.cf-runtime-layer-label { display: inline-flex; align-items: center; gap: 6px; color: #53666f; font-size: 11px; font-weight: 780; }
+.cf-runtime-layer-label svg { width: 14px; height: 14px; color: var(--accent); }
 .cf-runtime-node-status { width: max-content; padding: 4px 7px; display: inline-flex; align-items: center; gap: 6px; border: 1px solid color-mix(in srgb, var(--accent) 36%, var(--line)); border-radius: 4px; background: var(--accent-soft); color: var(--accent-dark); font-size: 11px; font-weight: 720; }
 .cf-runtime-node-status i { width: 7px; height: 7px; border-radius: 999px; background: var(--accent); box-shadow: 0 0 0 3px rgb(var(--cf-accent-rgb) / .12); }
 .cf-runtime-node-status.running i { animation: cf-runtime-pulse 1s ease-in-out infinite; }
@@ -111,17 +113,16 @@
 .cf-runtime-node-inspector strong, .cf-runtime-node-inspector code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cf-runtime-node-inspector strong { color: var(--text); font-size: 16px; }
 .cf-runtime-node-inspector code { color: var(--muted); font: 10px var(--mono); }
-.cf-runtime-node-recipe { min-width: 0; padding: 12px 16px; display: flex; align-items: center; gap: 6px; overflow: hidden; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--accent) 4%, var(--paper)); font-size: 11px; }
-.cf-runtime-node-recipe > span { flex: 0 0 auto; color: var(--accent-dark); font-weight: 760; }
-.cf-runtime-node-recipe b { min-width: 0; padding: 3px 5px; overflow: hidden; border-radius: 3px; background: var(--paper); color: var(--text); font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.cf-runtime-node-recipe { min-width: 0; padding: 10px 16px; display: flex; align-items: center; gap: 6px; overflow: hidden; border-bottom: 1px solid var(--line); background: #fafcfc; color: #849198; font-size: 10px; }
+.cf-runtime-node-recipe > span { flex: 0 0 auto; color: #849198; font-weight: 720; }
+.cf-runtime-node-recipe b { min-width: 0; padding: 2px 4px; overflow: hidden; border-radius: 3px; background: #fff; color: #68777f; font-weight: 620; text-overflow: ellipsis; white-space: nowrap; }
 .cf-runtime-node-recipe em { flex: 0 0 auto; color: var(--muted); font-style: normal; }
-.cf-runtime-node-purpose { padding: 14px 16px; border-bottom: 1px solid var(--line); }
+.cf-runtime-node-purpose { padding: 11px 16px; border-bottom: 1px solid var(--line); background: #fcfdfd; }
 .cf-runtime-node-purpose span, .cf-runtime-node-data span { color: var(--muted); font-size: 11px; font-weight: 720; }
-.cf-runtime-node-purpose p { margin: 6px 0 0; color: var(--text); font-size: 13px; line-height: 1.55; }
+.cf-runtime-node-purpose p { margin: 5px 0 0; color: #65747c; font-size: 11px; line-height: 1.5; }
 .cf-runtime-node-materials {
   min-height: 0;
-  max-height: 42vh;
-  padding: 0 16px 4px;
+  padding: 0 16px 10px;
   display: grid;
   gap: 8px;
   overflow: auto;
@@ -150,6 +151,13 @@
 .cf-runtime-node-materials li.current {
   border-color: color-mix(in srgb, var(--accent, #27875b) 55%, #bcd6cb);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent, #27875b) 14%, transparent);
+}
+.cf-runtime-node-materials li.focus {
+  border-color: color-mix(in srgb, var(--accent, #27875b) 42%, #d6e4df);
+  background: #fff;
+}
+.cf-runtime-node-materials li.focus.current {
+  border-color: color-mix(in srgb, var(--accent, #27875b) 62%, #bcd6cb);
 }
 .cf-runtime-node-materials li.collapsed > .cf-runtime-material-toggle { padding-block: 6px; }
 .cf-runtime-material-toggle {
@@ -230,16 +238,16 @@ li.current > .cf-runtime-material-toggle b { color: var(--accent-dark, #1f7a52);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-/* The running node gets the large surface: its values unfold fully. */
-li.current.expanded .cf-runtime-material-body p {
-  max-height: 46vh;
+/* The focused material gets the large surface: its values unfold fully. */
+li.focus.expanded .cf-runtime-material-body p {
+  max-height: 34vh;
   font-size: 11px;
 }
-.cf-runtime-node-data { min-height: 0; padding: 14px 16px; display: grid; align-content: start; gap: 12px; overflow: auto; }
+.cf-runtime-node-data { min-height: 0; max-height: min(240px, 28vh); padding: 12px 16px 14px; display: grid; align-content: start; gap: 10px; overflow: auto; border-top: 1px solid var(--border, #e2e7e9); }
 .cf-runtime-node-data > div { min-width: 0; display: grid; gap: 6px; }
 .cf-runtime-node-approval { padding: 11px; border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--line)); border-radius: 5px; background: var(--accent-soft); }
 .cf-runtime-node-approval span { color: var(--accent-dark); }
-.cf-runtime-node-approval p { margin: 4px 0 9px; color: var(--text); font-size: 12px; line-height: 1.45; }
+.cf-runtime-node-approval p { max-height: 120px; margin: 4px 0 9px; overflow: auto; color: var(--text); font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; word-break: break-word; }
 .cf-runtime-node-approval button { min-height: 30px; padding: 0 11px; border: 1px solid var(--accent); border-radius: 4px; background: var(--accent); color: #fff; font-size: 12px; font-weight: 720; cursor: pointer; }
 .cf-runtime-node-approval button:hover { background: var(--accent-dark); }
 .cf-runtime-node-data pre { min-width: 0; max-height: 180px; margin: 0; padding: 10px; overflow: auto; border: 1px solid var(--line); border-radius: 5px; background: var(--paper); color: var(--text); font: 11px/1.55 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }

@@ -1,22 +1,19 @@
 import { useEffect, useState } from 'react'
-import { Braces, Check, Clipboard, Code2, Database, FileCode2, GitCompareArrows, Lock, LockOpen, RotateCcw, Route, Save, Settings2, ShieldCheck, Unplug } from 'lucide-react'
+import { Braces, Check, Clipboard, Code2, Copy, Database, ExternalLink, Factory, FileCode2, FlaskConical, GitCompareArrows, Pencil, RotateCcw, Route, Save, Settings2, ShieldCheck, Unplug, X } from 'lucide-react'
 import type { FlowGraph, FlowNode, McpSourceResponse, StudioToolResource } from '../../api.ts'
 import { showToast } from '../../toast.tsx'
-import type { EngineeringNodeView, EngineeringSection } from './engineeringNode.ts'
+import { buildEngineeringRecipe, type EngineeringNodeView, type EngineeringRecipeItem, type EngineeringSection } from './engineeringNode.ts'
 import { connectionStatusLabel, getMcpPresentationMode, mcpPresentationLabel } from './McpDetailTemplates.tsx'
 import type { NodeDraft } from './types.ts'
 
-type InspectorTab = 'overview' | 'schema' | 'bindings' | 'execution' | 'routes' | 'policies' | 'raw' | 'diff'
+type InspectorTab = 'machine' | 'production' | 'contract' | 'fixture' | 'technical'
+type TechnicalView = 'raw' | 'diff'
 
-const TABS: Array<{ id: InspectorTab; label: string }> = [
-  { id: 'overview', label: '概览' },
-  { id: 'schema', label: '数据结构' },
-  { id: 'bindings', label: '绑定' },
-  { id: 'execution', label: '执行' },
-  { id: 'routes', label: '流转' },
-  { id: 'policies', label: '策略' },
-  { id: 'raw', label: '原始 JSON' },
-  { id: 'diff', label: '变更对比' },
+const BASE_TABS: Array<{ id: InspectorTab; label: string }> = [
+  { id: 'machine', label: '节点基础' },
+  { id: 'production', label: '生产配置' },
+  { id: 'contract', label: '数据契约' },
+  { id: 'technical', label: '技术视图' },
 ]
 
 const DRAFT_FIELD_LABELS: Partial<Record<keyof NodeDraft, string>> = {
@@ -24,6 +21,9 @@ const DRAFT_FIELD_LABELS: Partial<Record<keyof NodeDraft, string>> = {
   kind: '处理类别', executor: '执行器', effect: '副作用', next: '下一步', modelRole: '模型角色',
   input: '输入', output: '输出',
 }
+
+const PRIMARY_DRAFT_FIELDS: Array<keyof NodeDraft> = ['title', 'displayName', 'description']
+const ADVANCED_DRAFT_FIELDS: Array<keyof NodeDraft> = ['action', 'type', 'kind', 'executor', 'effect', 'next', 'modelRole', 'input', 'output']
 
 const SECTION_ICONS = {
   inputs: Database,
@@ -95,6 +95,150 @@ function JsonSource({ value }: { value: string }) {
   )
 }
 
+function StructuredValue({ value }: { value: unknown }) {
+  if (Array.isArray(value)) {
+    return (
+      <ol className="cf-engineering-structured-array">
+        {value.map((item, index) => <li key={index}><i>{index + 1}</i><StructuredValue value={item} /></li>)}
+      </ol>
+    )
+  }
+  if (value && typeof value === 'object') {
+    return (
+      <dl className="cf-engineering-structured-object">
+        {Object.entries(value as Record<string, unknown>).map(([key, item]) => (
+          <div key={key}><dt>{key}</dt><dd><StructuredValue value={item} /></dd></div>
+        ))}
+      </dl>
+    )
+  }
+  return <span className="cf-engineering-structured-scalar">{value === null ? 'null' : typeof value === 'boolean' ? String(value) : String(value ?? '')}</span>
+}
+
+type TestFixtureView = {
+  schema: string
+  status: string
+  summary: string
+  payload: unknown
+  consumePath: string
+}
+
+function parseRecord(value: unknown): Record<string, any> | null {
+  if (value && typeof value === 'object' && !Array.isArray(value)) return value as Record<string, any>
+  if (typeof value !== 'string' || !value.trim()) return null
+  try {
+    const parsed = JSON.parse(value)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+function buildTestFixtureView(node: FlowNode): TestFixtureView | null {
+  const raw = parseRecord(node.data) || {}
+  const contract = parseRecord(node.decision_contract) || parseRecord(raw.decision_contract)
+  const fixture = parseRecord(contract?.offline_decision)
+  if (!fixture) return null
+  return {
+    schema: String(fixture.schema || contract?.schema || 'decision_envelope.v1'),
+    status: String(fixture.status || 'resolved'),
+    summary: String(fixture.summary || '未填写样例摘要'),
+    payload: fixture.payload ?? fixture,
+    consumePath: String(contract?.consume?.path || '-'),
+  }
+}
+
+function fixtureValue(value: unknown) {
+  if (typeof value === 'string') return value
+  try { return JSON.stringify(value, null, 2) || '' } catch { return String(value ?? '') }
+}
+
+function TestFixturePanel({ fixture, onCopy }: { fixture: TestFixtureView; onCopy: (value: string, label: string) => void }) {
+  const payloadText = fixtureValue(fixture.payload)
+  return (
+    <section className="cf-engineering-fixture">
+      <header className="cf-engineering-layer-heading">
+        <FlaskConical aria-hidden="true" />
+        <div><strong>测试夹具</strong><span>Mock 模式的确定性样例</span></div>
+        <em>仅测试</em>
+      </header>
+      <section className="cf-engineering-fixture-notice" role="note">
+        <ShieldCheck aria-hidden="true" />
+        <div>
+          <strong>不会发送给真实模型</strong>
+          <p>仅在明确启用 mock_resolved 测试模式时作为固定输出；模型不可用时节点仍会失败，不会把它当作生产结果继续运行。</p>
+        </div>
+      </section>
+      <dl className="cf-engineering-fixture-facts">
+        <div><dt>触发模式</dt><dd>mock_resolved</dd></div>
+        <div><dt>结果状态</dt><dd>{fixture.status}</dd></div>
+        <div><dt>契约</dt><dd>{fixture.schema}</dd></div>
+        <div><dt>消费路径</dt><dd>{fixture.consumePath}</dd></div>
+      </dl>
+      <section className="cf-engineering-fixture-summary">
+        <span>样例摘要</span>
+        <p>{fixture.summary}</p>
+      </section>
+      <section className="cf-engineering-fixture-payload">
+        <header>
+          <div><strong>固定模拟输出</strong><span>{payloadText.length} 字符</span></div>
+          <button type="button" onClick={() => onCopy(payloadText, '测试夹具输出')} title="复制测试夹具输出"><Copy aria-hidden="true" /></button>
+        </header>
+        <div><StructuredValue value={fixture.payload} /></div>
+      </section>
+    </section>
+  )
+}
+
+function productionItemMeta(item: EngineeringRecipeItem) {
+  if (Array.isArray(item.data)) return `${item.data.length} 项`
+  if (item.data && typeof item.data === 'object') return `${Object.keys(item.data as Record<string, unknown>).length} 项`
+  return item.long ? `${item.value.length} 字符` : ''
+}
+
+function ProductionConfiguration({ items, sources, onCopy }: {
+  items: EngineeringRecipeItem[]
+  sources: EngineeringNodeView['remoteSources']
+  onCopy: (value: string, label: string) => void
+}) {
+  const compactItems = items.filter((item) => !item.long && item.data === undefined)
+  const detailItems = items.filter((item) => item.long || item.data !== undefined)
+  return (
+    <section className="cf-engineering-production">
+      <header className="cf-engineering-layer-heading">
+        <Factory aria-hidden="true" />
+        <div><strong>生产配置</strong><span>配方、提示词与信源</span></div>
+        <em>{items.length + sources.length} 项</em>
+      </header>
+      {compactItems.length > 0 && <dl className="cf-engineering-production-facts">
+        {compactItems.map((item) => <div key={item.label}><dt>{item.label}</dt><dd className={item.mono ? 'mono' : undefined}>{item.value}</dd></div>)}
+      </dl>}
+      {detailItems.map((item) => (
+        <section className="cf-engineering-production-detail" key={item.label}>
+          <header>
+            <div><strong>{item.label}</strong><span>{productionItemMeta(item)}</span></div>
+            <button type="button" onClick={() => onCopy(item.value, item.label)} title={`复制${item.label}`}><Copy aria-hidden="true" /></button>
+          </header>
+          {item.data !== undefined ? <StructuredValue value={item.data} /> : <pre>{item.value}</pre>}
+        </section>
+      ))}
+      {sources.length > 0 && <section className="cf-engineering-production-sources">
+        <header><Database aria-hidden="true" /><strong>信源</strong><span>{sources.length}</span></header>
+        <ul>
+          {sources.map((source) => <li key={source.url}>
+            <div><strong>{source.name}</strong><code>{source.url}</code></div>
+            <span>
+              <button type="button" onClick={() => onCopy(source.url, `${source.name} 地址`)} title="复制地址"><Copy aria-hidden="true" /></button>
+              <a href={source.url} target="_blank" rel="noreferrer" title={`打开 ${source.url}`}><ExternalLink aria-hidden="true" /></a>
+            </span>
+          </li>)}
+        </ul>
+      </section>}
+      {!items.length && !sources.length && <div className="cf-engineering-production-empty"><Factory aria-hidden="true" /><strong>这个节点没有生产配置</strong><span>它仅使用节点基础定义和数据契约运行。</span></div>}
+    </section>
+  )
+}
+
 export function EngineeringInspector({ node, graph, view, unlocked, canEdit, onToggleLock, draft, dirty, saving, onDraftChange, onResetDraft, onSaveDraft, stewardTool = 'none', onStewardFieldSelect, mcpTool, mcpSource, mcpLoading = false, onOpenMcp, onOpenMcpSource }: {
   node: FlowNode | null
   graph: FlowGraph
@@ -116,8 +260,9 @@ export function EngineeringInspector({ node, graph, view, unlocked, canEdit, onT
   onOpenMcp?: () => void
   onOpenMcpSource?: () => void
 }) {
-  const [tab, setTab] = useState<InspectorTab>('overview')
-  useEffect(() => { setTab('overview') }, [node?.id])
+  const [tab, setTab] = useState<InspectorTab>('machine')
+  const [technicalView, setTechnicalView] = useState<TechnicalView>('raw')
+  useEffect(() => { setTab('machine'); setTechnicalView('raw') }, [node?.id])
 
   if (!node || !view) {
     return (
@@ -131,19 +276,20 @@ export function EngineeringInspector({ node, graph, view, unlocked, canEdit, onT
 
   const sectionById = new Map(view.sections.map((section) => [section.id, section]))
   const mcpPresentationMode = mcpTool ? getMcpPresentationMode(mcpTool) : null
-  const visibleSections = tab === 'schema'
-    ? ['inputs', 'outputs']
-    : tab === 'overview'
-      ? view.sections.map((section) => section.id)
-      : [tab]
-  const copyRaw = async () => {
+  const recipe = buildEngineeringRecipe(node)
+  const testFixture = buildTestFixtureView(node)
+  const tabs = testFixture
+    ? [...BASE_TABS.slice(0, 3), { id: 'fixture' as const, label: '测试夹具' }, BASE_TABS[3]]
+    : BASE_TABS
+  const copyValue = async (value: string, label: string) => {
     try {
-      await navigator.clipboard.writeText(view.raw)
-      showToast({ title: '节点原始配置已复制', type: 'success' })
+      await navigator.clipboard.writeText(value)
+      showToast({ title: `${label}已复制`, type: 'success' })
     } catch (error: any) {
       showToast({ title: '复制失败', description: error?.message || String(error), type: 'error' })
     }
   }
+  const copyRaw = () => copyValue(view.raw, '节点原始配置')
 
   return (
     <aside className="cf-engineering-inspector">
@@ -157,20 +303,21 @@ export function EngineeringInspector({ node, graph, view, unlocked, canEdit, onT
           <i className={`health-${view.configHealth}`}><Check aria-hidden="true" />{view.configHealthLabel}</i>
           <button
             type="button"
-            className={`cf-engineering-lock ${unlocked ? 'unlocked' : 'locked'}`}
-            onClick={onToggleLock}
-            title={unlocked ? '锁定节点详细设置' : '解锁后编辑节点详细设置'}
-            aria-label={unlocked ? '锁定节点详细设置' : '解锁节点详细设置'}
+            className={`cf-engineering-edit-toggle ${unlocked ? 'editing' : ''}`}
+            onClick={() => { if (!unlocked) setTab('machine'); onToggleLock() }}
+            title={!canEdit ? '该节点由流程边界或工程投影管理，不能直接编辑' : unlocked ? '退出节点编辑' : '编辑节点配置'}
+            aria-label={unlocked ? '退出节点编辑' : '编辑节点配置'}
             aria-pressed={unlocked}
             disabled={!canEdit}
           >
-            {unlocked ? <LockOpen aria-hidden="true" /> : <Lock aria-hidden="true" />}
+            {unlocked ? <X aria-hidden="true" /> : <Pencil aria-hidden="true" />}
+            <span>{unlocked ? '退出编辑' : '编辑'}</span>
           </button>
         </div>
       </header>
 
-      <nav className="cf-engineering-inspector-tabs" aria-label="工程配置检查器">
-        {TABS.map((item) => (
+      <nav className={`cf-engineering-inspector-tabs ${testFixture ? 'has-fixture' : ''}`} aria-label="工程配置检查器">
+        {tabs.map((item) => (
           <button type="button" className={tab === item.id ? 'active' : ''} onClick={() => setTab(item.id)} key={item.id}>{item.label}</button>
         ))}
       </nav>
@@ -182,17 +329,27 @@ export function EngineeringInspector({ node, graph, view, unlocked, canEdit, onT
       </div>
 
       <div className="cf-engineering-inspector-body">
-        {tab === 'overview' && (
+        {tab === 'machine' && (
           <section className="cf-engineering-overview">
+            <header className="cf-engineering-layer-heading">
+              <Settings2 aria-hidden="true" />
+              <div><strong>节点基础</strong><span>机器定义与执行能力</span></div>
+            </header>
             {unlocked && canEdit && draft && onDraftChange && (
               <section className="cf-engineering-direct-editor">
                 <header><Settings2 aria-hidden="true" /><strong>编辑节点配置</strong><span>{dirty ? '有未保存的修改' : '已保存'}</span></header>
                 <div className="cf-engineering-direct-editor-grid">
-                  {(['title', 'displayName', 'description', 'action', 'type', 'kind', 'executor', 'effect', 'next', 'modelRole', 'input', 'output'] as Array<keyof NodeDraft>).map((key) => {
+                  {PRIMARY_DRAFT_FIELDS.map((key) => {
                     const multiline = key === 'description'
                     return <label key={String(key)} className={multiline ? 'wide' : undefined}><span>{DRAFT_FIELD_LABELS[key] || String(key)}</span>{multiline ? <textarea value={String(draft[key] ?? '')} onChange={(event) => onDraftChange({ [key]: event.target.value } as Partial<NodeDraft>)} /> : <input value={String(draft[key] ?? '')} onChange={(event) => onDraftChange({ [key]: event.target.value } as Partial<NodeDraft>)} />}</label>
                   })}
                 </div>
+                <details className="cf-engineering-advanced-editor">
+                  <summary><span>运行与契约字段</span><small>{ADVANCED_DRAFT_FIELDS.length} 项</small></summary>
+                  <div className="cf-engineering-direct-editor-grid">
+                    {ADVANCED_DRAFT_FIELDS.map((key) => <label key={String(key)}><span>{DRAFT_FIELD_LABELS[key] || String(key)}</span><input value={String(draft[key] ?? '')} onChange={(event) => onDraftChange({ [key]: event.target.value } as Partial<NodeDraft>)} /></label>)}
+                  </div>
+                </details>
                 <footer>
                   <button type="button" disabled={!dirty || saving} onClick={onResetDraft}><RotateCcw aria-hidden="true" />重置</button>
                   <button type="button" className="primary" disabled={!dirty || saving} onClick={onSaveDraft}><Save aria-hidden="true" />{saving ? '保存中...' : '保存节点'}</button>
@@ -229,20 +386,39 @@ export function EngineeringInspector({ node, graph, view, unlocked, canEdit, onT
           </section>
         )}
 
-        {(tab === 'overview' || ['schema', 'bindings', 'execution', 'routes', 'policies'].includes(tab)) && visibleSections.map((id) => {
+        {tab === 'machine' && ['execution', 'routes', 'policies'].map((id) => {
           const section = sectionById.get(id as EngineeringSection['id'])
           return section ? <SectionTable section={section} nodeId={node.id} selectable={stewardTool === 'pointer'} onFieldSelect={onStewardFieldSelect} key={section.id} /> : null
         })}
 
-        {tab === 'raw' && <JsonSource value={view.raw} />}
+        {tab === 'production' && <ProductionConfiguration items={recipe} sources={view.remoteSources} onCopy={(value, label) => void copyValue(value, label)} />}
 
-        {tab === 'diff' && (
-          <section className="cf-engineering-diff-empty">
-            <GitCompareArrows aria-hidden="true" />
-            <strong>当前没有待应用的变更</strong>
-            <span>AI 或工程编辑产生补丁后，这里将逐字段显示修改前后内容。</span>
-          </section>
-        )}
+        {tab === 'contract' && <>
+          <header className="cf-engineering-layer-heading cf-engineering-contract-heading">
+            <Database aria-hidden="true" />
+            <div><strong>数据契约</strong><span>输入、输出与绑定关系</span></div>
+          </header>
+          {['inputs', 'outputs', 'bindings'].map((id) => {
+          const section = sectionById.get(id as EngineeringSection['id'])
+          return section ? <SectionTable section={section} nodeId={node.id} selectable={stewardTool === 'pointer'} onFieldSelect={onStewardFieldSelect} key={section.id} /> : null
+          })}
+        </>}
+
+        {tab === 'fixture' && testFixture && <TestFixturePanel fixture={testFixture} onCopy={(value, label) => void copyValue(value, label)} />}
+
+        {tab === 'technical' && <section className="cf-engineering-technical">
+          <nav aria-label="技术视图">
+            <button type="button" className={technicalView === 'raw' ? 'active' : ''} onClick={() => setTechnicalView('raw')}><Braces aria-hidden="true" />原始 JSON</button>
+            <button type="button" className={technicalView === 'diff' ? 'active' : ''} onClick={() => setTechnicalView('diff')}><GitCompareArrows aria-hidden="true" />变更对比</button>
+          </nav>
+          {technicalView === 'raw' ? <JsonSource value={view.raw} /> : (
+            <section className="cf-engineering-diff-empty">
+              <GitCompareArrows aria-hidden="true" />
+              <strong>当前没有待应用的变更</strong>
+              <span>AI 或工程编辑产生补丁后，这里将逐字段显示修改前后内容。</span>
+            </section>
+          )}
+        </section>}
       </div>
 
       <footer className="cf-engineering-inspector-footer">
@@ -250,7 +426,7 @@ export function EngineeringInspector({ node, graph, view, unlocked, canEdit, onT
         <span>输入 <b>{sectionById.get('inputs')?.fields.length || 0}</b></span>
         <span>输出 <b>{sectionById.get('outputs')?.fields.length || 0}</b></span>
         <span>连接 <b>{graph.edges.filter((edge) => edge.from === node.id || edge.to === node.id).length}</b></span>
-        <strong>没有隐藏数据</strong>
+        <strong>{tab === 'production' ? '完整配方' : tab === 'machine' ? '静态定义' : tab === 'contract' ? '数据边界' : tab === 'fixture' ? '测试数据' : '技术数据'}</strong>
       </footer>
     </aside>
   )

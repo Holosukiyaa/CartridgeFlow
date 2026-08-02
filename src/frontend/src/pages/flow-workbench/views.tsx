@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Box, Button } from '../../ui.tsx'
 import { fetchStudioResources } from '../../api.ts'
-import { AlertTriangle, Bot, Braces, ChevronDown, ChevronUp, ClipboardCopy, Copy, Download, FileOutput, History, PanelRight, Pause, PlayCircle, RefreshCw, Square, SquarePen, X } from 'lucide-react'
+import { Activity, AlertTriangle, Bot, ChevronDown, ChevronUp, ClipboardCopy, Copy, Download, FileOutput, History, PanelRight, Pause, PlayCircle, RefreshCw, Square, SquarePen, X } from 'lucide-react'
 import { fetchFlowResourceCatalog, fetchMcpSource, type AIFlowSelection, type AIFlowStewardContext, type FlowAnnotation, type FlowEdge, type FlowEngineeringRelation, type FlowEvent, type FlowFiles, type FlowGraph, type FlowLabDetail, type FlowNode, type McpSourceResponse, type RunResult, type StudioToolResource } from '../../api.ts'
 import type { CreateNodeHandler, DesignDisplayMode, GraphResult, NodeDraft } from './types.ts'
 import { FlowGraphView, type CanvasTool, type ProtocolDisplayInfo } from './FlowGraphView.tsx'
@@ -102,8 +102,17 @@ function RuntimeNodeInspector({ node, state, runEvents, nodeRunStates, graph, on
   const statusLabel = state.status === 'paused' ? '等待人工继续' : state.status === 'running' ? '正在处理' : '正在准备'
   const artifacts = collectNodeArtifacts(state)
   const materialTrail = buildFlowMaterialTrail(graph, runEvents, nodeRunStates, node.id)
-  // The current node is expanded by default; other nodes collapse to a summary
-  // row. Users can manually expand/collapse any node.
+  // Keep the most recent useful output in view. The currently running node is
+  // often still waiting for its input, so making it the only expanded item
+  // hides the material users actually need to inspect.
+  const focusItem = [...materialTrail].reverse().find((item) => item.state.status === 'completed' && (item.state.outputKey || item.state.outputValue))
+    || [...materialTrail].reverse().find((item) => item.state.status === 'completed')
+    || materialTrail.find((item) => item.current)
+    || materialTrail[materialTrail.length - 1]
+  const focusNodeId = focusItem?.node.id || ''
+  const materialTrailForDisplay = focusItem
+    ? [focusItem, ...[...materialTrail].reverse().filter((item) => item.node.id !== focusNodeId)]
+    : materialTrail
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set())
   const [expandedManualIds, setExpandedManualIds] = useState<Set<string>>(new Set())
   const toggleMaterialItem = (nodeId: string, current: boolean) => {
@@ -124,30 +133,38 @@ function RuntimeNodeInspector({ node, state, runEvents, nodeRunStates, graph, on
   return (
     <aside className="cf-runtime-node-inspector" aria-live="polite" aria-label="当前运行节点详情">
       <header>
-        <span className={`cf-runtime-node-status ${state.status}`}><i aria-hidden="true" />{statusLabel}</span>
+        <div className="cf-runtime-layer-line">
+          <span className="cf-runtime-layer-label"><Activity aria-hidden="true" />运行现场</span>
+          <span className={`cf-runtime-node-status ${state.status}`}><i aria-hidden="true" />{statusLabel}</span>
+        </div>
         <div><strong title={view.title}>{view.title}</strong><code>{node.id}</code></div>
       </header>
       <section className="cf-runtime-node-recipe">
-        <span>配方</span>
+        <span>参考配方</span>
         <b>{view.inputs[0]?.label || '输入物料'}</b><em>{'->'}</em><b>{view.kindLabel}</b><em>{'->'}</em><b>{view.outputs[0]?.label || '处理结果'}</b>
       </section>
-      <section className="cf-runtime-node-purpose"><span>正在做什么</span><p>{view.what}</p></section>
+      <section className="cf-runtime-node-purpose"><span>节点任务 · 定义参考</span><p>{view.what}</p></section>
       {materialTrail.length > 0 && (
         <section className="cf-runtime-node-materials">
         <span>物料流转 · 实时</span>
         <ol>
-          {materialTrail.map((item) => {
+          {materialTrailForDisplay.map((item) => {
             const current = item.current
-            const expanded = current ? !collapsedIds.has(item.node.id) : expandedManualIds.has(item.node.id)
-            const summary = item.state.outputKey
-              ? `${item.state.outputKey}: ${compactRuntimeValue(item.state.outputValue, '')}`
-              : item.state.status === 'running' ? '处理中…' : item.state.status
+            const focused = item.node.id === focusNodeId
+            const expanded = focused ? !collapsedIds.has(item.node.id) : expandedManualIds.has(item.node.id)
+            const hasOutput = Boolean(item.state.outputKey || item.state.outputValue)
+            const hasInput = Boolean(item.state.inputKey || item.state.inputValue)
+            const summary = hasOutput
+              ? `${item.state.outputKey || '处理结果'}: ${compactRuntimeValue(item.state.outputValue, '已产出', 120)}`
+              : hasInput
+                ? `${item.state.inputKey || '输入物料'}: ${compactRuntimeValue(item.state.inputValue, '已到达', 120)}`
+                : item.state.status === 'running' ? '等待物料到达 · 处理中…' : item.state.status
             return (
-              <li key={item.node.id} className={`${current ? 'current' : ''} ${expanded ? 'expanded' : 'collapsed'}`}>
+              <li key={item.node.id} className={`${current ? 'current' : ''} ${focused ? 'focus' : ''} ${expanded ? 'expanded' : 'collapsed'}`}>
                 <button
                   type="button"
                   className="cf-runtime-material-toggle"
-                  onClick={() => toggleMaterialItem(item.node.id, current)}
+                  onClick={() => toggleMaterialItem(item.node.id, focused)}
                   aria-expanded={expanded}
                 >
                   <span className="order">{String(item.order).padStart(2, '0')}</span>
@@ -175,8 +192,10 @@ function RuntimeNodeInspector({ node, state, runEvents, nodeRunStates, graph, on
             {onOpenPendingInteraction && <button type="button" onClick={onOpenPendingInteraction}>打开审核</button>}
           </div>
         )}
-        <div><span>当前输入{state.inputKey ? ` · ${state.inputKey}` : ''}</span><pre>{compactRuntimeValue(state.inputValue, '等待上游物料到达', 12000)}</pre></div>
-        <div><span>当前产出{state.outputKey ? ` · ${state.outputKey}` : ''}</span><pre>{compactRuntimeValue(state.outputValue, state.status === 'running' ? '处理尚未完成' : '等待本节点产出', 12000)}</pre></div>
+        {materialTrail.length === 0 && <>
+          <div><span>当前输入{state.inputKey ? ` · ${state.inputKey}` : ''}</span><pre>{compactRuntimeValue(state.inputValue, '等待上游物料到达', 12000)}</pre></div>
+          <div><span>当前产出{state.outputKey ? ` · ${state.outputKey}` : ''}</span><pre>{compactRuntimeValue(state.outputValue, state.status === 'running' ? '处理尚未完成' : '等待本节点产出', 12000)}</pre></div>
+        </>}
         {artifacts.length > 0 && (
           <div className="artifacts"><span>本次产物</span>{artifacts.map((path) => <pre key={path} title={path}>{path}</pre>)}</div>
         )}
@@ -605,7 +624,6 @@ export function DesignView({
       <div className="cf-design-main">
         <div className="cf-design-modebar">
           <div className={`cf-design-canvas-status ${canvasTool === 'connect' ? 'active' : ''}`} aria-live="polite"><i />{canvasTool === 'connect' ? '连线模式' : '选择模式'}</div>
-          <div className="cf-design-view-badge"><Braces aria-hidden="true" />工程视图</div>
           {engineering && <div className="cf-engineering-legend" aria-label="工程关系筛选">
             {([
               ['control', '主流程'],
@@ -674,10 +692,8 @@ export function DesignView({
         unlocked={engineeringUnlocked}
         canEdit={canEditSelectedNode}
         onToggleLock={() => {
-          setEngineeringUnlocked((current) => {
-            if (current) onCloseUnpinnedNodeEditors()
-            return !current
-          })
+          if (engineeringUnlocked) onCloseUnpinnedNodeEditors()
+          setEngineeringUnlocked((current) => !current)
         }}
         draft={selectedNode ? nodeDrafts[selectedNode.id] || makeNodeDraft(selectedNode) : undefined}
         dirty={Boolean(selectedNode && nodeDrafts[selectedNode.id] && JSON.stringify(nodeDrafts[selectedNode.id]) !== JSON.stringify(makeNodeDraft(selectedNode)))}

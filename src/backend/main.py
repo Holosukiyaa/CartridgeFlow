@@ -123,7 +123,10 @@ MAX_CARTRIDGE_TOTAL_UNCOMPRESSED_BYTES = 512 * 1024 * 1024
 def _public_data_path(path: str | Path) -> str:
     """Expose stable logical data paths without leaking a relocated host path."""
     data_root = (ROOT / DATA_ROOT).resolve()
-    relative = Path(path).resolve().relative_to(data_root)
+    try:
+        relative = Path(path).resolve().relative_to(data_root)
+    except ValueError:
+        return str(path)
     return (Path(".data") / relative).as_posix()
 
 
@@ -626,7 +629,7 @@ def get_studio_resources():
 def put_studio_resources(payload: StudioResourcesPayload):
     from core.studio.resources import save_resources
 
-    return {"ok": True, "resources": save_resources(payload.dict())}
+    return {"ok": True, "resources": save_resources(payload.model_dump())}
 
 
 @app.get("/api/studio/environment")
@@ -642,7 +645,7 @@ def create_studio_credential(payload: StudioCredentialPayload):
     from core.studio.environment import upsert_credential
 
     try:
-        item = upsert_credential(payload.dict())
+        item = upsert_credential(payload.model_dump())
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return {"ok": True, "credential": item}
@@ -653,7 +656,7 @@ def update_studio_credential(credential_key: str, payload: StudioCredentialPaylo
     from core.studio.environment import upsert_credential
 
     try:
-        item = upsert_credential(payload.dict(), credential_key)
+        item = upsert_credential(payload.model_dump(), credential_key)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return {"ok": True, "credential": item}
@@ -685,7 +688,7 @@ def list_llm_providers():
 def create_llm_provider(payload: LLMProviderPayload):
     from core.llm.config_manager import public_provider, upsert_provider
     try:
-        item = upsert_provider(payload.dict())
+        item = upsert_provider(payload.model_dump())
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"ok": True, "provider": public_provider(item)}
@@ -694,7 +697,7 @@ def create_llm_provider(payload: LLMProviderPayload):
 @app.put("/api/llm/providers/{provider_id}")
 def update_llm_provider(provider_id: str, payload: LLMProviderPayload):
     from core.llm.config_manager import public_provider, upsert_provider
-    data = payload.dict()
+    data = payload.model_dump()
     data["id"] = provider_id
     try:
         item = upsert_provider(data)
@@ -732,7 +735,7 @@ def get_llm_assignments():
 @app.put("/api/llm/assignments")
 def set_llm_assignments(payload: LLMAssignmentsPayload):
     from core.llm.config_manager import get_assignments, save_assignments
-    save_assignments(payload.dict())
+    save_assignments(payload.model_dump())
     return {"ok": True, "assignments": get_assignments()}
 
 
@@ -2426,7 +2429,7 @@ def create_lab_flow_mcp_tool(cartridge_id: str, payload: McpToolPayload):
         manifest, files = _flow_manifest_files(cartridge_id)
         _ensure_manifest_tool_editor_allowed(manifest)
         tools = manifest.setdefault("mcp_tools", [])
-        tool = _normalize_mcp_tool(payload.dict())
+        tool = _normalize_mcp_tool(payload.model_dump())
         existing_ids = {item.get("id") for item in tools if isinstance(item, dict)}
         base_id = tool["id"]
         index = 2
@@ -2453,7 +2456,7 @@ def update_lab_flow_mcp_tool(cartridge_id: str, tool_id: str, payload: McpToolPa
         tools = manifest.setdefault("mcp_tools", [])
         for index, item in enumerate(tools):
             if isinstance(item, dict) and item.get("id") == tool_id:
-                data = payload.dict()
+                data = payload.model_dump()
                 data["id"] = tool_id
                 tools[index] = _normalize_mcp_tool(data)
                 result = _write_manifest_tools(cartridge_id, files, manifest)
@@ -3432,7 +3435,7 @@ def delete_interaction_sandbox(run_id: str, interaction_id: str):
 def handle_interaction_host_request(run_id: str, interaction_id: str, payload: SandboxHostRequestPayload):
     import hashlib as _hashlib
     try:
-        raw_size = len(json.dumps(payload.dict(by_alias=True), ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+        raw_size = len(json.dumps(payload.model_dump(by_alias=True), ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
         if raw_size > 65536:
             raise HTTPException(status_code=413, detail="Sandbox host message exceeds 64 KiB")
         run = runner.get_run(run_id)

@@ -21,8 +21,10 @@ function countEntries(value: unknown) {
   return value && typeof value === 'object' && !Array.isArray(value) ? Object.keys(value).length : 0
 }
 
+const ENGINEERING_RESOURCE_PREFIX = '__engineering_resource__:'
+
 function isEngineeringResource(node: FlowNode) {
-  return node.scope === 'engineering_resource' || Boolean(node.params?.engineering_resource)
+  return node.scope === 'engineering_resource' || node.id.startsWith(ENGINEERING_RESOURCE_PREFIX)
 }
 
 function isBoundaryNodeForDimensions(node: FlowNode) {
@@ -57,8 +59,7 @@ function estimateEngineeringRecipeHeight(node: FlowNode): number {
   const wrapRows = (value: unknown) => {
     if (value == null) return 0
     const text = typeof value === 'string' ? value : JSON.stringify(value)
-    // dd clamps at 4 lines (see .cf-engineering-recipe dd -webkit-line-clamp);
-    // values may contain explicit newlines (multi-line prompts).
+    // Canvas recipe values are summaries, not full prompt/source documents.
     const lines = text.split('\n').slice(0, 4)
     const rows = lines.reduce((sum, line) => sum + Math.max(1, Math.ceil(line.length / 20)), 0)
     return Math.min(4, rows)
@@ -68,17 +69,17 @@ function estimateEngineeringRecipeHeight(node: FlowNode): number {
     rows += 2 // 模型角色 + 模型参数
     const system = raw.system_prompt || params.system_prompt
     const prompt = raw.prompt || params.prompt || params.target || params.format
-    if (system) rows += wrapRows(system)
-    if (prompt) rows += wrapRows(prompt)
+    if (system) rows += 2
+    if (prompt) rows += 3
     const contract = node.decision_contract as { consume?: { path?: string } } | undefined
     if (contract?.consume?.path) rows += 1 // 输出结构
   } else if (action === 'tool_call' || action === 'remote_call' || action === 'mcp_read') {
     const tools = [node.tool_binding, node.mcp_binding, node.allowed_tools].filter(Boolean)
     rows += 1 // 调用工具
     if (tools.length) rows += Math.ceil(String(tools[0]).length / 24)
-    // 信源地址（studio 资源解析后每个工具渲染 name+url 两行）
+    // 信源在节点卡上只显示数量和名称摘要，完整 URL 位于详情面板。
     const toolList = Array.isArray(params.tools) ? params.tools : []
-    if (toolList.length) rows += toolList.length * 2
+    if (toolList.length) rows += 2
     if (params.resource_role || node.tool_binding) rows += 1 // 资源角色
     if (node.endpoint || params.endpoint) rows += 1 // 远端地址
     if (node.timeout_ms) rows += 1 // 超时
@@ -95,7 +96,7 @@ function estimateEngineeringRecipeHeight(node: FlowNode): number {
   } else if (action === 'collect_artifacts') {
     rows += 1 + wrapRows(params.input) + 1 // 输入来源(可长) + 交付输出
   } else {
-    rows += 1 + wrapRows(params) // 参数 JSON
+    if (Object.keys(params).length) rows += 1 + wrapRows(params) // 参数摘要
   }
   if (rows <= 0) return 0
   return 36 + rows * 19 // title/padding base + row height (dd 11px/1.5 + dl gap)

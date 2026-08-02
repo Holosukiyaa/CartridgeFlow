@@ -248,10 +248,40 @@
   display: grid;
   gap: 4px;
 }
-.cf-pending-review-content > span {
+.cf-pending-review-head {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.cf-pending-review-head > span {
   color: #6b7882;
   font-size: 11px;
   font-weight: 720;
+}
+.cf-pending-review-actions {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px;
+}
+.cf-pending-review-actions button {
+  min-height: 26px;
+  padding: 3px 8px;
+  border: 1px solid #d9c8bc;
+  border-radius: 4px;
+  background: #fff;
+  color: #6e625a;
+  font-size: 11px;
+  cursor: pointer;
+}
+.cf-pending-review-actions button.active,
+.cf-pending-review-actions button:hover {
+  border-color: #c46f35;
+  background: #fff2e8;
+  color: #994821;
 }
 .cf-pending-review-content pre {
   margin: 0;
@@ -265,6 +295,14 @@
   font: 11px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+.cf-pending-review-frame {
+  width: 100%;
+  height: clamp(220px, 42vh, 430px);
+  min-height: 220px;
+  border: 1px solid #e1e7e8;
+  border-radius: 5px;
+  background: #fff;
 }
 .cf-pending-card {
   display: flex;
@@ -480,7 +518,7 @@
   flex: 0 0 auto;
   min-height: 44px;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
   padding: 10px 12px;
@@ -488,11 +526,20 @@
 }
 
 .cf-pending-modal-head strong {
+  flex: 1 1 auto;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.4;
   font-size: 14px;
+}
+.cf-pending-modal-head > span {
+  flex: 0 1 150px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .cf-pending-modal-head button {
@@ -1070,7 +1117,7 @@
   min-width: 0;
   min-height: 58px;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
   padding: 10px 14px;
   border-radius: 7px;
@@ -1120,15 +1167,18 @@
 
 .cf-run-status-copy > span {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  max-height: 3.2em;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   font-size: 12px;
+  line-height: 1.45;
 }
 
 .cf-run-status-actions {
   flex: 0 0 auto;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 7px;
 }

@@ -65,12 +65,16 @@ function knownContractReason(tool: StudioToolResource) {
   return '未提供可读取实现或可验证连接契约，内部实现不可观测。'
 }
 
+function hasContractValue(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false
+  return Object.keys(value as Record<string, unknown>).length > 0
+}
+
 function JsonContract({ label, value }: { label: string; value: unknown }) {
-  const text = value && typeof value === 'object' && Object.keys(value as Record<string, unknown>).length
-    ? JSON.stringify(value, null, 2)
-    : '未声明'
+  if (!hasContractValue(value)) return null
+  const text = JSON.stringify(value, null, 2)
   return (
-    <section className="cf-engineering-inspector-section">
+    <section className="cf-engineering-inspector-section cf-mcp-schema-contract">
       <header><Workflow aria-hidden="true" /><strong>{label}</strong></header>
       <pre className="cf-engineering-json" aria-label={label}>{text}</pre>
     </section>
@@ -79,7 +83,7 @@ function JsonContract({ label, value }: { label: string; value: unknown }) {
 
 function DetailSummary({ title, icon: Icon, children }: { title: string; icon: LucideIcon; children: ReactNode }) {
   return (
-    <section className="cf-engineering-mcp-summary">
+    <section className="cf-engineering-mcp-summary cf-mcp-detail-card">
       <header><Icon aria-hidden="true" /><strong>{title}</strong></header>
       {children}
     </section>
@@ -110,10 +114,14 @@ export function ExternalMcpDetailTemplate({
   const health = connectionHealth || tool.health?.connection
   const run = tool.health?.run
   const serverTool = [contract?.server || tool.server, contract?.tool || tool.tool].filter(Boolean).join(' / ') || '未声明'
+  const hasInputSchema = hasContractValue(contract?.input_schema)
+  const hasOutputSchema = hasContractValue(contract?.output_schema)
+  const connectionObserved = Boolean(health?.checked_at || (health?.status && !['not_checked', 'not_applicable'].includes(health.status)))
+  const runObserved = Boolean(run?.last_run_at || (run?.status && run.status !== 'not_observed'))
 
   if (tab === 'contract') {
     return (
-      <div className="cf-mcp-detail-template" aria-label="调用契约">
+      <div className="cf-mcp-detail-template contract" aria-label="调用契约">
         {notice && <p role="alert">{notice}</p>}
         <DetailSummary title="调用契约" icon={ShieldCheck}>
           <DetailValue label="服务 / 工具" value={serverTool} />
@@ -125,48 +133,59 @@ export function ExternalMcpDetailTemplate({
         </DetailSummary>
         <JsonContract label="输入参数 Schema" value={contract?.input_schema} />
         <JsonContract label="输出 Schema" value={contract?.output_schema} />
+        {!hasInputSchema && !hasOutputSchema && <section className="cf-mcp-contract-empty">
+          <Workflow aria-hidden="true" />
+          <strong>未声明输入/输出 Schema</strong>
+          <span>当前调用仍受服务、权限、超时与副作用约束。</span>
+        </section>}
       </div>
     )
   }
 
   if (tab === 'runs') {
     return (
-      <div className="cf-mcp-detail-template" aria-label="运行轨迹">
+      <div className="cf-mcp-detail-template runs" aria-label="检查记录">
         {notice && <p role="alert">{notice}</p>}
-        <DetailSummary title="连通性检查" icon={RadioTower}>
-          <DetailValue label="状态" value={connectionStatusLabel(health?.status)} />
-          <DetailValue label="最近检查" value={formatTime(health?.checked_at)} />
-          <DetailValue label="检查器" value={health?.adapter || '暂无记录'} />
-          <DetailValue label="可重试" value={health?.retryable === true ? '可以' : health?.retryable === false ? '不可以' : '未知'} />
-          <DetailValue label="错误代码" value={health?.code || '暂无记录'} />
-          <footer><button type="button" disabled={checking} onClick={onCheckConnectivity}><TimerReset aria-hidden="true" />{checking ? '检查中...' : '测试连接'}</button></footer>
-        </DetailSummary>
-        <DetailSummary title="运行轨迹" icon={Workflow}>
-          <DetailValue label="状态" value={runStatusLabel(run?.status)} />
-          <DetailValue label="最近调用" value={formatTime(run?.last_run_at)} />
-          <DetailValue label="不可观测原因" value="当前连接器未提供公开运行遥测。" />
-          <DetailValue label="轨迹代码" value={run?.code || 'RUN_TELEMETRY_UNAVAILABLE'} />
-        </DetailSummary>
+        {!connectionObserved && !runObserved ? <section className="cf-mcp-check-empty">
+          <RadioTower aria-hidden="true" />
+          <strong>尚未检查连接</strong>
+          <span>先验证当前端点与认证配置是否可用。</span>
+          <button type="button" disabled={checking} onClick={onCheckConnectivity}><TimerReset aria-hidden="true" />{checking ? '检查中...' : '测试连接'}</button>
+        </section> : <>
+          {connectionObserved && <DetailSummary title="连接检查" icon={RadioTower}>
+            <DetailValue label="状态" value={connectionStatusLabel(health?.status)} />
+            <DetailValue label="最近检查" value={formatTime(health?.checked_at)} />
+            {health?.adapter && <DetailValue label="检查器" value={health.adapter} />}
+            {health?.retryable !== undefined && <DetailValue label="可重试" value={health.retryable ? '可以' : '不可以'} />}
+            {health?.code && <DetailValue label="错误代码" value={health.code} />}
+            <footer><button type="button" disabled={checking} onClick={onCheckConnectivity}><TimerReset aria-hidden="true" />{checking ? '检查中...' : '重新检查'}</button></footer>
+          </DetailSummary>}
+          {runObserved ? <DetailSummary title="运行记录" icon={Workflow}>
+            <DetailValue label="状态" value={runStatusLabel(run?.status)} />
+            <DetailValue label="最近调用" value={formatTime(run?.last_run_at)} />
+            {run?.code && <DetailValue label="轨迹代码" value={run.code} />}
+          </DetailSummary> : <section className="cf-mcp-run-empty"><Workflow aria-hidden="true" /><span>尚无工具运行记录</span></section>}
+        </>}
       </div>
     )
   }
 
   return (
-    <div className="cf-mcp-detail-template" aria-label="连接详情">
+    <div className="cf-mcp-detail-template connection" aria-label="连接详情">
       {notice && <p role="alert">{notice}</p>}
       <DetailSummary title="连接详情" icon={RadioTower}>
         <DetailValue label="连接器身份" value={connector?.identity || tool.resource_id || tool.id} />
         <DetailValue label="服务 / 工具" value={serverTool} />
-        <DetailValue label="端点引用" value={connector?.endpoint?.reference || '未配置'} />
-        <DetailValue label="OpenAPI 引用" value={connector?.openapi?.reference || '未配置'} />
-        <DetailValue label="传输方式" value={connector?.endpoint?.transport || connector?.command?.transport || '未声明'} />
-        <DetailValue label="命令引用" value={connector?.command?.reference || '未配置'} />
+        {connector?.endpoint?.reference && <DetailValue label="端点引用" value={connector.endpoint.reference} />}
+        {connector?.openapi?.reference && <DetailValue label="OpenAPI 引用" value={connector.openapi.reference} />}
+        {(connector?.endpoint?.transport || connector?.command?.transport) && <DetailValue label="传输方式" value={connector?.endpoint?.transport || connector?.command?.transport} />}
+        {connector?.command?.reference && <DetailValue label="命令引用" value={connector.command.reference} />}
         <DetailValue label="连接状态" value={connectionStatusLabel(connectionHealth?.status || tool.health?.connection?.status)} />
       </DetailSummary>
       <DetailSummary title="认证与访问" icon={KeyRound}>
-        <DetailValue label="认证引用" value={connector?.authentication?.reference || '无需认证'} />
+        {connector?.authentication?.reference && <DetailValue label="认证引用" value={connector.authentication.reference} />}
         <DetailValue label="认证状态" value={authenticationStatusLabel(connector?.authentication?.status)} />
-        <DetailValue label="权限范围" value={(contract?.permissions || []).join(', ') || '未声明'} />
+        {Boolean(contract?.permissions?.length) && <DetailValue label="权限范围" value={(contract?.permissions || []).join(', ')} />}
         <DetailValue label="透明度" value={tool.transparency || 'unknown'} />
       </DetailSummary>
     </div>
@@ -176,8 +195,10 @@ export function ExternalMcpDetailTemplate({
 export function UnauditableMcpDetailTemplate({ tool, notice }: { tool: StudioToolResource; notice?: string }) {
   const contract = tool.contract
   const serverTool = [contract?.server || tool.server, contract?.tool || tool.tool].filter(Boolean).join(' / ') || '未声明'
+  const hasInputSchema = hasContractValue(contract?.input_schema)
+  const hasOutputSchema = hasContractValue(contract?.output_schema)
   return (
-    <div className="cf-mcp-detail-template" aria-label="已知契约">
+    <div className="cf-mcp-detail-template contract unauditable" aria-label="已知契约">
       {notice && <p role="alert">{notice}</p>}
       <DetailSummary title="已知契约" icon={ShieldCheck}>
         <DetailValue label="服务 / 工具" value={serverTool} />
@@ -188,6 +209,7 @@ export function UnauditableMcpDetailTemplate({ tool, notice }: { tool: StudioToo
       </DetailSummary>
       <JsonContract label="已知输入 Schema" value={contract?.input_schema} />
       <JsonContract label="已知输出 Schema" value={contract?.output_schema} />
+      {!hasInputSchema && !hasOutputSchema && <section className="cf-mcp-contract-empty"><Workflow aria-hidden="true" /><strong>未声明输入/输出 Schema</strong><span>当前只能核对已知调用边界。</span></section>}
       <section className="cf-mcp-transparency-empty"><CircleAlert aria-hidden="true" />当前 MCP 不可审计，不显示源码编辑器或内部操作图。</section>
     </div>
   )

@@ -694,17 +694,29 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
             autoLayoutOnMount={shouldAutoLayoutNewFlow(flowId)}
             onAutoLayoutComplete={() => clearNewFlowAutoLayout(flowId)}
             onLayoutSave={async (layout) => {
-              const result = await saveFlowLayout(flowId, files, layout)
-              setFiles(result.files)
-              setDetail((prev) => prev ? { ...prev, graph: result.graph } : prev)
+              try {
+                const result = await saveFlowLayout(flowId, files, layout)
+                setFiles(result.files)
+                setDetail((prev) => prev ? { ...prev, graph: result.graph } : prev)
+              } catch (error: any) {
+                showToast({ title: '布局保存失败', description: error?.message || String(error), type: 'error' })
+              }
             }}
             onEdgesSave={async (edges) => {
-              const result = await saveFlowEdges(flowId, files, edges)
-              updateGraphResult(result)
+              try {
+                const result = await saveFlowEdges(flowId, files, edges)
+                updateGraphResult(result)
+              } catch (error: any) {
+                showToast({ title: '保存连线失败', description: error?.message || String(error), type: 'error' })
+              }
             }}
             onAnnotationsSave={async (annotations: FlowAnnotation[]) => {
-              const result = await saveFlowAnnotations(flowId, annotations)
-              updateGraphResult(result)
+              try {
+                const result = await saveFlowAnnotations(flowId, annotations)
+                updateGraphResult(result)
+              } catch (error: any) {
+                showToast({ title: '注释保存失败', description: error?.message || String(error), type: 'error' })
+              }
             }}
             onCreateNode={createCategoryNode}
             onFilesChange={setFiles}

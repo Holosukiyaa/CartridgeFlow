@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Braces, Code2, FileCode2, Save, ShieldCheck, X } from 'lucide-react'
+import { Braces, Code2, FileCode2, History, RadioTower, Save, ShieldCheck, X } from 'lucide-react'
 import { checkFlowResourceConnectivity, fetchFlowResourceDetail, replaceMcpSource, type McpConnectionHealth, type McpSourceEditResponse, type McpSourceResponse, type StudioToolResource } from '../../api.ts'
 import { ExternalMcpDetailTemplate, getMcpPresentationMode, mcpPresentationLabel, UnauditableMcpDetailTemplate, type ExternalMcpDetailTab } from './McpDetailTemplates.tsx'
 
@@ -106,7 +106,7 @@ export function McpTransparencyOverlay({ flowId, tool, source, loading, error, i
   }
 
   return (
-    <section className="cf-mcp-transparency-overlay" aria-label={localParsable ? 'MCP 内部流程' : externalConnector ? '外部 MCP 连接详情' : '不可审计 MCP 已知契约'}>
+    <section className={`cf-mcp-transparency-overlay mode-${presentationMode}`} aria-label={localParsable ? 'MCP 内部流程' : externalConnector ? '外部 MCP 连接详情' : '不可审计 MCP 已知契约'}>
       <header>
         <div><Braces aria-hidden="true" /><div><strong>{displayedTool.name || 'MCP 工具'}</strong><code>{localParsable ? displayedTool.transparency || 'unknown' : mcpPresentationLabel(displayedTool)}</code></div></div>
         <button type="button" onClick={onClose} title={localParsable ? '收起内部流程' : '关闭详情'}><X aria-hidden="true" /></button>
@@ -138,13 +138,12 @@ export function McpTransparencyOverlay({ flowId, tool, source, loading, error, i
         <footer><span>解析：<b>{parseStatusLabel(source, tool)}</b></span><span>{graph.operations.length} 个操作</span><span>{graph.edges.length} 条连线</span><span>{graph.fallbacks.length} 条备用路径</span></footer>
       </> : <>
         {externalConnector ? <nav aria-label="外部 MCP 详情内容">
-          <button type="button" className={externalTab === 'connection' ? 'active' : ''} onClick={() => setExternalTab('connection')}><Braces aria-hidden="true" />连接详情</button>
+          <button type="button" className={externalTab === 'connection' ? 'active' : ''} onClick={() => setExternalTab('connection')}><RadioTower aria-hidden="true" />连接</button>
           <button type="button" className={externalTab === 'contract' ? 'active' : ''} onClick={() => setExternalTab('contract')}><FileCode2 aria-hidden="true" />调用契约</button>
-          <button type="button" className={externalTab === 'runs' ? 'active' : ''} onClick={() => setExternalTab('runs')}><Code2 aria-hidden="true" />运行轨迹</button>
+          <button type="button" className={externalTab === 'runs' ? 'active' : ''} onClick={() => setExternalTab('runs')}><History aria-hidden="true" />检查记录</button>
           <span>{[displayedTool.server, displayedTool.tool].filter(Boolean).join(' / ') || '未声明服务与工具'}</span>
         </nav> : <nav aria-label="不可审计 MCP 详情内容"><button type="button" className="active"><ShieldCheck aria-hidden="true" />已知契约</button><span>{[displayedTool.server, displayedTool.tool].filter(Boolean).join(' / ') || '未声明服务与工具'}</span></nav>}
-        {detailLoading ? <div className="cf-mcp-transparency-empty">正在读取已脱敏的资源详情...</div> : <div className="cf-mcp-operation-canvas">{externalConnector ? <ExternalMcpDetailTemplate tool={displayedTool} tab={externalTab} connectionHealth={displayedConnectionHealth} checking={checkingConnectivity} onCheckConnectivity={() => void testConnectivity()} notice={[detailError, connectivityError].filter(Boolean).join(' ')} /> : <UnauditableMcpDetailTemplate tool={displayedTool} notice={detailError} />}</div>}
-        <footer>{externalConnector ? <><span>连接：<b>{displayedConnectionHealth?.status === 'healthy' ? '连接正常' : displayedConnectionHealth?.status === 'unhealthy' ? '连接异常' : '尚未检查'}</b></span><span>运行：<b>未观测</b></span></> : <><span>透明度：<b>{displayedTool.transparency || 'unknown'}</b></span><span>内部实现不可观测</span></>}</footer>
+        {detailLoading ? <div className="cf-mcp-transparency-empty">正在读取已脱敏的资源详情...</div> : <div className="cf-mcp-operation-canvas cf-mcp-detail-canvas">{externalConnector ? <ExternalMcpDetailTemplate tool={displayedTool} tab={externalTab} connectionHealth={displayedConnectionHealth} checking={checkingConnectivity} onCheckConnectivity={() => void testConnectivity()} notice={[detailError, connectivityError].filter(Boolean).join(' ')} /> : <UnauditableMcpDetailTemplate tool={displayedTool} notice={detailError} />}</div>}
       </>}
     </section>
   )

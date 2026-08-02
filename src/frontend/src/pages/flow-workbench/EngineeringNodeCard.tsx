@@ -1,24 +1,11 @@
-import { memo, type ReactNode } from 'react'
+import { memo } from 'react'
 import { AlertTriangle, Bot, Box, Check, CircleDot, Cloud, Database, FileCode2, LoaderCircle, PanelTop, Play, Route, ShieldCheck, Wrench } from 'lucide-react'
 import { Handle, Position } from '@xyflow/react'
 import type { FlowNode } from '../../api.ts'
 import { getNodePalette } from './nodeModel.ts'
 import type { NodeRunState } from './runState.ts'
 import type { PortCounts } from './FlowNodePorts.tsx'
-import { buildEngineeringRecipe, engineeringControlHandleId, engineeringHandleId, type EngineeringNodeRenderModel } from './engineeringNode.ts'
-
-// Break long URLs at punctuation (/, ., ?, &, =, #, -, _) so the browser wraps
-// at natural boundaries instead of splitting a hostname mid-word.
-function insertUrlBreaks(url: string): ReactNode[] {
-  const parts = url.split(/([\/\.?&=#_-])/g)
-  const nodes: ReactNode[] = []
-  parts.forEach((part, index) => {
-    if (!part) return
-    nodes.push(part)
-    if (index < parts.length - 1) nodes.push(<wbr key={`w${index}`} />)
-  })
-  return nodes
-}
+import { buildEngineeringRecipe, engineeringControlHandleId, engineeringHandleId, summarizeEngineeringRecipeItem, type EngineeringNodeRenderModel } from './engineeringNode.ts'
 
 function NodeKindIcon({ iconKey }: { iconKey: string }) {
   if (iconKey === 'start') return <Play aria-hidden="true" />
@@ -158,16 +145,17 @@ export const EngineeringNodeCard = memo(function EngineeringNodeCard({
             {recipe.map((item) => (
               <div key={item.label} title={item.value}>
                 <dt>{item.label}</dt>
-                <dd className={`${item.mono ? 'mono' : ''}${item.long ? ' long' : ''}`}>{item.value}</dd>
+                <dd className={`${item.mono ? 'mono' : ''}${item.long ? ' long' : ''}`}>{summarizeEngineeringRecipeItem(item)}</dd>
               </div>
             ))}
           </dl>
           {view.remoteSources && view.remoteSources.length > 0 && (
             <div className="cf-engineering-recipe-sources">
-              <dt>信源地址</dt>
-              {view.remoteSources.map((source) => (
-                <dd key={source.url} className="source" title={`${source.name} · ${source.url}`}><b>{source.name}</b><code>{insertUrlBreaks(source.url)}</code></dd>
-              ))}
+              <span>信源</span>
+              <div title={view.remoteSources.map((source) => source.name).join('、')}>
+                <strong>{view.remoteSources.length} 个地址已配置</strong>
+                <small>{view.remoteSources.map((source) => source.name).join('、')}</small>
+              </div>
             </div>
           )}
         </section>

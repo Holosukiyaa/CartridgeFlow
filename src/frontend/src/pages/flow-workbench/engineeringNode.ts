@@ -769,17 +769,34 @@ export function buildEngineeringNodeModels(
 export type EngineeringRecipeItem = {
   label: string
   value: string
+  data?: unknown
   mono?: boolean
-  /** Long/prose values (prompts, JSON, URLs) get a distinct text-block style. */
+  /** Long/prose values are summarized on the canvas but remain complete in the inspector. */
   long?: boolean
 }
 
-function recipeValue(value: unknown, limit = 5000): string {
+function recipeValue(value: unknown): string {
   if (value === undefined || value === null) return ''
-  const text = typeof value === 'string' ? value : JSON.stringify(value)
-  if (!text) return ''
-  const normalized = text.replace(/\s+/g, ' ').trim()
-  return normalized.length > limit ? `${normalized.slice(0, limit)}...` : normalized
+  if (typeof value === 'string') return value.trim()
+  try {
+    return JSON.stringify(value, null, 2)
+  } catch {
+    return String(value)
+  }
+}
+
+export function summarizeEngineeringRecipeItem(item: EngineeringRecipeItem, limit = 92): string {
+  if (item.data && typeof item.data === 'object') {
+    const count = Array.isArray(item.data) ? item.data.length : Object.keys(item.data as Record<string, unknown>).length
+    const keys = Array.isArray(item.data)
+      ? []
+      : Object.keys(item.data as Record<string, unknown>).slice(0, 3)
+    return `${count} 项${keys.length ? ` · ${keys.join(' / ')}` : ''}`
+  }
+  const normalized = item.value.replace(/\s+/g, ' ').trim()
+  if (!normalized) return ''
+  const prefix = normalized.length > limit ? `${normalized.slice(0, limit)}...` : normalized
+  return item.long ? `${normalized.length} 字符 · ${prefix}` : prefix
 }
 
 function recipeTools(node: FlowNode): string[] {
@@ -800,7 +817,13 @@ export function buildEngineeringRecipe(node: FlowNode): EngineeringRecipeItem[] 
   const items: EngineeringRecipeItem[] = []
   const push = (label: string, value: unknown, mono = false) => {
     const text = recipeValue(value)
-    if (text) items.push({ label, value: text, mono, long: text.length > 80 || text.includes('\n') })
+    if (text) items.push({
+      label,
+      value: text,
+      data: typeof value === 'object' && value !== null ? value : undefined,
+      mono,
+      long: text.length > 80 || text.includes('\n'),
+    })
   }
 
   if (action === 'llm_prompt') {
@@ -832,7 +855,7 @@ export function buildEngineeringRecipe(node: FlowNode): EngineeringRecipeItem[] 
   } else if (action === 'collect_inputs') {
     push('采集字段', Array.isArray(params.fields) ? params.fields.join('、') : params.fields, true)
     const defaults = params.defaults as Record<string, unknown> | undefined
-    if (defaults) push('默认值', JSON.stringify(defaults), true)
+    if (defaults) push('默认值', defaults, true)
   } else if (action === 'confirm_checkpoint') {
     const interaction = params.interaction as { store_key?: string; prompt?: string } | undefined
     push('审核键', interaction?.store_key || params.output, true)
@@ -843,7 +866,7 @@ export function buildEngineeringRecipe(node: FlowNode): EngineeringRecipeItem[] 
   } else {
     const tools = recipeTools(node)
     if (tools.length) push('绑定工具', tools.join('、'), true)
-    push('参数', params, true)
+    if (Object.keys(params).length) push('参数配置', params, true)
   }
   return items
 }

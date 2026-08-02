@@ -304,7 +304,8 @@ class LabNodeExecutor:
         params = dict(params)
         preset_config = dict(params.get("preset_config") or {})
         mcp_binding = params.get("mcp_binding") if isinstance(params.get("mcp_binding"), dict) else {}
-        allowed_tools = self._split_keys(params.get("allowed_tools")) or self._split_keys(mcp_binding.get("allowed_tools"))
+        param_tools = params.get("allowed_tools")
+        allowed_tools = self._split_keys(param_tools) if param_tools is not None else self._split_keys(mcp_binding.get("allowed_tools"))
         if not allowed_tools:
             raise NodeActionError("FLOW_CONTRACT_INVALID", f"{kind} requires allowed_tools before execution")
 
@@ -1162,15 +1163,25 @@ class LabNodeExecutor:
             preset_config.get("focus") or
             "你是一个可靠的助手，请根据上下文完成任务。"
         )
-        prompt_template = (
-            params.get("prompt") or
-            preset_config.get("target") or
-            preset_config.get("format") or
-            preset_config.get("from_to") or
-            params.get("description") or
-            ""
-        )
-        model_role = params.get("model_role") or run.get("inputs", {}).get("model_role") or "runtime"
+        if "prompt" in params:
+            prompt_template = params.get("prompt")
+        elif "target" in preset_config:
+            prompt_template = preset_config.get("target")
+        elif "format" in preset_config:
+            prompt_template = preset_config.get("format")
+        elif "from_to" in preset_config:
+            prompt_template = preset_config.get("from_to")
+        elif params.get("description"):
+            prompt_template = params.get("description")
+        else:
+            prompt_template = (
+                (run.get("inputs") or {}).get("prompt") or
+                (run.get("inputs") or {}).get("task_description") or
+                ""
+            )
+        if prompt_template is None:
+            prompt_template = ""
+        model_role = params.get("model_role") or (run.get("inputs") or {}).get("model_role") or "runtime"
 
         optional_input_key = params.get("optional_input") or preset_config.get("optional_input")
         context_parts = []
@@ -1181,12 +1192,6 @@ class LabNodeExecutor:
             if optional_context:
                 context_parts.append(optional_context)
         context_text = "\n\n".join(item for item in context_parts if item)
-        if not prompt_template:
-            prompt_template = (
-                run.get("inputs", {}).get("prompt") or
-                run.get("inputs", {}).get("task_description") or
-                "请根据上下文完成任务。"
-            )
         final_prompt = f"{context_text}\n\n{prompt_template}".strip() if context_text else prompt_template
 
         used_llm = False
@@ -2153,9 +2158,9 @@ class LabNodeExecutor:
             raise RuntimeError(f"{label} failed: {detail[:500]}")
 
     def _video_title(self, brief: str) -> str:
-        titled = re.search(r"视频标题[^\n]*\n+(?:\s*\*\*)?([^\n*]+)", brief)
+        titled = re.search(r"视频标题[^\n]*\n+(?:\s*\*\*)?([^\n]+)", brief)
         if titled:
-            return titled.group(1).strip().strip("「」\"'")[:52]
+            return titled.group(1).strip().strip("「」\"'*")[:52]
         for line in brief.splitlines():
             cleaned = re.sub(r"^[#>*\s]+|[*`]+$", "", line).strip()
             cleaned = re.sub(r"^[^\w\u4e00-\u9fff]+", "", cleaned)

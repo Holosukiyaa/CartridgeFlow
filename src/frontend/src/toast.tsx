@@ -21,27 +21,21 @@ export function showToast(options: { title: string; description?: string; type?:
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([])
 
-  const addToast = useCallback((t: Omit<ToastItem, 'id'>) => {
-    const id = ++_nextId
-    setToasts((prev) => [...prev, { ...t, id }])
-  }, [])
-
   const removeToast = useCallback((id: number) => {
     setToasts((prev) => prev.filter((x) => x.id !== id))
   }, [])
+
+  // 自动移除过期 toast：每个新 toast 在添加时独立设定时器
+  const addToast = useCallback((t: Omit<ToastItem, 'id'>) => {
+    const id = ++_nextId
+    setToasts((prev) => [...prev, { ...t, id }])
+    window.setTimeout(() => removeToast(id), 3000)
+  }, [removeToast])
 
   useEffect(() => {
     _globalAdd = addToast
     return () => { _globalAdd = null }
   }, [addToast])
-
-  // 自动移除过期 toast
-  useEffect(() => {
-    if (toasts.length === 0) return
-    const latest = toasts[toasts.length - 1]
-    const timer = setTimeout(() => removeToast(latest.id), 3000)
-    return () => clearTimeout(timer)
-  }, [toasts, removeToast])
 
   const colorMap: Record<string, string> = {
     success: '#eef7ef', error: '#fff4ee', info: '#fffaf5', warning: '#fef9f0', loading: '#fffaf5',

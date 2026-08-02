@@ -94,7 +94,7 @@ export function Heading({ children, size, className, mb, mt, color }: WithChildr
   const s: CSSProperties = {}
   if (mb !== undefined) s.marginBottom = typeof mb === 'number' ? `${mb * 4}px` : mb
   if (mt !== undefined) s.marginTop = typeof mt === 'number' ? `${mt * 4}px` : mt
-  if (color) s.color = color
+  if (color) { const c = color.trim(); s.color = c; if (c === 'fg.muted') s.color = 'var(--cf-text-dim)'; if (c === 'fg.error') s.color = 'var(--cf-red)'; if (c === 'fg.success') s.color = 'var(--cf-green)' }
   return React.createElement(Tag, { className, style: s }, children)
 }
 
@@ -106,7 +106,7 @@ export function Text({ children, className, fontSize, fontWeight, color, mb, mt,
   const s: CSSProperties = { ...style }
   if (fontSize) s.fontSize = fontSize
   if (fontWeight) s.fontWeight = fontWeight
-  if (color) { s.color = color; if (color === 'fg.muted') s.color = 'var(--cf-text-dim)'; if (color === 'fg.error') s.color = 'var(--cf-red)'; if (color === 'fg.success') s.color = 'var(--cf-green)' }
+  if (color) { const c = color.trim(); s.color = c; if (c === 'fg.muted') s.color = 'var(--cf-text-dim)'; if (c === 'fg.error') s.color = 'var(--cf-red)'; if (c === 'fg.success') s.color = 'var(--cf-green)' }
   if (mb !== undefined) s.marginBottom = typeof mb === 'number' ? `${mb * 4}px` : mb
   if (mt !== undefined) s.marginTop = typeof mt === 'number' ? `${mt * 4}px` : mt
   if (ml !== undefined) s.marginLeft = typeof ml === 'number' ? `${ml * 4}px` : ml

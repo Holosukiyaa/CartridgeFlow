@@ -1750,10 +1750,22 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
         }}
         onNodesDelete={async (deletedNodes: FlowGraphNode[]) => {
           if (compactStatic || readOnlyGraph || !onDeleteNode || deletedNodes.length === 0) return
-          const node = deletedNodes[0].data as unknown as FlowNode
-          if (!node || isEngineeringResourceNode(node) || node.locked || isStartNode(node, node.id) || deletingNodeRef.current) return
           deletingNodeRef.current = true
-          try { await onDeleteNode(node) } finally { deletingNodeRef.current = false }
+          const errors: string[] = []
+          try {
+            for (const graphNode of deletedNodes) {
+              const node = graphNode.data as unknown as FlowNode
+              if (!node || isEngineeringResourceNode(node) || node.locked || isStartNode(node, node.id)) continue
+              try {
+                await onDeleteNode(node)
+              } catch (deleteError: any) {
+                errors.push(deleteError?.message || String(deleteError))
+              }
+            }
+          } finally {
+            deletingNodeRef.current = false
+            if (errors.length) showToast({ title: `删除 ${errors.length} 个节点失败`, description: errors.join('; '), type: 'error' })
+          }
         }}
         onConnect={async (connection: Connection) => {
           if (compactStatic || readOnlyGraph || !onEdgesSave || !connection.source || !connection.target) return

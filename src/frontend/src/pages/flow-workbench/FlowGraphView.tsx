@@ -11,6 +11,7 @@ import {
   ViewportPortal,
   addEdge,
   getViewportForBounds,
+  useUpdateNodeInternals,
   type Connection,
   type Edge,
   type Node,
@@ -47,6 +48,15 @@ export type ProtocolDisplayInfo = {
   targetProtocolLabel: string
   currentProtocolLabel: string
   currentProtocolStatus: string
+}
+
+function FlowNodeInternalsSync({ nodeIds }: { nodeIds: string[] }) {
+  const updateNodeInternals = useUpdateNodeInternals()
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => updateNodeInternals(nodeIds))
+    return () => window.cancelAnimationFrame(frame)
+  }, [nodeIds, updateNodeInternals])
+  return null
 }
 
 function graphNodesMatch(current: FlowGraphNode[], next: FlowGraphNode[]) {
@@ -916,6 +926,7 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
 
   const [nodes, setNodes] = useState<FlowGraphNode[]>(initialNodes)
   const [edges, setEdges] = useState<FlowGraphEdge[]>(initialEdges)
+  const canvasNodeIds = useMemo(() => initialNodes.map((node) => node.id), [initialNodes])
   const persistedEdgesRef = useRef<FlowGraphEdge[]>(initialEdges)
   const edgeSavePendingRef = useRef(0)
   const edgeSaveQueueRef = useRef<Promise<void>>(Promise.resolve())
@@ -1195,6 +1206,8 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
   const handleFlowInit = useCallback((instance: ReactFlowInstance) => {
     setFlowInstance(instance)
     lastFittedGraphIdRef.current = ''
+    instance.setNodes(initialNodes)
+    instance.setEdges(initialEdges)
     if (compactStatic) return
     window.requestAnimationFrame(() => {
       const target = instance.getNode(initialFocusId || initialNodes[0]?.id) || initialNodes[0]
@@ -1206,7 +1219,7 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
         { zoom: displayMode === 'engineering' ? 1.02 : 0.78, duration: 0 },
       )
     })
-  }, [compactStatic, displayMode, initialFocusId, initialNodes])
+  }, [compactStatic, displayMode, initialEdges, initialFocusId, initialNodes])
 
   const beginNodeEditorDrag = useCallback((event: React.PointerEvent<HTMLDivElement>, editor: NodeEditorPlacement) => {
     const target = event.target as HTMLElement
@@ -1769,7 +1782,7 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
       <OutcomeNodeRenderContext.Provider value={outcomeNodeRenderContext}>
       <EngineeringNodeRenderContext.Provider value={engineeringNodeRenderContext}>
       <ReactFlow<FlowGraphNode, FlowGraphEdge>
-        key={`${graph.id}:${compactStatic ? 'compact' : 'canvas'}`}
+        key={`${graph.id}:${compactStatic ? 'compact' : 'canvas'}:${displayMode}`}
         defaultNodes={initialNodes}
         defaultEdges={initialEdges}
         nodeTypes={nodeTypes}
@@ -2331,6 +2344,7 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
             )}
             </div>
         )}
+        <FlowNodeInternalsSync nodeIds={canvasNodeIds} />
       </ReactFlow>
       </EngineeringNodeRenderContext.Provider>
       </OutcomeNodeRenderContext.Provider>

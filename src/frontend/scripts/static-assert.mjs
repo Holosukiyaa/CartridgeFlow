@@ -36,6 +36,15 @@ try {
   process.exit(1)
 }
 
+check(
+  /key=\{`\$\{graph\.id\}:\$\{compactStatic \? 'compact' : 'canvas'\}:\$\{displayMode\}`\}/.test(src),
+  'React Flow remounts when the canvas display mode changes',
+)
+check(
+  src.includes('<FlowNodeInternalsSync nodeIds={canvasNodeIds} />'),
+  'React Flow remeasures node handles after a canvas mode remount',
+)
+
 const decl = src.match(/export const RESOURCE_EDGE_REJECT_MESSAGE = '([^']+)'/)
 check(Boolean(decl), 'RESOURCE_EDGE_REJECT_MESSAGE 常量已声明')
 const message = decl ? decl[1] : ''

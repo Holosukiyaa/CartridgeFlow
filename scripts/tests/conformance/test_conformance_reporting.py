@@ -4,7 +4,7 @@ import unittest
 from dataclasses import asdict
 from pathlib import Path
 
-from core.conformance.reporting import REPORT_SCHEMA, build_conformance_report, load_latest_report, write_conformance_report
+from core.conformance.reporting import REPORT_SCHEMA, _test_evidence, build_conformance_report, load_latest_report, write_conformance_report
 from core.data_paths import CONFORMANCE_REPORT
 from core.llm.retry import RetryConfig
 
@@ -13,6 +13,16 @@ ROOT = Path(__file__).resolve().parents[3]
 
 
 class ConformanceReportingTests(unittest.TestCase):
+    def test_short_evidence_selector_matches_a_complete_test_id_segment(self):
+        cases = {
+            "suite.test_exact": {"id": "suite.test_exact", "status": "passed"},
+            "suite.test_not_exact": {"id": "suite.test_not_exact", "status": "failed"},
+        }
+
+        evidence = _test_evidence(["test_exact"], cases)
+
+        self.assertEqual(["suite.test_exact"], [item["id"] for item in evidence])
+
     def test_versioned_retry_policy_matches_code_fallback(self):
         configured = json.loads((ROOT / "config" / "defaults" / "llm_retry.json").read_text(encoding="utf-8"))
         fallback = asdict(RetryConfig())

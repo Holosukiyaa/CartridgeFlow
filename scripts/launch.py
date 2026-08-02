@@ -103,13 +103,13 @@ def main() -> None:
     # A repeat launch replaces only a process we can positively identify as
     # this workbench. A foreign listener remains an actionable error.
     restart_managed_listener(8765, "backend.main:app")
-    restart_managed_listener(5173, "vite")
+    restart_managed_listener(5173, os.path.normcase(os.path.abspath(FRONTEND_DIR)))
     require_port_available(8765)
     require_port_available(5173)
 
     if not os.path.exists(os.path.join(FRONTEND_DIR, "node_modules")):
         print("[0/2] 安装前端依赖...")
-        subprocess.run([npm, "install"], cwd=FRONTEND_DIR, check=True)
+        subprocess.run([npm, "ci"], cwd=FRONTEND_DIR, check=True)
 
     print("[1/2] 启动后端 (port 8765)...")
     backend = subprocess.Popen(

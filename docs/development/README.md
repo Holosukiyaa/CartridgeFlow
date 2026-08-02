@@ -23,6 +23,9 @@ scripts/
 │  ├─ runtime/           节点执行、错误、恢复和 Worker
 │  ├─ studio/            本机环境、资源和 TODO
 │  ├─ llm/               模型配方和 Provider 接口
+│  ├─ api/               HTTP API、边界和安全响应
+│  ├─ lab/               Flow 创作、分析和编辑
+│  ├─ orchestration/     执行计划编译与调度
 │  ├─ hygiene/           仓库与发布包卫生
 │  ├─ history/           旧协议识别、拒绝和规则快照
 │  └─ fixtures/          跨测试复用的夹具，不单独执行
@@ -44,4 +47,4 @@ python scripts/run_conformance.py
 
 查找文件用途、审计历史遗留内容或新增文件时，使用并同步维护 [项目文件清单](FILE_INVENTORY.md)。
 
-涉及卡带发布、发行候选包、签名、运行台导入或安装闭环时，阅读 [运行台开发者工具包](../../runtime-developer-toolkit/README.md) 和其中的 [运行台团队 CF-CRE@1 与 CF-FARP@1.0 开发指南](../../runtime-developer-toolkit/guide/RUNTIME_TEAM_CF_CRE_FARP_DEVELOPMENT_GUIDE.md)。
+涉及卡带发布、发行候选包、签名、运行台导入或安装闭环时，阅读 [运行台开发者工具包](../../demos/runtime-developer-toolkit/README.md) 和其中的 [运行台团队 CF-CRE@1 与 CF-FARP@1.0 开发指南](../../demos/runtime-developer-toolkit/guide/RUNTIME_TEAM_CF_CRE_FARP_DEVELOPMENT_GUIDE.md)。

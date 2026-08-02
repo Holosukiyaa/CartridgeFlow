@@ -1,5 +1,7 @@
+import os
 import platform
 import re
+import shlex
 import subprocess
 
 
@@ -8,6 +10,29 @@ OS_NAMES = {
     "darwin": "macos",
     "linux": "linux",
 }
+
+
+def _split_command(command: str) -> list[str]:
+    if os.name != "nt":
+        return shlex.split(command)
+
+    import ctypes
+    from ctypes import wintypes
+
+    argc = ctypes.c_int()
+    shell32 = ctypes.windll.shell32
+    shell32.CommandLineToArgvW.argtypes = (wintypes.LPCWSTR, ctypes.POINTER(ctypes.c_int))
+    shell32.CommandLineToArgvW.restype = ctypes.POINTER(wintypes.LPWSTR)
+    argv = shell32.CommandLineToArgvW(command, ctypes.byref(argc))
+    if not argv:
+        raise OSError(ctypes.get_last_error(), "CommandLineToArgvW failed")
+    try:
+        return [argv[index] for index in range(argc.value)]
+    finally:
+        kernel32 = ctypes.windll.kernel32
+        kernel32.LocalFree.argtypes = (wintypes.HLOCAL,)
+        kernel32.LocalFree.restype = wintypes.HLOCAL
+        kernel32.LocalFree(ctypes.cast(argv, wintypes.HLOCAL))
 
 
 class EnvironmentChecker:
@@ -75,10 +100,13 @@ class EnvironmentChecker:
         }
 
     def _check_command(self, requirement: dict) -> dict:
-        command = requirement.get("command") or requirement.get("id")
+        command = str(requirement.get("command") or requirement.get("id") or "").strip()
         required_level = self._required_level(requirement)
         try:
-            result = subprocess.run(command.split(), capture_output=True, text=True, timeout=5)
+            parts = _split_command(command)
+            if not parts:
+                return self._missing_item(requirement, required_level, None)
+            result = subprocess.run(parts, capture_output=True, text=True, timeout=5)
             output = (result.stdout or result.stderr or "").strip()
             detected = self._extract_version(output) or output
             if result.returncode != 0:

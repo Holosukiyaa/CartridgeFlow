@@ -40,7 +40,7 @@ export function InteractionAssetEditor({ flowId, componentRef, onComponentRefCha
     }
   }
 
-  useEffect(() => { void load() }, [flowId])
+  useEffect(() => { void load(componentRef) }, [componentRef, flowId])
 
   const selectComponent = (id: string, sourceComponents = components, sourceAssets = assets) => {
     setSelectedId(id)

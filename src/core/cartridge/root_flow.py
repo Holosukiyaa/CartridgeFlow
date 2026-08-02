@@ -230,12 +230,11 @@ class RootFlowEngine:
             self.complete(state_doc, state_name, "completed")
             state = self.states.get(state_name) or {}
             next_states = [] if state.get("type") == "terminal" and state_name != start_state else self.next_states(state_name, state_doc.get("context") or {})
-            if state.get("type") == "terminal" and (state_name == "complete" or not next_states):
-                state_doc["status"] = "completed" if state_name == "complete" else state_name
+            if state.get("type") == "terminal" and (state_name != start_state or not next_states):
+                state_doc["status"] = "completed"
                 state_doc["current_state"] = state_name
                 state_doc["updated_at"] = now_iso()
-                if state_name == "complete":
-                    break
+                break
             for target in next_states:
                 completed_parents.setdefault(target, set()).add(state_name)
                 if edge_handler:

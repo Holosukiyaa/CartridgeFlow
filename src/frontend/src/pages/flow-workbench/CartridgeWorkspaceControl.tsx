@@ -208,7 +208,7 @@ export default function CartridgeWorkspaceControl({ current, empty = false, onSw
     <ConfigModal
       open={modalOpen && panel !== 'current' && panel !== 'manage'}
       title={panel === 'create' ? '新建开发卡带' : '卡带信息'}
-      kicker={panel === 'create' ? 'NEW CARTRIDGE' : 'CARTRIDGE PROFILE'}
+      kicker={panel === 'create' ? '新建卡带' : '卡带档案'}
       className="cf-cartridge-workspace-modal"
       onClose={() => { if (!busy) setModalOpen(false) }}
     >
@@ -249,7 +249,7 @@ export default function CartridgeWorkspaceControl({ current, empty = false, onSw
 
   const managerPanel = modalOpen && panel === 'manage' && current ? (
     <aside className="cf-cartridge-floating-panel cf-cartridge-manager-panel" aria-label="打开其他卡带">
-      <header><div><span>CARTRIDGE LIBRARY</span><strong>打开其他卡带</strong></div><button type="button" onClick={() => setModalOpen(false)} aria-label="关闭卡带库"><X /></button></header>
+      <header><div><span>卡带库</span><strong>打开其他卡带</strong></div><button type="button" onClick={() => setModalOpen(false)} aria-label="关闭卡带库"><X /></button></header>
       {managerContent}
     </aside>
   ) : null

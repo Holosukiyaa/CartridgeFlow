@@ -37,6 +37,7 @@ INLINE_SECRET_PATTERN = re.compile(
 BEARER_TOKEN_PATTERN = re.compile(r"(?i)\bbearer\s+[^\s,;]+")
 COMMON_TOKEN_PATTERN = re.compile(r"\b(?:sk|rk|pk|ghp|xox[baprs])[-_][A-Za-z0-9_-]{8,}\b")
 AUTH_HEADER_PATTERN = re.compile(r"^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
+AUTH_SCHEME_PATTERN = AUTH_HEADER_PATTERN
 DEFAULT_CONNECTIVITY_TIMEOUT_MS = 10_000
 DEFAULT_TOOL_TIMEOUT_MS = 30_000
 _CONNECTIVITY_HISTORY: dict[tuple[str, str], dict] = {}
@@ -753,6 +754,13 @@ def _connector_auth_headers(item: dict) -> dict[str, str]:
             health=_failed_health("EXTERNAL_CONNECTOR_CONFIGURATION_INVALID", "The connector authentication configuration is invalid."),
         )
     scheme = str(item.get("auth_scheme") or "").strip()
+    if scheme and not AUTH_SCHEME_PATTERN.fullmatch(scheme):
+        raise ResourceCatalogError(
+            "EXTERNAL_CONNECTOR_CONFIGURATION_INVALID",
+            "The connector authentication configuration is invalid.",
+            status_code=409,
+            health=_failed_health("EXTERNAL_CONNECTOR_CONFIGURATION_INVALID", "The connector authentication configuration is invalid."),
+        )
     return {header: f"{scheme} {token}".strip()}
 
 

@@ -19,6 +19,17 @@ from dataclasses import dataclass, field
 from core.llm import chat
 from core.llm.config_manager import resolve_model
 
+MENTOR_HISTORY_LIMIT = 12
+
+
+def _bounded_mentor_messages(messages: list[dict]) -> list[dict]:
+    system = [messages[0]] if messages and messages[0].get("role") == "system" else []
+    visible = messages[1:] if system else messages
+    recent = visible[-MENTOR_HISTORY_LIMIT:]
+    while recent and recent[0].get("role") == "assistant":
+        recent = recent[1:]
+    return [*system, *recent]
+
 
 # ── 工具 schema ──────────────────────────────────────────────
 
@@ -202,6 +213,7 @@ class _MentorAgent:
             worker_context=worker_context,
         )
         self.messages.append({"role": "user", "content": eval_prompt})
+        self.messages = _bounded_mentor_messages(self.messages)
 
         try:
             response = await chat(
@@ -235,6 +247,7 @@ class _MentorAgent:
         """回答 Worker 通过 ask_mentor 提出的问题。"""
         prompt = f"[WORKER QUESTION] {question}\n请根据你的私有知识回答，要具体、有帮助。"
         self.messages.append({"role": "user", "content": prompt})
+        self.messages = _bounded_mentor_messages(self.messages)
         try:
             response = await chat(
                 self.cfg, self.messages,

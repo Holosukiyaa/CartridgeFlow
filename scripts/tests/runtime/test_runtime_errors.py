@@ -7,9 +7,12 @@ from pathlib import Path
 from unittest.mock import patch
 
 from core.cartridge.runner import CartridgeRunner
+from core.cartridge.permissions import PermissionManager
 from core.lab.node_executor import LabNodeExecutor
 from core.llm.config import ModelConfig
 from core.runtime.errors import ERROR_CATALOG, ERROR_SCHEMA, RuntimeFailure, build_runtime_error, error_from_node_result, write_diagnostic
+from core.runtime.llm_prompt import _run_async
+from core.runtime.agent_squad import MENTOR_HISTORY_LIMIT, _bounded_mentor_messages
 
 
 REQUIRED_FIELDS = {
@@ -29,6 +32,39 @@ class _Registry:
 
 
 class RuntimeErrorEnvelopeTests(unittest.TestCase):
+    def test_mentor_history_keeps_system_prompt_and_recent_messages(self):
+        messages = [{"role": "system", "content": "rules"}] + [
+            {"role": "user", "content": str(index)} for index in range(MENTOR_HISTORY_LIMIT + 5)
+        ]
+
+        bounded = _bounded_mentor_messages(messages)
+
+        self.assertEqual("system", bounded[0]["role"])
+        self.assertEqual(MENTOR_HISTORY_LIMIT + 1, len(bounded))
+        self.assertEqual("5", bounded[1]["content"])
+
+    def test_mentor_history_does_not_start_with_an_orphaned_assistant_message(self):
+        messages = [{"role": "system", "content": "rules"}]
+        for index in range(MENTOR_HISTORY_LIMIT):
+            messages.extend([
+                {"role": "user", "content": f"question-{index}"},
+                {"role": "assistant", "content": f"answer-{index}"},
+            ])
+        messages.append({"role": "user", "content": "latest"})
+
+        bounded = _bounded_mentor_messages(messages)
+
+        self.assertEqual("system", bounded[0]["role"])
+        self.assertEqual("user", bounded[1]["role"])
+        self.assertEqual("latest", bounded[-1]["content"])
+        self.assertLessEqual(len(bounded) - 1, MENTOR_HISTORY_LIMIT)
+
+    def test_sync_runtime_can_bridge_async_work_from_an_active_event_loop(self):
+        async def invoke():
+            return _run_async(asyncio.sleep(0, result="completed"))
+
+        self.assertEqual("completed", asyncio.run(invoke()))
+
     def test_catalog_covers_required_failure_classes(self):
         required_codes = {
             "INPUT_REQUIRED", "DECISION_ENVELOPE_INVALID", "DECISION_CONSUME_FAILED",
@@ -77,6 +113,84 @@ class RuntimeErrorEnvelopeTests(unittest.TestCase):
         envelope = error_from_node_result(result, run_id="run_test", node_id="writer")
         self.assertEqual("INPUT_REQUIRED", envelope["code"])
         self.assertEqual(["brief"], envelope["missing_inputs"])
+
+    def test_declared_permission_modes_are_enforced_before_node_execution(self):
+        manager = PermissionManager()
+        manifest = {
+            "permissions": [
+                {"id": "auto", "auth_mode": "always_allow"},
+                {"id": "confirm", "auth_mode": "ask_once"},
+                {"id": "each", "auth_mode": "ask_each_time"},
+                {"id": "blocked", "auth_mode": "deny"},
+            ]
+        }
+        permissions = manager.init_permission_state(manifest)
+        executor = LabNodeExecutor()
+
+        self.assertEqual("granted", permissions["auto"]["status"])
+        self.assertEqual("pending", permissions["confirm"]["status"])
+        self.assertEqual("pending", permissions["each"]["status"])
+        self.assertEqual("denied", permissions["blocked"]["status"])
+        for permission_id in ("confirm", "blocked"):
+            result = executor.execute(
+                "protected",
+                {"action": "pass_result", "params": {"permission": permission_id}},
+                {"context": {"store": {}}},
+                {"inputs": {}, "permissions": permissions},
+                ".",
+            )
+            self.assertTrue(result["failed"])
+            self.assertEqual("PERMISSION_DENIED", result["error_code"])
+
+        undeclared = executor.execute(
+            "undeclared",
+            {"action": "pass_result", "params": {"permission": "not_in_manifest"}},
+            {"context": {"store": {}}},
+            {"inputs": {}, "permissions": permissions},
+            ".",
+        )
+        self.assertTrue(undeclared["failed"])
+        self.assertEqual("PERMISSION_DENIED", undeclared["error_code"])
+        self.assertIn("undeclared", undeclared["error"])
+
+        legacy_top_level = executor.execute(
+            "legacy",
+            {"action": "pass_result", "permission": "blocked", "params": {}},
+            {"context": {"store": {}}},
+            {"inputs": {}, "permissions": permissions},
+            ".",
+        )
+        self.assertTrue(legacy_top_level["failed"])
+        self.assertEqual("PERMISSION_DENIED", legacy_top_level["error_code"])
+
+        legacy_without_manifest_permissions = executor.execute(
+            "legacy-empty-permissions",
+            {"action": "pass_result", "permission": "write_run_artifacts", "params": {}},
+            {"context": {"store": {}}},
+            {"inputs": {}, "permissions": {}},
+            ".",
+        )
+        self.assertNotEqual("PERMISSION_DENIED", legacy_without_manifest_permissions.get("error_code"))
+
+        allowed = executor.execute(
+            "allowed",
+            {"action": "pass_result", "params": {"permission": "auto"}},
+            {"context": {"store": {}}},
+            {"inputs": {}, "permissions": permissions},
+            ".",
+        )
+        self.assertNotEqual("PERMISSION_DENIED", allowed.get("error_code"))
+
+        run = {"inputs": {}, "permissions": permissions}
+        manager.grant(run, "each", "ask_each_time")
+        executor.execute(
+            "ask_each",
+            {"action": "pass_result", "params": {"permission": "each"}},
+            {"context": {"store": {}}},
+            run,
+            ".",
+        )
+        self.assertEqual("pending", permissions["each"]["status"])
 
     def test_missing_provider_configuration_is_not_normal_success(self):
         executor = LabNodeExecutor()

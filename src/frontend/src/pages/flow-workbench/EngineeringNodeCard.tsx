@@ -5,7 +5,7 @@ import type { FlowNode } from '../../api.ts'
 import { getNodePalette } from './nodeModel.ts'
 import type { NodeRunState } from './runState.ts'
 import type { PortCounts } from './FlowNodePorts.tsx'
-import { buildEngineeringRecipe, engineeringControlHandleId, engineeringHandleId, summarizeEngineeringRecipeItem, type EngineeringNodeRenderModel } from './engineeringNode.ts'
+import { buildEngineeringRecipe, engineeringControlHandleId, engineeringHandleId, humanizeEngineeringKey, humanizeEngineeringValue, summarizeEngineeringRecipeItem, type EngineeringNodeRenderModel } from './engineeringNode.ts'
 
 function NodeKindIcon({ iconKey }: { iconKey: string }) {
   if (iconKey === 'start') return <Play aria-hidden="true" />
@@ -174,9 +174,9 @@ export const EngineeringNodeCard = memo(function EngineeringNodeCard({
                 <div className="cf-engineering-field" data-tone={field.tone} key={`${field.key}:${field.value}`} title={`${field.key}: ${field.value}`}>
                   {connectedAsInput && <Handle type="target" position={Position.Left} id={engineeringHandleId('target', field.key)} className={`cf-engineering-field-port in ${dependencyInputs.has(field.key) ? 'dependency' : ''}`} />}
                   {dataConnected ? <CircleDot aria-hidden="true" /> : <i className="cf-engineering-field-marker" aria-hidden="true" />}
-                  <code>{field.key}</code>
-                  <span>{field.value}</span>
-                  {field.meta && <em>{field.meta}</em>}
+                  <code title={field.key}>{humanizeEngineeringKey(field.key)}</code>
+                  <span>{humanizeEngineeringValue(field.value)}</span>
+                  {field.meta && <em>{humanizeEngineeringValue(field.meta)}</em>}
                   {connectedAsOutput && <Handle type="source" position={Position.Right} id={engineeringHandleId('source', field.key)} className={`cf-engineering-field-port out ${dependencyOutputs.has(field.key) ? 'dependency' : ''}`} />}
                 </div>
               )

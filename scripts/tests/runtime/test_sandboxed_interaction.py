@@ -4,10 +4,11 @@ import tempfile
 import unittest
 import urllib.request
 from pathlib import Path
+from unittest.mock import patch
 
 from core.cartridge.assets import load_asset_bundle
 from core.extensions.descriptor import PortableDlcValidationError, load_portable_dlc_descriptor
-from core.extensions.sandbox_service import SandboxRendererManager
+from core.extensions.sandbox_service import SandboxRendererError, SandboxRendererManager
 
 
 def _hash(content: bytes) -> str:
@@ -97,6 +98,15 @@ class SandboxedInteractionTests(unittest.TestCase):
             manifest = self._package(root, inline_script=True)
             with self.assertRaisesRegex(PortableDlcValidationError, "inline script"):
                 load_portable_dlc_descriptor(root, manifest)
+
+    def test_renderer_reports_missing_entry_hash_without_starting_a_process(self):
+        descriptor = {
+            "frontend": {"components": [{"id": "editor", "entry": "ui/index.html"}]},
+            "files": [],
+        }
+        with patch("core.extensions.sandbox_service.load_portable_dlc_descriptor", return_value=descriptor):
+            with self.assertRaisesRegex(SandboxRendererError, "entry hash is missing"):
+                SandboxRendererManager().launch(".", {}, "editor", "run:interaction", "http://127.0.0.1:5173")
 
 
 if __name__ == "__main__":

@@ -32,6 +32,7 @@ function CartridgeWorkbenchRoute({ flowId, workspaceMode, navigate }: {
 
   return (
     <FlowWorkbench
+      key={flowId}
       flowId={flowId}
       onSwitchFlow={(nextFlowId) => navigate(nextFlowId ? cartridgePath(nextFlowId) : '/', { replace: !nextFlowId })}
     />

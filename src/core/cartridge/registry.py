@@ -3,7 +3,7 @@ from pathlib import Path
 
 from core.data_paths import DEV_CARTRIDGES_DIR, INSTALLED_CARTRIDGES_DIR
 
-from .validator import ManifestValidator, ManifestValidationError
+from .validator import ManifestValidator, ManifestValidationError, resolve_package_entry
 
 
 class CartridgeRegistry:
@@ -38,7 +38,11 @@ class CartridgeRegistry:
     def get_cartridge(self, cartridge_id: str) -> dict:
         path = self._find_cartridge_path(cartridge_id)
         manifest = self.validator.validate_package(path, self._read_json(path / "manifest.json"))
-        root_flow_path = path / manifest.get("root_flow", {}).get("entry", "root.flow.json")
+        root_flow_path = resolve_package_entry(
+            path,
+            manifest.get("root_flow", {}).get("entry", "root.flow.json"),
+            "manifest.root_flow.entry",
+        )
         try:
             root_flow = self._read_json(root_flow_path) if root_flow_path.exists() else {}
         except json.JSONDecodeError:
@@ -88,7 +92,10 @@ class CartridgeRegistry:
         entry = welcome.get("entry")
         if not entry:
             return ""
-        welcome_path = package_path / entry
+        try:
+            welcome_path = resolve_package_entry(package_path, entry, "manifest.welcome.entry")
+        except ValueError:
+            return ""
         if not welcome_path.exists():
             return ""
         return welcome_path.read_text(encoding="utf-8")

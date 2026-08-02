@@ -65,7 +65,8 @@ function graphNodesMatch(current: FlowGraphNode[], next: FlowGraphNode[]) {
 
 function graphEdgesMatch(current: FlowGraphEdge[], next: FlowGraphEdge[]) {
   if (current.length !== next.length) return false
-  return current.every((edge, index) => JSON.stringify(edge) === JSON.stringify(next[index]))
+  const nextById = new Map(next.map((edge) => [edge.id, edge]))
+  return current.every((edge) => JSON.stringify(edge) === JSON.stringify(nextById.get(edge.id)))
 }
 const DEFAULT_PROTOCOL_DISPLAY: ProtocolDisplayInfo = {
   baseContractLabel: 'Base Contract 未读取',
@@ -511,6 +512,9 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
     if (!onEdgesSave && activeCanvasTool === 'connect') setActiveCanvasTool('select')
     if (!onCreateNode && canvasPanel === 'nodes') setCanvasPanel(null)
   }, [activeCanvasTool, canvasPanel, onCreateNode, onEdgesSave])
+  useEffect(() => {
+    if (readOnlyGraph && canvasPanel && canvasPanel !== 'base-info') setCanvasPanel(null)
+  }, [canvasPanel, readOnlyGraph])
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance | null>(null)
   const resourcePositionsRef = useRef<Record<string, { x: number; y: number }>>({})
   const [nodeEditorPositions, setNodeEditorPositions] = useState<Record<string, NodeEditorPosition>>({})
@@ -522,6 +526,11 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
   const nodeEditorDragRef = useRef<NodeEditorDragState | null>(null)
   const annotationPointerRef = useRef<AnnotationPointerState | null>(null)
   const annotationsRef = useRef<FlowAnnotation[]>(graph.annotations || [])
+  const persistedAnnotationsRef = useRef<FlowAnnotation[]>(graph.annotations || [])
+  const annotationSavePendingRef = useRef(0)
+  const annotationSaveQueueRef = useRef<Promise<void>>(Promise.resolve())
+  const nodeDragSnapshotRef = useRef<FlowGraphNode[] | null>(null)
+  const resourcePositionDragSnapshotRef = useRef<Record<string, { x: number; y: number }> | null>(null)
   const rightGestureRef = useRef<{ x: number; y: number; moved: boolean } | null>(null)
   const suppressContextMenuUntilRef = useRef(0)
   const updateWorkspaceTheme = useCallback((nextTheme: WorkspaceTheme) => {
@@ -841,6 +850,9 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
 
   const [nodes, setNodes] = useState<FlowGraphNode[]>(initialNodes)
   const [edges, setEdges] = useState<FlowGraphEdge[]>(initialEdges)
+  const persistedEdgesRef = useRef<FlowGraphEdge[]>(initialEdges)
+  const edgeSavePendingRef = useRef(0)
+  const edgeSaveQueueRef = useRef<Promise<void>>(Promise.resolve())
   const pendingCreatedNodeFocusRef = useRef<string | null>(null)
   const focusCanvasNode = useCallback((nodeId: string) => {
     if (!flowInstance) return
@@ -962,6 +974,8 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
     }
   }, [flowInstance, initialNodes])
   useEffect(() => {
+    if (edgeSavePendingRef.current > 0) return
+    persistedEdgesRef.current = initialEdges
     setEdges((current) => graphEdgesMatch(current, initialEdges) ? current : initialEdges)
     if (flowInstance && !graphEdgesMatch(flowInstance.getEdges() as FlowGraphEdge[], initialEdges)) {
       flowInstance.setEdges(initialEdges)
@@ -983,12 +997,14 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
     )))
   }, [compactStatic, displayMode, flowInstance, selectedNode?.id])
   useEffect(() => {
+    if (annotationSavePendingRef.current > 0) return
     const next = graph.annotations || []
     annotationsRef.current = next
+    persistedAnnotationsRef.current = next
     setAnnotations(next)
     setActiveAnnotationId(null)
     annotationPointerRef.current = null
-  }, [graph.id])
+  }, [graph.annotations, graph.id])
   useEffect(() => {
     setNodeEditorPositions({})
     setDraggingEditorId(null)
@@ -1044,9 +1060,26 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
   }, [nodeById])
 
   const saveEdgesQuietly = useCallback(async (items: FlowGraphEdge[]) => {
-    if (compactStatic || readOnlyGraph || !onEdgesSave) return
-    await onEdgesSave(buildFlowEdges(items))
-  }, [buildFlowEdges, compactStatic, onEdgesSave, readOnlyGraph])
+    if (compactStatic || readOnlyGraph || !onEdgesSave) return false
+    edgeSavePendingRef.current += 1
+    const save = edgeSaveQueueRef.current.then(() => onEdgesSave(buildFlowEdges(items)))
+    edgeSaveQueueRef.current = save.catch(() => undefined)
+    try {
+      await save
+      persistedEdgesRef.current = items
+      return true
+    } catch (error: any) {
+      if (edgeSavePendingRef.current === 1) {
+        const persisted = persistedEdgesRef.current
+        setEdges(persisted)
+        flowInstance?.setEdges(persisted)
+      }
+      showToast({ title: '保存连线失败', description: error?.message || String(error), type: 'error' })
+      return false
+    } finally {
+      edgeSavePendingRef.current -= 1
+    }
+  }, [buildFlowEdges, compactStatic, flowInstance, onEdgesSave, readOnlyGraph])
 
   const validateConnection = useCallback((sourceId: string, targetId: string) => {
     const source = nodeById.get(sourceId)
@@ -1169,12 +1202,19 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
 
   const commitAnnotations = useCallback(async (next = annotationsRef.current) => {
     if (!onAnnotationsSave) return
+    annotationSavePendingRef.current += 1
+    const save = annotationSaveQueueRef.current.then(() => onAnnotationsSave(next))
+    annotationSaveQueueRef.current = save.catch(() => undefined)
     try {
-      await onAnnotationsSave(next)
+      await save
+      persistedAnnotationsRef.current = next
     } catch (error: any) {
+      if (annotationSavePendingRef.current === 1) replaceAnnotations(persistedAnnotationsRef.current)
       showToast({ title: '注释保存失败', description: error?.message || String(error), type: 'error' })
+    } finally {
+      annotationSavePendingRef.current -= 1
     }
-  }, [onAnnotationsSave])
+  }, [onAnnotationsSave, replaceAnnotations])
 
   const createAnnotation = useCallback((anchorNode: FlowNode | null = null) => {
     if (!onAnnotationsSave || !flowInstance) return
@@ -1391,15 +1431,23 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
     const aligned = currentNodes.map((node) => ({ ...node, position: result.nodeLayout[node.id] || node.position }))
     setNodes(aligned)
     flowInstance?.setNodes(aligned)
+    try {
+      await onLayoutSave(buildLayoutFromNodes(aligned))
+    } catch (error: any) {
+      setNodes(currentNodes)
+      flowInstance?.setNodes(currentNodes)
+      showToast({ title: '自动整理失败', description: error?.message || String(error), type: 'error' })
+      return false
+    }
     setNodeEditorPositions((current) => ({ ...current, ...result.satelliteLayout }))
     Object.entries(result.satelliteLayout).forEach(([editorId, position]) => {
       onNodeEditorPositionChange?.(editorId, position)
     })
-    await onLayoutSave(buildLayoutFromNodes(aligned))
     setCanvasPanel(null)
     window.requestAnimationFrame(() => {
       fitBoundsIntoCanvas(result.bounds, 260)
     })
+    return true
   }, [buildLayoutFromNodes, fitBoundsIntoCanvas, flowInstance, nodeEditorPlacements, nodes, onLayoutSave, onNodeEditorPositionChange, renderGraph.edges])
 
   useEffect(() => {
@@ -1411,7 +1459,10 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
     const frame = window.requestAnimationFrame(() => {
       started = true
       void handleAutoAlign()
-        .then(() => onAutoLayoutComplete?.())
+        .then((saved) => {
+          if (saved) onAutoLayoutComplete?.()
+          else autoLayoutGraphIdRef.current = ''
+        })
         .catch((error: any) => {
           autoLayoutGraphIdRef.current = ''
           showToast({ title: '自动整理失败', description: error?.message || String(error), type: 'error' })
@@ -1666,7 +1717,7 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
       <OutcomeNodeRenderContext.Provider value={outcomeNodeRenderContext}>
       <EngineeringNodeRenderContext.Provider value={engineeringNodeRenderContext}>
       <ReactFlow<FlowGraphNode, FlowGraphEdge>
-        key={`${graph.id}:${displayMode}:${compactStatic ? 'compact' : 'canvas'}`}
+        key={`${graph.id}:${compactStatic ? 'compact' : 'canvas'}`}
         defaultNodes={initialNodes}
         defaultEdges={initialEdges}
         nodeTypes={nodeTypes}
@@ -1730,7 +1781,14 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
             node,
           })
         }}
-        onNodeDragStart={() => setContextMenu(null)}
+        onNodeDragStart={() => {
+          setContextMenu(null)
+          nodeDragSnapshotRef.current = ((flowInstance?.getNodes() as FlowGraphNode[] | undefined) || nodes).map((node) => ({
+            ...node,
+            position: { ...node.position },
+          }))
+          resourcePositionDragSnapshotRef.current = { ...resourcePositionsRef.current }
+        }}
         onNodeDragStop={async () => {
           if (compactStatic || readOnlyGraph) return
           const currentNodes = (flowInstance?.getNodes() as FlowGraphNode[] | undefined) || nodes
@@ -1745,8 +1803,25 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
           if (Object.keys(resourceLayout).length) {
             resourcePositionsRef.current = { ...resourcePositionsRef.current, ...resourceLayout }
           }
-          if (!onLayoutSave) return
-          await onLayoutSave(buildLayoutFromNodes(currentNodes))
+          if (!onLayoutSave) {
+            nodeDragSnapshotRef.current = null
+            resourcePositionDragSnapshotRef.current = null
+            return
+          }
+          try {
+            await onLayoutSave(buildLayoutFromNodes(currentNodes))
+          } catch (error: any) {
+            const previousNodes = nodeDragSnapshotRef.current
+            if (previousNodes) {
+              setNodes(previousNodes)
+              flowInstance?.setNodes(previousNodes)
+            }
+            resourcePositionsRef.current = resourcePositionDragSnapshotRef.current || {}
+            showToast({ title: '布局保存失败', description: error?.message || String(error), type: 'error' })
+          } finally {
+            nodeDragSnapshotRef.current = null
+            resourcePositionDragSnapshotRef.current = null
+          }
         }}
         onNodesDelete={async (deletedNodes: FlowGraphNode[]) => {
           if (compactStatic || readOnlyGraph || !onDeleteNode || deletedNodes.length === 0) return
@@ -1940,15 +2015,15 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
         {!compactStatic && (
           <Panel position="top-left" className="cf-canvas-tool-rail">
             <nav aria-label="画布工具">
-              <button type="button" className={activeCanvasTool === 'select' && !canvasPanel ? 'active' : ''} onClick={() => { setActiveCanvasTool('select'); setCanvasPanel(null); onCloseNodeEditor?.() }} title="选择与移动"><MousePointer2 /><span>选择</span></button>
-              <button type="button" className={activeCanvasTool === 'connect' && !canvasPanel ? 'active' : ''} onClick={activateConnectMode} title={onEdgesSave ? '连接节点' : '请先在右侧解锁工程操作'} disabled={!onEdgesSave}><GitBranch /><span>连线</span></button>
-              <button type="button" className={canvasPanel === 'nodes' ? 'active' : ''} onClick={() => toggleCanvasPanel('nodes')} title={onCreateNode ? '节点库' : '请先在右侧解锁工程操作'} disabled={!onCreateNode}><Box /><span>节点</span></button>
-              <button type="button" className={canvasPanel === 'notes' ? 'active' : ''} onClick={() => { onCloseNodeEditor?.(); toggleCanvasPanel('notes') }} title="画布注释"><MessageSquare /><span>注释</span></button>
-              <button type="button" className={canvasPanel === 'models' ? 'active' : ''} onClick={() => { onCloseNodeEditor?.(); toggleCanvasPanel('models') }} title={modelPanel ? '模型管理' : '只读卡带不能修改模型绑定，请先克隆到开发卡带'} disabled={!modelPanel}><BrainCircuit /><span>模型</span></button>
-              <button type="button" className={canvasPanel === 'variables' ? 'active' : ''} onClick={() => { onCloseNodeEditor?.(); toggleCanvasPanel('variables') }} title="流程变量"><Braces /><span>变量</span></button>
-              <button type="button" className={canvasPanel === 'settings' ? 'active' : ''} onClick={() => { onCloseNodeEditor?.(); toggleCanvasPanel('settings') }} title="画布配置"><Settings /><span>配置</span></button>
-              <button type="button" className={canvasPanel === 'tools' ? 'active' : ''} onClick={() => { onCloseNodeEditor?.(); toggleCanvasPanel('tools') }} title={toolPanel ? 'MCP 工具库' : '只读卡带不能修改工具绑定，请先克隆到开发卡带'} disabled={!toolPanel}><Wrench /><span>工具</span></button>
-              <button type="button" className={canvasPanel === 'package' ? 'active' : ''} onClick={() => { onCloseNodeEditor?.(); toggleCanvasPanel('package') }} title={packagePanel ? '打包当前卡带' : '只读卡带不能生成开发包，请先克隆到开发卡带'} disabled={!packagePanel}><PackageCheck /><span>打包</span></button>
+              <button type="button" className={activeCanvasTool === 'select' && !canvasPanel ? 'active' : ''} onClick={() => { setActiveCanvasTool('select'); setCanvasPanel(null); onCloseNodeEditor?.() }} title={readOnlyGraph ? '选择节点查看详情' : '选择与移动'}><MousePointer2 /><span>选择</span></button>
+              <button type="button" className={activeCanvasTool === 'connect' && !canvasPanel ? 'active' : ''} onClick={activateConnectMode} title={onEdgesSave && !readOnlyGraph ? '连接节点' : '当前流程暂不允许修改连线'} disabled={readOnlyGraph || !onEdgesSave}><GitBranch /><span>连线</span></button>
+              <button type="button" className={canvasPanel === 'nodes' ? 'active' : ''} onClick={() => toggleCanvasPanel('nodes')} title={onCreateNode && !readOnlyGraph ? '节点库' : '当前流程暂不允许增删节点'} disabled={readOnlyGraph || !onCreateNode}><Box /><span>节点</span></button>
+              <button type="button" className={canvasPanel === 'notes' ? 'active' : ''} onClick={() => { onCloseNodeEditor?.(); toggleCanvasPanel('notes') }} title={readOnlyGraph ? '当前流程暂不允许编辑注释' : '画布注释'} disabled={readOnlyGraph}><MessageSquare /><span>注释</span></button>
+              <button type="button" className={canvasPanel === 'models' ? 'active' : ''} onClick={() => { onCloseNodeEditor?.(); toggleCanvasPanel('models') }} title={modelPanel && !readOnlyGraph ? '模型管理' : '当前流程暂不允许修改模型绑定'} disabled={readOnlyGraph || !modelPanel}><BrainCircuit /><span>模型</span></button>
+              <button type="button" className={canvasPanel === 'variables' ? 'active' : ''} onClick={() => { onCloseNodeEditor?.(); toggleCanvasPanel('variables') }} title={readOnlyGraph ? '当前流程暂不允许编辑变量' : '流程变量'} disabled={readOnlyGraph}><Braces /><span>变量</span></button>
+              <button type="button" className={canvasPanel === 'settings' ? 'active' : ''} onClick={() => { onCloseNodeEditor?.(); toggleCanvasPanel('settings') }} title={readOnlyGraph ? '当前流程暂不允许编辑配置' : '画布配置'} disabled={readOnlyGraph}><Settings /><span>配置</span></button>
+              <button type="button" className={canvasPanel === 'tools' ? 'active' : ''} onClick={() => { onCloseNodeEditor?.(); toggleCanvasPanel('tools') }} title={toolPanel && !readOnlyGraph ? 'MCP 工具库' : '当前流程暂不允许修改工具绑定'} disabled={readOnlyGraph || !toolPanel}><Wrench /><span>工具</span></button>
+              <button type="button" className={canvasPanel === 'package' ? 'active' : ''} onClick={() => { onCloseNodeEditor?.(); toggleCanvasPanel('package') }} title={packagePanel && !readOnlyGraph ? '打包当前卡带' : '当前流程暂不允许生成开发包'} disabled={readOnlyGraph || !packagePanel}><PackageCheck /><span>打包</span></button>
               <button type="button" className={canvasPanel === 'base-info' ? 'active' : ''} onClick={() => { onCloseNodeEditor?.(); toggleCanvasPanel('base-info') }} title="基座信息"><Info /><span>基座</span></button>
             </nav>
             <div className="cf-canvas-zoom-tools">

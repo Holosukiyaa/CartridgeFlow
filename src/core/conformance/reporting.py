@@ -252,7 +252,7 @@ def _test_evidence(selectors, cases: dict[str, dict]) -> list[dict]:
         selector = str(selector or "").strip()
         if not selector:
             continue
-        matches = [item for case_id, item in cases.items() if case_id == selector or case_id.endswith(selector)]
+        matches = [item for case_id, item in cases.items() if case_id == selector or case_id.endswith(f".{selector}")]
         if not matches:
             result.append({"id": selector, "status": "missing"})
         else:

@@ -15,6 +15,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
 
 from core.data_paths import DATA_ROOT, USER_CONFIG_DIR
+from core.local_config import restrict_private_file
 
 
 SIGNATURE_SCHEMA = "cartridgeflow.release_signature.v1"
@@ -69,6 +70,7 @@ def ensure_development_signing_identity(root: str | Path, publisher_id: str) -> 
             serialization.PrivateFormat.PKCS8,
             serialization.NoEncryption(),
         ))
+    restrict_private_file(key_path)
     public_key = private_key.public_key().public_bytes(
         serialization.Encoding.Raw,
         serialization.PublicFormat.Raw,
@@ -83,7 +85,9 @@ def ensure_development_signing_identity(root: str | Path, publisher_id: str) -> 
         "public_key": _encode(public_key),
     }
     trust_store["keys"] = [item for item in keys if item.get("key_id") != key_id] + [entry]
-    _trust_store_path(base).write_text(json.dumps(trust_store, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
+    trust_store_path = _trust_store_path(base)
+    trust_store_path.write_text(json.dumps(trust_store, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
+    restrict_private_file(trust_store_path)
     return identity
 
 

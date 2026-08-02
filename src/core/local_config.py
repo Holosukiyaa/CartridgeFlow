@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import stat
 import uuid
 from copy import deepcopy
 from datetime import datetime
@@ -39,12 +41,19 @@ def write_local_json(path: str | Path, data: dict) -> None:
     temporary = target.with_name(f".{target.name}.{uuid.uuid4().hex}.tmp")
     try:
         temporary.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        restrict_private_file(temporary)
         temporary.replace(target)
+        restrict_private_file(target)
     except OSError as exc:
         raise LocalConfigError(f"Cannot write local configuration: {target}") from exc
     finally:
         if temporary.exists():
             temporary.unlink(missing_ok=True)
+
+
+def restrict_private_file(path: str | Path) -> None:
+    if os.name != "nt":
+        Path(path).chmod(stat.S_IRUSR | stat.S_IWUSR)
 
 
 def _recover_invalid_file(path: Path, fallback: dict) -> dict:

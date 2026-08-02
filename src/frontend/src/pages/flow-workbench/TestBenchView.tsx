@@ -109,6 +109,15 @@ function getNodeTitle(node?: FlowNode | null) {
   return node.title || node.id
 }
 
+function sandboxedReviewDocument(content: string) {
+  const srcDoc = content
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="referrer" content="no-referrer"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; frame-src 'self'"><style>html,body,iframe{box-sizing:border-box;width:100%;height:100%;margin:0;border:0}body{overflow:hidden}</style></head><body><iframe title="review preview" sandbox="" referrerpolicy="no-referrer" srcdoc="${srcDoc}"></iframe></body></html>`
+}
+
 function ArtifactList({
   artifacts,
   nodeById,
@@ -425,7 +434,7 @@ export function PendingInteractionForm({
   const reviewIsHtml = /^\s*(?:<!doctype\s+html|<html\b|<body\b|<(?:main|section|article|div)\b)/i.test(reviewContent)
   const openReviewPreview = () => {
     if (!reviewContent) return
-    const url = URL.createObjectURL(new Blob([reviewContent], { type: 'text/html' }))
+    const url = URL.createObjectURL(new Blob([sandboxedReviewDocument(reviewContent)], { type: 'text/html' }))
     const opened = window.open(url, '_blank', 'noopener,noreferrer')
     if (!opened) showToast({ title: '预览窗口被浏览器拦截', description: '请允许弹出窗口后再打开预览。', type: 'error' })
     window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
@@ -448,7 +457,7 @@ export function PendingInteractionForm({
             </div>}
           </div>
           {reviewIsHtml && reviewContentMode === 'preview'
-            ? <iframe className="cf-pending-review-frame" title="待审核页面预览" sandbox="allow-scripts" srcDoc={reviewContent} />
+            ? <iframe className="cf-pending-review-frame" title="待审核页面预览" sandbox="" referrerPolicy="no-referrer" srcDoc={reviewContent} />
             : <pre>{reviewContent}</pre>}
         </div>
       )}

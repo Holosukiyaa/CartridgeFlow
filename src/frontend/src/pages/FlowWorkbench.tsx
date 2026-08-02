@@ -120,6 +120,7 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
   const [optimisticRunTransition, setOptimisticRunTransition] = useState<OptimisticRunTransition | null>(null)
   const [dismissedInteractionId, setDismissedInteractionId] = useState('')
   const [interactionPresentationSize, setInteractionPresentationSize] = useState<{ width: number; height: number } | null>(null)
+  const pollGenerationRef = useRef(0)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [selectedHistoryRunId, setSelectedHistoryRunId] = useState('')
   const [runLog, setRunLog] = useState<{ run: RunResult; events: FlowEvent[] } | null>(null)
@@ -164,7 +165,6 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
     void tick()
     const timer = window.setInterval(tick, 2500)
     return () => { cancelled = true; window.clearInterval(timer) }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeRuntimeRun?.run_id])
   const visualRuntimeRun = activeRuntimeRun
     || (runCompletionNotice ? runs.find((run) => run.run_id === runCompletionNotice.runId) : undefined)
@@ -353,10 +353,16 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
 
   const editable = Boolean(detail?.cartridge.editable)
 
+  useEffect(() => () => {
+    pollGenerationRef.current += 1
+  }, [flowId])
+
   const pollRunUntilStable = useCallback(async (runId: string, maxAttempts = 900) => {
+    const generation = ++pollGenerationRef.current
     let latest: RunResult | null = null
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       await sleep(800)
+      if (generation !== pollGenerationRef.current) return latest
       let runData: RunResult
       let eventData: { items: FlowEvent[] }
       try {
@@ -365,9 +371,11 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
           fetchCartridgeRunEvents(runId),
         ])
       } catch (pollError) {
+        if (generation !== pollGenerationRef.current) return latest
         if (attempt < 10) continue
         throw pollError
       }
+      if (generation !== pollGenerationRef.current) return latest
       latest = runData
       setRuns((current) => [runData, ...current.filter((item) => item.run_id !== runData.run_id)])
       setEvents(eventData.items || [])
@@ -694,29 +702,17 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
             autoLayoutOnMount={shouldAutoLayoutNewFlow(flowId)}
             onAutoLayoutComplete={() => clearNewFlowAutoLayout(flowId)}
             onLayoutSave={async (layout) => {
-              try {
-                const result = await saveFlowLayout(flowId, files, layout)
-                setFiles(result.files)
-                setDetail((prev) => prev ? { ...prev, graph: result.graph } : prev)
-              } catch (error: any) {
-                showToast({ title: '布局保存失败', description: error?.message || String(error), type: 'error' })
-              }
+              const result = await saveFlowLayout(flowId, files, layout)
+              setFiles(result.files)
+              setDetail((prev) => prev ? { ...prev, graph: result.graph } : prev)
             }}
             onEdgesSave={async (edges) => {
-              try {
-                const result = await saveFlowEdges(flowId, files, edges)
-                updateGraphResult(result)
-              } catch (error: any) {
-                showToast({ title: '保存连线失败', description: error?.message || String(error), type: 'error' })
-              }
+              const result = await saveFlowEdges(flowId, files, edges)
+              updateGraphResult(result)
             }}
             onAnnotationsSave={async (annotations: FlowAnnotation[]) => {
-              try {
-                const result = await saveFlowAnnotations(flowId, annotations)
-                updateGraphResult(result)
-              } catch (error: any) {
-                showToast({ title: '注释保存失败', description: error?.message || String(error), type: 'error' })
-              }
+              const result = await saveFlowAnnotations(flowId, annotations)
+              updateGraphResult(result)
             }}
             onCreateNode={createCategoryNode}
             onFilesChange={setFiles}
@@ -770,6 +766,7 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
           {historyOpen && (
             <RunHistoryPanel
               runs={runs}
+              graph={detail.graph}
               selectedRunId={selectedRunId}
               busy={runControlBusy}
               onClose={() => setHistoryOpen(false)}

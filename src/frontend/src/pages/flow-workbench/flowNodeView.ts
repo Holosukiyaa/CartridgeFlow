@@ -272,7 +272,7 @@ function buildConfigIssues(node: FlowNode, kind: NodeSemanticKind, context: Node
       }))
   }
   const issues: NodeConfigIssue[] = []
-  const blocker = (code: string, message: string) => issues.push({ severity: 'warning', code, message, origin: 'authoring_hint' })
+  const blocker = (code: string, message: string) => issues.push({ severity: 'blocker', code, message, origin: 'authoring_hint' })
   const warning = (code: string, message: string) => issues.push({ severity: 'warning', code, message, origin: 'authoring_hint' })
   const requireValue = (value: unknown, code: string, message: string) => { if (!configured(value)) blocker(code, message) }
   const input = readNodeValue(node, 'input', 'input_key')

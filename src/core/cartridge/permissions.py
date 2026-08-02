@@ -78,14 +78,16 @@ class PermissionManager:
         resolved = self.resolve_permissions(manifest)
         state = {}
         for perm in resolved:
+            auth_mode = perm["auth_mode"]
+            status = "granted" if auth_mode == "always_allow" else "denied" if auth_mode == "deny" else "pending"
             state[perm["id"]] = {
                 "id": perm["id"],
                 "label": perm["label"],
                 "level": perm["level"],
                 "description": perm["description"],
-                "auth_mode": perm["auth_mode"],
-                "status": "pending",
-                "granted_at": None,
+                "auth_mode": auth_mode,
+                "status": status,
+                "granted_at": now_iso() if status == "granted" else None,
             }
         return state
 

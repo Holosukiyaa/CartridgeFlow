@@ -94,6 +94,31 @@ class ProtocolExtensionCompatibilityTest(unittest.TestCase):
         self.assertIn("manifest.protocol_extensions[0].version is required", message)
         self.assertIn("manifest.protocol_extensions[0].required_capabilities must be an array", message)
 
+    def test_manifest_entries_cannot_escape_the_cartridge_package(self):
+        manifest = {
+            "schema_version": "1.0",
+            "id": "test.path-boundary",
+            "name": "Path boundary",
+            "version": "0.0.1",
+            "kind": "flow",
+            "category": "test",
+            "runtime": {"type": "none"},
+            "root_flow": {"entry": "../outside.flow.json"},
+            "welcome": {"type": "markdown", "entry": "../outside.md"},
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            package = root / "package"
+            package.mkdir()
+            (root / "outside.flow.json").write_text("{}", encoding="utf-8")
+            (root / "outside.md").write_text("private", encoding="utf-8")
+            with self.assertRaises(ManifestValidationError) as context:
+                ManifestValidator().validate_package(package, manifest)
+
+        message = str(context.exception)
+        self.assertIn("manifest.root_flow.entry points outside the cartridge package", message)
+        self.assertIn("manifest.welcome.entry points outside the cartridge package", message)
+
     def test_manifests_without_extensions_remain_compatible(self):
         base = load_base_implementation(ROOT)
         report = build_compatibility_report(base, self._manifest(), self._root_flow(), ROOT)

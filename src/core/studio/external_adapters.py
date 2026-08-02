@@ -525,6 +525,8 @@ def _auth_headers(connection: dict) -> dict[str, str]:
     if not HTTP_HEADER_PATTERN.fullmatch(header):
         raise ExternalAdapterFailure("request_invalid", "Configured authentication header name is invalid")
     scheme = str(connection.get("auth_scheme") or ("Bearer" if header.casefold() == "authorization" else "")).strip()
+    if scheme and not HTTP_HEADER_PATTERN.fullmatch(scheme):
+        raise ExternalAdapterFailure("request_invalid", "Configured authentication scheme is invalid")
     value = f"{scheme} {secret}".strip()
     return {"Accept": "application/json", header: value}
 

@@ -106,7 +106,7 @@ def serve(package: Path, descriptor: Path, component: str, token: str, port: int
             relative = unquote(parsed.path[len(prefix):]).replace("\\", "/")
             item = scope["files"].get(relative)
             target = (package / relative).resolve()
-            if not item or target != package and package not in target.parents or not target.is_file():
+            if not item or (target != package and package not in target.parents) or not target.is_file():
                 self.send_error(404)
                 return
             size = target.stat().st_size

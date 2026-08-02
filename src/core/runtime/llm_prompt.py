@@ -1,5 +1,28 @@
 import asyncio
 import html
+import threading
+
+
+def _run_async(awaitable):
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(awaitable)
+
+    result = {}
+
+    def run():
+        try:
+            result["value"] = asyncio.run(awaitable)
+        except BaseException as exc:
+            result["error"] = exc
+
+    thread = threading.Thread(target=run, name="cartridgeflow-llm-prompt", daemon=True)
+    thread.start()
+    thread.join()
+    if "error" in result:
+        raise result["error"]
+    return result.get("value")
 
 
 class LlmPromptRuntime:
@@ -67,22 +90,12 @@ class LlmPromptRuntime:
             {"role": "user", "content": user_prompt},
         ]
 
-        try:
-            response = asyncio.run(chat(
-                cfg,
-                messages,
-                agent_name="llm_prompt_runtime",
-                phase="run",
-            ))
-        except RuntimeError:
-            # 已在 event loop 中（不应该发生在 runtime start 中，但做容错）
-            loop = asyncio.get_event_loop()
-            response = loop.run_until_complete(chat(
-                cfg,
-                messages,
-                agent_name="llm_prompt_runtime",
-                phase="run",
-            ))
+        response = _run_async(chat(
+            cfg,
+            messages,
+            agent_name="llm_prompt_runtime",
+            phase="run",
+        ))
 
         content = response.get("content", "")
         meta = response.get("meta", {})

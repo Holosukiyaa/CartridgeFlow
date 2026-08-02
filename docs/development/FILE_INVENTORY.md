@@ -18,7 +18,7 @@ cleanup disposition live in `PROJECT_CLEANUP_AUDIT_2026-07-31.md`.
 | Tests | `scripts/tests/` | `api/`, `conformance/`, `runtime/`, `studio/`, `lab/`, `orchestration/`, `ui/` |
 | Automation | `scripts/` | `bootstrap.ps1`, `launch.py`, `run_conformance.py`, `run_node_coverage.py` |
 | Flow authoring skill | `docs/development/skills/cartridgeflow-flow-author/` | `SKILL.md`, `references/authoring-checklist.md`, `scripts/preflight_flow.py`, `scripts/validate_authored_cartridge.py` |
-| Runtime developer toolkit | `runtime-developer-toolkit/` | `README.md`, `guide/`, `demo/`, `samples/` |
+| Runtime developer toolkit | `demos/runtime-developer-toolkit/` | `README.md`, `guide/`, `demo/`, `samples/` |
 
 Generated output, dependencies, caches, user data, and temporary files are not
 enumerated. They must remain outside source ownership and outside Git.

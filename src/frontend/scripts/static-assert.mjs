@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const flowGraphViewPath = join(root, 'src/pages/flow-workbench/FlowGraphView.tsx')
-const cssGlobPath = join(root, 'src/styles')
+const cssGlobPath = join(root, 'src')
 
 const failures = []
 const notes = []
@@ -62,7 +62,7 @@ let importantCount = 0
 let cssFiles = 0
 let cssScanError = null
 if (!existsSync(cssGlobPath)) {
-  notes.push('  ⚠ 样式目录未找到，跳过 !important 红线检查')
+  notes.push('  ⚠ 前端源码目录未找到，跳过 !important 红线检查')
 } else {
   try {
     for (const file of collectCss(cssGlobPath)) {

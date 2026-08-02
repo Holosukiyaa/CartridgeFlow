@@ -19,6 +19,7 @@ import re
 import subprocess
 import sys
 import time
+from contextvars import ContextVar
 from datetime import datetime
 from pathlib import Path
 
@@ -34,6 +35,9 @@ SUPPORTED_ACTIONS = frozenset({
     "render_interaction", "llm_prompt", "tool_call", "remote_call", "render_template", "pass_result",
     "save_context", "confirm_checkpoint", "collect_artifacts", "render_video_brief", "custom_action",
 })
+
+_PENDING_MISSING: ContextVar[list[dict] | None] = ContextVar("pending_missing", default=None)
+_OPTIONAL_INPUT_KEYS: ContextVar[frozenset[str]] = ContextVar("optional_input_keys", default=frozenset())
 
 
 class NodeActionError(RuntimeError):
@@ -138,6 +142,22 @@ class LabNodeExecutor:
         action = state.get("action") or ""
         preset_config = params.get("preset_config") or {}
 
+        permission_id = str(params.get("permission") or state.get("permission") or "").strip()
+        permission_states = run.get("permissions") or {}
+        permission = permission_states.get(permission_id) if permission_id else None
+        # An empty permission table denotes a legacy cartridge. Once a cartridge opts into
+        # manifest permissions, every referenced permission is enforced fail-closed.
+        if permission_id and permission_states and (permission is None or permission.get("status") != "granted"):
+            status = str(permission.get("status") or "pending") if permission is not None else "undeclared"
+            for key in structured_keys:
+                store.pop(key, None)
+            return {
+                "action": action,
+                "failed": True,
+                "error_code": "PERMISSION_DENIED",
+                "error": f"Permission '{permission_id}' is {status}.",
+            }
+
         dispatch = {
             "collect_inputs": self._collect_inputs,
             "show_welcome": self._show_ui,
@@ -159,8 +179,11 @@ class LabNodeExecutor:
 
         # per-node 缺失键收集：在执行器自己解析键的那一刻记录"要读但 store 里没有"的键。
         # 这样数据链断裂的判定唯一依据执行器的真实解析行为，不再另写一份静态解析（避免与引擎漂移）。
-        self._pending_missing = []
-        self._optional_input_keys = set(self._split_keys(params.get("optional_input") or preset_config.get("optional_input")))
+        pending_missing: list[dict] = []
+        pending_token = _PENDING_MISSING.set(pending_missing)
+        optional_token = _OPTIONAL_INPUT_KEYS.set(
+            frozenset(self._split_keys(params.get("optional_input") or preset_config.get("optional_input")))
+        )
 
         try:
             handler = dispatch.get(action)
@@ -173,11 +196,11 @@ class LabNodeExecutor:
                     "error_code": "ACTION_EXECUTOR_MISSING",
                     "error": f"action '{action}' 暂无执行器，节点未执行",
                 }
-            if isinstance(result, dict) and self._pending_missing:
+            if isinstance(result, dict) and pending_missing:
                 # 去重保序
                 seen = set()
                 missing = []
-                for item in self._pending_missing:
+                for item in pending_missing:
                     if not item:
                         continue
                     key = (item.get("key"), item.get("required"), item.get("source")) if isinstance(item, dict) else item
@@ -201,8 +224,11 @@ class LabNodeExecutor:
         finally:
             for key in structured_keys:
                 store.pop(key, None)
-            self._pending_missing = []
-            self._optional_input_keys = set()
+            if permission is not None and permission.get("auth_mode") == "ask_each_time":
+                permission["status"] = "pending"
+                permission["granted_at"] = None
+            _PENDING_MISSING.reset(pending_token)
+            _OPTIONAL_INPUT_KEYS.reset(optional_token)
 
     def _split_keys(self, raw_value) -> list[str]:
         if not raw_value:
@@ -398,9 +424,9 @@ class LabNodeExecutor:
         return str(contract.get("side_effect") or "").strip().lower()
 
     def _record_missing(self, base_key: str, ref: str = "", required: bool | None = None, source: str = "input") -> None:
-        tracker = getattr(self, "_pending_missing", None)
+        tracker = _PENDING_MISSING.get()
         if tracker is not None and base_key:
-            optional_keys = getattr(self, "_optional_input_keys", set())
+            optional_keys = _OPTIONAL_INPUT_KEYS.get()
             is_required = (base_key not in optional_keys) if required is None else bool(required)
             tracker.append({
                 "key": base_key,
@@ -2188,7 +2214,14 @@ class LabNodeExecutor:
         image = Image.new("RGB", (1080, 1920), "#10161f")
         draw = ImageDraw.Draw(image)
         font_path = next((candidate for candidate in (
-            "C:/Windows/Fonts/msyh.ttc", "C:/Windows/Fonts/msyhbd.ttc", "C:/Windows/Fonts/simhei.ttf"
+            "C:/Windows/Fonts/msyh.ttc",
+            "C:/Windows/Fonts/msyhbd.ttc",
+            "C:/Windows/Fonts/simhei.ttf",
+            "/System/Library/Fonts/PingFang.ttc",
+            "/System/Library/Fonts/STHeiti Medium.ttc",
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
         ) if Path(candidate).is_file()), "")
         if not font_path:
             raise RuntimeError("A Chinese-capable system font is required for video rendering")

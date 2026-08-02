@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { Box, Button } from '../../ui.tsx'
 import { fetchStudioResources } from '../../api.ts'
 import { Activity, AlertTriangle, Bot, ChevronDown, ChevronUp, ClipboardCopy, Copy, Download, FileOutput, History, PanelRight, Pause, PlayCircle, RefreshCw, Square, SquarePen, X } from 'lucide-react'
-import { fetchFlowResourceCatalog, fetchMcpSource, type AIFlowSelection, type AIFlowStewardContext, type FlowAnnotation, type FlowEdge, type FlowEngineeringRelation, type FlowEvent, type FlowFiles, type FlowGraph, type FlowLabDetail, type FlowNode, type McpSourceResponse, type RunResult, type StudioToolResource } from '../../api.ts'
+import { analyzeLabFlow, fetchFlowResourceCatalog, fetchMcpSource, type AIFlowSelection, type AIFlowStewardContext, type FlowAnnotation, type FlowEdge, type FlowEngineeringRelation, type FlowEvent, type FlowFiles, type FlowGraph, type FlowLabDetail, type FlowNode, type McpSourceResponse, type RunResult, type StudioToolResource } from '../../api.ts'
 import type { CreateNodeHandler, DesignDisplayMode, GraphResult, NodeDraft } from './types.ts'
 import { FlowGraphView, type CanvasTool, type ProtocolDisplayInfo } from './FlowGraphView.tsx'
 import { NodeDetailCard } from './NodeDetailCard.tsx'
@@ -240,7 +240,7 @@ export function WorkbenchHeader({
       <div className="cf-workbench-brand">
         <BrandMark className="cf-workbench-brand-mark" />
         <strong>CARTRIDGE WORKSPACE <i>/</i> 卡带工作台</strong>
-        <div className="cf-workbench-protocol-tags" aria-label="协议支持"><span>基座目标 {protocolInfo.targetProtocolLabel}</span><span>当前卡带 {protocolInfo.currentProtocolLabel}</span><span>Flow Analyzer</span><span>资源目录</span></div>
+        <div className="cf-workbench-protocol-tags" aria-label="协议支持"><span>基座目标 {protocolInfo.targetProtocolLabel}</span><span>当前卡带 {protocolInfo.currentProtocolLabel}</span><span>流程分析器</span><span>资源目录</span></div>
       </div>
       <div className="cf-workbench-header-spacer" />
       <div className="cf-workbench-actions">
@@ -356,22 +356,16 @@ export function DesignView({
   const [savingNodeIds, setSavingNodeIds] = useState<Set<string>>(() => new Set())
   const executionPlanV1 = useMemo(() => isExecutionPlanV1(files, graph), [files, graph])
   const [executionPlanAnalysis, setExecutionPlanAnalysis] = useState<ExecutionPlanAnalysis | null>(null)
+  const [executionPlanAnalysisError, setExecutionPlanAnalysisError] = useState('')
   useEffect(() => {
     let active = true
     setExecutionPlanAnalysis(null)
+    setExecutionPlanAnalysisError('')
     if (!executionPlanV1 || !editable) return () => { active = false }
-    void fetch(`/api/lab/flows/${encodeURIComponent(flowId)}/analyze`, {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ files, target: 'dev' }),
-    }).then(async (response) => {
-      if (!response.ok) throw new Error(await response.text())
-      return response.json() as Promise<ExecutionPlanAnalysis>
-    }).then((report) => {
+    void analyzeLabFlow<ExecutionPlanAnalysis>(flowId, files).then((report) => {
       if (active && report?.protocol?.runtime_adapter === 'cf-farp.execution-plan.v1') setExecutionPlanAnalysis(report)
-    }).catch(() => {
-      // A missing analysis result must leave an execution-plan canvas without runnable lines.
+    }).catch((error: any) => {
+      if (active) setExecutionPlanAnalysisError(error?.message || 'ExecutionPlan 分析失败')
     })
     return () => { active = false }
   }, [editable, executionPlanV1, files, flowId])
@@ -578,7 +572,7 @@ export function DesignView({
     }).catch((error: any) => { if (active) setMcpError(error?.message || 'MCP 资源目录不可读取') })
     return () => { active = false }
   }, [engineering, flowId, selectedNode?.id, selectedNode?.scope, selectedNode?.params?.resource_id])
-  const canMutateGraph = editable && !executionPlanV1
+  const canMutateGraph = editable
   const canEditSelectedNode = Boolean(editable && selectedNode && !selectedNode.locked && selectedNode.scope !== 'root')
   const visibleEngineeringRelations = useMemo(() => engineeringDataRelations.filter((relation) => (
     relation.kind === 'dependency' ? edgeVisibility.dependency : edgeVisibility.data
@@ -636,6 +630,7 @@ export function DesignView({
             ))}
             <b>{graph.nodes.length} 节点 · {engineeringProjection.resourceCount} 资源 · {engineeringProjection.controlEdgeCount} 控制 · {engineeringRelationCounts.data} 数据 · {engineeringRelationCounts.dependency} 依赖</b>
             {executionPlanV1 && <span>{executionPlanAnalysis?.execution_plan?.status === 'compiled' ? executionPlanAnalysis.execution_plan.runtime_status === 'supported' ? `ExecutionPlan 已编译 · ${executionPlanAnalysis.execution_plan.edge_count || 0} 条计划边` : `ExecutionPlan 已编译，仅工程投影 · 当前 Base 尚未支持运行` : 'ExecutionPlan 未编译 · 旧连线不会显示为运行路线'}</span>}
+            {executionPlanAnalysisError && <span title={executionPlanAnalysisError}>ExecutionPlan 分析失败</span>}
           </div>}
           <div className="cf-design-panel-toggles">
             {engineering && <button type="button" className={engineeringInspectorOpen ? 'active' : ''} onClick={() => setEngineeringInspectorOpen((current) => !current)} title={engineeringInspectorOpen ? '收起节点详情' : '展开节点详情'} aria-pressed={engineeringInspectorOpen}><PanelRight aria-hidden="true" /><span>详情</span></button>}
@@ -734,8 +729,9 @@ const RUN_STATUS_LABELS: Record<string, string> = {
   retrying: '重试中',
 }
 
-export function RunHistoryPanel({ runs, selectedRunId, busy = false, onSelect, onOpenLog, onOpenArtifacts, onRefresh, onClose }: {
+export function RunHistoryPanel({ runs, graph, selectedRunId, busy = false, onSelect, onOpenLog, onOpenArtifacts, onRefresh, onClose }: {
   runs: RunResult[]
+  graph?: FlowGraph
   selectedRunId?: string
   busy?: boolean
   onSelect: (runId: string) => void
@@ -769,11 +765,13 @@ export function RunHistoryPanel({ runs, selectedRunId, busy = false, onSelect, o
           const inputCount = Object.keys(run.inputs || {}).length
           const artifactCount = (run.delivery?.artifacts?.length || run.artifacts?.length || 0)
           const summary = error || run.data_chain?.summary || (inputCount ? `已收集 ${inputCount} 项运行输入，流程已完整执行。` : '运行已完成，未发现需要处理的异常。')
+          const currentNode = graph?.nodes.find((node) => node.id === run.current_state)
+          const currentStateLabel = currentNode?.display_name || currentNode?.title || run.current_state || '尚未进入节点'
           return (
             <article key={run.run_id} className={`${run.run_id === selectedRunId ? 'active' : ''}${expanded ? ' expanded' : ''}`}>
               <button type="button" className="cf-canvas-history-select" onClick={() => { setExpandedRunId(run.run_id); onSelect(run.run_id) }}>
-                <span className="cf-canvas-history-status"><i className={run.status} />{RUN_STATUS_LABELS[run.status] || run.status}<time>{String(run.updated_at || run.created_at || '').replace('T', ' ').slice(5, 16) || '时间未知'}</time></span>
-                <strong>{run.current_state || '尚未进入节点'}</strong>
+                <span className="cf-canvas-history-status"><i className={run.status} />{RUN_STATUS_LABELS[run.status] || run.status}<time>{String(run.updated_at || run.created_at || '').replace('T', ' ').slice(0, 16) || '时间未知'}</time></span>
+                <strong title={run.current_state || undefined}>{currentStateLabel}</strong>
                 <code>{run.run_id}</code>
                 <span className="cf-canvas-history-chevron" aria-hidden="true">{expanded ? <ChevronUp /> : <ChevronDown />}</span>
               </button>

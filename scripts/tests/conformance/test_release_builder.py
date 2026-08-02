@@ -1,4 +1,6 @@
 import json
+import os
+import stat
 import sys
 import tempfile
 import unittest
@@ -11,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "src"))
 
 from core.protocol import build_release_archive, extract_release_payload, inspect_release_archive
-from core.protocol.release_signing import generate_signing_identity, verify_signature_metadata
+from core.protocol.release_signing import ensure_development_signing_identity, generate_signing_identity, verify_signature_metadata
 
 
 def public_contracts():
@@ -42,6 +44,16 @@ def write_source(path: Path):
 
 
 class ReleaseBuilderTests(unittest.TestCase):
+    @unittest.skipIf(os.name == "nt", "POSIX file modes are not enforced on Windows")
+    def test_development_signing_material_is_owner_only(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            ensure_development_signing_identity(root, "demo.publisher")
+            private_files = list(root.rglob("*.pem")) + list(root.rglob("trusted_publishers.json"))
+
+            self.assertEqual(2, len(private_files))
+            self.assertTrue(all(stat.S_IMODE(path.stat().st_mode) == 0o600 for path in private_files))
+
     def test_builds_real_archive_that_runtime_can_stage_without_activation(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

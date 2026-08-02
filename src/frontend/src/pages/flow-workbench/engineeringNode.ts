@@ -775,6 +775,59 @@ export type EngineeringRecipeItem = {
   long?: boolean
 }
 
+const ENGINEERING_LABELS: Record<string, string> = {
+  type: '类型', kind: '处理类别', action: '动作', executor: '执行器', effect: '副作用', scope: '作用范围',
+  source: '输入来源', input: '输入', output: '输出', result: '处理结果', endpoint: '服务地址', model_role: '模型角色',
+  agent: '代理角色', component_ref: '组件引用', tool_binding: '工具绑定', allowed_tools: '允许的工具', mcp_binding: 'MCP 绑定',
+  input_binding: '输入绑定', input_schema: '输入结构', output_contract: '输出契约', primary_output: '主要输出', action_routes: '动作路由',
+  next: '下一步', onSuccess: '成功后', onFailure: '失败后', timeout_ms: '超时', failure_policy: '失败策略', permission: '权限',
+  audit_log: '审计记录', required: '必填', optional: '可选', schema: '数据结构', contract: '契约', value: '值',
+  description: '说明', title: '标题', name: '名称', objects: '对象列表', material: '材质', position: '位置', motion: '运动',
+  camera: '镜头', controls: '交互控制', extra: '补充说明', scene_design: '场景设计', summary: '摘要', status: '状态', payload: '结果数据',
+  requirements: '场景需求', research: '参考资料', research_bundle: '资料汇总', research_bundle_raw: '原始资料汇总',
+  scene_spec: '场景规格', scene_title: '场景标题', scene_code: '场景代码', scene_code_core: '场景核心代码', scene_html: '场景页面',
+  scene_spec_out: '场景规格输出契约', scene_code_core_out: '场景代码输出契约', scene_code_core_rev: '场景代码修订契约',
+  approval: '审核结论', feedback: '修改意见', design: '设计数据', terrain: '地形', lighting: '光照', interaction: '交互方式', palette: '配色',
+  template_file: '模板文件', variables: '变量映射', scene_page: '场景产物',
+}
+
+const ENGINEERING_KEY_TOKENS: Record<string, string> = {
+  news: '新闻', selection: '选择', fact: '事实', facts: '事实', check: '核查', decision: '决策', daily: '每日', brief: '简报',
+  video: '视频', render: '渲染', delivery: '交付', complete: '完成', request: '请求', rss: 'RSS', fetch: '抓取', bundle: '汇总',
+  failure: '失败', collect: '收集', selected: '已选择', script: '脚本', review: '审核', result: '结果', raw: '原始',
+  scene: '场景', code: '代码', core: '核心', page: '页面', spec: '规格', research: '资料', requirements: '需求', output: '输出', input: '输入',
+}
+
+const ENGINEERING_VALUE_LABELS: Record<string, string> = {
+  process: '处理节点', terminal: '结束节点', start: '开始节点', root: '主流程', object: '对象', string: '文本',
+  number: '数字', integer: '整数', boolean: '布尔值', array: '列表', required: '必填', optional: '可选', store: '存储',
+  output: '输出', input: '输入', binding: '绑定', node: '节点', 'node ref': '节点引用', protocol: '协议字段',
+  primary: '主要输出', allowlist: '允许列表', mcp: 'MCP 工具', component: '交互组件', ms: '毫秒', schema: '数据结构',
+  'declared output': '已声明输出', read_only: '只读', none: '无副作用', true: '是', false: '否',
+  llm_prompt: '调用 AI 模型', tool_call: '调用工具', mcp_read: '读取外部数据', remote_call: '调用远程服务',
+  collect_inputs: '采集用户输入', collect_artifacts: '整理交付产物', pass_result: '汇总处理结果', confirm_checkpoint: '等待人工确认',
+  render_template: '渲染页面模板', render_video_brief: '生成视频简报', ai_decision: 'AI 决策', human_review: '人工审核',
+  transform: '数据转换', sub_flow: '子流程', deterministic: '确定性执行', model: '模型执行', base: '基座执行',
+  decision: 'AI 决策', llm: '大语言模型', architect: '场景架构师', resolved: '已解析', contract: '契约', artifact: '产物',
+}
+
+export function humanizeEngineeringKey(value: string) {
+  const key = String(value || '').trim()
+  if (!key) return '-'
+  if (ENGINEERING_LABELS[key]) return ENGINEERING_LABELS[key]
+  return key.split(/[_-]+/).map((token) => ENGINEERING_KEY_TOKENS[token.toLowerCase()] || token).join('')
+}
+
+export function humanizeEngineeringValue(value: string) {
+  const text = String(value ?? '').trim()
+  if (ENGINEERING_VALUE_LABELS[text]) return ENGINEERING_VALUE_LABELS[text]
+  const typedReference = text.match(/^([^\s]+)\s*->\s*(.+)$/)
+  if (typedReference && ENGINEERING_VALUE_LABELS[typedReference[1]]) {
+    return `${ENGINEERING_VALUE_LABELS[typedReference[1]]} -> ${typedReference[2]}`
+  }
+  return text
+}
+
 function recipeValue(value: unknown): string {
   if (value === undefined || value === null) return ''
   if (typeof value === 'string') return value.trim()
@@ -791,7 +844,7 @@ export function summarizeEngineeringRecipeItem(item: EngineeringRecipeItem, limi
     const keys = Array.isArray(item.data)
       ? []
       : Object.keys(item.data as Record<string, unknown>).slice(0, 3)
-    return `${count} 项${keys.length ? ` · ${keys.join(' / ')}` : ''}`
+    return `${count} 项${keys.length ? ` · ${keys.map(humanizeEngineeringKey).join(' / ')}` : ''}`
   }
   const normalized = item.value.replace(/\s+/g, ' ').trim()
   if (!normalized) return ''
@@ -830,7 +883,7 @@ export function buildEngineeringRecipe(node: FlowNode): EngineeringRecipeItem[] 
     push('模型角色', node.model_role || params.model_role, true)
     const llm = (params.llm_options || raw.llm_options) as Record<string, unknown> | undefined
     if (llm && (llm.max_tokens || llm.timeout_seconds)) {
-      push('模型参数', `max_tokens ${llm.max_tokens ?? '-'} · timeout ${llm.timeout_seconds ?? '-'}s`, true)
+      push('模型参数', `最大输出 ${llm.max_tokens ?? '-'} · 超时 ${llm.timeout_seconds ?? '-'} 秒`, true)
     }
     push('系统指令', raw.system_prompt || params.system_prompt)
     push('处理指令', raw.prompt || params.prompt || params.target || params.format)

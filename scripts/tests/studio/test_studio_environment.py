@@ -1,14 +1,33 @@
 import os
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 from core.studio.environment import delete_credential, environment_snapshot, upsert_credential
+from core.cartridge.environment import EnvironmentChecker, _split_command
 from core.studio.release import build_binding_descriptor, resource_preflight
 from core.studio.resource_resolver import LocalResourceBindingError, resolve_cartridge_resources, resolve_runtime_tool_binding
 
 
 class StudioEnvironmentTests(unittest.TestCase):
+    def test_environment_command_preserves_quoted_executable(self):
+        result = EnvironmentChecker()._check_command({
+            "id": "python",
+            "type": "command",
+            "command": f'"{sys.executable}" --version',
+            "required": True,
+        })
+
+        self.assertEqual("ok", result["status"])
+        self.assertRegex(result["detected"], r"\d+\.\d+")
+
+    def test_environment_command_preserves_quoted_argument_values(self):
+        parts = _split_command(f'"{sys.executable}" --label="value with spaces"')
+
+        self.assertEqual(sys.executable, parts[0])
+        self.assertEqual("--label=value with spaces", parts[1])
+
     def test_credential_values_are_masked_and_applied(self):
         key = "CF_TEST_LOCAL_SECRET"
         with tempfile.TemporaryDirectory() as temp_dir:

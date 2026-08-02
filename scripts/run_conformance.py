@@ -22,15 +22,27 @@ from audit_protocol_governance import audit as audit_protocol_governance
 
 
 TEST_GROUPS = ("conformance", "runtime", "studio", "llm", "api", "lab", "orchestration", "hygiene", "history")
+ROOT_TEST_GROUP = "."
 
 
 def discover_tests(pattern: str) -> unittest.TestSuite:
     suite = unittest.TestSuite()
     test_root = ROOT / "scripts" / "tests"
+    suite.addTests(unittest.TestLoader().discover(str(test_root), pattern=pattern))
     for group in TEST_GROUPS:
         loader = unittest.TestLoader()
         suite.addTests(loader.discover(str(test_root / group), pattern=pattern))
     return suite
+
+
+def undiscovered_test_groups(pattern: str) -> list[str]:
+    test_root = ROOT / "scripts" / "tests"
+    known = set(TEST_GROUPS) | {ROOT_TEST_GROUP}
+    discovered = set()
+    for path in test_root.rglob(pattern):
+        relative = path.relative_to(test_root)
+        discovered.add(relative.parts[0] if len(relative.parts) > 1 else ROOT_TEST_GROUP)
+    return sorted(discovered - known)
 
 
 def main() -> int:
@@ -39,6 +51,12 @@ def main() -> int:
     parser.add_argument("--output", default=CONFORMANCE_REPORT.as_posix())
     parser.add_argument("--quiet", action="store_true")
     args = parser.parse_args()
+
+    undiscovered = undiscovered_test_groups(args.pattern)
+    if undiscovered:
+        print("Conformance test discovery has unregistered test groups:")
+        print("\n".join(f"- {group}" for group in undiscovered))
+        return 1
 
     governance_errors = audit_protocol_governance(ROOT)
     if governance_errors:

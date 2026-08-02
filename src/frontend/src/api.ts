@@ -18,25 +18,48 @@ export class ApiError extends Error {
   }
 }
 
-export async function api<T = any>(path: string, options: RequestInit = {}): Promise<T> {
-  const res = await fetch(path, {
-    headers: { 'Content-Type': 'application/json', ...(options.headers as Record<string, string>) },
-    ...options,
-  })
-  if (!res.ok) {
-    const raw = await res.text()
-    let payload: any = null
-    try { payload = JSON.parse(raw) } catch { /* retain plain-text server errors */ }
-    const envelope = payload?.error_envelope as RuntimeErrorEnvelope | undefined
-    const detail = payload?.detail
-    const detailMessage = typeof detail === 'string' ? detail : detail?.message
-    const message = detailMessage
-      || envelope?.message
-      || raw
-      || `Request failed (${res.status})`
-    throw new ApiError(message, res.status, envelope, detail)
+type ApiRequestInit = RequestInit & { timeoutMs?: number }
+
+export async function api<T = unknown>(path: string, options: ApiRequestInit = {}): Promise<T> {
+  const { timeoutMs = 60_000, signal: externalSignal, ...requestOptions } = options
+  const controller = new AbortController()
+  let timedOut = false
+  const abortFromCaller = () => controller.abort(externalSignal?.reason)
+  if (externalSignal?.aborted) abortFromCaller()
+  else externalSignal?.addEventListener('abort', abortFromCaller, { once: true })
+  const timeout = timeoutMs > 0 ? window.setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, timeoutMs) : null
+  const headers = new Headers(requestOptions.headers)
+  if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
+
+  try {
+    const res = await fetch(path, { ...requestOptions, headers, signal: controller.signal })
+    if (!res.ok) {
+      const raw = await res.text()
+      let payload: any = null
+      try { payload = JSON.parse(raw) } catch { /* retain plain-text server errors */ }
+      const envelope = payload?.error_envelope as RuntimeErrorEnvelope | undefined
+      const detail = payload?.detail
+      const detailMessage = typeof detail === 'string' ? detail : detail?.message
+      const message = detailMessage
+        || envelope?.message
+        || raw
+        || `Request failed (${res.status})`
+      throw new ApiError(message, res.status, envelope, detail)
+    }
+    return res.json() as Promise<T>
+  } catch (error) {
+    if (error instanceof ApiError) throw error
+    if ((error as Error)?.name === 'AbortError') {
+      throw new ApiError(timedOut ? `Request timed out after ${timeoutMs} ms` : 'Request was cancelled', timedOut ? 408 : 499)
+    }
+    throw error
+  } finally {
+    if (timeout !== null) window.clearTimeout(timeout)
+    externalSignal?.removeEventListener('abort', abortFromCaller)
   }
-  return res.json() as Promise<T>
 }
 
 // ── 卡带相关类型 ──────────────────────────────────────────────
@@ -171,6 +194,12 @@ export const fetchLabFlow = (id: string) => api<FlowLabDetail>(`/api/lab/flows/$
 
 export const fetchLabFlowFiles = (id: string) =>
   api<{ cartridge_id: string; files: FlowFiles }>(`/api/lab/flows/${id}/files`)
+
+export const analyzeLabFlow = <T = unknown>(id: string, files: FlowFiles, target = 'dev') =>
+  api<T>(`/api/lab/flows/${encodeURIComponent(id)}/analyze`, {
+    method: 'POST',
+    body: JSON.stringify({ files, target }),
+  })
 
 export const askAIFlowSteward = (
   id: string,

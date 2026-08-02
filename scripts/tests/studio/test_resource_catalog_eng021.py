@@ -139,6 +139,16 @@ class ResourceCatalogEng021Tests(unittest.TestCase):
         self.assertEqual(409, raised.exception.status_code)
         self.assertEqual("failed", raised.exception.health["status"])
 
+    def test_connector_rejects_header_injection_in_auth_scheme(self):
+        with _healthy_connector() as endpoint, patch.dict(os.environ, {"ENG021_NEWS_TOKEN": "secret"}):
+            resource_id = "external-news-injection-test"
+            resources = _resources(endpoint, bound=True, resource_id=resource_id)
+            resources["tools"][0]["auth_scheme"] = "Bearer\r\nX-Injected: yes"
+            with self.assertRaises(ResourceCatalogError) as raised:
+                check_flow_resource_connectivity(ROOT, _manifest(), _flow(), resource_id, resources=resources)
+
+        self.assertEqual("EXTERNAL_CONNECTOR_CONFIGURATION_INVALID", raised.exception.code)
+
     def test_local_parsable_and_unauditable_modes_are_distinct(self):
         portable_manifest = {
             "id": "dev.eng021-local",

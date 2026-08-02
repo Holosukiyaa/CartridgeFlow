@@ -384,9 +384,9 @@ li.focus.expanded .cf-runtime-material-body p {
 .cf-workbench-page .cf-workbench-actions { flex: 1 1 auto; justify-content: flex-end; }
 .cf-workbench-protocol-tags { gap: 6px; }
 .cf-workbench-protocol-tags span {
-  border-color: color-mix(in srgb, var(--accent) 22%, #dfe4e8);
+  border-color: #dfe3e7;
   background: #fff;
-  color: #40675f;
+  color: #66717c;
 }
 .cf-workbench-page .cf-workbench-cartridge-control {
   width: fit-content;

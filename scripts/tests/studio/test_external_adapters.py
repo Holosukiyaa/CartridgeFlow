@@ -106,6 +106,24 @@ def _binding(kind, **connection):
 
 
 class ExternalAdapterTests(unittest.TestCase):
+    def test_remote_http_rejects_header_injection_in_auth_scheme(self):
+        with _http_fixture() as base_url, patch.dict(os.environ, {"CF_FIXTURE_API_KEY": "secret"}):
+            result = execute_external_tool(
+                _binding(
+                    "remote_api",
+                    endpoint=f"{base_url}/direct",
+                    auth_env="CF_FIXTURE_API_KEY",
+                    auth_scheme="Bearer\r\nX-Injected: yes",
+                ),
+                "fixture",
+                "call",
+                {},
+                {"timeout_ms": 2_000},
+            )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual("request_invalid", result["code"])
+
     def test_remote_http_executes_openapi_operation_with_local_auth(self):
         secret = "local-secret-value"
         with _http_fixture() as base_url, patch.dict(os.environ, {"CF_FIXTURE_API_KEY": secret}):

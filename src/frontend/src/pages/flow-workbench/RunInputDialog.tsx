@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState, type ChangeEvent } from 'react'
-import { uploadWorkspaceFile } from '../../api.ts'
+import { uploadWorkspaceFile, type CartridgeInput } from '../../api.ts'
 import { resolveRunInputDefault } from './inputDefaults.ts'
 
 export function RunInputDialog({
@@ -8,7 +8,7 @@ export function RunInputDialog({
   onSubmit,
   onCancel,
 }: {
-  inputs: any[]
+  inputs: CartridgeInput[]
   disabled?: boolean
   onSubmit: (values: Record<string, string>) => void
   onCancel: () => void
@@ -108,7 +108,7 @@ export function RunInputDialog({
                     value={values[input.id] || ''}
                     onChange={(event) => setValues((current) => ({ ...current, [input.id]: event.target.value }))}
                   >
-                    {input.options.map((option: any) => (
+                    {input.options.map((option) => (
                       <option key={option.value} value={option.value}>{option.label || option.value}</option>
                     ))}
                   </select>
@@ -133,4 +133,3 @@ export function RunInputDialog({
     </div>
   )
 }
-

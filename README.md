@@ -16,6 +16,13 @@ python scripts/launch.py
 The workbench opens at `http://127.0.0.1:5173`. User configuration, runs,
 artifacts, and temporary files live under `.data/` by default. Set
 `CARTRIDGEFLOW_DATA_ROOT` before process startup to relocate that data root.
+Relative values are resolved from the repository root; use an absolute path to
+place runtime data elsewhere on the machine.
+
+The repository has three independent version dimensions: `VERSION` is the
+CartridgeFlow product release, `src/frontend/package.json` versions the private
+frontend bundle, and `config/base/BASE_IMPLEMENTATION.json` versions the Base
+implementation and its protocol support evidence.
 
 ## Verify
 

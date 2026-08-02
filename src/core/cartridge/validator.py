@@ -10,6 +10,17 @@ class ManifestValidationError(ValueError):
     pass
 
 
+def resolve_package_entry(package_path: Path, entry: object, field: str) -> Path:
+    value = str(entry or "").strip().replace("\\", "/")
+    if not value or Path(value).is_absolute():
+        raise ValueError(f"{field} must be a package-relative path")
+    root = package_path.resolve()
+    candidate = (root / value).resolve()
+    if candidate != root and root not in candidate.parents:
+        raise ValueError(f"{field} points outside the cartridge package")
+    return candidate
+
+
 def _catalog_protocol_features(runtime_contract: dict) -> frozenset[str]:
     return protocol_features(
         str(runtime_contract.get("protocol") or ""),
@@ -216,7 +227,12 @@ class ManifestValidator:
             errors.append("manifest.root_flow must be an object")
         else:
             root_entry = manifest["root_flow"].get("entry", "root.flow.json")
-            if not (package_path / root_entry).is_file():
+            try:
+                root_path = resolve_package_entry(package_path, root_entry, "manifest.root_flow.entry")
+            except ValueError as exc:
+                errors.append(str(exc))
+                root_path = None
+            if root_path is not None and not root_path.is_file():
                 errors.append(f"root_flow entry not found: {root_entry}")
 
         welcome = manifest.get("welcome") or {}
@@ -227,8 +243,14 @@ class ManifestValidator:
                 entry = welcome.get("entry")
                 if not entry:
                     errors.append("manifest.welcome.entry is required for markdown welcome")
-                elif not (package_path / entry).is_file():
-                    errors.append(f"welcome entry not found: {entry}")
+                else:
+                    try:
+                        welcome_path = resolve_package_entry(package_path, entry, "manifest.welcome.entry")
+                    except ValueError as exc:
+                        errors.append(str(exc))
+                        welcome_path = None
+                    if welcome_path is not None and not welcome_path.is_file():
+                        errors.append(f"welcome entry not found: {entry}")
 
         permissions = manifest.get("permissions", [])
         if not isinstance(permissions, list):

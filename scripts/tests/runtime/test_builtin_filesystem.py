@@ -1,7 +1,9 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
+from core.lab import builtin_mcp as builtin_mcp_module
 from core.lab.builtin_mcp import BASE_BUILTIN_TOOL_IDS, BuiltinMcpRegistry
 
 
@@ -25,6 +27,23 @@ class BuiltinFilesystemTest(unittest.TestCase):
         actual = {f"{server}/{tool}" for server, tools in registry.list_tools().items() for tool in tools}
         self.assertEqual(BASE_BUILTIN_TOOL_IDS, actual)
         self.assertEqual({"filesystem"}, set(registry.list_tools()))
+
+    def test_read_write_and_append_enforce_byte_limits(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "large.txt").write_text("12345", encoding="utf-8")
+            registry = BuiltinMcpRegistry(root)
+            with patch.object(builtin_mcp_module, "MAX_FILESYSTEM_READ_BYTES", 4):
+                read = registry.call("filesystem", "read_file", {"path": "large.txt"})
+            with patch.object(builtin_mcp_module, "MAX_FILESYSTEM_WRITE_BYTES", 4):
+                write = registry.call("filesystem", "write_file", {"path": "write.txt", "content": "12345"})
+                append = registry.call("filesystem", "append_file", {"path": "append.txt", "content": "12345"})
+
+            self.assertFalse(read["ok"])
+            self.assertFalse(write["ok"])
+            self.assertFalse(append["ok"])
+            self.assertFalse((root / "write.txt").exists())
+            self.assertFalse((root / "append.txt").exists())
 
 
 if __name__ == "__main__":

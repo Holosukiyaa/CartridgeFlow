@@ -1,4 +1,6 @@
 import json
+import os
+import stat
 import tempfile
 import unittest
 from pathlib import Path
@@ -85,6 +87,8 @@ class StudioResourcesTests(unittest.TestCase):
 
             self.assertEqual(1, json.loads(target.read_text(encoding="utf-8"))["version"])
             self.assertEqual([], list(target.parent.glob("*.tmp")))
+            if os.name != "nt":
+                self.assertEqual(0o600, stat.S_IMODE(target.stat().st_mode))
 
 
 if __name__ == "__main__":

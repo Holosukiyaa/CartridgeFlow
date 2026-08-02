@@ -31,6 +31,13 @@ class SandboxRendererManager:
         )
         if not component:
             raise SandboxRendererError(f"sandbox frontend component is not declared: {component_ref}")
+        entry = str(component.get("entry") or "").replace("\\", "/")
+        entry_record = next(
+            (item for item in descriptor.get("files") or [] if item.get("path") == entry),
+            None,
+        )
+        if not entry_record or not entry_record.get("sha256"):
+            raise SandboxRendererError("sandbox frontend entry hash is missing from the descriptor")
         self.revoke(scope_key)
         token = secrets.token_urlsafe(32)
         port = self._free_port()
@@ -68,12 +75,11 @@ class SandboxRendererManager:
             except subprocess.TimeoutExpired:
                 process.kill()
             raise SandboxRendererError("sandbox renderer startup timed out")
-        entry = str(component.get("entry") or "").replace("\\", "/")
         self._processes[scope_key] = {"process": process, "started": time.monotonic(), "port": port}
         return {
             "url": f"http://localhost:{port}/component/{token}/{entry}",
             "origin": f"http://localhost:{port}",
-            "entry_sha256": next(item.get("sha256") for item in descriptor.get("files") or [] if item.get("path") == entry),
+            "entry_sha256": entry_record["sha256"],
             "descriptor_sha256": descriptor.get("_descriptor_sha256"),
             "policy": {
                 "process": "dedicated",

@@ -156,6 +156,22 @@ class ProtocolV08RuntimeTests(unittest.TestCase):
         }
         self.assertEqual(["b"], RootFlowEngine(flow).next_states("a", {"store": {}}))
 
+    def test_terminal_state_name_does_not_leak_into_run_status(self):
+        flow = {
+            "start": "start",
+            "states": {
+                "start": {"type": "system", "next": "done"},
+                "done": {"type": "terminal"},
+            },
+        }
+        engine = RootFlowEngine(flow)
+        state = engine.create_state("run_terminal", {})
+
+        result = engine.run_standard_flow(state, {})
+
+        self.assertEqual("completed", result["status"])
+        self.assertEqual("done", result["current_state"])
+
 
 if __name__ == "__main__":
     unittest.main()

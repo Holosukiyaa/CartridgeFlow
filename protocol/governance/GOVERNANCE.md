@@ -18,7 +18,7 @@
 ```text
 protocol/base/0.2/specification.md
 protocol/flow-authoring/1.0/README.md
-protocol/base/CARTRIDGEFLOW-BASE-0.2.json
+protocol/base/0.2/release.json
 protocol/flow-authoring/1.0/release.json
 ```
 

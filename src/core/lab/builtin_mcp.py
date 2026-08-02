@@ -20,6 +20,10 @@ BASE_BUILTIN_TOOL_IDS = frozenset(
     {f"filesystem/{tool}" for tool in FILESYSTEM_DESCRIPTIONS}
 )
 
+MAX_FILESYSTEM_READ_BYTES = 4 * 1024 * 1024
+MAX_FILESYSTEM_WRITE_BYTES = 4 * 1024 * 1024
+MAX_FILESYSTEM_FILE_BYTES = 16 * 1024 * 1024
+
 
 class BuiltinMcpRegistry:
     """Registry containing base tools plus one explicitly scoped cartridge DLC."""
@@ -111,8 +115,11 @@ class BuiltinMcpRegistry:
                     target = self._safe_path(item, allow_uploaded_file=True)
                     if not target.is_file():
                         return {"ok": False, "error": f"File not found: {item}"}
+                    size = target.stat().st_size
+                    if total + size > MAX_FILESYSTEM_READ_BYTES:
+                        return {"ok": False, "error": f"Read exceeds {MAX_FILESYSTEM_READ_BYTES} byte limit"}
                     content = target.read_text(encoding="utf-8", errors="replace")
-                    total += len(content)
+                    total += size
                     chunks.append(content if len(items) == 1 else f"--- FILE: {item} ---\n{content}")
                 return {"ok": True, "path": items[0] if len(items) == 1 else items, "content": "\n\n".join(chunks), "size": total, "count": len(items)}
             except Exception as exc:
@@ -126,8 +133,11 @@ class BuiltinMcpRegistry:
                 target = self._safe_path(raw)
                 target.parent.mkdir(parents=True, exist_ok=True)
                 content = str(params.get("content") or "")
+                content_size = len(content.encode("utf-8"))
+                if content_size > MAX_FILESYSTEM_WRITE_BYTES:
+                    return {"ok": False, "error": f"Write exceeds {MAX_FILESYSTEM_WRITE_BYTES} byte limit"}
                 target.write_text(content, encoding="utf-8")
-                return {"ok": True, "path": str(target), "written": len(content)}
+                return {"ok": True, "path": str(target), "written": content_size}
             except Exception as exc:
                 return {"ok": False, "error": str(exc)}
 
@@ -139,9 +149,13 @@ class BuiltinMcpRegistry:
                 target = self._safe_path(raw)
                 target.parent.mkdir(parents=True, exist_ok=True)
                 content = str(params.get("content") or "")
+                content_size = len(content.encode("utf-8"))
+                current_size = target.stat().st_size if target.exists() else 0
+                if content_size > MAX_FILESYSTEM_WRITE_BYTES or current_size + content_size > MAX_FILESYSTEM_FILE_BYTES:
+                    return {"ok": False, "error": "Append exceeds filesystem byte limit"}
                 with target.open("a", encoding="utf-8") as handle:
                     handle.write(content)
-                return {"ok": True, "path": str(target), "appended": len(content)}
+                return {"ok": True, "path": str(target), "appended": content_size}
             except Exception as exc:
                 return {"ok": False, "error": str(exc)}
 

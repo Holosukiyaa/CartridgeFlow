@@ -234,6 +234,13 @@
 .cf-workbench-page .cf-workbench-runtime-controls button:hover:not(:disabled) { background: var(--accent-soft) !important; }
 .cf-workbench-page .cf-workbench-runtime-controls button.active { background: var(--accent-soft) !important; box-shadow: inset 0 -2px 0 var(--accent) !important; }
 .cf-workbench-page .cf-workbench-runtime-controls button:disabled { color: #aeb5bd !important; opacity: 1; }
+.cf-workbench-page .cf-workbench-runtime-controls .cf-run-readiness-button {
+  min-width: 92px;
+  color: #9b402a;
+  background: #fff3ed;
+  font-weight: 700;
+}
+.cf-workbench-page .cf-workbench-runtime-controls .cf-run-readiness-button svg { color: #b8563a; }
 
 .cf-workbench-page .cf-workbench-design-shell {
   flex: 1 1 auto;

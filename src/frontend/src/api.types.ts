@@ -159,6 +159,25 @@ export interface FlowAnalysisReport {
   }
 }
 
+export interface AuthoringReadinessItem {
+  id: string
+  area: 'flow' | 'inputs' | 'models' | 'tools' | 'delivery' | string
+  severity: 'blocker' | 'warning' | string
+  code: string
+  message: string
+  node_id?: string
+  action?: { type: 'node' | 'panel' | string; target: string; label: string }
+}
+
+export interface AuthoringReadiness {
+  schema: string
+  status: 'blocked' | 'warning' | 'ready'
+  can_run: boolean
+  source_digest?: string
+  summary: { blockers: number; warnings: number }
+  items: AuthoringReadinessItem[]
+}
+
 export interface FlowEngineeringEndpoint {
   type: string
   node_id?: string
@@ -484,6 +503,7 @@ export interface NodeCreatePayload {
   title?: string
   after_node_id?: string
   insert_mode?: 'insert' | 'branch'
+  node?: Record<string, any>
 }
 
 // ── LLM Provider 相关类型 ──────────────────────────────────────────────

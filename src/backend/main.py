@@ -2606,6 +2606,110 @@ def analyze_lab_flow(cartridge_id: str, payload: FlowAnalysisPayload):
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@app.post("/api/lab/flows/{cartridge_id}/readiness")
+def get_lab_flow_readiness(cartridge_id: str, payload: DevFlowFilesPayload):
+    try:
+        cartridge = registry.get_cartridge(cartridge_id)
+        files = payload.files if cartridge.get("editable") else {}
+        preview = dev_flow_manager.preview_graph(cartridge_id, files) if cartridge.get("editable") else cartridge
+        root_flow = preview.get("root_flow") or {}
+        protocol = root_flow.get("protocol") if isinstance(root_flow.get("protocol"), dict) else {}
+        catalog = load_protocol_release_catalog(ROOT)
+        from core.lab.flow_analyzer import analyze_flow, build_authoring_readiness
+        analysis = analyze_flow(
+            root_flow,
+            preview,
+            target="dev",
+            base=load_base_implementation(ROOT),
+            runtime_adapter=catalog.runtime_adapter(str(protocol.get("id") or ""), str(protocol.get("version") or "")),
+        )
+        manifest = preview.get("manifest") if isinstance(preview.get("manifest"), dict) else preview
+        from core.studio.resource_catalog import build_flow_resource_catalog
+        resource_catalog = build_flow_resource_catalog(
+            ROOT,
+            manifest,
+            root_flow,
+            package_path=cartridge.get("package_path"),
+        )
+        return build_authoring_readiness(manifest, root_flow, analysis, resource_catalog)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+_NODE_UPDATE_FIELDS = (
+    "title", "type", "action", "next", "kind", "executor", "effect",
+    "display_name", "component_ref", "interaction_mode", "input_binding",
+    "action_routes", "output", "display", "input_kind", "source",
+    "input_schema", "output_contract", "decision_contract", "decision_test_mode",
+    "mock_decision_envelope", "primary_output", "tool_binding", "allowed_tools",
+    "mcp_binding", "failure_policy", "permission", "audit_log", "endpoint",
+    "timeout_ms", "agent", "tools", "params", "model_role", "layout", "inputs",
+    "outputs",
+)
+
+
+def _apply_node_update_payload(state: dict, payload: NodeUpdatePayload) -> None:
+    """Apply the same typed node patch during create and update operations."""
+    provided_fields = payload.model_fields_set
+    for key in _NODE_UPDATE_FIELDS:
+        if key not in provided_fields:
+            continue
+        value = getattr(payload, key)
+        if value is None:
+            state.pop(key, None)
+        else:
+            state[key] = value
+
+
+def _apply_manifest_contracts(
+    files: dict,
+    payload: NodeUpdatePayload | None,
+    previous_state: dict | None = None,
+    preserve_existing_inputs: bool = True,
+) -> bool:
+    if payload is None:
+        return False
+    updates_inputs = "manifest_inputs" in payload.model_fields_set
+    updates_roles = "manifest_model_roles" in payload.model_fields_set
+    if not updates_inputs and not updates_roles:
+        return False
+    import json as _json
+    manifest = _json.loads(files.get("manifest") or "{}")
+    if updates_inputs:
+        previous_params = previous_state.get("params") if isinstance(previous_state, dict) and isinstance(previous_state.get("params"), dict) else {}
+        previous_input_ids = {
+            str(item).strip()
+            for item in previous_params.get("fields") or []
+            if str(item).strip()
+        }
+        incoming_inputs = [item for item in payload.manifest_inputs or [] if isinstance(item, dict)]
+        incoming_ids = {str(item.get("id") or "").strip() for item in incoming_inputs}
+        preserved_inputs = [
+            item for item in manifest.get("inputs") or []
+            if isinstance(item, dict)
+            and str(item.get("id") or "").strip() not in previous_input_ids
+            and str(item.get("id") or "").strip() not in incoming_ids
+        ] if preserve_existing_inputs else []
+        manifest["inputs"] = [*preserved_inputs, *incoming_inputs]
+    if updates_roles:
+        recipe = manifest.get("llm_recipe") if isinstance(manifest.get("llm_recipe"), dict) else {}
+        incoming_roles = [item for item in payload.manifest_model_roles or [] if isinstance(item, dict)]
+        incoming_role_ids = {str(item.get("id") or "").strip() for item in incoming_roles}
+        preserved_roles = [
+            item for item in recipe.get("roles") or []
+            if isinstance(item, dict) and str(item.get("id") or "").strip() not in incoming_role_ids
+        ]
+        manifest["llm_recipe"] = {
+            **recipe,
+            "schema": "cartridgeflow.llm_recipe.v1",
+            "roles": [*preserved_roles, *incoming_roles],
+        }
+    files["manifest"] = _json.dumps(manifest, ensure_ascii=False, indent=2)
+    return True
+
+
 @app.post("/api/lab/flows/{cartridge_id}/nodes")
 def create_lab_flow_node(cartridge_id: str, payload: NodeCreatePayload):
     try:
@@ -2736,6 +2840,23 @@ def create_lab_flow_node(cartridge_id: str, payload: NodeCreatePayload):
     new_state["locked"] = False
     if payload.title:
         new_state["title"] = payload.title
+    if payload.node is not None:
+        _apply_node_update_payload(new_state, payload.node)
+    has_existing_user_form = any(
+        isinstance(item, dict)
+        and isinstance(item.get("params"), dict)
+        and str(item.get("action") or item["params"].get("action") or "") == "collect_inputs"
+        and (
+            str(item["params"].get("preset") or "") == "user_form"
+            or str(item.get("input_kind") or "") == "initial"
+        )
+        for item in states.values()
+    )
+    manifest_changed = _apply_manifest_contracts(
+        files,
+        payload.node,
+        preserve_existing_inputs=has_existing_user_form,
+    )
     _ensure_typed_node_contracts(root_flow, new_state)
     after_node_id = payload.after_node_id or root_flow.get("start")
     if _is_execution_plan_root_flow(root_flow):
@@ -2777,6 +2898,8 @@ def create_lab_flow_node(cartridge_id: str, payload: NodeCreatePayload):
         root_flow.pop("control_edges", None)
         files["root_flow"] = _json.dumps(root_flow, ensure_ascii=False, indent=2)
         dev_flow_manager.save_file(cartridge_id, "root_flow", files["root_flow"])
+        if manifest_changed:
+            dev_flow_manager.save_file(cartridge_id, "manifest", files["manifest"])
         validation = dev_flow_manager.validate_files(cartridge_id, files)
         graph = flow_graph_builder.build(dev_flow_manager.preview_graph(cartridge_id, files))
         return {"status": "node_created", "node_id": node_id, "files": files, "validation": validation, "graph": graph}
@@ -2803,6 +2926,8 @@ def create_lab_flow_node(cartridge_id: str, payload: NodeCreatePayload):
     _sync_flow_edges_from_next(root_flow, branch_edges)
     files["root_flow"] = _json.dumps(root_flow, ensure_ascii=False, indent=2)
     dev_flow_manager.save_file(cartridge_id, "root_flow", files["root_flow"])
+    if manifest_changed:
+        dev_flow_manager.save_file(cartridge_id, "manifest", files["manifest"])
     validation = dev_flow_manager.validate_files(cartridge_id, files)
     graph = flow_graph_builder.build(dev_flow_manager.preview_graph(cartridge_id, files))
     return {"status": "node_created", "node_id": node_id, "files": files, "validation": validation, "graph": graph}
@@ -2892,53 +3017,8 @@ def update_lab_flow_node(cartridge_id: str, node_id: str, payload: NodeUpdatePay
         raise HTTPException(status_code=404, detail=f"Node not found: {node_id}")
 
     state = states[node_id]
-    updates = {
-        "title": payload.title,
-        "type": payload.type,
-        "action": payload.action,
-        "next": payload.next,
-        "kind": payload.kind,
-        "executor": payload.executor,
-        "effect": payload.effect,
-        "display_name": payload.display_name,
-        "component_ref": payload.component_ref,
-        "interaction_mode": payload.interaction_mode,
-        "input_binding": payload.input_binding,
-        "action_routes": payload.action_routes,
-        "output": payload.output,
-        "display": payload.display,
-        "input_kind": payload.input_kind,
-        "source": payload.source,
-        "input_schema": payload.input_schema,
-        "output_contract": payload.output_contract,
-        "decision_contract": payload.decision_contract,
-        "decision_test_mode": payload.decision_test_mode,
-        "mock_decision_envelope": payload.mock_decision_envelope,
-        "primary_output": payload.primary_output,
-        "tool_binding": payload.tool_binding,
-        "allowed_tools": payload.allowed_tools,
-        "mcp_binding": payload.mcp_binding,
-        "failure_policy": payload.failure_policy,
-        "permission": payload.permission,
-        "audit_log": payload.audit_log,
-        "endpoint": payload.endpoint,
-        "timeout_ms": payload.timeout_ms,
-        "agent": payload.agent,
-        "tools": payload.tools,
-        "params": payload.params,
-        "model_role": payload.model_role,
-        "layout": payload.layout,
-        "inputs": payload.inputs,
-        "outputs": payload.outputs,
-    }
-    provided_fields = payload.model_fields_set
-    for key, value in updates.items():
-        if key not in provided_fields:
-            continue
-        if value is None:
-            state.pop(key, None)
-        else:
-            state[key] = value
+    manifest_changed = _apply_manifest_contracts(files, payload, state)
+    _apply_node_update_payload(state, payload)
     _ensure_typed_node_contracts(root_flow, state)
     if _is_typed_root_flow(root_flow):
         branch_edges = [edge for edge in _flow_edges(root_flow) if _edge_scope(edge) != "root"]
@@ -2948,6 +3028,8 @@ def update_lab_flow_node(cartridge_id: str, node_id: str, payload: NodeUpdatePay
     validation = dev_flow_manager.validate_files(cartridge_id, files)
     if validation.get("valid"):
         dev_flow_manager.save_file(cartridge_id, "root_flow", files["root_flow"])
+        if manifest_changed:
+            dev_flow_manager.save_file(cartridge_id, "manifest", files["manifest"])
     graph = flow_graph_builder.build(dev_flow_manager.preview_graph(cartridge_id, files))
     return {
         "status": "node_updated",

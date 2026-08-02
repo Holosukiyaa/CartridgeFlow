@@ -356,8 +356,8 @@ def normalize_assignments(data: dict | None) -> dict:
 def build_model_binding_report(manifest: dict, root_flow: dict | None = None) -> dict:
     recipe = manifest.get("llm_recipe") if isinstance(manifest.get("llm_recipe"), dict) else {}
     roles = recipe.get("roles") if recipe.get("schema") == "cartridgeflow.llm_recipe.v1" else []
-    if not isinstance(roles, list) or not roles:
-        return {"status": "ok", "items": []}
+    if not isinstance(roles, list):
+        roles = []
     providers = {item.get("id"): item for item in list_providers()}
     assignments = get_assignments()
     cartridge_id = str(manifest.get("id") or "")

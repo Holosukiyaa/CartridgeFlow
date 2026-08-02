@@ -995,3 +995,179 @@ def _without_layout(value):
     if isinstance(value, list):
         return [_without_layout(item) for item in value]
     return value
+
+
+def build_authoring_readiness(
+    manifest: dict,
+    root_flow: dict,
+    analysis: dict | None = None,
+    resource_catalog: dict | None = None,
+) -> dict:
+    """Combine protocol, inputs, models, and local tools into one run gate."""
+    from core.llm.config_manager import build_model_binding_report
+
+    items: list[dict] = []
+    for finding in (analysis or {}).get("findings") or []:
+        severity = str(finding.get("severity") or "warning")
+        if severity not in {"blocker", "warning"}:
+            continue
+        node_id = str(finding.get("node_id") or "")
+        items.append({
+            "id": str(finding.get("id") or f"analysis:{finding.get('code') or len(items)}"),
+            "area": "flow",
+            "severity": severity,
+            "code": str(finding.get("code") or "FLOW_CONFIGURATION_REQUIRED"),
+            "message": str(finding.get("message") or "流程配置尚未完成"),
+            **({"node_id": node_id} if node_id else {}),
+            "action": {
+                "type": "node" if node_id else "panel",
+                "target": node_id or "settings",
+                "label": "配置节点" if node_id else "检查流程配置",
+            },
+        })
+
+    manifest_input_ids = {
+        str(item.get("id") or "").strip()
+        for item in manifest.get("inputs") or []
+        if isinstance(item, dict) and str(item.get("id") or "").strip()
+    }
+    states = root_flow.get("states") if isinstance(root_flow.get("states"), dict) else {}
+    input_node_ids: list[str] = []
+    collected_input_ids: set[str] = set()
+    empty_input_nodes: list[str] = []
+    for node_id, state in states.items():
+        if not isinstance(state, dict):
+            continue
+        params = state.get("params") if isinstance(state.get("params"), dict) else {}
+        if str(state.get("action") or params.get("action") or "") != "collect_inputs":
+            continue
+        if str(params.get("preset") or "") != "user_form" and str(state.get("input_kind") or "") != "initial":
+            continue
+        fields = set(_string_list(params.get("fields")))
+        input_node_ids.append(str(node_id))
+        collected_input_ids.update(fields)
+        if not fields:
+            empty_input_nodes.append(str(node_id))
+    if input_node_ids and (collected_input_ids != manifest_input_ids or empty_input_nodes):
+        missing_from_run = sorted(collected_input_ids - manifest_input_ids)
+        unused_run_inputs = sorted(manifest_input_ids - collected_input_ids)
+        details = []
+        if missing_from_run:
+            details.append(f"运行窗口缺少：{', '.join(missing_from_run)}")
+        if unused_run_inputs:
+            details.append(f"节点未收集：{', '.join(unused_run_inputs)}")
+        if empty_input_nodes:
+            details.append("存在尚未声明字段的输入节点")
+        node_id = empty_input_nodes[0] if empty_input_nodes else input_node_ids[0]
+        items.append({
+            "id": f"readiness:input:{node_id}",
+            "area": "inputs",
+            "severity": "blocker",
+            "code": "RUN_INPUT_CONTRACT_MISMATCH",
+            "message": "流程启动输入与输入节点不一致。" + ("；".join(details) if details else ""),
+            "node_id": node_id,
+            "action": {"type": "panel", "target": "settings", "label": "配置运行输入"},
+        })
+
+    model_report = build_model_binding_report(manifest, root_flow)
+    model_items = model_report.get("items") or []
+    blocked_roles = {
+        str(item.get("id") or "")
+        for item in model_items
+        if not str(item.get("id") or "").startswith("node:") and str(item.get("status") or "ok") != "ok"
+    }
+    for model_item in model_items:
+        status = str(model_item.get("status") or "ok")
+        if status == "ok":
+            continue
+        node_id = str(model_item.get("node_id") or "")
+        model_role = str(model_item.get("model_role") or "")
+        if node_id and model_role in blocked_roles:
+            continue
+        message = str(model_item.get("message") or "模型配置尚未完成")
+        if "no explicit model connection binding" in message:
+            message = f"“{model_item.get('label') or 'AI 节点'}”尚未选择执行模型"
+        elif not node_id and "尚未显式绑定模型角色" in message:
+            message = "当前流程还没有可用的执行模型"
+        items.append({
+            "id": f"readiness:model:{model_item.get('id') or len(items)}",
+            "area": "models",
+            "severity": "blocker" if status == "blocked" else "warning",
+            "code": "MODEL_BINDING_REQUIRED",
+            "message": message,
+            **({"node_id": node_id} if node_id else {}),
+            "action": {"type": "panel", "target": "models", "label": "绑定模型"},
+        })
+
+    catalog_tools = [
+        item for item in (resource_catalog or {}).get("tools") or []
+        if isinstance(item, dict)
+    ]
+    for finding in (resource_catalog or {}).get("findings") or []:
+        if not isinstance(finding, dict):
+            continue
+        severity = str(finding.get("severity") or "warning")
+        if severity not in {"blocker", "warning"}:
+            continue
+        code = str(finding.get("code") or "TOOL_CONFIGURATION_REQUIRED")
+        node_ids = [str(value) for value in finding.get("node_ids") or [] if str(value)]
+        messages = {
+            "NODE_TOOL_NOT_DECLARED": "节点使用的工具尚未加入当前流程",
+            "NODE_TOOL_RESOURCE_NOT_BOUND": "节点使用的工具尚未完成本机绑定",
+            "TOOL_RESOURCE_UNRESOLVED": "当前流程声明的工具在本机不可用",
+        }
+        items.append({
+            "id": f"readiness:resource:{code}:{node_ids[0] if node_ids else len(items)}",
+            "area": "tools",
+            "severity": severity,
+            "code": code,
+            "message": messages.get(code, str(finding.get("message") or "工具配置尚未完成")),
+            **({"node_id": node_ids[0]} if node_ids else {}),
+            "action": {"type": "panel", "target": "tools", "label": "配置工具"},
+        })
+
+    tools_by_pair: dict[tuple[str, str], list[dict]] = {}
+    for tool in catalog_tools:
+        pair = (str(tool.get("server") or ""), str(tool.get("tool") or ""))
+        if all(pair):
+            tools_by_pair.setdefault(pair, []).append(tool)
+    for node_id, state in states.items():
+        if not isinstance(state, dict):
+            continue
+        params = state.get("params") if isinstance(state.get("params"), dict) else {}
+        declared_tools = state.get("tools") if isinstance(state.get("tools"), list) else params.get("tools")
+        for tool in declared_tools if isinstance(declared_tools, list) else []:
+            if not isinstance(tool, dict) or tool.get("enabled") is False:
+                continue
+            server = str(tool.get("server") or "").strip()
+            tool_name = str(tool.get("tool") or "").strip()
+            if not server or not tool_name:
+                continue
+            candidates = tools_by_pair.get((server, tool_name), [])
+            available = any(
+                candidate.get("source") == "base_builtin" or candidate.get("status") == "ready"
+                for candidate in candidates
+            )
+            if available:
+                continue
+            items.append({
+                "id": f"readiness:inline-tool:{node_id}:{server}/{tool_name}",
+                "area": "tools",
+                "severity": "blocker",
+                "code": "TOOL_RESOURCE_UNAVAILABLE",
+                "message": f"“{state.get('display_name') or state.get('title') or node_id}”使用的工具 {server}/{tool_name} 在本机不可用或尚未绑定",
+                "node_id": node_id,
+                "action": {"type": "panel", "target": "tools", "label": "配置工具"},
+            })
+
+    items = _dedupe_by_id(items)
+    blockers = sum(item.get("severity") == "blocker" for item in items)
+    warnings = sum(item.get("severity") == "warning" for item in items)
+    return {
+        "schema": "cartridgeflow.authoring_readiness.v1",
+        "status": "blocked" if blockers else "warning" if warnings else "ready",
+        "can_run": blockers == 0,
+        "source_digest": str((analysis or {}).get("source_digest") or ""),
+        "summary": {"blockers": blockers, "warnings": warnings},
+        "items": items,
+    }

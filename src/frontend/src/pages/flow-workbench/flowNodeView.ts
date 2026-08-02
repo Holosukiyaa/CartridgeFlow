@@ -90,16 +90,16 @@ const KIND_LABELS: Record<NodeSemanticKind, string> = {
   interaction: '交互节点',
   decision: 'AI 决策节点',
   retrieval: '检索节点',
-  mcp_read: 'MCP 读取节点',
-  mcp_execute: 'MCP 执行节点',
-  remote_call: '远程执行节点',
+  mcp_read: '读取节点',
+  mcp_execute: '工具节点',
+  remote_call: '远程工具节点',
   transfer: '传递节点',
   transform: '转换节点',
   validation: '校验节点',
   routing: '路由节点',
-  gate: '机器门禁节点',
-  human_gate: '人工门禁节点',
-  delivery: '交付节点',
+  gate: '自动检查节点',
+  human_gate: '人工确认节点',
+  delivery: '保存节点',
   extension: '扩展节点',
 }
 
@@ -553,6 +553,9 @@ const PLAIN_FIELD_LABELS: Record<string, string> = {
   session: '当前会话',
   session_id: '会话信息',
   request: '用户请求',
+  user_request: '用户提供的信息',
+  user_input: '用户提供的信息',
+  user_form: '用户填写的内容',
   intent: '用户想做的事',
   intent_envelope: '判断结果',
   entities: '关键信息',
@@ -565,6 +568,16 @@ const PLAIN_FIELD_LABELS: Record<string, string> = {
   reply_envelope: '回复结果',
   references: '参考资料',
   recovery_result: '失败处理说明',
+  release_summary: '发布摘要',
+  generated_content: '生成的内容',
+  modified_result: '修改后的内容',
+  structured_result: '整理后的内容',
+  summary: '摘要',
+  file_content: '文件内容',
+  file_write_result: '写入结果',
+  dir_entries: '目录内容',
+  tool_result: '工具处理结果',
+  context_pack: '合并后的内容',
   error: '出错信息',
   context: '当时的流程信息',
   result: '处理结果',
@@ -575,6 +588,9 @@ const PLAIN_FIELD_DESCRIPTIONS: Record<string, string> = {
   session: '帮助 AI 接着聊',
   session_id: '帮助系统记住这次对话',
   request: '整理好的请求内容',
+  user_request: '用户在运行前填写的内容',
+  user_input: '用户在运行前填写的内容',
+  user_form: '用户在运行前填写的内容',
   intent: '是查订单还是查商品',
   intent_envelope: '下一步应该做什么',
   entities: '订单号、商品名等线索',
@@ -587,6 +603,16 @@ const PLAIN_FIELD_DESCRIPTIONS: Record<string, string> = {
   reply_envelope: '已经组织好的回答',
   references: '结果来自哪里',
   recovery_result: '告诉用户哪里出了问题',
+  release_summary: '可以继续修改或直接交付',
+  generated_content: '可以交给后续步骤继续使用',
+  modified_result: '按要求修改后的结果',
+  structured_result: '已经转换成目标格式',
+  summary: '提炼后的重点内容',
+  file_content: '从所选文件读取的内容',
+  file_write_result: '文件保存状态和位置',
+  dir_entries: '所选目录中的文件和文件夹',
+  tool_result: '工具返回的处理结果',
+  context_pack: '多个来源合并后的统一内容',
   error: '前面节点的失败原因',
   context: '出错时已经处理到哪里',
   result: '交给下一个节点使用',
@@ -604,7 +630,8 @@ function plainFieldKey(value: unknown) {
 
 export function plainOutcomeFieldLabel(value: unknown) {
   const key = plainFieldKey(value)
-  return PLAIN_FIELD_LABELS[key] || key || '上一步的内容'
+  if (/^input_\d+$/i.test(key)) return `输入 ${Number(key.split('_').at(-1)) || ''}`.trim()
+  return PLAIN_FIELD_LABELS[key] || (key ? '流程信息' : '上一步的内容')
 }
 
 function plainOutcomeFieldDescription(value: unknown) {
@@ -616,10 +643,13 @@ function outcomeTitle(node: FlowNode, kind: NodeSemanticKind) {
   const title = String(node.display_name || node.title || '').trim()
   const searchable = `${node.id} ${title} ${node.action || ''}`.toLowerCase()
   if (kind === 'start') return '开始'
+  if (kind === 'terminal' && /fail|error|失败|错误/.test(searchable)) return '处理失败并结束'
   if (kind === 'terminal') return '把结果交给用户'
   if (kind === 'input') return /用户|request|collect/.test(searchable) ? '先收集用户说了什么' : '先收集需要的信息'
   if (kind === 'decision' && /意图|intent|router/.test(searchable)) return '先判断用户想做什么'
   if (kind === 'decision' && /回复|reply|answer|response/.test(searchable)) return '让 AI 写好最终回复'
+  const target = String((node.params?.preset_config as AnyRecord | undefined)?.target || '').trim()
+  if (kind === 'decision' && target) return `让 AI ${target}`
   if (kind === 'decision') return '让 AI 判断下一步怎么做'
   if ((kind === 'mcp_read' || kind === 'retrieval') && /订单|order/.test(searchable)) return '去订单系统查订单'
   if ((kind === 'mcp_read' || kind === 'retrieval') && /商品|产品|product|catalog/.test(searchable)) return '去商品库查商品'
@@ -633,10 +663,13 @@ function outcomeTitle(node: FlowNode, kind: NodeSemanticKind) {
 export function outcomeCopy(node: FlowNode, kind: NodeSemanticKind) {
   const searchable = `${node.id} ${node.display_name || node.title || ''} ${node.action || ''}`.toLowerCase()
   if (kind === 'start') return ['流程从这里开始，接收用户输入。', '这是整个流程的起点。']
+  if (kind === 'terminal' && /fail|error|失败|错误/.test(searchable)) return ['记录失败原因并结束当前路径。', '只有前面的步骤无法继续时才会到这里。']
   if (kind === 'terminal') return ['把整理好的回复交给用户，然后结束本次流程。', '用户最终看到的内容从这里交付。']
   if (kind === 'input') return ['把用户原话整理好，方便后续步骤使用。', '先把用户输入变成统一格式。']
   if (kind === 'decision' && /意图|intent|router/.test(searchable)) return ['识别用户想做什么，决定接下来走哪条流程。', '判断这是查订单、查商品，还是需要补充信息。']
   if (kind === 'decision' && /回复|reply|answer|response/.test(searchable)) return ['根据查询结果，写成用户容易理解的回复。', 'AI 会在这里组织最终说法。']
+  const target = String((node.params?.preset_config as AnyRecord | undefined)?.target || '').trim()
+  if (kind === 'decision' && target) return [`让 AI ${target}。`, '生成结果会自动交给下一步。']
   if (kind === 'decision') return ['让 AI 根据已有信息做出判断。', '判断结果会决定下一步怎么走。']
   if ((kind === 'mcp_read' || kind === 'retrieval') && /订单|order/.test(searchable)) return ['根据用户请求查询订单系统，获取订单信息。', '这里只读取订单，不会修改订单。']
   if ((kind === 'mcp_read' || kind === 'retrieval') && /商品|产品|product|catalog/.test(searchable)) return ['根据用户请求查询商品库，获取商品信息。', '这里只读取商品资料，不会修改商品。']
@@ -655,6 +688,20 @@ function schemaInputRows(node: FlowNode): OutcomeNodeRow[] {
   return Object.keys(properties).slice(0, 3).map((key) => ({
     label: plainOutcomeFieldLabel(key),
     value: plainOutcomeFieldDescription(key),
+  }))
+}
+
+function configuredInputRows(node: FlowNode): OutcomeNodeRow[] {
+  const preset = node.params?.preset_config as AnyRecord | undefined
+  const configuredFields = preset?.fields
+  const labels = Array.isArray(configuredFields)
+    ? configuredFields.map(String)
+    : typeof configuredFields === 'string'
+      ? configuredFields.split(/[，、,;；\n]/)
+      : []
+  return labels.map((label) => label.trim()).filter(Boolean).slice(0, 3).map((label) => ({
+    label,
+    value: '用户在运行前填写',
   }))
 }
 
@@ -684,8 +731,9 @@ function outputRows(node: FlowNode): OutcomeNodeRow[] {
 export function buildOutcomeNodeCardView(node: FlowNode, runState?: NodeRunState, context: NodePresentationContext = {}) {
   const technical = buildFlowNodeCardView(node, runState, context)
   const [what, beginnerTip] = outcomeCopy(node, technical.semanticKind)
+  const configuredRows = technical.semanticKind === 'input' ? configuredInputRows(node) : []
   const bindingRows = bindingInputRows(node)
-  const inputs = bindingRows.length ? bindingRows : schemaInputRows(node)
+  const inputs = configuredRows.length ? configuredRows : bindingRows.length ? bindingRows : schemaInputRows(node)
   if (!inputs.length && technical.semanticKind === 'start') {
     inputs.push({ label: '用户输入', value: '用户在运行前填写的内容' })
   } else if (!inputs.length) {

@@ -1,6 +1,8 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from core.cartridge import artifacts as artifacts_module
@@ -268,6 +270,33 @@ class ProcessNodeExecutionTests(unittest.TestCase):
         LabNodeExecutor().execute("collect", state, state_doc, {"inputs": {}}, ".")
         self.assertRegex(state_doc["context"]["store"]["brief"]["edition_date"], r"^\d{4}-\d{2}-\d{2}$")
 
+    def test_legacy_generic_prompt_does_not_override_configured_ai_preset(self):
+        state_doc = {"context": {"store": {"brief": "# Launch plan\nShip the guided builder."}}}
+        state = {
+            "type": "process",
+            "kind": "decision",
+            "executor": "llm",
+            "effect": "none",
+            "action": "llm_prompt",
+            "params": {
+                "input": "brief",
+                "output": "generated",
+                "prompt": "请根据用户输入完成任务。",
+                "preset_config": {"target": "生成发布摘要", "format": "JSON"},
+            },
+        }
+
+        with patch(
+            "core.llm.config_manager.resolve_model",
+            return_value=SimpleNamespace(api_key="", provider_id="", model="", timeout=30),
+        ):
+            result = LabNodeExecutor().execute("generate", state, state_doc, {"inputs": {}}, ".")
+
+        self.assertEqual("llm_prompt", result["action"])
+        self.assertEqual("missing_api_key", result["fallback"])
+        self.assertIsInstance(state_doc["context"]["store"]["generated"], str)
+        self.assertEqual("Launch plan", json.loads(state_doc["context"]["store"]["generated"])["title"])
+
     def test_delivery_process_collects_declared_outputs_and_artifacts(self):
         state_doc = {"context": {"store": {}}}
         state = {
@@ -530,12 +559,13 @@ class ProcessNodeExecutionTests(unittest.TestCase):
                 "base": {}, "protocol": {}, "summary": {}, "findings": [],
             }
 
-            run = runner.create_run(
-                manifest["id"],
-                {"request": "produce a deterministic artifact"},
-                run_id="run_deterministic_chain",
-                test_mode={"decision": "mock_resolved"},
-            )
+            with patch("core.cartridge.runner.build_model_binding_report", return_value={"status": "ok", "items": []}):
+                run = runner.create_run(
+                    manifest["id"],
+                    {"request": "produce a deterministic artifact"},
+                    run_id="run_deterministic_chain",
+                    test_mode={"decision": "mock_resolved"},
+                )
 
             self.assertEqual("completed", run["status"], run)
             self.assertEqual("complete", run["current_state"])

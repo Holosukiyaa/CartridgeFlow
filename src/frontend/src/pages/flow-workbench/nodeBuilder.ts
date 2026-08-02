@@ -4,9 +4,28 @@ import type { NodeCategoryId } from './types.ts'
 
 export const firstText = (...values: any[]) => values.find((value) => typeof value === 'string' && value.trim())?.trim() || ''
 const TOOL_PRESET_TARGETS: Record<string, { server: string; tool: string; idHints: string[] }> = {
+  read_file: { server: 'filesystem', tool: 'read_file', idHints: ['filesystem_read', 'fs_read', 'read_file'] },
   filesystem_read: { server: 'filesystem', tool: 'read_file', idHints: ['filesystem_read', 'fs_read', 'read_file'] },
   filesystem_write: { server: 'filesystem', tool: 'write_file', idHints: ['filesystem_write', 'fs_write', 'write_file'] },
   filesystem_list: { server: 'filesystem', tool: 'list_dir', idHints: ['filesystem_list', 'fs_list', 'list_dir'] },
+}
+
+const PRESET_DEFAULT_OUTPUTS: Record<string, string> = {
+  user_form: 'user_input',
+  read_file: 'file_content',
+  scan_project: 'project_map',
+  import_log: 'error_log',
+  analyze: 'analysis_result',
+  generate: 'generated_content',
+  modify: 'modified_result',
+  convert: 'structured_result',
+  summarize: 'summary',
+  filesystem_read: 'file_content',
+  filesystem_write: 'file_write_result',
+  filesystem_list: 'dir_entries',
+  mcp_call: 'tool_result',
+  merge: 'context_pack',
+  confirm: 'review_result',
 }
 
 const lowerText = (value: any) => String(value || '').trim().toLowerCase()
@@ -33,7 +52,8 @@ function resolveMcpLibraryTool(
 ) {
   const protocolKind = lowerText(draftNode?.kind || draftNode?.params?.kind)
   const isMcpProcess = protocolKind === 'mcp_read' || protocolKind === 'mcp_execute'
-  if (categoryId !== 'tool' && !isMcpProcess) return null
+  const isInputFileRead = categoryId === 'input' && presetId === 'read_file'
+  if (categoryId !== 'tool' && !isMcpProcess && !isInputFileRead) return null
   if (!mcpTools.length) return null
   const explicitId = firstText(
     presetConfig.mcp_tool_id,
@@ -123,7 +143,7 @@ export function buildPresetConfig(draftNode: any, categoryId: NodeCategoryId, pr
   const config = { ...((draftNode.preset_config || draftNode.presetConfig || {}) as Record<string, string>) }
   const title = firstText(draftNode.title, draftNode.label, baseId)
   const description = firstText(draftNode.description, draftNode.goal, draftNode.prompt, title)
-  const outputName = firstText(draftNode.output_name, draftNode.outputName, draftNode.output, `${baseId || categoryId}_${index + 1}_result`)
+  const outputName = firstText(draftNode.output_name, draftNode.outputName, draftNode.output, PRESET_DEFAULT_OUTPUTS[presetId], `${baseId || categoryId}_${index + 1}_result`)
   preset.fields.forEach((field) => {
     if (config[field.key]) return
     if (field.key === 'output_name') config[field.key] = outputName
@@ -155,11 +175,153 @@ export function buildPresetConfig(draftNode: any, categoryId: NodeCategoryId, pr
   return config
 }
 
+export function parseInputFieldNames(value: unknown) {
+  if (Array.isArray(value)) return value.map((item) => String(item || '').trim()).filter(Boolean)
+  return String(value || '')
+    .split(/[,，、;；\n]+/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+export type UserFormFieldDefinition = {
+  id?: string
+  label: string
+  type: 'text' | 'textarea' | 'number' | 'date' | 'email' | 'url' | 'file'
+  required: boolean
+  default?: string
+}
+
+const USER_FORM_FIELD_TYPES = new Set<UserFormFieldDefinition['type']>(['text', 'textarea', 'number', 'date', 'email', 'url', 'file'])
+
+export function parseUserFormFieldDefinitions(value: unknown, serializedDefinitions?: unknown): UserFormFieldDefinition[] {
+  let source = serializedDefinitions
+  if (typeof serializedDefinitions === 'string') {
+    try {
+      source = JSON.parse(serializedDefinitions)
+    } catch {
+      source = null
+    }
+  }
+  if (Array.isArray(source)) {
+    const definitions = source.flatMap((item): UserFormFieldDefinition[] => {
+      if (!item || typeof item !== 'object') return []
+      const label = String((item as any).label || '').trim()
+      if (!label) return []
+      const requestedType = String((item as any).type || 'text') as UserFormFieldDefinition['type']
+      const type = USER_FORM_FIELD_TYPES.has(requestedType) ? requestedType : 'text'
+      const defaultValue = (item as any).default
+      const id = String((item as any).id || '').trim()
+      return [{
+        ...(id ? { id } : {}),
+        label,
+        type,
+        required: (item as any).required !== false,
+        ...(defaultValue === undefined || defaultValue === null || defaultValue === '' ? {} : { default: String(defaultValue) }),
+      }]
+    })
+    if (definitions.length) return definitions
+  }
+  return parseInputFieldNames(value).map((label) => ({
+    label,
+    type: /需求|说明|描述|内容|背景|prompt|description|content/i.test(label) ? 'textarea' : 'text',
+    required: true,
+  }))
+}
+
+export function buildUserFormInputs(value: unknown, serializedDefinitions?: unknown) {
+  const used = new Set<string>()
+  return parseUserFormFieldDefinitions(value, serializedDefinitions).map((definition, index) => {
+    const ascii = (definition.id || definition.label)
+      .normalize('NFKD')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+    const baseId = ascii || `input_${index + 1}`
+    let id = baseId
+    let suffix = 2
+    while (used.has(id)) id = `${baseId}_${suffix++}`
+    used.add(id)
+    return { ...definition, id }
+  })
+}
+
+function presetPrompt(presetId: string, config: Record<string, string>) {
+  if (presetId === 'analyze') return config.goal || ''
+  if (presetId === 'generate') {
+    return [config.target, config.format ? `输出格式：${config.format}` : ''].filter(Boolean).join('\n')
+  }
+  if (presetId === 'modify') return config.change_goal || ''
+  if (presetId === 'convert') return config.from_to || ''
+  if (presetId === 'summarize') return config.focus || ''
+  return ''
+}
+
+export function buildPresetRuntimeParams(
+  baseParams: Record<string, any>,
+  categoryId: NodeCategoryId,
+  presetId: string,
+  presetConfig: Record<string, string>,
+  options: { description?: string; input?: string; output?: string; force?: boolean } = {},
+) {
+  const previousConfig = baseParams.preset_config && typeof baseParams.preset_config === 'object'
+    ? baseParams.preset_config
+    : {}
+  const presetChanged = baseParams.preset !== presetId
+    || JSON.stringify(previousConfig) !== JSON.stringify(presetConfig)
+  const shouldCompile = Boolean(options.force || presetChanged)
+  const params: Record<string, any> = {
+    ...baseParams,
+    node_category: categoryId,
+    preset: presetId,
+    preset_config: { ...presetConfig },
+  }
+
+  if (options.description !== undefined) params.description = options.description
+  if (options.input) params.input = options.input
+  if (options.output) params.output = options.output
+
+  if (categoryId === 'input' && presetId === 'user_form') {
+    if (shouldCompile || !Array.isArray(params.fields) || !params.fields.length) {
+      params.fields = buildUserFormInputs(presetConfig.fields, presetConfig.fields_json).map((field) => field.id)
+    }
+    if (shouldCompile || !params.output) params.output = presetConfig.output_name || options.output || 'user_input'
+  }
+
+  if (categoryId === 'process') {
+    const prompt = presetPrompt(presetId, presetConfig)
+    if ((shouldCompile || !String(params.prompt || '').trim()) && prompt) params.prompt = prompt
+    if (!String(params.system_prompt || '').trim()) params.system_prompt = '你是一个可靠的助手，请严格根据任务和输入上下文生成结果。'
+    if (shouldCompile || !params.output) params.output = presetConfig.output_name || options.output || 'llm_result'
+  }
+
+  if (categoryId === 'control' && presetId === 'confirm') {
+    if (shouldCompile || !params.output) params.output = presetConfig.output_name || 'review_result'
+    if (presetConfig.source || options.input) params.input = presetConfig.source || options.input
+    params.interaction = {
+      prompt: presetConfig.message || '请检查上一步结果，确认后继续。',
+      store_key: 'human_review_answer',
+      input_schema: {
+        type: 'object',
+        properties: {
+          approval: { type: 'string', title: '审核结论', enum: ['approve'], enumNames: ['确认通过'] },
+          feedback: { type: 'string', title: '审核备注（可选）' },
+        },
+        required: ['approval'],
+      },
+      resume_policy: 'resume_same_node',
+      copy_answer_to: params.output,
+    }
+  }
+
+  return params
+}
+
 export function buildToolSpecs(categoryId: NodeCategoryId, presetId: string, presetConfig: Record<string, string>, inputText: string, outputText: string, draftTools?: any, mcpTools: McpTool[] = [], draftNode?: any) {
   if (Array.isArray(draftTools)) return draftTools
   const protocolKind = lowerText(draftNode?.kind || draftNode?.params?.kind)
   const isMcpProcess = protocolKind === 'mcp_read' || protocolKind === 'mcp_execute'
-  if (categoryId !== 'tool' && !isMcpProcess) return draftTools ?? null
+  const isInputFileRead = categoryId === 'input' && presetId === 'read_file'
+  if (categoryId !== 'tool' && !isMcpProcess && !isInputFileRead) return draftTools ?? null
   const output = outputText || presetConfig.output_name || 'tool_result'
   const libraryTool = resolveMcpLibraryTool(categoryId, presetId, presetConfig, draftNode, mcpTools)
   if (libraryTool) {
@@ -174,7 +336,7 @@ export function buildToolSpecs(categoryId: NodeCategoryId, presetId: string, pre
       mcp_tool_id: libraryTool.id,
     }]
   }
-  if (presetId === 'filesystem_read') {
+  if (presetId === 'filesystem_read' || presetId === 'read_file') {
     return [{ type: 'builtin', server: 'filesystem', tool: 'read_file', params: { path: presetConfig.path || '' }, enabled: true, output }]
   }
   if (presetId === 'filesystem_write') {
@@ -343,4 +505,3 @@ export function buildProtocolPatch(categoryId: NodeCategoryId, presetId: string,
     timeout_ms: Number(draftNode.timeout_ms || draftNode.timeoutMs || presetConfig.timeout_ms || presetConfig.timeoutMs || (categoryId === 'remote' ? 120000 : 0)) || undefined,
   }
 }
-

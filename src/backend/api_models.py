@@ -206,6 +206,8 @@ class NodeUpdatePayload(BaseModel):
     layout: dict | None = None
     inputs: dict | None = None
     outputs: dict | None = None
+    manifest_inputs: list[dict] | None = None
+    manifest_model_roles: list[dict] | None = None
 
 
 class NodeCreatePayload(BaseModel):
@@ -215,6 +217,7 @@ class NodeCreatePayload(BaseModel):
     title: str | None = None
     after_node_id: str | None = None
     insert_mode: str = "insert"
+    node: NodeUpdatePayload | None = None
 
 
 class LayoutSavePayload(BaseModel):

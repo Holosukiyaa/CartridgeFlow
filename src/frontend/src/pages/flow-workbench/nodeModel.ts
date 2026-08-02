@@ -15,6 +15,7 @@ export type FlowNodeDimensions = { width: number; height: number }
 type FlowLayoutOptions = {
   viewMode?: FlowNodeViewMode
   nodeDimensions?: Record<string, FlowNodeDimensions>
+  force?: boolean
 }
 
 function countEntries(value: unknown) {
@@ -167,8 +168,8 @@ export const NODE_CATEGORIES: NodeCategory[] = [
     defaultType: 'process',
     defaultAction: 'collect_inputs',
     defaultTitle: '输入节点',
-    description: '负责收集要用的信息，例如用户需求、项目文件、日志或网页内容。',
-    examples: ['用户输入', '项目扫描', '文件读取', '日志导入'],
+    description: '负责收集用户填写的信息，或读取一个指定文件。',
+    examples: ['用户填写', '文件读取'],
     color: '#c66837',
     bg: '#fff7f1',
   },
@@ -200,14 +201,14 @@ export const NODE_CATEGORIES: NodeCategory[] = [
   },
   {
     id: 'tool',
-    label: 'MCP执行节点',
-    shortLabel: 'MCP执行',
+    label: '工具节点',
+    shortLabel: '工具',
     templateId: 'runtime',
     defaultType: 'process',
     defaultAction: 'tool_call',
-    defaultTitle: 'MCP执行节点',
-    description: '负责按协议调用文件、网络、MCP 或外部系统；读取类能力会标记为 MCP读取节点，副作用能力会标记为 MCP执行节点。',
-    examples: ['读取文件', '写入文件', '调用 MCP', '执行外部能力'],
+    defaultTitle: '工具节点',
+    description: '负责读取、写入或列出工作区文件。',
+    examples: ['读取文件', '写入文件', '列出目录'],
     color: '#275fae',
     bg: '#eef5ff',
   },
@@ -232,21 +233,21 @@ export const NODE_CATEGORIES: NodeCategory[] = [
     defaultType: 'process',
     defaultAction: 'pass_result',
     defaultTitle: '传递节点',
-    description: '负责把结果送到需要它的地方，也可以拆分、合并、筛选和分发。',
-    examples: ['传递结果', '拆分内容', '合并内容', '分发结果'],
+    description: '负责直接传递、重命名或合并上游结果。',
+    examples: ['直接传递', '字段对应', '合并结果'],
     color: '#2f7f77',
     bg: '#eefaf8',
   },
   {
     id: 'store',
-    label: '交付节点',
-    shortLabel: '交付',
+    label: '保存节点',
+    shortLabel: '保存',
     templateId: 'runtime',
     defaultType: 'process',
     defaultAction: 'save_context',
-    defaultTitle: '交付节点',
-    description: '负责保存中间结果、上下文、草稿、运行记录或最终产物。',
-    examples: ['上下文存放', '结果缓存', '项目摘要', '产物保存'],
+    defaultTitle: '保存节点',
+    description: '把上一步结果保存到本次运行上下文，供后续节点读取。',
+    examples: ['保存结果', '保存上下文'],
     color: '#7d633d',
     bg: '#fff6df',
   },
@@ -258,8 +259,8 @@ export const NODE_CATEGORIES: NodeCategory[] = [
     defaultType: 'process',
     defaultAction: 'confirm_checkpoint',
     defaultTitle: '门禁节点',
-    description: '负责决定下一步怎么走，例如确认、检查、分支、重试或结束。',
-    examples: ['人工确认', '条件判断', '结果检查', '错误回流'],
+    description: '暂停流程并等待人工确认，确认后继续执行。',
+    examples: ['人工确认', '交付审核'],
     color: '#77659d',
     bg: '#f3efff',
   },
@@ -458,6 +459,17 @@ const CATEGORY_PROTOCOL_DEFAULTS: Record<NodeCategoryId, ProcessProtocolDefaults
 
 export function getProtocolDefaults(categoryId: NodeCategoryId, presetId?: string): ProcessProtocolDefaults {
   const defaults = { ...CATEGORY_PROTOCOL_DEFAULTS[categoryId] }
+  if (categoryId === 'input' && presetId === 'read_file') {
+    defaults.kind = 'mcp_read'
+    defaults.executor = 'mcp'
+    defaults.effect = 'read_only'
+    defaults.action = 'tool_call'
+    defaults.displaySuffix = 'MCP读取'
+    defaults.toolBinding = undefined
+    defaults.permission = undefined
+    defaults.failurePolicy = undefined
+    defaults.auditLog = undefined
+  }
   if (categoryId === 'tool' && presetId === 'filesystem_read') {
     defaults.kind = 'mcp_read'
     defaults.effect = 'read_only'
@@ -529,8 +541,6 @@ export const NODE_PRESETS: Record<NodeCategoryId, NodePreset[]> = {
   input: [
     { id: 'user_form', label: '用户填写', description: '让用户提供需求、目标或约束。', fields: [{ key: 'fields', label: '需要填写什么？', placeholder: '例如：需求描述、目标用户、限制条件', multiline: true }, { key: 'output_name', label: '输出名称', placeholder: 'user_request' }] },
     { id: 'read_file', label: '读取文件', description: '读取指定文件内容。', fields: [{ key: 'path', label: '文件路径', placeholder: 'src/App.tsx' }, { key: 'output_name', label: '输出名称', placeholder: 'file_content' }] },
-    { id: 'scan_project', label: '扫描项目', description: '生成项目结构或上下文。', fields: [{ key: 'scope', label: '扫描范围', placeholder: 'src/frontend/src' }, { key: 'output_name', label: '输出名称', placeholder: 'project_map' }] },
-    { id: 'import_log', label: '导入日志', description: '导入错误日志或运行输出。', fields: [{ key: 'source', label: '日志来源', placeholder: '终端输出 / 文件路径', multiline: true }, { key: 'output_name', label: '输出名称', placeholder: 'error_log' }] },
   ],
   interaction: [
     { id: 'display', label: '展示界面', description: '展示被动 HTML 组件，不写入运行数据。', fields: [] },
@@ -539,7 +549,7 @@ export const NODE_PRESETS: Record<NodeCategoryId, NodePreset[]> = {
   ],
   process: [
     { id: 'analyze', label: '分析信息', description: '分析输入内容并给出结构化结论。', fields: [{ key: 'goal', label: '分析目标', placeholder: '分析用户需求和风险', multiline: true }, { key: 'output_name', label: '输出名称', placeholder: 'requirement_analysis' }] },
-    { id: 'generate', label: '生成内容', description: '根据输入生成文本、方案或代码。', fields: [{ key: 'target', label: '生成什么？', placeholder: '实现计划 / 文档 / 代码草案' }, { key: 'format', label: '格式要求', placeholder: 'Markdown / JSON / patch' }] },
+    { id: 'generate', label: '生成内容', description: '根据输入生成文本、方案或代码。', fields: [{ key: 'target', label: '生成什么？', placeholder: '实现计划 / 文档 / 代码草案' }, { key: 'format', label: '格式要求', placeholder: 'Markdown / JSON / patch' }, { key: 'output_name', label: '输出名称', placeholder: 'generated_content' }] },
     { id: 'modify', label: '修改内容', description: '根据要求修改已有内容。', fields: [{ key: 'change_goal', label: '修改目标', placeholder: '优化文案、调整代码、补充说明', multiline: true }, { key: 'output_name', label: '输出名称', placeholder: 'modified_result' }] },
     { id: 'convert', label: '转换格式', description: '把一种格式转换为另一种格式。', fields: [{ key: 'from_to', label: '转换规则', placeholder: 'raw_text -> structured_json' }, { key: 'output_name', label: '输出名称', placeholder: 'structured_result' }] },
     { id: 'summarize', label: '总结内容', description: '压缩长内容，提取重点。', fields: [{ key: 'focus', label: '总结重点', placeholder: '结论、风险、待办', multiline: true }, { key: 'output_name', label: '输出名称', placeholder: 'summary' }] },
@@ -548,7 +558,6 @@ export const NODE_PRESETS: Record<NodeCategoryId, NodePreset[]> = {
     { id: 'filesystem_read', label: '读取文件', description: '读取工作区内指定文件，把内容写入 context.store。', fields: [{ key: 'path', label: '文件路径', placeholder: 'test_output/analysis.txt' }, { key: 'output_name', label: '输出名称', placeholder: 'file_content' }] },
     { id: 'filesystem_write', label: '写入文件', description: '把上游内容或固定内容写入工作区文件。', fields: [{ key: 'path', label: '文件路径', placeholder: 'test_output/analysis.txt' }, { key: 'source', label: '写入内容来源', placeholder: 'analysis_result' }, { key: 'output_name', label: '输出名称', placeholder: 'file_write_result' }] },
     { id: 'filesystem_list', label: '列出目录', description: '列出工作区内指定目录。', fields: [{ key: 'path', label: '目录路径', placeholder: '.' }, { key: 'output_name', label: '输出名称', placeholder: 'dir_entries' }] },
-    { id: 'mcp_call', label: 'MCP 调用', description: '声明一个 MCP 或内置工具调用。', fields: [{ key: 'server', label: '服务', placeholder: 'filesystem' }, { key: 'tool', label: '工具', placeholder: 'read_file' }, { key: 'output_name', label: '输出名称', placeholder: 'tool_result' }] },
   ],
   remote: [
     { id: 'remote_mcp_call', label: '远程工具调用', description: '调用卡带 DLC 注册的远程工具；本地地址与凭据由工具配置提供。', fields: [{ key: 'service', label: '资源名称', placeholder: '例如：远程生成服务' }, { key: 'server', label: 'MCP 服务', placeholder: '由卡带 DLC 注册' }, { key: 'tool', label: '工具名称', placeholder: 'tool_name' }, { key: 'output_name', label: '输出名称', placeholder: 'remote_result' }] },
@@ -557,19 +566,12 @@ export const NODE_PRESETS: Record<NodeCategoryId, NodePreset[]> = {
     { id: 'pass', label: '直接传递', description: '把上游结果直接交给下游。', fields: [{ key: 'from', label: '来源', placeholder: 'analysis' }, { key: 'to', label: '目标', placeholder: 'planner.input' }] },
     { id: 'map', label: '字段对应', description: '把字段重新对应到下游需要的名字。', fields: [{ key: 'mapping', label: '对应关系', placeholder: 'files -> target_files\nreason -> change_reason', multiline: true }] },
     { id: 'merge', label: '合并结果', description: '把多个结果合成一个上下文包。', fields: [{ key: 'items', label: '要合并的内容', placeholder: 'analysis, project_map, user_request', multiline: true }, { key: 'output_name', label: '输出名称', placeholder: 'context_pack' }] },
-    { id: 'split', label: '拆分结果', description: '把一个结果拆成多个部分。', fields: [{ key: 'rule', label: '拆分规则', placeholder: '按章节 / 字段 / 类型拆分', multiline: true }] },
   ],
   store: [
-    { id: 'context', label: '保存到上下文', description: '保存为后续节点可读取的上下文。', fields: [{ key: 'key', label: '保存名称', placeholder: 'context.plan' }, { key: 'source', label: '保存对象', placeholder: 'implementation_plan' }] },
-    { id: 'artifact', label: '保存为文件', description: '生成可预览或交付的文件。', fields: [{ key: 'path', label: '文件名', placeholder: 'plan.md' }, { key: 'format', label: '格式', placeholder: 'markdown / html / json' }] },
-    { id: 'cache', label: '临时缓存', description: '暂存中间结果，供本次运行使用。', fields: [{ key: 'key', label: '缓存名称', placeholder: 'cache.project_map' }, { key: 'ttl', label: '保留方式', placeholder: '本次运行 / 长期' }] },
-    { id: 'draft', label: '保存草稿', description: '保存尚未最终确认的内容。', fields: [{ key: 'name', label: '草稿名称', placeholder: 'draft.plan' }, { key: 'source', label: '草稿内容', placeholder: 'generated_plan' }] },
+    { id: 'context', label: '保存结果', description: '保存为本次运行中后续节点可读取的内容。', fields: [{ key: 'key', label: '保存名称', placeholder: 'plan_result' }, { key: 'source', label: '保存对象', placeholder: 'implementation_plan' }] },
   ],
   control: [
-    { id: 'confirm', label: '人工确认', description: '暂停流程，等待用户确认。', fields: [{ key: 'message', label: '确认文案', placeholder: '是否继续执行下一步？', multiline: true }, { key: 'on_cancel', label: '取消后去哪里', placeholder: 'stop / revise' }] },
-    { id: 'condition', label: '条件判断', description: '根据条件决定下一步。', fields: [{ key: 'condition', label: '判断条件', placeholder: 'test_result.status == passed' }, { key: 'on_fail', label: '不满足时去哪里', placeholder: 'debug_node' }] },
-    { id: 'test_check', label: '测试判定', description: '根据测试结果决定通过或回流。', fields: [{ key: 'pass_to', label: '通过后', placeholder: 'artifact_node' }, { key: 'fail_to', label: '失败后', placeholder: 'fix_node' }] },
-    { id: 'risk_check', label: '风险检查', description: '根据风险等级决定是否需要人工确认。', fields: [{ key: 'risk_rule', label: '风险规则', placeholder: '涉及写文件或运行命令时需要确认', multiline: true }] },
+    { id: 'confirm', label: '人工确认', description: '暂停流程并展示上一步结果，确认通过后继续。', fields: [{ key: 'message', label: '审核要求', placeholder: '请检查内容是否准确、完整，可以交付。', multiline: true }] },
   ],
   custom: [
     { id: 'blank', label: '完全自定义', description: '不套用标准预设，手动定义节点行为。', fields: [] },
@@ -829,7 +831,7 @@ export function buildBalancedLayout(graph: FlowGraph, options: FlowLayoutOptions
     if (!hasSavedPosition) hasCompleteSavedLayout = false
     if (hasSavedPosition) layout[node.id] = { x: saved!.x, y: saved!.y }
   })
-  if (hasCompleteSavedLayout) {
+  if (hasCompleteSavedLayout && !options.force) {
     // Saved positions may predate node-size changes (e.g. taller recipe blocks);
     // re-resolve collisions with the current estimated sizes so stacked nodes
     // don't overlap, without rewriting the user's saved coordinates.
@@ -840,6 +842,7 @@ export function buildBalancedLayout(graph: FlowGraph, options: FlowLayoutOptions
     })
   }
   const automatic = buildAutoAlignLayout(graph, options)
+  if (options.force) return automatic
   graph.nodes.forEach((node) => {
     if (!layout[node.id]) layout[node.id] = automatic[node.id] || { x: node.x, y: node.y }
   })

@@ -218,6 +218,10 @@ export function WorkbenchHeader({
   onStop,
   onCloneToDev,
   cloningToDev = false,
+  runBlocked = false,
+  runBlockerCount = 0,
+  runReadinessError = false,
+  onReadiness,
 }: {
   detail: FlowLabDetail
   protocolInfo: ProtocolDisplayInfo
@@ -231,6 +235,10 @@ export function WorkbenchHeader({
   onStop: () => void
   onCloneToDev?: () => void
   cloningToDev?: boolean
+  runBlocked?: boolean
+  runBlockerCount?: number
+  runReadinessError?: boolean
+  onReadiness?: () => void
 }) {
   const running = ['created', 'running', 'retrying', 'recovering', 'rolling_back'].includes(runStatus || '')
   const paused = ['paused', 'paused_waiting_user'].includes(runStatus || '')
@@ -252,9 +260,10 @@ export function WorkbenchHeader({
         <nav className="cf-workbench-mode-switch" aria-label="工作台模式">
           <Button className="active" aria-current="page"><SquarePen aria-hidden="true" />设计</Button>
           <div className="cf-workbench-runtime-controls" aria-label="运行控制">
-            <button type="button" onClick={onRun} disabled={running || paused || runBusy} title="使用真实模型与真实工具运行当前流程">
+            <button type="button" onClick={onRun} disabled={running || paused || runBusy || runBlocked} title={runBlocked ? '请先处理运行前检查中的阻塞项' : '使用真实模型与真实工具运行当前流程'}>
               <PlayCircle aria-hidden="true" />运行
             </button>
+            {runBlocked && <button type="button" className="cf-run-readiness-button" onClick={onReadiness} title="查看并处理运行前检查"><AlertTriangle aria-hidden="true" />{runReadinessError ? '检查失败' : runBlockerCount ? `待配置 ${runBlockerCount}` : '检查中'}</button>}
             <button type="button" className={paused ? 'active' : ''} onClick={onPause} disabled={(!running && !paused) || runBusy} title={paused ? '从最近检查点继续运行' : '在当前节点完成后暂停'}>
               {paused ? <PlayCircle aria-hidden="true" /> : <Pause aria-hidden="true" />}{paused ? '继续' : '暂停'}
             </button>
@@ -277,7 +286,7 @@ export function DesignView({
   onSelectNode, onGuideNodeEditor, onCloseNodeEditor, onToggleNodeEditorPin, onNodeEditorPositionChange, onCloseUnpinnedNodeEditors, onLayoutSave, autoLayoutOnMount, onAutoLayoutComplete, onEdgesSave, onAnnotationsSave, onCreateNode, onDeleteNode, onFilesChange, onSaved,
   engineeringResourceLayout, onEngineeringResourceLayoutSave,
   modelPanel, toolPanel, packagePanel, cartridgePanel, runStatus, nodeRunStates, runEvents, runCompletionVisible, runCompletion, onDismissRunCompletion, onOpenRunLog, onOpenRunResult, onOpenPendingInteraction,
-  protocolInfo,
+  protocolInfo, requestedCanvasPanel,
 }: {
   graph: FlowGraph
   editable: boolean
@@ -308,6 +317,7 @@ export function DesignView({
   packagePanel?: ReactNode
   cartridgePanel?: ReactNode
   protocolInfo: ProtocolDisplayInfo
+  requestedCanvasPanel?: { panel: 'nodes' | 'notes' | 'models' | 'variables' | 'settings' | 'tools' | 'package' | 'base-info'; requestId: number } | null
   runStatus?: string
   nodeRunStates?: Map<string, NodeRunState>
   runEvents?: FlowEvent[]
@@ -320,9 +330,7 @@ export function DesignView({
 }) {
   const [engineeringInspectorOpen, setEngineeringInspectorOpen] = useState(false)
   const [stewardOpen, setStewardOpen] = useState(false)
-  // Guided and engineering views merged: the engineering card now carries the
-  // guided copy (what / tip / recipe strip), so a single mode remains.
-  const displayMode: DesignDisplayMode = 'engineering'
+  const [displayMode, setDisplayMode] = useState<DesignDisplayMode>('outcome')
   const [canvasTool, setCanvasTool] = useState<CanvasTool>('select')
   // Studio resource catalog: lets node recipes show concrete remote endpoints
   // (e.g. RSS feed URLs) instead of opaque tool ids.
@@ -581,7 +589,7 @@ export function DesignView({
     () => engineering ? buildEngineeringNodeModels(engineeringGraph, files, nodeRunStates, visibleEngineeringRelations, toolCatalog) : new Map(),
     [engineering, engineeringGraph, files, nodeRunStates, visibleEngineeringRelations, toolCatalog],
   )
-  const canvasGraph = executionPlanV1 || engineering ? engineeringGraph : graph
+  const canvasGraph = engineering ? engineeringGraph : planAwareGraph
   const persistBusinessLayout = useCallback(async (layout: Record<string, { x: number; y: number }>) => {
     const businessNodeIds = new Set(graph.nodes.map((node) => node.id))
     const filtered = Object.fromEntries(Object.entries(layout).filter(([nodeId]) => businessNodeIds.has(nodeId)))
@@ -618,6 +626,10 @@ export function DesignView({
       <div className="cf-design-main">
         <div className="cf-design-modebar">
           <div className={`cf-design-canvas-status ${canvasTool === 'connect' ? 'active' : ''}`} aria-live="polite"><i />{canvasTool === 'connect' ? '连线模式' : '选择模式'}</div>
+          <div className="cf-design-view-switch" role="group" aria-label="画布视图">
+            <button type="button" className={displayMode === 'outcome' ? 'active' : ''} aria-pressed={displayMode === 'outcome'} onClick={() => { setDisplayMode('outcome'); setEngineeringInspectorOpen(false) }}><i className="cf-view-dot" />业务视图</button>
+            <button type="button" className={displayMode === 'engineering' ? 'active' : ''} aria-pressed={displayMode === 'engineering'} onClick={() => setDisplayMode('engineering')}><Activity aria-hidden="true" />工程视图</button>
+          </div>
           {engineering && <div className="cf-engineering-legend" aria-label="工程关系筛选">
             {([
               ['control', '主流程'],
@@ -666,6 +678,7 @@ export function DesignView({
           onCloseNodeEditor={onCloseUnpinnedNodeEditors}
           onCanvasToolChange={setCanvasTool}
           requestedCanvasTool={canvasTool}
+          requestedCanvasPanel={requestedCanvasPanel}
           onStewardSelectionChange={updateStewardSelection}
           runStatus={runStatus}
           nodeRunStates={nodeRunStates}

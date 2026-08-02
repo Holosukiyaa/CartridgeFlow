@@ -65,6 +65,7 @@
 | N20 | Mentor 历史保留 system prompt 和至多最近 12 条消息，并丢弃截断后孤立的 assistant 开头，避免每轮累计完整 6000 字符快照。 |
 | L10/L13/L18/L19 | 删除无效 eslint 注释；补全文档测试目录；launch 改用 `npm ci`；package 与 lockfile 声明 Node >=20.19。 |
 | UX2/UX4 | 运行历史显示节点业务名称并保留内部 ID tooltip；时间显示完整日期和分钟。 |
+| UX5 | 运行按钮接入统一创作就绪报告；输入、模型、工具和本机资源存在阻塞时 fail-closed，并提供可跳转的业务化修复入口。每次点击运行都会重新检查，检查请求失败也不再显示假绿色状态。 |
 
 ## 此前已修复
 
@@ -105,16 +106,16 @@
 | Worker 隔离 | N22-N23/N26 | stdout 流式上限、POSIX RLIMIT 和 journal retention 需要修改 worker 协议与跨平台进程测试。 |
 | 请求体 | N28 | upload/archive 已有专门上限；其余写端点仍需要统一 ASGI streaming body limiter，而不只是信任 Content-Length。 |
 | 协议治理 | N31/N33 | FARP 1.0 capability/profile 与 Base 声明的对称性需要协议所有者决定。发布快照不可在普通 bugfix 中改写；治理审计应在决议后加入相应门禁。 |
-| 产品体验 | UX1/UX3/UX5/UX7 | 节点生产数据、非 HTML 交付主视图、运行按钮原因和独立运行/结果模式属于产品设计工作。**UX1 修正**：复核确认运行时数据流完整——`runner.py:661-663` 在 `lab_node_executed` 事件 data 注入 `input_value`/`output_value`，`runState.ts:53-118` 消费后 compact 卡片与 NodeDetail runtime section 均可见；剩余差异仅是 **detailed 视图模式运行时未显示 in/out 值（与 compact 不对称）**，属可选的展示增强而非"数据不可见"。 |
+| 产品体验 | UX1/UX3/UX7 | 节点生产数据、非 HTML 交付主视图和独立运行/结果模式仍属于后续产品设计工作。**UX1 修正**：复核确认运行时数据流完整——`runner.py:661-663` 在 `lab_node_executed` 事件 data 注入 `input_value`/`output_value`，`runState.ts:53-118` 消费后 compact 卡片与 NodeDetail runtime section 均可见；剩余差异仅是 **detailed 视图模式运行时未显示 in/out 值（与 compact 不对称）**，属可选的展示增强而非"数据不可见"。 |
 | 依赖复现 | L17 | Python 顶层依赖已固定大部分版本，但完整传递依赖锁定需要确定支持平台和发布流程。 |
 
 ## 验证证据
 
-- `python scripts/run_conformance.py --quiet`：**382 tests：381 passed，1 skipped**；128 capabilities verified，17 partial，0 failing；生成的 `latest.json` 已通过标准 JSON 解析校验。
+- `python scripts/run_conformance.py --quiet`：**390 tests：389 passed，1 skipped**；128 capabilities verified，17 partial，0 failing；生成的 `latest.json` 已通过标准 JSON 解析校验。
 - `npm run typecheck`：TypeScript strict 检查通过。
 - `npm run build`：生产构建通过。
-- `npm test`：静态断言通过；扫描 **15 个 CSS / 722 个 !important**，低于 730 红线。
-- Playwright 实机浏览：设计画布、运行输入、历史切换和卡带双向切换均无页面异常或失败请求；注入布局保存 500 后，13 个节点坐标全部回滚，且无未处理 Promise。
+- `npm test`：静态断言通过；扫描 **15 个 CSS / 724 个 !important**，低于 730 红线。
+- Playwright 实机浏览：设计画布、运行输入、历史切换和卡带双向切换均无页面异常或失败请求；注入布局保存 500 后，13 个节点坐标全部回滚，且无未处理 Promise。无 AI 搭建回归进一步验证了节点点击预配置、字段改名/换序后稳定键、模型一键绑定、统一就绪复检、工具读取、人工确认、点击新增自动布局和业务视图术语边界；20 个节点逐对检测 0 重叠，桌面 125% 缩放与 390px 窄视口无横向溢出或不可达操作，浏览器控制台错误为 0。
 - 新增回归覆盖：路径逃逸、并发缺失输入、权限模式、terminal 状态、认证头注入、文件大小限制、active-loop async bridge、sandbox entry hash、带引号命令、selector 边界、Mentor 历史上限。
 
 当前机器 Node.js 为 20.18.0，低于 Vite 要求的 20.19；构建仍成功，但本地环境应升级。

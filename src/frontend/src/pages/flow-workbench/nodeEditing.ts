@@ -1,4 +1,5 @@
 import { updateFlowNode, type FlowFiles, type FlowNode } from '../../api.ts'
+import { buildPresetRuntimeParams, buildUserFormInputs } from './nodeBuilder.ts'
 import { CATEGORY_BY_ID, buildProtocolNodePayload } from './nodeModel.ts'
 import type { GraphResult, NodeDraft } from './types.ts'
 
@@ -31,17 +32,13 @@ export async function saveNodeDraft(flowId: string, files: FlowFiles, node: Flow
   if (draft.decisionContract.trim()) parseJsonField(draft.decisionContract, '决策契约', {})
   if (draft.timeoutMs && (!Number.isFinite(Number(draft.timeoutMs)) || Number(draft.timeoutMs) <= 0)) throw new Error('超时时间必须是大于 0 的数字')
 
-  const nextParams = { ...params }
-  Object.assign(nextParams, {
-    node_category: draft.category,
-    preset: draft.preset,
-    preset_config: draft.presetConfig,
+  const nextParams = buildPresetRuntimeParams(params, draft.category, draft.preset, draft.presetConfig, {
     description: draft.description,
     input: draft.input,
     output: draft.output,
-    save_to: draft.saveTo,
-    condition: draft.condition,
   })
+  nextParams.save_to = draft.saveTo
+  nextParams.condition = draft.condition
   setOptionalParam(nextParams, 'optional_input', draft.optionalInput)
   setOptionalParam(nextParams, 'replay_policy', draft.replayPolicy)
   setOptionalParam(nextParams, 'idempotency', draft.idempotency)
@@ -58,5 +55,8 @@ export async function saveNodeDraft(flowId: string, files: FlowFiles, node: Flow
     model_role: draft.modelRole || null,
     tools,
     params: nextParams,
+    ...(draft.category === 'input' && draft.preset === 'user_form'
+      ? { manifest_inputs: buildUserFormInputs(draft.presetConfig.fields, draft.presetConfig.fields_json) }
+      : {}),
   })
 }

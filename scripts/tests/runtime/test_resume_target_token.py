@@ -167,6 +167,11 @@ class ResumeTargetTokenTests(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self.temp_dir = Path(self._tmp.name)
+        self._model_binding_patch = mock.patch(
+            "core.cartridge.runner.build_model_binding_report",
+            return_value={"status": "ok", "items": []},
+        )
+        self._model_binding_patch.start()
         self.manifest = plan_manifest()
         self.flow = plan_flow()
         self.runner = CartridgeRunner(self.temp_dir, _Registry(self.temp_dir, self.manifest, self.flow))
@@ -175,6 +180,7 @@ class ResumeTargetTokenTests(unittest.TestCase):
         self.runner.mcp_executor = None
 
     def tearDown(self):
+        self._model_binding_patch.stop()
         self._tmp.cleanup()
 
     def _mock_llm(self):

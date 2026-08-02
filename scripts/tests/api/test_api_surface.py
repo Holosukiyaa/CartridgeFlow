@@ -11,7 +11,9 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from backend import main as backend_main
+from backend.api_models import NodeCreatePayload, NodeUpdatePayload
 from backend.main import app
+from core.lab.dev_flow import DevFlowManager
 
 
 class ApiSurfaceTests(unittest.TestCase):
@@ -99,6 +101,139 @@ class ApiSurfaceTests(unittest.TestCase):
         catalog = response.json()["protocol_catalog"]
         self.assertEqual("CF-FARP@1.0", catalog["default_for_new_flows"]["label"])
         self.assertEqual("current", next(item["lifecycle"] for item in catalog["releases"] if item["version"] == "1.0"))
+
+    def test_node_create_applies_complete_business_configuration_atomically(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            manager = DevFlowManager(Path(temp_dir))
+            flow_id = "dev.atomic-authoring"
+            manager.create_flow(flow_id, "Atomic authoring")
+            payload = NodeCreatePayload(
+                template_id="prompt",
+                node_id="generate_summary",
+                title="生成摘要",
+                after_node_id="start",
+                node=NodeUpdatePayload(
+                    kind="decision",
+                    executor="llm",
+                    effect="none",
+                    action="llm_prompt",
+                    model_role="runtime",
+                    params={
+                        "node_category": "process",
+                        "preset": "generate",
+                        "preset_config": {
+                            "target": "生成发布摘要",
+                            "format": "Markdown",
+                            "output_name": "release_summary",
+                        },
+                        "prompt": "生成发布摘要\n输出格式：Markdown",
+                        "output": "release_summary",
+                    },
+                    manifest_model_roles=[{
+                        "id": "runtime",
+                        "label": "运行模型",
+                        "capability": "text_generation",
+                        "api_type": "openai_compatible",
+                        "wire_api": "chat_completions",
+                        "model": "configured-locally",
+                        "required": True,
+                    }],
+                ),
+            )
+            input_payload = NodeCreatePayload(
+                template_id="input",
+                node_id="collect_brief",
+                title="填写需求",
+                after_node_id="start",
+                node=NodeUpdatePayload(
+                    kind="input",
+                    executor="user",
+                    effect="writes_store",
+                    action="collect_inputs",
+                    params={
+                        "node_category": "input",
+                        "preset": "user_form",
+                        "preset_config": {"fields": "需求描述、目标", "output_name": "brief"},
+                        "fields": ["input_1", "input_2"],
+                        "output": "brief",
+                    },
+                    manifest_inputs=[
+                        {"id": "input_1", "label": "需求描述", "type": "textarea", "required": True},
+                        {"id": "input_2", "label": "目标", "type": "text", "required": True},
+                    ],
+                ),
+            )
+            other_input_payload = NodeCreatePayload(
+                template_id="input",
+                node_id="collect_audience",
+                title="填写受众",
+                after_node_id="collect_brief",
+                node=NodeUpdatePayload(
+                    kind="input",
+                    executor="user",
+                    effect="writes_store",
+                    action="collect_inputs",
+                    params={
+                        "node_category": "input",
+                        "preset": "user_form",
+                        "preset_config": {"fields": "受众", "output_name": "audience"},
+                        "fields": ["input_3"],
+                        "output": "audience",
+                    },
+                    manifest_inputs=[
+                        {"id": "input_3", "label": "受众", "type": "text", "required": True},
+                    ],
+                    manifest_model_roles=[{
+                        "id": "reviewer",
+                        "label": "审核模型",
+                        "capability": "text_generation",
+                        "api_type": "openai_compatible",
+                        "wire_api": "chat_completions",
+                        "model": "configured-locally",
+                        "required": False,
+                    }],
+                ),
+            )
+
+            with patch.object(backend_main, "dev_flow_manager", manager), patch.object(
+                backend_main.registry,
+                "get_cartridge",
+                return_value={"id": flow_id, "editable": True},
+            ):
+                result = backend_main.create_lab_flow_node(flow_id, payload)
+                input_result = backend_main.create_lab_flow_node(flow_id, input_payload)
+                other_input_result = backend_main.create_lab_flow_node(flow_id, other_input_payload)
+                updated_input_result = backend_main.update_lab_flow_node(
+                    flow_id,
+                    "collect_brief",
+                    NodeUpdatePayload(
+                        params={
+                            "node_category": "input",
+                            "preset": "user_form",
+                            "preset_config": {"fields": "需求描述", "output_name": "brief"},
+                            "fields": ["input_1"],
+                            "output": "brief",
+                        },
+                        manifest_inputs=[
+                            {"id": "input_1", "label": "需求描述", "type": "textarea", "required": True},
+                        ],
+                    ),
+                )
+
+            root_flow = json.loads(result["files"]["root_flow"])
+            node = root_flow["states"]["generate_summary"]
+            self.assertEqual("生成发布摘要\n输出格式：Markdown", node["params"]["prompt"])
+            self.assertEqual("release_summary", node["params"]["output"])
+            self.assertEqual("runtime", node["model_role"])
+            self.assertEqual(1, sum(
+                edge.get("from") == "generate_summary" and edge.get("kind") == "failure"
+                for edge in root_flow["execution_plan"]["edges"]
+            ))
+            manifest = json.loads(updated_input_result["files"]["manifest"])
+            self.assertEqual(["input_3", "input_1"], [item["id"] for item in manifest["inputs"]])
+            self.assertEqual(["runtime", "reviewer"], [item["id"] for item in manifest["llm_recipe"]["roles"]])
+            input_root_flow = json.loads(input_result["files"]["root_flow"])
+            self.assertEqual(["input_1", "input_2"], input_root_flow["states"]["collect_brief"]["params"]["fields"])
 
     def test_validation_errors_do_not_echo_api_keys(self):
         secret = "sk-security-regression-secret"

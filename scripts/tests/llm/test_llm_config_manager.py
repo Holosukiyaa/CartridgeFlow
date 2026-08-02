@@ -213,6 +213,27 @@ class LlmConfigManagerTests(unittest.TestCase):
                 self.assertEqual("ok", selected_node_role["status"])
                 self.assertEqual("local", selected_node_role["items"][-1]["provider_id"])
 
+    def test_ai_node_is_blocked_even_when_manifest_declares_no_model_roles(self):
+        manifest = {
+            "id": "flow.unconfigured",
+            "llm_recipe": {"schema": "cartridgeflow.llm_recipe.v1", "roles": []},
+        }
+        root_flow = {
+            "states": {
+                "generate": {
+                    "type": "process",
+                    "kind": "decision",
+                    "executor": "llm",
+                    "action": "llm_prompt",
+                },
+            },
+        }
+
+        report = manager.build_model_binding_report(manifest, root_flow)
+
+        self.assertEqual("blocked", report["status"])
+        self.assertEqual("AI 决策节点未选择模型角色", report["items"][0]["message"])
+
     def test_public_provider_and_config_paths_do_not_expose_secrets_or_absolute_paths(self):
         provider = {
             "id": "local", "name": "Local", "api_type": "openai", "wire_api": "chat_completions",

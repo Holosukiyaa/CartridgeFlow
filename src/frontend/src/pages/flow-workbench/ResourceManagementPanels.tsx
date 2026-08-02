@@ -58,6 +58,13 @@ import { resolveNodeSemanticKind } from './flowNodeView.ts'
 
 type ModelRole = { id: string; label: string; model?: string }
 type ModelManagementStage = 'connections' | 'flow' | 'nodes'
+type ModelManagementPanelProps = {
+  flowId: string
+  cartridge: CartridgeDetail
+  graph?: FlowGraph
+  onBindingsChange?: () => void | Promise<void>
+  initialStage?: ModelManagementStage
+}
 type ProviderDraft = {
   id: string
   name: string
@@ -124,14 +131,14 @@ function StatusMessage({ text, tone = 'neutral' }: { text: string; tone?: 'neutr
   return <div className={`cf-resource-feedback ${tone}`}>{tone === 'success' ? <CheckCircle2 /> : tone === 'error' ? <X /> : <Info />}<span>{text}</span></div>
 }
 
-export function ModelManagementPanel({ flowId, cartridge, graph }: { flowId: string; cartridge: CartridgeDetail; graph?: FlowGraph }) {
+export function ModelManagementPanel({ flowId, cartridge, graph, onBindingsChange, initialStage = 'nodes' }: ModelManagementPanelProps) {
   const [providers, setProviders] = useState<LlmProvider[]>([])
   const [assignments, setAssignments] = useState<LlmAssignments>(EMPTY_ASSIGNMENTS)
   const [expandedId, setExpandedId] = useState('')
   const [draft, setDraft] = useState<ProviderDraft>(providerDraft())
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<{ text: string; tone: 'neutral' | 'success' | 'error' } | null>(null)
-  const [activeStage, setActiveStage] = useState<ModelManagementStage>('connections')
+  const [activeStage, setActiveStage] = useState<ModelManagementStage>(initialStage)
   const importRef = useRef<HTMLInputElement>(null)
   const initialExpansionRef = useRef(false)
   const roles = useMemo(() => flowModelRoles(cartridge), [cartridge])
@@ -139,7 +146,6 @@ export function ModelManagementPanel({ flowId, cartridge, graph }: { flowId: str
   const decisionNodes = useMemo(() => (graph?.nodes || []).filter((node) => resolveNodeSemanticKind(node) === 'decision' || Boolean(node.model_role) || /decision|intent_router/i.test(`${node.type} ${node.action || ''}`)), [graph])
   const providerById = useMemo(() => new Map(providers.map((provider) => [provider.id, provider])), [providers])
   const flowProviderIds = useMemo(() => new Set(Object.values(flowBindings).map((binding) => binding.provider_id).filter(Boolean) as string[]), [flowBindings])
-  const flowProviders = useMemo(() => providers.filter((provider) => flowProviderIds.has(provider.id)), [providers, flowProviderIds])
   const boundRoleCount = roles.filter((role) => Boolean(flowBindings[role.id]?.provider_id)).length
   const boundNodeCount = decisionNodes.filter((node) => Boolean(assignments.nodes?.[`${flowId}/${node.id}`]?.[node.model_role || 'runtime']?.provider_id)).length
 
@@ -259,6 +265,7 @@ export function ModelManagementPanel({ flowId, cartridge, graph }: { flowId: str
     try {
       const result = await saveLlmAssignments(next)
       setAssignments(result.assignments)
+      await onBindingsChange?.()
       const suffix = affectedNodeKeys.length ? `，并解除 ${affectedNodeKeys.length} 个失去来源的节点绑定` : ''
       setMessage({ text: provider ? `${role.label} 已绑定连接 ID：${provider.id}${suffix}` : `${role.label} 已解除 Flow 绑定${suffix}。`, tone: 'success' })
     } catch (error: any) {
@@ -270,19 +277,27 @@ export function ModelManagementPanel({ flowId, cartridge, graph }: { flowId: str
 
   const bindDecisionNode = async (node: FlowGraph['nodes'][number], providerId: string) => {
     const next: LlmAssignments = JSON.parse(JSON.stringify(assignments || EMPTY_ASSIGNMENTS))
+    next.cartridges ||= {}
     next.nodes ||= {}
     const key = `${flowId}/${node.id}`
     const role = node.model_role || 'runtime'
-    const provider = flowProviders.find((item) => item.id === providerId)
+    const provider = providerById.get(providerId)
     next.nodes[key] ||= {}
-    if (provider) next.nodes[key][role] = { provider_id: provider.id, model: provider.default_model || '' }
-    else delete next.nodes[key][role]
+    if (provider) {
+      const binding = { provider_id: provider.id, model: provider.default_model || '' }
+      next.cartridges[flowId] ||= {}
+      next.cartridges[flowId][role] = binding
+      next.nodes[key][role] = binding
+    } else {
+      delete next.nodes[key][role]
+    }
     if (Object.keys(next.nodes[key] || {}).length === 0) delete next.nodes[key]
     setBusy(true)
     try {
       const result = await saveLlmAssignments(next)
       setAssignments(result.assignments)
-      setMessage({ text: provider ? `${node.display_name || node.title || node.id} 已绑定 ${provider.name || provider.id}。` : `${node.display_name || node.title || node.id} 已解除节点绑定。`, tone: 'success' })
+      await onBindingsChange?.()
+      setMessage({ text: provider ? `${node.display_name || node.title || 'AI 节点'} 已使用 ${provider.name || provider.id}，流程默认模型已同步。` : `${node.display_name || node.title || 'AI 节点'} 已解除模型绑定。`, tone: 'success' })
     } catch (error: any) {
       setMessage({ text: error.message || '节点绑定失败', tone: 'error' })
     } finally { setBusy(false) }
@@ -326,29 +341,29 @@ export function ModelManagementPanel({ flowId, cartridge, graph }: { flowId: str
         <button type="button" onClick={async () => downloadJson('cartridgeflow-models.json', await exportLlmConfig())}><Download />导出配置</button>
         <input ref={importRef} type="file" accept="application/json,.json" hidden onChange={(event) => void importConfig(event.target.files?.[0])} />
       </div>
-      <nav className="cf-model-binding-path" aria-label="模型绑定层级">
+      <nav className="cf-model-binding-path" aria-label="模型设置">
         <button type="button" className={activeStage === 'connections' ? 'active' : ''} onClick={() => setActiveStage('connections')}>
-          <i><Cable /></i><span><b>1. 模型 API</b><small>本机连接资源池</small></span><em>{providers.length} 个</em>
-        </button>
-        <ArrowRight className="cf-model-binding-arrow" />
-        <button type="button" className={activeStage === 'flow' ? 'active' : ''} onClick={() => setActiveStage('flow')}>
-          <i><Workflow /></i><span><b>2. 当前 Flow</b><small>按模型角色接入</small></span><em>{boundRoleCount}/{roles.length}</em>
+          <i><Cable /></i><span><b>模型连接</b><small>管理本机 API</small></span><em>{providers.length} 个</em>
         </button>
         <ArrowRight className="cf-model-binding-arrow" />
         <button type="button" className={activeStage === 'nodes' ? 'active' : ''} onClick={() => setActiveStage('nodes')}>
-          <i><BrainCircuit /></i><span><b>3. AI 节点</b><small>分配到具体节点</small></span><em>{boundNodeCount}/{decisionNodes.length}</em>
+          <i><BrainCircuit /></i><span><b>节点模型</b><small>直接选择执行模型</small></span><em>{boundNodeCount}/{decisionNodes.length}</em>
+        </button>
+        <ArrowRight className="cf-model-binding-arrow" />
+        <button type="button" className={activeStage === 'flow' ? 'active' : ''} onClick={() => setActiveStage('flow')}>
+          <i><Workflow /></i><span><b>高级绑定</b><small>按角色设置默认值</small></span><em>{boundRoleCount}/{roles.length}</em>
         </button>
       </nav>
-      <div className="cf-resource-scope-note"><Info /><span>连接先保存在本机资源池，再进入当前 Flow，最后才能分配给具体 AI 节点；API Key 始终不会写入 Flow。</span></div>
+      <div className="cf-resource-scope-note"><Info /><span>为节点选择模型时会自动完成当前流程的默认绑定；API Key 始终只保存在本机。</span></div>
       {message && <StatusMessage {...message} />}
 
       {activeStage === 'connections' && <section className="cf-model-stage">
         <header className="cf-model-stage-head">
-          <div><span>第 1 层</span><h3>模型 API 连接</h3><p>这里管理本机可用连接。新增或导入连接后，它仍未属于任何 Flow。</p></div>
+          <div><span>本机资源</span><h3>模型 API 连接</h3><p>这里管理本机可用连接。保存连接后即可直接分配给 AI 节点。</p></div>
           <strong>{providers.length}<small>资源池连接</small></strong>
         </header>
         <div className="cf-resource-list">
-          {providers.length === 0 && expandedId !== '__new__' && <div className="cf-resource-empty"><FileJson /><b>还没有模型 API 连接</b><span>新增一个 OpenAI 兼容连接，保存后再进入下一层绑定当前 Flow。</span><button type="button" onClick={startNew}><CirclePlus />新增连接</button></div>}
+          {providers.length === 0 && expandedId !== '__new__' && <div className="cf-resource-empty"><FileJson /><b>还没有模型 API 连接</b><span>新增一个 OpenAI 兼容连接，保存后即可为 AI 节点选择。</span><button type="button" onClick={startNew}><CirclePlus />新增连接</button></div>}
           {[...(expandedId === '__new__' ? [{ id: '__new__', name: '新模型连接' } as LlmProvider] : []), ...providers].map((provider) => {
             const expanded = expandedId === provider.id
             const boundRoles = roles.filter((role) => flowBindings[role.id]?.provider_id === provider.id)
@@ -376,7 +391,7 @@ export function ModelManagementPanel({ flowId, cartridge, graph }: { flowId: str
                     <div className="cf-resource-card-actions">
                       <button type="button" disabled={busy || !draft.id} onClick={() => void testProvider()}><Zap />测试连接</button>
                       {provider.id !== '__new__' && <button className="danger" type="button" disabled={busy} onClick={() => void removeProvider(provider)}>删除连接</button>}
-                      {provider.id !== '__new__' && <button type="button" onClick={() => setActiveStage('flow')}>前往 Flow 绑定<ArrowRight /></button>}
+                      {provider.id !== '__new__' && <button type="button" onClick={() => setActiveStage('nodes')}>设置节点模型<ArrowRight /></button>}
                       <button className="primary" type="submit" disabled={busy}>保存</button>
                     </div>
                   </form>
@@ -389,7 +404,7 @@ export function ModelManagementPanel({ flowId, cartridge, graph }: { flowId: str
 
       {activeStage === 'flow' && <section className="cf-model-stage">
         <header className="cf-model-stage-head">
-          <div><span>第 2 层</span><h3>绑定到当前 Flow</h3><p>把资源池连接分配给当前 Flow 声明的模型角色。未选择的连接仍只属于本机资源池。</p></div>
+          <div><span>高级设置</span><h3>按角色设置默认模型</h3><p>节点模型选择会自动维护这些默认值；只有需要精确控制角色时才需要在这里调整。</p></div>
           <strong>{boundRoleCount}/{roles.length}<small>角色已绑定</small></strong>
         </header>
         {providers.length === 0 ? <div className="cf-resource-empty"><Cable /><b>资源池中没有可绑定连接</b><span>请先新增并测试模型 API，再返回这里完成 Flow 绑定。</span><button type="button" onClick={() => { setActiveStage('connections'); startNew() }}><CirclePlus />新增连接</button></div> : <>
@@ -407,24 +422,24 @@ export function ModelManagementPanel({ flowId, cartridge, graph }: { flowId: str
             })}
           </div>
         </>}
-        <footer className="cf-model-stage-next"><span>{boundRoleCount ? `当前 Flow 已使用 ${flowProviderIds.size} 个模型 API 连接。` : '完成至少一个 Flow 角色绑定后，才能继续分配具体节点。'}</span><button type="button" disabled={!flowProviderIds.size} onClick={() => setActiveStage('nodes')}>继续绑定 AI 节点<ArrowRight /></button></footer>
+        <footer className="cf-model-stage-next"><span>{boundRoleCount ? `当前 Flow 已使用 ${flowProviderIds.size} 个模型 API 连接。` : '也可以直接前往节点模型，一次完成节点和流程默认绑定。'}</span><button type="button" disabled={!providers.length} onClick={() => setActiveStage('nodes')}>设置节点模型<ArrowRight /></button></footer>
       </section>}
 
       {activeStage === 'nodes' && <section className="cf-model-stage">
         <header className="cf-model-stage-head">
-          <div><span>第 3 层</span><h3>绑定具体 AI 节点</h3><p>节点只能选择已经进入当前 Flow 的模型 API；资源池中未绑定 Flow 的连接不会出现在这里。</p></div>
+          <div><span>运行配置</span><h3>为 AI 节点选择模型</h3><p>一次选择会同时设置节点模型和当前流程的默认模型，无需再配置角色。</p></div>
           <strong>{boundNodeCount}/{decisionNodes.length}<small>节点已绑定</small></strong>
         </header>
-        {!flowProviders.length ? <div className="cf-resource-empty"><Workflow /><b>当前 Flow 还没有模型连接</b><span>先完成第 2 层 Flow 绑定，再为具体 AI 节点选择执行模型。</span><button type="button" onClick={() => setActiveStage('flow')}>返回 Flow 绑定</button></div> : decisionNodes.length === 0 ? <div className="cf-resource-empty"><BrainCircuit /><b>当前 Flow 没有 AI 决策节点</b><span>添加具有模型角色的 AI 决策节点后，它们会显示在这里。</span></div> : <div className="cf-model-binding-list node-list">
+        {!providers.length ? <div className="cf-resource-empty"><Cable /><b>还没有可用的模型连接</b><span>先新增并测试模型 API，保存后即可返回这里选择。</span><button type="button" onClick={() => { setActiveStage('connections'); startNew() }}><CirclePlus />新增连接</button></div> : decisionNodes.length === 0 ? <div className="cf-resource-empty"><BrainCircuit /><b>当前 Flow 没有 AI 节点</b><span>添加 AI 节点后，它们会显示在这里。</span></div> : <div className="cf-model-binding-list node-list">
           {decisionNodes.map((node) => {
             const role = node.model_role || 'runtime'
             const binding = assignments.nodes?.[`${flowId}/${node.id}`]?.[role]
             const provider = binding?.provider_id ? providerById.get(binding.provider_id) : undefined
             return <article className={binding ? 'is-bound' : ''} key={node.id}>
               <i><BrainCircuit /></i>
-              <span><b>{node.display_name || node.title || node.id}</b><code>{node.id} · {role}</code></span>
-              <div>{provider ? <><b>{provider.name || provider.id}</b><small>{binding.model || provider.default_model || '使用连接默认模型'}</small></> : <><b>尚未绑定</b><small>运行前需要选择 Flow 内连接</small></>}</div>
-              <select aria-label={`为 ${node.display_name || node.title || node.id} 选择模型连接`} value={binding?.provider_id || ''} disabled={busy} onChange={(event) => void bindDecisionNode(node, event.target.value)}><option value="">不绑定</option>{flowProviders.map((item) => <option key={item.id} value={item.id}>{item.name || item.id} · {item.default_model || '默认模型未设置'}</option>)}</select>
+              <span><b>{node.display_name || node.title || 'AI 节点'}</b><small>AI 节点</small></span>
+              <div>{provider ? <><b>{provider.name || provider.id}</b><small>{binding.model || provider.default_model || '使用连接默认模型'}</small></> : <><b>尚未选择</b><small>运行前需要选择执行模型</small></>}</div>
+              <select aria-label={`为 ${node.display_name || node.title || 'AI 节点'} 选择模型连接`} value={binding?.provider_id || ''} disabled={busy} onChange={(event) => void bindDecisionNode(node, event.target.value)}><option value="">不绑定</option>{providers.map((item) => <option key={item.id} value={item.id}>{item.name || item.id} · {item.default_model || '默认模型未设置'}</option>)}</select>
             </article>
           })}
         </div>}

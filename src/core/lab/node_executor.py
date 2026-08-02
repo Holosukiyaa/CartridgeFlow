@@ -1189,14 +1189,22 @@ class LabNodeExecutor:
             preset_config.get("focus") or
             "你是一个可靠的助手，请根据上下文完成任务。"
         )
-        if "prompt" in params:
-            prompt_template = params.get("prompt")
-        elif "target" in preset_config:
-            prompt_template = preset_config.get("target")
-        elif "format" in preset_config:
-            prompt_template = preset_config.get("format")
+        preset_target = str(preset_config.get("target") or "").strip()
+        preset_format = str(preset_config.get("format") or "").strip()
+        compiled_preset_prompt = "\n".join(filter(None, (
+            preset_target,
+            f"输出格式：{preset_format}" if preset_format else "",
+        )))
+        explicit_prompt = params.get("prompt")
+        legacy_default_prompt = explicit_prompt == "请根据用户输入完成任务。"
+        if explicit_prompt and not legacy_default_prompt:
+            prompt_template = explicit_prompt
+        elif compiled_preset_prompt:
+            prompt_template = compiled_preset_prompt
         elif "from_to" in preset_config:
             prompt_template = preset_config.get("from_to")
+        elif explicit_prompt:
+            prompt_template = explicit_prompt
         elif params.get("description"):
             prompt_template = params.get("description")
         else:

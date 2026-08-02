@@ -6,7 +6,7 @@ cleanup disposition live in `PROJECT_CLEANUP_AUDIT_2026-07-31.md`.
 
 | Area | Owner | Entry points |
 |---|---|---|
-| Product | Repository root | `README.md`, `AGENT.md`, `VERSION`, `run.bat` |
+| Product | Repository root | `README.md`, `AGENT.md`, `计划文档.md`, `VERSION`, `run.bat` |
 | Backend | `src/backend/` | `main.py` |
 | Cartridge runtime | `src/core/cartridge/` | `registry.py`, `runner.py`, `root_flow.py`, `validator.py` |
 | Authoring | `src/core/lab/` | `dev_flow.py`, `flow_analyzer.py`, `node_executor.py` |

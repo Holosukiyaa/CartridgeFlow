@@ -2,6 +2,7 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from core.cartridge.runner import CartridgeRunner
 from core.protocol import build_compatibility_report, load_base_implementation
@@ -195,7 +196,8 @@ class RuntimeInteractionTests(unittest.TestCase):
             compatibility = build_compatibility_report(load_base_implementation(ROOT), cartridge["manifest"], cartridge["root_flow"], ROOT)
             self.assertTrue(compatibility["ok"], compatibility["findings"])
 
-            run = runner.create_run(cartridge["id"], {"topic": "story"})
+            with patch("core.cartridge.runner.build_model_binding_report", return_value={"status": "ok", "items": []}):
+                run = runner.create_run(cartridge["id"], {"topic": "story"})
             self.assertEqual("paused_waiting_user", run["status"])
             self.assertIn("pending_interaction", run)
             self.assertEqual("resume_next_node", run["pending_interaction"]["resume"]["policy"])
@@ -239,7 +241,8 @@ class RuntimeInteractionTests(unittest.TestCase):
             shutil.copytree(ROOT / "protocol", tmp_root / "protocol")
 
             runner = CartridgeRunner(tmp_root, StubRegistry(cartridge))
-            run = runner.create_run(cartridge["id"], {"topic": "story"})
+            with patch("core.cartridge.runner.build_model_binding_report", return_value={"status": "ok", "items": []}):
+                run = runner.create_run(cartridge["id"], {"topic": "story"})
             self.assertEqual("paused_waiting_user", run["status"])
 
             answer = {"approval": "revise", "feedback": "The first draft was too slow."}

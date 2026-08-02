@@ -115,7 +115,7 @@ export function RunInputDialog({
                 ) : (
                   <input
                     id={`cf-input-${input.id}`}
-                    type={input.type === 'date' ? 'date' : 'text'}
+                    type={['date', 'number', 'email', 'url'].includes(input.type) ? input.type : 'text'}
                     value={values[input.id] || ''}
                     placeholder={input.placeholder || ''}
                     onChange={(event) => setValues((current) => ({ ...current, [input.id]: event.target.value }))}

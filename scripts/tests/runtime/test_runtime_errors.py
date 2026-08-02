@@ -308,7 +308,8 @@ class RuntimeErrorEnvelopeTests(unittest.TestCase):
             runner.build_compatibility_report = lambda *args, **kwargs: {
                 "ok": True, "status": "compatible", "legacy": False, "base": {}, "protocol": {}, "summary": {}, "findings": [],
             }
-            run = runner.create_run("test.failure", test_mode={"decision": "mock_blocked"})
+            with patch("core.cartridge.runner.build_model_binding_report", return_value={"status": "ok", "items": []}):
+                run = runner.create_run("test.failure", test_mode={"decision": "mock_blocked"})
             failed_event = next(item for item in runner.get_events(run["run_id"]) if item["type"] == "lab_node_failed")
             final_event = next(item for item in runner.get_events(run["run_id"]) if item["type"] == "run_failed")
 

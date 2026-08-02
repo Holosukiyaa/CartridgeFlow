@@ -10,6 +10,7 @@ import {
   fetchBaseImplementation,
   fetchLabFlowFiles,
   fetchLabFlowRuns,
+  fetchFlowReadiness,
   fetchMcpTools,
   fetchCartridgeRun,
   fetchCartridgeRunEvents,
@@ -18,7 +19,6 @@ import {
   saveFlowAnnotations,
   saveFlowLayout,
   runFlow,
-  updateFlowNode,
   type FlowEvent,
   type FlowAnnotation,
   type FlowFiles,
@@ -28,12 +28,14 @@ import {
   type McpTool,
   type RunResult,
   type TestProbeRange,
+  type AuthoringReadiness,
+  type AuthoringReadinessItem,
 } from '../api.ts'
 import { showToast } from '../toast.tsx'
 import { DesignView, RunHistoryPanel, RunLogDialog, WorkbenchHeader } from './flow-workbench/views.tsx'
-import { CATEGORY_BY_ID, getPreset } from './flow-workbench/nodeModel.ts'
+import { CATEGORY_BY_ID, buildBalancedLayout, getPreset } from './flow-workbench/nodeModel.ts'
 import type { CreateNodeOptions, GraphResult, NodeCategoryId } from './flow-workbench/types.ts'
-import { buildPresetConfig, buildProtocolPatch, buildToolSpecs, firstText } from './flow-workbench/nodeBuilder.ts'
+import { buildPresetConfig, buildPresetRuntimeParams, buildProtocolPatch, buildToolSpecs, buildUserFormInputs, firstText } from './flow-workbench/nodeBuilder.ts'
 import { ModelManagementPanel, PackagingPanel, ToolManagementPanel } from './flow-workbench/ResourceManagementPanels.tsx'
 import CartridgeWorkspaceControl from './flow-workbench/CartridgeWorkspaceControl.tsx'
 import { CartridgeDefinitionPanel } from './flow-workbench/CartridgeDefinitionPanel.tsx'
@@ -127,6 +129,10 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
   const [runCompletionNotice, setRunCompletionNotice] = useState<{ runId: string; shownAt: number } | null>(null)
   const [resultModal, setResultModal] = useState<{ runId: string; html: string } | null>(null)
   const [protocolCatalog, setProtocolCatalog] = useState<ProtocolReleaseCatalog | null>(null)
+  const [readiness, setReadiness] = useState<AuthoringReadiness | null>(null)
+  const [readinessError, setReadinessError] = useState('')
+  const [readinessOpen, setReadinessOpen] = useState(false)
+  const [requestedCanvasPanel, setRequestedCanvasPanel] = useState<{ panel: 'models' | 'settings' | 'tools' | 'package'; requestId: number } | null>(null)
   const latestRun = runs[0]
   const pendingInteraction = latestRun?.status === 'paused_waiting_user' ? latestRun.pending_interaction : null
   const pendingInteractionId = String(pendingInteraction?.interaction_id || '')
@@ -225,6 +231,20 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
     }
   }, [])
 
+  const refreshReadiness = useCallback(async (nextFiles: FlowFiles = {}) => {
+    setReadiness(null)
+    setReadinessError('')
+    try {
+      const report = await fetchFlowReadiness(flowId, nextFiles)
+      setReadiness(report)
+      return report
+    } catch (error: any) {
+      setReadiness(null)
+      setReadinessError(error?.message || '无法完成运行前检查')
+      return null
+    }
+  }, [flowId])
+
   const load = useCallback(async () => {
     setLoading(true)
     setError('')
@@ -233,6 +253,8 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
       const [data, baseResponse] = await Promise.all([fetchLabFlow(flowId), fetchBaseImplementation()])
       setProtocolCatalog(baseResponse.protocol_catalog || null)
       setDetail(data)
+      setReadiness(null)
+      setReadinessError('')
       setRuns(data.runs || [])
       setSelectedHistoryRunId(data.runs?.[0]?.run_id || '')
       setEvents(data.latest_run_events || [])
@@ -246,11 +268,16 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
           setFiles(fileData.files || {})
           const toolData = await fetchMcpTools(flowId)
           setMcpTools(toolData.mcp_tools || [])
-          if (toolData.files) setFiles(toolData.files || fileData.files || {})
+          const currentFiles = toolData.files || fileData.files || {}
+          if (toolData.files) setFiles(currentFiles)
+          await refreshReadiness(currentFiles)
         } catch {
           setFiles({})
           setMcpTools([])
+          await refreshReadiness({})
         }
+      } else {
+        await refreshReadiness({})
       }
     } catch (e: any) {
       setError(e.message || '加载失败')
@@ -355,7 +382,7 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
 
   useEffect(() => () => {
     pollGenerationRef.current += 1
-  }, [flowId])
+  }, [flowId, refreshReadiness])
 
   const pollRunUntilStable = useCallback(async (runId: string, maxAttempts = 900) => {
     const generation = ++pollGenerationRef.current
@@ -502,6 +529,18 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
     setOpenNodeEditors((current) => current.filter((editor) => editor.pinned || editor.nodeId === node.id))
   }, [])
 
+  const handleReadinessAction = useCallback((item: AuthoringReadinessItem) => {
+    if (item.node_id && detail) {
+      const node = detail.graph.nodes.find((candidate) => candidate.id === item.node_id)
+      if (node) selectNode(node)
+    }
+    const target = item.action?.target
+    if (target === 'models' || target === 'settings' || target === 'tools' || target === 'package') {
+      setRequestedCanvasPanel({ panel: target, requestId: Date.now() })
+    }
+    setReadinessOpen(false)
+  }, [detail, selectNode])
+
   const openGuidedNodeEditor = useCallback((node: FlowNode, section: NodeDetailSection) => {
     setSelectedNode(node)
     setOpenNodeEditors((current) => {
@@ -534,13 +573,44 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
 
   const updateGraphResult = useCallback((result: GraphResult) => {
     setFiles(result.files)
-    setDetail((prev) => prev ? { ...prev, graph: result.graph } : prev)
-  }, [])
+    setDetail((prev) => {
+      if (!prev) return prev
+      let manifest: Record<string, any> | null = null
+      try { manifest = result.files.manifest ? JSON.parse(result.files.manifest) : null } catch { /* keep last valid manifest */ }
+      return {
+        ...prev,
+        graph: result.graph,
+        ...(manifest ? {
+          cartridge: {
+            ...prev.cartridge,
+            manifest,
+            inputs: manifest.inputs || [],
+            outputs: manifest.outputs || [],
+            mcp_tools: manifest.mcp_tools || [],
+            llm_recipe: manifest.llm_recipe,
+          },
+        } : {}),
+      }
+    })
+    void refreshReadiness(result.files)
+  }, [refreshReadiness])
 
   const createCategoryNode = useCallback(async (sourceNode: FlowNode | null, categoryId: NodeCategoryId, insertMode: 'insert' | 'branch', options?: CreateNodeOptions) => {
     const category = CATEGORY_BY_ID.get(categoryId)!
     const nodeId = `${categoryId}_${Date.now().toString(36)}`
     try {
+      const presetId = options?.presetId || (category.id === 'custom' ? 'blank' : getPreset(category.id).id)
+      const sourceOutput = firstText(sourceNode?.params?.output, sourceNode?.primary_output, sourceNode?.output)
+      const presetConfig = buildPresetConfig({ input: sourceOutput, preset_config: options?.presetConfig || {} }, category.id, presetId, nodeId, 0)
+      const outputText = firstText(presetConfig.output_name, presetConfig.path, presetConfig.key)
+      const toolSpecs = buildToolSpecs(category.id, presetId, presetConfig, sourceOutput, outputText, undefined, availableMcpTools, {})
+      const protocolPatch = buildProtocolPatch(category.id, presetId, presetConfig, toolSpecs, availableMcpTools, {}, outputText)
+      const params = buildPresetRuntimeParams({}, category.id, presetId, presetConfig, {
+        description: category.description,
+        input: sourceOutput,
+        output: outputText,
+        force: true,
+      })
       const created = await createFlowNode(flowId, {
         files,
         template_id: category.templateId,
@@ -548,47 +618,51 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
         title: category.defaultTitle,
         after_node_id: sourceNode?.id,
         insert_mode: insertMode,
-      })
-      const createdNode = created.graph.nodes.find((node) => node.id === created.node_id)
-      const presetId = options?.presetId || (category.id === 'custom' ? 'blank' : getPreset(category.id).id)
-      const presetConfig = buildPresetConfig({ preset_config: options?.presetConfig || {} }, category.id, presetId, nodeId, 0)
-      const outputText = firstText(presetConfig.output_name, presetConfig.path, presetConfig.key)
-      const toolSpecs = buildToolSpecs(category.id, presetId, presetConfig, '', outputText, undefined, availableMcpTools, {})
-      const protocolPatch = buildProtocolPatch(category.id, presetId, presetConfig, toolSpecs, availableMcpTools, {}, outputText)
-      const updated = await updateFlowNode(flowId, created.node_id, {
-        files: created.files,
-        title: category.defaultTitle,
-        ...protocolPatch,
-        next: createdNode?.next || '',
-        agent: null,
-        model_role: null,
-        tools: toolSpecs,
-        params: {
-          ...(createdNode?.params || {}),
-          node_category: category.id,
-          preset: presetId,
-          preset_config: presetConfig,
-          description: category.description,
-          output: outputText,
+        node: {
+          title: category.defaultTitle,
+          ...protocolPatch,
+          agent: null,
+          model_role: category.id === 'process' ? 'runtime' : null,
+          tools: toolSpecs,
+          params,
+          ...(category.id === 'input' && presetId === 'user_form'
+            ? { manifest_inputs: buildUserFormInputs(presetConfig.fields, presetConfig.fields_json) }
+            : {}),
+          ...(category.id === 'process'
+            ? {
+                manifest_model_roles: [{
+                  id: 'runtime',
+                  label: '运行模型',
+                  capability: 'text_generation',
+                  api_type: 'openai_compatible',
+                  wire_api: 'chat_completions',
+                  model: 'configured-locally',
+                  required: true,
+                }],
+              }
+            : {}),
         },
       })
-      let finalResult: GraphResult = updated
+      let finalResult: GraphResult = created
       if (options?.position) {
-        const nextLayout = Object.fromEntries(updated.graph.nodes.map((item) => {
+        const nextLayout = Object.fromEntries(created.graph.nodes.map((item) => {
           const raw = (item as any).layout || item.params?.layout || item.data?.params?.layout || {}
           return [item.id, {
             x: Math.round(Number(raw.x ?? item.x ?? 0) / 10) * 10,
             y: Math.round(Number(raw.y ?? item.y ?? 0) / 10) * 10,
           }]
         }))
-        nextLayout[updated.node_id] = {
+        nextLayout[created.node_id] = {
           x: Math.round(options.position.x / 10) * 10,
           y: Math.round(options.position.y / 10) * 10,
         }
-        finalResult = await saveFlowLayout(flowId, updated.files, nextLayout)
+        finalResult = await saveFlowLayout(flowId, created.files, nextLayout)
+      } else {
+        const balancedLayout = buildBalancedLayout(created.graph, { viewMode: 'detailed', force: true })
+        finalResult = await saveFlowLayout(flowId, created.files, balancedLayout)
       }
       updateGraphResult(finalResult)
-      const node = finalResult.graph.nodes.find((item) => item.id === updated.node_id)
+      const node = finalResult.graph.nodes.find((item) => item.id === created.node_id)
       if (node) selectNode(node)
       showToast({ title: `${category.shortLabel}节点已新增`, type: 'success' })
       return node
@@ -622,9 +696,14 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
           onHistory={() => {
             setHistoryOpen((current) => !current)
           }}
-          onRun={() => {
+          onRun={async () => {
+            const latestReadiness = await refreshReadiness(files)
+            if (!latestReadiness?.can_run) {
+              setReadinessOpen(true)
+              return
+            }
             if ((detail.cartridge.inputs || []).length) setRunInputOpen(true)
-            else void startFlowRun({})
+            else await startFlowRun({})
           }}
           onPause={() => {
             if (activeRuntimeRun?.status === 'paused_waiting_user') setDismissedInteractionId('')
@@ -633,6 +712,10 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
           onStop={() => void controlActiveRun('cancel')}
           onCloneToDev={cloneReadonlyToDev}
           cloningToDev={cloningToDev}
+          runBlocked={!readiness?.can_run}
+          runBlockerCount={readiness?.summary.blockers || 0}
+          runReadinessError={Boolean(readinessError)}
+          onReadiness={() => setReadinessOpen(true)}
         />
 
         {runInputOpen && (
@@ -642,6 +725,36 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
             onSubmit={(inputs) => void startFlowRun(inputs)}
             onCancel={() => setRunInputOpen(false)}
           />
+        )}
+
+        {readinessOpen && (
+          <div className="cf-input-modal-backdrop" onClick={() => setReadinessOpen(false)}>
+            <div className="cf-input-modal cf-readiness-modal" role="dialog" aria-modal="true" aria-label="运行前检查" onClick={(event) => event.stopPropagation()}>
+              <div className="cf-input-modal-head">
+                <strong>运行前检查</strong>
+                <button type="button" className="cf-input-modal-close" onClick={() => setReadinessOpen(false)}>x</button>
+              </div>
+              <div className="cf-readiness-body">
+                {!readiness ? <p className={`cf-readiness-loading${readinessError ? ' error' : ''}`}>{readinessError ? `检查失败：${readinessError}` : '正在检查流程、输入、模型和资源配置…'}</p> : <>
+                  <div className={`cf-readiness-summary ${readiness.status}`}>
+                    <strong>{readiness.can_run ? '当前流程可以运行' : `还有 ${readiness.summary.blockers} 项必须处理`}</strong>
+                    <span>{readiness.summary.warnings ? `另有 ${readiness.summary.warnings} 项建议` : '检查结果来自当前流程源码和本机资源绑定'}</span>
+                  </div>
+                  <div className="cf-readiness-list">
+                    {readiness.items.map((item) => (
+                      <article key={item.id} data-severity={item.severity}>
+                        <span>{item.area === 'models' ? '模型' : item.area === 'inputs' ? '输入' : item.area === 'tools' ? '工具' : item.area === 'delivery' ? '交付' : '流程'}</span>
+                        <div><strong>{item.message}</strong>{item.node_id && <small>{detail?.graph.nodes.find((node) => node.id === item.node_id)?.display_name || detail?.graph.nodes.find((node) => node.id === item.node_id)?.title || '相关节点'}</small>}</div>
+                        {item.action && <button type="button" onClick={() => handleReadinessAction(item)}>{item.action.label}</button>}
+                      </article>
+                    ))}
+                    {!readiness.items.length && <p className="cf-readiness-empty">没有发现阻塞项。</p>}
+                  </div>
+                </>}
+                <footer><button type="button" className="cf-btn-outline" onClick={() => void refreshReadiness(files)}>重新检查</button><button type="button" className="cf-btn-accent" onClick={() => setReadinessOpen(false)}>返回画布</button></footer>
+              </div>
+            </div>
+          </div>
         )}
 
         {visiblePendingInteraction && latestRun && (
@@ -687,6 +800,7 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
             <DesignView
             graph={detail.graph}
             protocolInfo={protocolInfo}
+            requestedCanvasPanel={requestedCanvasPanel}
             editable={editable}
             files={files}
             flowId={flowId}
@@ -727,7 +841,7 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
             onOpenRunLog={openRunLog}
             onOpenRunResult={(run) => void openRunArtifactsDirectory(run)}
             onOpenPendingInteraction={() => setDismissedInteractionId('')}
-            modelPanel={<ModelManagementPanel flowId={flowId} cartridge={detail.cartridge} graph={detail.graph} />}
+            modelPanel={<ModelManagementPanel flowId={flowId} cartridge={detail.cartridge} graph={detail.graph} initialStage="nodes" onBindingsChange={async () => { await refreshReadiness(files) }} />}
             toolPanel={<ToolManagementPanel flowId={flowId} onFlowToolsChange={setFlowResourceTools} />}
             packagePanel={<PackagingPanel flowId={flowId} />}
             cartridgePanel={<CartridgeDefinitionPanel

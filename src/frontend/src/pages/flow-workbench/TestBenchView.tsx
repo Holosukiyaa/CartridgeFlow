@@ -443,7 +443,7 @@ export function PendingInteractionForm({
     <div className="cf-pending-card">
       <div className="cf-pending-head">
         <strong>等待用户确认</strong>
-        <span>流程已暂停</span>
+        <code>{question.store_key || pending?.interaction_id || 'user_reply'}</code>
       </div>
       <p>{question.prompt || '该节点需要用户输入后继续。'}</p>
       {question.review_content && (

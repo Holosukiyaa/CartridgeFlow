@@ -2,6 +2,7 @@ import { memo, type DragEvent, type ReactNode } from 'react'
 import { ArrowDownToLine, ArrowLeftRight, ArrowRight, Bot, Braces, CheckCircle2, Cloud, Database, FileCheck2, Flag, GitBranch, PackageCheck, PanelTop, Play, Route, Search, ShieldCheck, Shuffle, UserCheck, Wrench } from 'lucide-react'
 import type { FlowNode } from '../../api.ts'
 import { getNodePalette, type FlowNodeViewMode } from './nodeModel.ts'
+import { buildEngineeringRecipe, summarizeEngineeringRecipeItem } from './engineeringNode.ts'
 import { FlowNodePorts, type PortCounts } from './FlowNodePorts.tsx'
 import { buildFlowNodeCardView, buildOutcomeNodeCardView, type OutcomeNodeCardView } from './flowNodeView.ts'
 import type { NodeRunState } from './runState.ts'
@@ -89,6 +90,22 @@ function DetailedNodeContent({ node, order, view, runState }: Pick<FlowNodeCardP
         <ArrowRight aria-hidden="true" />
         <span className="flow-node-recipe-item output" title={view.outputs.map((item) => item.label).join('、')}>{view.outputs[0]?.label || '处理结果'}</span>
       </section>
+      {(() => {
+        const recipe = buildEngineeringRecipe(node)
+        if (!recipe.length) return null
+        return (
+          <section className="flow-node-recipe-detail" aria-label="处理配方明细">
+            <dl>
+              {recipe.map((item) => (
+                <div key={item.label} title={item.value}>
+                  <dt>{item.label}</dt>
+                  <dd className={item.mono ? 'mono' : ''}>{summarizeEngineeringRecipeItem(item)}</dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+        )
+      })()}
       <section className="flow-node-outcome-band summary">
         <h4><GitBranch />做什么</h4>
         <p title={view.what}>{view.what}</p>

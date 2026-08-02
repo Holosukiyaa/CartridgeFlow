@@ -21,7 +21,7 @@ expect(projection, /plan_edge_id: planEdgeId/, '每条工程执行线必须保�
 expect(projection, /transition === 'loop_exit'/, '循环退出必须作为同一计划边的显式可视替代路径。')
 expect(projection, /options\.executionPlanV1 \? buildExecutionPlanEdges/, 'CF-FARP@1.0 工程图不得回退到旧图边。')
 expect(views, /isExecutionPlanV1/, '工程视图必须识别 CF-FARP@1.0。')
-expect(views, /\/analyze/, '工程视图必须请求 Analyzer 的 ExecutionPlan 投影。')
+expect(views, /analyzeLabFlow<ExecutionPlanAnalysis>/, '工程视图必须通过统一 API 请求 Analyzer 的 ExecutionPlan 投影。')
 expect(views, /旧连线不会显示为运行路线/, '未编译计划必须明确告知旧连线不会成为运行路线。')
 expect(views, /executionPlanV1 \|\| engineering \? engineeringGraph : graph/, '1.0 引导视图也必须使用计划投影，不能重新显示旧运行线。')
 expect(graph, /plan-edge-\$\{planEdgeId\}/, '画布边 DOM 标识必须携带计划边身份。')

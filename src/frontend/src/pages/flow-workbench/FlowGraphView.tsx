@@ -19,8 +19,8 @@ import {
   type ReactFlowInstance,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { AlertTriangle, AlignHorizontalSpaceAround, Box, Braces, BrainCircuit, CheckCircle2, ChevronDown, ChevronUp, CirclePause, FileText, FolderOpen, GitBranch, GripVertical, Info, Lock, Maximize, Maximize2, MessageSquare, MessageSquarePlus, MousePointer2, PackageCheck, Plus, Settings, Trash2, Unlock, Wrench, X, ZoomIn, ZoomOut } from 'lucide-react'
-import { uploadWorkspaceFile, type AIFlowSelection, type FlowAnnotation, type FlowEdge, type FlowEvent, type FlowFiles, type FlowGraph, type FlowNode, type RunResult } from '../../api.ts'
+import { AlertTriangle, AlignHorizontalSpaceAround, Box, Braces, BrainCircuit, CheckCircle2, CirclePause, FileText, FolderOpen, GitBranch, GripVertical, Info, Lock, Maximize, Maximize2, MessageSquare, MessageSquarePlus, MousePointer2, PackageCheck, Plus, Settings, Trash2, Unlock, Wrench, X, ZoomIn, ZoomOut } from 'lucide-react'
+import type { AIFlowSelection, FlowAnnotation, FlowEdge, FlowEvent, FlowFiles, FlowGraph, FlowNode, RunResult } from '../../api.ts'
 import { DEFAULT_WORKSPACE_THEME, loadWorkspaceTheme, saveWorkspaceTheme, WORKSPACE_THEME_PRESETS, type WorkspaceTheme } from '../../appearance.ts'
 import { showToast } from '../../toast.tsx'
 import type { CreateNodeHandler, DesignDisplayMode, NodeCategoryId } from './types.ts'
@@ -84,24 +84,7 @@ const DEFAULT_PROTOCOL_DISPLAY: ProtocolDisplayInfo = {
   currentProtocolLabel: 'CF-FARP@unknown',
   currentProtocolStatus: '当前卡带协议未读取',
 }
-export type CanvasPanel = 'nodes' | 'notes' | 'models' | 'variables' | 'settings' | 'tools' | 'package' | 'base-info' | null
-
-type LibraryInputFieldDraft = {
-  key: string
-  id: string
-  label: string
-  type: 'text' | 'textarea' | 'number' | 'date' | 'email' | 'url' | 'file'
-  required: boolean
-  default: string
-}
-
-function defaultLibraryInputFields(): LibraryInputFieldDraft[] {
-  return [
-    { key: 'field_requirement', id: 'input_1', label: '需求描述', type: 'textarea', required: true, default: '' },
-    { key: 'field_goal', id: 'input_2', label: '目标', type: 'text', required: true, default: '' },
-    { key: 'field_constraints', id: 'input_3', label: '限制条件', type: 'textarea', required: false, default: '' },
-  ]
-}
+type CanvasPanel = 'nodes' | 'notes' | 'models' | 'variables' | 'settings' | 'tools' | 'package' | 'base-info' | null
 
 type EngineeringNodeRenderContextValue = {
   models: Map<string, EngineeringNodeRenderModel>
@@ -465,7 +448,7 @@ function buildRunEdgeStates(graphEdges: FlowEdge[], runEvents: FlowEvent[] = EMP
   return edgeStates
 }
 
-export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engineeringEdgeVisibility = { control: true, data: true, dependency: true, branch: true, failure: true }, engineeringDataRelations: providedEngineeringDataRelations, engineeringNodeModels: providedEngineeringNodeModels, selectedNode, focusNodeId, onSelectNode, onNodeEditorPositionChange, onLayoutSave, autoLayoutOnMount = false, onAutoLayoutComplete, onEdgesSave, onAnnotationsSave, onCreateNode, onDeleteNode, modelPanel, toolPanel, packagePanel, cartridgePanel, protocolInfo = DEFAULT_PROTOCOL_DISPLAY, nodeEditors = [], activeNodeEditorId, onCloseNodeEditor, onCanvasToolChange, requestedCanvasTool, requestedCanvasPanel, onStewardSelectionChange, compactStatic = false, readOnlyGraph = false, runStatus, nodeRunStates, runEvents, runCompletionVisible = false, runCompletion, onDismissRunCompletion, onOpenRunLog, onOpenRunResult, onOpenPendingInteraction, testProbeState }: {
+export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engineeringEdgeVisibility = { control: true, data: true, dependency: true, branch: true, failure: true }, engineeringDataRelations: providedEngineeringDataRelations, engineeringNodeModels: providedEngineeringNodeModels, selectedNode, focusNodeId, onSelectNode, onNodeEditorPositionChange, onLayoutSave, autoLayoutOnMount = false, onAutoLayoutComplete, onEdgesSave, onAnnotationsSave, onCreateNode, onDeleteNode, modelPanel, toolPanel, packagePanel, cartridgePanel, protocolInfo = DEFAULT_PROTOCOL_DISPLAY, nodeEditors = [], activeNodeEditorId, onCloseNodeEditor, onCanvasToolChange, requestedCanvasTool, onStewardSelectionChange, compactStatic = false, readOnlyGraph = false, runStatus, nodeRunStates, runEvents, runCompletionVisible = false, runCompletion, onDismissRunCompletion, onOpenRunLog, onOpenRunResult, onOpenPendingInteraction, testProbeState }: {
   graph: FlowGraph
   files?: FlowFiles
   displayMode?: DesignDisplayMode
@@ -493,7 +476,6 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
   onCloseNodeEditor?: () => void
   onCanvasToolChange?: (tool: CanvasTool) => void
   requestedCanvasTool?: CanvasTool
-  requestedCanvasPanel?: { panel: Exclude<CanvasPanel, null>; requestId: number } | null
   onStewardSelectionChange?: (selection: AIFlowSelection) => void
   compactStatic?: boolean
   readOnlyGraph?: boolean
@@ -514,10 +496,6 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
   const [selectedLibraryCategoryId, setSelectedLibraryCategoryId] = useState<NodeCategoryId | null>(null)
   const [selectedLibraryPresetId, setSelectedLibraryPresetId] = useState('')
   const [libraryPresetConfig, setLibraryPresetConfig] = useState<Record<string, string>>({})
-  const [libraryInputFields, setLibraryInputFields] = useState<LibraryInputFieldDraft[]>(defaultLibraryInputFields)
-  const [creatingLibraryNode, setCreatingLibraryNode] = useState(false)
-  const [uploadingLibraryFile, setUploadingLibraryFile] = useState(false)
-  const libraryFileInputRef = useRef<HTMLInputElement>(null)
   const [canvasLocked, setCanvasLocked] = useState(false)
   const canvasGridGap = 40
   const [workspaceTheme, setWorkspaceTheme] = useState<WorkspaceTheme>(() => loadWorkspaceTheme())
@@ -544,12 +522,6 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
     if (!onEdgesSave && activeCanvasTool === 'connect') setActiveCanvasTool('select')
     if (!onCreateNode && canvasPanel === 'nodes') setCanvasPanel(null)
   }, [activeCanvasTool, canvasPanel, onCreateNode, onEdgesSave])
-  useEffect(() => {
-    if (!requestedCanvasPanel || readOnlyGraph) return
-    onCloseNodeEditor?.()
-    setCanvasPanel(requestedCanvasPanel.panel)
-    if (requestedCanvasPanel.panel !== 'nodes') setSelectedLibraryCategoryId(null)
-  }, [onCloseNodeEditor, readOnlyGraph, requestedCanvasPanel])
   useEffect(() => {
     if (readOnlyGraph && canvasPanel && canvasPanel !== 'base-info') setCanvasPanel(null)
   }, [canvasPanel, readOnlyGraph])
@@ -635,52 +607,14 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
   const stableRunEvents = runEvents ?? EMPTY_FLOW_EVENTS
   const runEdgeStates = useMemo(() => buildRunEdgeStates(graphEdges, stableRunEvents), [graphEdges, stableRunEvents])
   const renderGraph = useMemo(() => ({ ...graph, edges: graphEdges }), [graph, graphEdges])
-  const authoringNodeCategories = useMemo(() => displayMode === 'engineering'
-    ? NODE_CATEGORIES
-    : NODE_CATEGORIES.filter((category) => ['input', 'process', 'tool', 'transfer', 'store', 'control'].includes(category.id)), [displayMode])
   const selectedLibraryCategory = useMemo(
-    () => authoringNodeCategories.find((category) => category.id === selectedLibraryCategoryId) || null,
-    [authoringNodeCategories, selectedLibraryCategoryId],
+    () => NODE_CATEGORIES.find((category) => category.id === selectedLibraryCategoryId) || null,
+    [selectedLibraryCategoryId],
   )
   const selectedLibraryPreset = useMemo(
     () => selectedLibraryCategory ? getPreset(selectedLibraryCategory.id, selectedLibraryPresetId) : null,
     [selectedLibraryCategory, selectedLibraryPresetId],
   )
-  const structuredInputSelected = selectedLibraryCategory?.id === 'input' && selectedLibraryPreset?.id === 'user_form'
-  const fileReadPresetSelected = selectedLibraryCategory?.id === 'input' && selectedLibraryPreset?.id === 'read_file'
-  const validLibraryInputFields = useMemo(
-    () => libraryInputFields.filter((field) => field.label.trim()),
-    [libraryInputFields],
-  )
-  const effectiveLibraryPresetConfig = useMemo(() => {
-    if (!structuredInputSelected) return libraryPresetConfig
-    const definitions = validLibraryInputFields.map(({ id, label, type, required, default: defaultValue }) => ({
-      id,
-      label: label.trim(),
-      type,
-      required,
-      ...(defaultValue.trim() ? { default: defaultValue } : {}),
-    }))
-    return {
-      ...libraryPresetConfig,
-      fields: definitions.map((field) => field.label).join('、'),
-      fields_json: JSON.stringify(definitions),
-      output_name: libraryPresetConfig.output_name || 'user_input',
-    }
-  }, [libraryPresetConfig, structuredInputSelected, validLibraryInputFields])
-  const uploadLibraryFile = useCallback(async (file: File | null) => {
-    if (!file || uploadingLibraryFile) return
-    setUploadingLibraryFile(true)
-    try {
-      const result = await uploadWorkspaceFile(file)
-      setLibraryPresetConfig((current) => ({ ...current, path: result.path }))
-      showToast({ title: '文件已就绪', description: result.filename, type: 'success' })
-    } catch (error: any) {
-      showToast({ title: '文件导入失败', description: error?.message || '请检查文件后重试', type: 'error' })
-    } finally {
-      setUploadingLibraryFile(false)
-    }
-  }, [uploadingLibraryFile])
   const canvasVariables = useMemo(() => {
     const variables = new Map<string, { name: string; source: string; kind: string }>()
     graph.nodes.forEach((node) => {
@@ -1574,16 +1508,15 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
     setSelectedLibraryCategoryId(categoryId)
     setSelectedLibraryPresetId(preset.id)
     setLibraryPresetConfig({})
-    setLibraryInputFields(defaultLibraryInputFields())
   }, [onCloseNodeEditor])
 
   const startNodeTemplateDrag = useCallback((event: React.DragEvent<HTMLButtonElement>, categoryId: NodeCategoryId) => {
     const preset = getPreset(categoryId, categoryId === selectedLibraryCategoryId ? selectedLibraryPresetId : undefined)
-    const config = categoryId === selectedLibraryCategoryId ? effectiveLibraryPresetConfig : {}
+    const config = categoryId === selectedLibraryCategoryId ? libraryPresetConfig : {}
     event.dataTransfer.setData(NODE_TEMPLATE_MIME, JSON.stringify({ categoryId, presetId: preset.id, presetConfig: config }))
     event.dataTransfer.effectAllowed = 'copy'
     if (categoryId !== selectedLibraryCategoryId) selectLibraryCategory(categoryId)
-  }, [effectiveLibraryPresetConfig, selectLibraryCategory, selectedLibraryCategoryId, selectedLibraryPresetId])
+  }, [libraryPresetConfig, selectLibraryCategory, selectedLibraryCategoryId, selectedLibraryPresetId])
 
   const handleNodeTemplateDragOver = useCallback((event: React.DragEvent) => {
     const types = Array.from(event.dataTransfer.types || [])
@@ -1613,20 +1546,6 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
       showToast({ title: '节点拖放失败', description: error?.message || '节点模板数据无效', type: 'error' })
     }
   }, [flowInstance, nodeViewMode, onCreateNode, selectedNode])
-
-  const createSelectedLibraryNode = useCallback(async () => {
-    if (!onCreateNode || !selectedLibraryCategory || !selectedLibraryPreset || creatingLibraryNode) return
-    setCreatingLibraryNode(true)
-    try {
-      const node = await onCreateNode(selectedNode, selectedLibraryCategory.id, 'insert', {
-        presetId: selectedLibraryPreset.id,
-        presetConfig: effectiveLibraryPresetConfig,
-      })
-      if (node) setSelectedLibraryCategoryId(null)
-    } finally {
-      setCreatingLibraryNode(false)
-    }
-  }, [creatingLibraryNode, effectiveLibraryPresetConfig, onCreateNode, selectedLibraryCategory, selectedLibraryPreset, selectedNode])
 
   const handleCanvasDrop = useCallback(async (event: React.DragEvent) => {
     if (event.dataTransfer.getData('application/x-cf-steward-tool') === 'pointer') {
@@ -2087,7 +2006,7 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
               <button type="button" className={canvasPanel === 'models' ? 'active' : ''} onClick={() => { onCloseNodeEditor?.(); toggleCanvasPanel('models') }} title={modelPanel && !readOnlyGraph ? '模型管理' : '当前流程暂不允许修改模型绑定'} disabled={readOnlyGraph || !modelPanel}><BrainCircuit /><span>模型</span></button>
               <button type="button" className={canvasPanel === 'variables' ? 'active' : ''} onClick={() => { onCloseNodeEditor?.(); toggleCanvasPanel('variables') }} title={readOnlyGraph ? '当前流程暂不允许编辑变量' : '流程变量'} disabled={readOnlyGraph}><Braces /><span>变量</span></button>
               <button type="button" className={canvasPanel === 'settings' ? 'active' : ''} onClick={() => { onCloseNodeEditor?.(); toggleCanvasPanel('settings') }} title={readOnlyGraph ? '当前流程暂不允许编辑配置' : '画布配置'} disabled={readOnlyGraph}><Settings /><span>配置</span></button>
-              <button type="button" className={canvasPanel === 'tools' ? 'active' : ''} onClick={() => { onCloseNodeEditor?.(); toggleCanvasPanel('tools') }} title={toolPanel && !readOnlyGraph ? (displayMode === 'engineering' ? 'MCP 工具库' : '工具库') : '当前流程暂不允许修改工具绑定'} disabled={readOnlyGraph || !toolPanel}><Wrench /><span>工具</span></button>
+              <button type="button" className={canvasPanel === 'tools' ? 'active' : ''} onClick={() => { onCloseNodeEditor?.(); toggleCanvasPanel('tools') }} title={toolPanel && !readOnlyGraph ? 'MCP 工具库' : '当前流程暂不允许修改工具绑定'} disabled={readOnlyGraph || !toolPanel}><Wrench /><span>工具</span></button>
               <button type="button" className={canvasPanel === 'package' ? 'active' : ''} onClick={() => { onCloseNodeEditor?.(); toggleCanvasPanel('package') }} title={packagePanel && !readOnlyGraph ? '打包当前卡带' : '当前流程暂不允许生成开发包'} disabled={readOnlyGraph || !packagePanel}><PackageCheck /><span>打包</span></button>
               <button type="button" className={canvasPanel === 'base-info' ? 'active' : ''} onClick={() => { onCloseNodeEditor?.(); toggleCanvasPanel('base-info') }} title="基座信息"><Info /><span>基座</span></button>
             </nav>
@@ -2105,18 +2024,17 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
             <header><strong>{canvasPanel === 'nodes' ? '节点库' : canvasPanel === 'notes' ? '画布注释' : canvasPanel === 'models' ? '模型管理' : canvasPanel === 'variables' ? '流程变量' : canvasPanel === 'tools' ? '工具管理' : canvasPanel === 'package' ? '卡带打包' : canvasPanel === 'base-info' ? '基座信息' : '卡带与画布配置'}</strong><button type="button" onClick={() => { setCanvasPanel(null); setSelectedLibraryCategoryId(null) }}>×</button></header>
             {canvasPanel === 'nodes' && (
               <div className="cf-canvas-node-library">
-                <p>点击选择并配置节点；也可以直接拖到画布。</p>
-                {authoringNodeCategories.map((category) => (
+                <p>拖到画布创建节点；右键打开新节点预配置。</p>
+                {NODE_CATEGORIES.map((category) => (
                   <button
                     type="button"
                     key={category.id}
                     className={selectedLibraryCategoryId === category.id ? 'active' : ''}
                     disabled={!onCreateNode}
                     draggable={Boolean(onCreateNode)}
-                    onClick={() => selectLibraryCategory(category.id)}
                     onDragStart={(event) => startNodeTemplateDrag(event, category.id)}
                     onContextMenu={(event) => { event.preventDefault(); selectLibraryCategory(category.id) }}
-                    title="点击配置；拖动创建"
+                    title="拖动创建；右键配置"
                   >
                     <GripVertical className="cf-node-library-grip" aria-hidden="true" />
                     <i style={{ background: category.color }} />
@@ -2206,7 +2124,7 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
                       type="button"
                       key={preset.id}
                       className={selectedLibraryPreset.id === preset.id ? 'active' : ''}
-                      onClick={() => { setSelectedLibraryPresetId(preset.id); setLibraryPresetConfig({}); setLibraryInputFields(defaultLibraryInputFields()) }}
+                      onClick={() => { setSelectedLibraryPresetId(preset.id); setLibraryPresetConfig({}) }}
                     >
                       <strong>{preset.label}</strong>
                       <span>{preset.description}</span>
@@ -2216,63 +2134,10 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
               </section>
               <section className="cf-node-template-fields">
                 <label>预设参数</label>
-                {structuredInputSelected && (
-                  <div className="cf-structured-input-editor">
-                    {libraryInputFields.map((inputField, index) => (
-                      <div className="cf-structured-input-row" key={inputField.key}>
-                        <input
-                          aria-label={`字段 ${index + 1} 名称`}
-                          value={inputField.label}
-                          placeholder="字段名称"
-                          onChange={(event) => setLibraryInputFields((current) => current.map((item) => item.key === inputField.key ? { ...item, label: event.target.value } : item))}
-                        />
-                        <div className="cf-structured-input-options">
-                          <select aria-label={`${inputField.label || `字段 ${index + 1}`} 类型`} value={inputField.type} onChange={(event) => setLibraryInputFields((current) => current.map((item) => item.key === inputField.key ? { ...item, type: event.target.value as LibraryInputFieldDraft['type'] } : item))}>
-                            <option value="text">单行文本</option>
-                            <option value="textarea">多行文本</option>
-                            <option value="number">数字</option>
-                            <option value="date">日期</option>
-                            <option value="email">邮箱</option>
-                            <option value="url">网址</option>
-                            <option value="file">文件</option>
-                          </select>
-                          <input aria-label={`${inputField.label || `字段 ${index + 1}`} 默认值`} value={inputField.default} placeholder="默认值（可选）" onChange={(event) => setLibraryInputFields((current) => current.map((item) => item.key === inputField.key ? { ...item, default: event.target.value } : item))} />
-                          <label className="cf-structured-input-required"><input type="checkbox" checked={inputField.required} onChange={(event) => setLibraryInputFields((current) => current.map((item) => item.key === inputField.key ? { ...item, required: event.target.checked } : item))} />必填</label>
-                          <span className="cf-structured-input-actions">
-                            <button type="button" title="上移字段" aria-label={`上移${inputField.label || `字段 ${index + 1}`}`} disabled={index === 0} onClick={() => setLibraryInputFields((current) => { const next = [...current]; [next[index - 1], next[index]] = [next[index], next[index - 1]]; return next })}><ChevronUp /></button>
-                            <button type="button" title="下移字段" aria-label={`下移${inputField.label || `字段 ${index + 1}`}`} disabled={index === libraryInputFields.length - 1} onClick={() => setLibraryInputFields((current) => { const next = [...current]; [next[index], next[index + 1]] = [next[index + 1], next[index]]; return next })}><ChevronDown /></button>
-                            <button type="button" title="删除字段" aria-label={`删除${inputField.label || `字段 ${index + 1}`}`} disabled={libraryInputFields.length === 1} onClick={() => setLibraryInputFields((current) => current.filter((item) => item.key !== inputField.key))}><Trash2 /></button>
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                    <button className="cf-structured-input-add" type="button" onClick={() => { const suffix = Date.now().toString(36); setLibraryInputFields((current) => [...current, { key: `field_${suffix}`, id: `input_${suffix}`, label: '', type: 'text', required: false, default: '' }]) }}><Plus />添加字段</button>
-                  </div>
-                )}
-                {selectedLibraryPreset.fields.length ? selectedLibraryPreset.fields.filter((field) => field.key !== 'output_name' && !(structuredInputSelected && field.key === 'fields')).map((field) => (
+                {selectedLibraryPreset.fields.length ? selectedLibraryPreset.fields.map((field) => (
                   <label key={field.key}>
                     <span>{field.label}</span>
-                    {field.key === 'path' && fileReadPresetSelected ? (
-                      <>
-                        <div className="cf-library-file-picker">
-                          <input
-                            value={libraryPresetConfig[field.key] || ''}
-                            placeholder={field.placeholder}
-                            onChange={(event) => setLibraryPresetConfig((current) => ({ ...current, [field.key]: event.target.value }))}
-                          />
-                          <button type="button" disabled={uploadingLibraryFile} onClick={() => libraryFileInputRef.current?.click()}><FolderOpen />{uploadingLibraryFile ? '导入中' : '选择文件'}</button>
-                        </div>
-                        <input
-                          ref={libraryFileInputRef}
-                          type="file"
-                          style={{ display: 'none' }}
-                          onChange={(event) => {
-                            void uploadLibraryFile(event.target.files?.[0] || null)
-                            event.target.value = ''
-                          }}
-                        />
-                      </>
-                    ) : field.multiline ? (
+                    {field.multiline ? (
                       <textarea
                         value={libraryPresetConfig[field.key] || ''}
                         placeholder={field.placeholder}
@@ -2286,13 +2151,10 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
                       />
                     )}
                   </label>
-                )) : !structuredInputSelected && <p>这个预设不需要额外参数。</p>}
+                )) : <p>这个预设不需要额外参数。</p>}
               </section>
             </div>
-            <footer>
-              <span>{selectedNode ? `添加到“${selectedNode.display_name || selectedNode.title || selectedNode.id}”之后` : '添加到流程主链'}</span>
-              <button type="button" disabled={creatingLibraryNode || (structuredInputSelected && validLibraryInputFields.length === 0)} onClick={() => void createSelectedLibraryNode()}><Plus />{creatingLibraryNode ? '添加中…' : '添加到流程'}</button>
-            </footer>
+            <footer><GripVertical aria-hidden="true" /><span>配置会随节点条目一起拖入画布，松开后创建</span></footer>
           </Panel>
         )}
         {!compactStatic && <MiniMap pannable zoomable nodeColor={(node) => (node.data as unknown as FlowNode).locked ? '#b7bbb4' : getNodeCategory(node.data as unknown as FlowNode).bg} nodeStrokeColor={(node) => (node.data as unknown as FlowNode).locked ? '#898f87' : getNodeCategory(node.data as unknown as FlowNode).color} nodeBorderRadius={3} maskColor="rgb(var(--cf-accent-rgb) / .12)" />}
@@ -2317,17 +2179,17 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
                 <div className="cf-graph-menu-group cf-graph-menu-group-primary">
                   {contextMenu.node && onAnnotationsSave && <button type="button" onClick={() => createAnnotation(contextMenu.node)}><span>添加关联注释</span><MessageSquarePlus aria-hidden="true" /></button>}
                   <div className="cf-graph-submenu-item">
-                    <button disabled={!contextMenu.node || !onCreateNode}>新增节点 <span aria-hidden="true">›</span></button>
+                    <button disabled={!contextMenu.node || !onCreateNode}>新增 Flow <span aria-hidden="true">›</span></button>
                     <div className="cf-graph-submenu">
-                      {authoringNodeCategories.map((category) => (
+                      {NODE_CATEGORIES.map((category) => (
                         <button key={`flow-${category.id}`} onClick={() => contextMenu.node && onCreateNode?.(contextMenu.node, category.id, 'insert')} disabled={!contextMenu.node || !onCreateNode}>
-                          {category.label}
+                          {category.shortLabel} Flow
                         </button>
                       ))}
                     </div>
                   </div>
                 </div>
-                {displayMode === 'engineering' && <div className="cf-graph-menu-group">
+                <div className="cf-graph-menu-group">
                   <button onClick={() => {
                     if (contextMenu.node) void copyNodeText(contextMenu.node, 'id')
                     setContextMenu(null)
@@ -2336,7 +2198,7 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
                     if (contextMenu.node) void copyNodeText(contextMenu.node, 'config')
                     setContextMenu(null)
                   }} disabled={!contextMenu.node}>复制节点配置</button>
-                </div>}
+                </div>
                 <div className="cf-graph-menu-group cf-graph-menu-group-danger">
                   <button className="danger" onClick={() => contextMenu.node && onDeleteNode?.(contextMenu.node)} disabled={!contextMenu.node || contextMenu.node.locked || !onDeleteNode}>删除节点</button>
                 </div>

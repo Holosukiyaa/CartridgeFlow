@@ -1,25 +1,23 @@
 # Authoring To Runtime Handoff Boundary
 
-Creator Studio owns intent, source references, AI proposals, selected acceptance
-records, freeze lineage, and creator-local UI state. These are private authoring
-facts and do not form runtime input.
+Creator Studio owns intent, source references, prompts, AI proposals, selected
+acceptance records, freeze lineage, and creator-local UI state. These are
+private authoring facts and do not form runtime input.
 
 Developer Console owns read-only development diagnostics over declared Flow
 files, analysis, resources, tuning materialization, and preflight results. It
 does not run cartridges, receive creator chat/session data, or own a runtime
 installation.
 
-The runtime receives only a signed CF-CRE archive plus a runtime-owned trust
-store and runtime configuration. The reference toolkit verifies the archive's
-integrity, publisher signature, trust binding, and public FARP payload before
-installing or executing it. It rejects archive paths and JSON fields for chat,
-creator/authoring sessions, developer repositories, and frontend state.
+The handoff endpoint accepts only the current, design-ready Creator revision
+and its matching compile candidate. It materializes a signed CF-CRE archive
+with a CF-FARP Root Flow, then returns signed-handoff metadata and a package
+URL. It does not install, execute, or report a running cartridge.
 
-There is currently no accepted backend/core bridge from an authoring
-`compile_candidate` to a materialized `root.flow.json` and then to the
-production package endpoint. The candidate is deterministic provenance for an
-accepted, frozen creator revision, but it is not a runtime cartridge handoff.
-The backend/core owners must add that explicit materialization and packaging
-bridge, with lineage from acceptance and freeze digests into the signed
-CF-CRE payload, before claiming a single end-to-end authoring-to-runtime
-generation path.
+The runtime receives only the downloaded signed CF-CRE archive, a runtime-owned
+trust store, and runtime configuration. The reference toolkit verifies archive
+integrity, publisher signature, trust binding, public-package boundaries, and
+the declared CF-FARP Root Flow before any optional install or execution action.
+It rejects archive paths and JSON fields for chat, creator/authoring sessions,
+developer repositories, and frontend state. Source URLs, credentials, local
+paths, Creator session records, and prompts are not handoff payload data.

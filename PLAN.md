@@ -573,6 +573,62 @@ Creator API 补全，使 Creator Studio 能以服务端事实实现来源、语�
 **验收：** 遵循 12.1 的版本、投影、事务、冻结、来源安全与生成门禁要求；已发布合同
 保持兼容；协议治理、服务/API、负向安全测试与完整一致性证据通过。
 
+```powershell
+Set-Location -LiteralPath "C:\_HOLOLAB\code\CF WS\CartridgeFlow"
+$worktree = "C:\_HOLOLAB\code\CF WS\CartridgeFlow-worker-306-creator-contract-completion"
+git worktree add $worktree -b "workers/worker-306-creator-contract-completion"
+
+$prompt = @'
+你是 worker-306-creator-contract-completion。为已合并的 Worker 302 创作服务补齐受版本
+治理的协议、Creator API 和创作者安全投影，使 Worker 303 能实现真正的 API 驱动
+Creator Studio。只从当前 main 基线开始；不得修改 Worker 303 工作树或实现任何前端。
+
+允许写入：所需下一版 protocol/flow-authoring/**、protocol/tuning/**、protocol/catalog/**、
+必要 config/base/** 与治理证据、src/core/protocol/**、src/core/studio/**、src/backend/**，
+以及直接相关协议/服务/API/一致性测试。
+
+排除：src/creator-studio/**、src/developer-console/**、src/frontend/**、demos/**、运行时
+执行、队列、运行历史、结果交付 UI、根依赖、PLAN.md、MENTOR_WORKERS.md 和其他工作树。
+
+先检查当前协议目录、发布目录、治理脚本和 capability evidence，确定正确的下一版发布；
+不得改变已发布 CF-FARP@1.2、CF-TUNING@1.1 或已接受 Worker 302 API 的既有语义。
+CF-FARP 保持可执行拓扑所有权；创作合同持有创作 revision、蓝图/实例、来源、冻结和
+变更集事实。
+
+按 PLAN.md 12.1 实现：
+1. Creator projection 成为创作者安全且完整的事实来源，含 revision、语义步骤、通俗
+   输入/输出和关系、来源角色/安全远程引用、creator-safe bindings、未解决假设、影响、
+   pending proposals、active freezes、history、reversals、blocked findings、设计检查及
+   generation readiness。
+2. 扩展受审阅变更集，支持来源和语义步骤的添加/更新/移除、步骤输入输出关系的连接/
+   断开及 creator-safe binding 更新；所有 mutation 必须走 proposal -> preview -> accept，
+   保持乐观 revision、部分接受、原子应用和 reversal。禁止直接写入 API。
+3. 冻结步骤绝不静默变化。Creator projection 必须提供构造有效 freeze_revision 所需的
+   安全快照引用；服务必须验证冻结步骤变更或以稳定、通俗错误拒绝。
+4. 来源可接受安全远程 URL、RSS 或来源角色，但必须拒绝 URL user-info、敏感查询参数、
+   凭据和机器本地路径；不得让秘密进入工件、投影、日志、编译物或错误。
+5. 提供设计检查与确定性 generation readiness/编译候选 API。它们只验证创作事实与
+   移交候选，绝不伪造生产执行或已签名运行时行为。
+6. “请 AI 修改”重用当前 accepted revision 再次创建 AI proposal，不引入本地隐式状态。
+
+添加协议/治理、服务和 API 正反向测试，证明接受前无状态变化、部分接受精确匹配
+selected change ids、reversal 创建新 revision、冻结守卫生效、来源安全规则生效、Creator
+projection 无工程/秘密泄露，以及 blocked/过期/未冻结设计阻止 generation readiness。
+运行协议治理审计、相关测试和完整 conformance。
+
+仅创建普通提交；不 amend、不 rebase、不改写历史。提交前运行 git diff --check 且确保
+git status --short 为空。
+
+## Worker Delivery Report
+Changed files: <one path per line>
+Commit SHA: <full SHA>
+Tests: <command and result per line>
+Known risks: <none or concrete risks>
+Scope confirmation: <confirm no excluded paths changed>
+'@
+codex -C $worktree $prompt
+```
+
 ### Worker 305
 
 **名称与目标：** `worker-305-authoring-integration`：负责最终跨界面验收，并仅更新

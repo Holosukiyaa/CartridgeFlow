@@ -3,7 +3,7 @@
 Project: CartridgeFlow AI-Assisted Authoring
 Repository root: `C:\_HOLOLAB\code\CF WS\CartridgeFlow`
 Active delivery: `creator-ai-authoring-2026-08`
-Last updated: 2026-08-03 20:33 +08:00
+Last updated: 2026-08-03 20:38 +08:00
 Mentor: Codex `/root` using `mentor-orchestrator`
 
 ## Active Baseline
@@ -90,7 +90,13 @@ merged. No active Worker may merge or cherry-pick Worker 201.
   editable frozen step silently becomes `confirmed`, and undo does not restore
   design state. The selected-count UI can also claim three accepted changes
   while only two additions are applied. Add real API-backed workflows and
-  regression coverage before resubmission.
+  regression coverage before resubmission. Follow-up contract audit confirmed
+  the current Worker 302 creator projection omits source references, ports,
+  bindings, blocking findings, validation/generation readiness and active
+  freeze-snapshot identifiers. The published operation set also cannot add or
+  remove sources/steps or connect steps. A separately scoped backend contract
+  extension is required before Worker 303 can honestly implement the complete
+  accepted workflow; source data must remain credential-free references.
 - Mentor acceptance: `review`; do not merge or clean up before a follow-up
   Worker report and acceptance review.
 
@@ -145,3 +151,4 @@ merged. No active Worker may merge or cherry-pick Worker 201.
 | 2026-08-03 20:26 +08:00 | Worker 304 merged as `defb87b`; post-merge `npm ci`, 7-test standard suite, typecheck and production build passed. Its clean branch/worktree are eligible for automatic cleanup. |
 | 2026-08-03 20:29 +08:00 | Worker 304 worktree and local branch were removed after merge containment and cleanliness checks. |
 | 2026-08-03 20:33 +08:00 | Worker 303 reported `3e275f9`. Build and jsdom tests passed, but technical review blocked acceptance: the Creator Studio is a local static prototype with no Worker 302 API integration, no functional reversal or manual-canvas controls, and invalid frozen-step semantics. |
+| 2026-08-03 20:38 +08:00 | Review confirmed Worker 303's contract dependency: the current creator API lacks the creator projection facts and mutation/generation operations required by the frozen plan. A bounded backend contract extension is needed before its frontend can be completed. |

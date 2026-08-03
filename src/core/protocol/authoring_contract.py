@@ -9,7 +9,9 @@ from typing import Any
 from .tuning import TuningProtocolError, canonical_digest
 
 
-AUTHORING_PROTOCOL = {"id": "CF-TUNING", "version": "1.1"}
+AUTHORING_PROTOCOL = {"id": "CF-TUNING", "version": "1.2"}
+LEGACY_AUTHORING_PROTOCOL = {"id": "CF-TUNING", "version": "1.1"}
+_SUPPORTED_AUTHORING_PROTOCOLS = (AUTHORING_PROTOCOL, LEGACY_AUTHORING_PROTOCOL)
 BLUEPRINT_SCHEMA = "cartridgeflow.recipe_blueprint.v1"
 INSTANCE_SCHEMA = "cartridgeflow.recipe_instance.v1"
 CHANGE_SET_SCHEMA = "cartridgeflow.authoring_change_set.v1"
@@ -94,7 +96,7 @@ def _relation(value: object) -> dict:
     return deepcopy(value)
 
 
-def _blueprint_body(recipe_id: str, intent: str, steps: list[dict], source_references: list[dict], relations: list[dict] | None = None) -> dict:
+def _blueprint_body(recipe_id: str, intent: str, steps: list[dict], source_references: list[dict], relations: list[dict] | None = None, *, protocol: dict | None = None, include_relations: bool = True) -> dict:
     _id(recipe_id, "recipe_id")
     if not isinstance(intent, str) or not intent.strip() or len(intent) > 4000 or not isinstance(steps, list) or not steps:
         raise TuningProtocolError("blueprint intent and steps are required")
@@ -116,13 +118,18 @@ def _blueprint_body(recipe_id: str, intent: str, steps: list[dict], source_refer
         item["from_step_id"] not in seen or item["to_step_id"] not in seen for item in normalized_relations
     ):
         raise TuningProtocolError("step relations must have unique known endpoints")
-    return {"schema": BLUEPRINT_SCHEMA, "protocol": dict(AUTHORING_PROTOCOL), "recipe_id": recipe_id,
-            "intent": intent.strip(), "steps": normalized_steps, "source_references": references,
-            "relations": normalized_relations}
+    protocol = dict(protocol or AUTHORING_PROTOCOL)
+    if protocol not in _SUPPORTED_AUTHORING_PROTOCOLS:
+        raise TuningProtocolError("recipe blueprint protocol is unsupported")
+    body = {"schema": BLUEPRINT_SCHEMA, "protocol": protocol, "recipe_id": recipe_id,
+            "intent": intent.strip(), "steps": normalized_steps, "source_references": references}
+    if include_relations:
+        body["relations"] = normalized_relations
+    return body
 
 
-def create_recipe_blueprint(recipe_id: str, intent: str, steps: list[dict], source_references: list[dict], relations: list[dict] | None = None) -> dict:
-    body = _blueprint_body(recipe_id, intent, steps, source_references, relations)
+def create_recipe_blueprint(recipe_id: str, intent: str, steps: list[dict], source_references: list[dict], relations: list[dict] | None = None, *, protocol: dict | None = None) -> dict:
+    body = _blueprint_body(recipe_id, intent, steps, source_references, relations, protocol=protocol)
     item_id, digest = _digest_id("blueprint", body)
     return {"id": item_id, **body, "digest": digest}
 
@@ -136,7 +143,7 @@ def create_recipe_instance(blueprint: dict, bindings: dict, *, revision: int = 1
     if parent_instance is not None:
         validate_recipe_instance(parent_instance)
         parent = {"id": parent_instance["id"], "digest": parent_instance["digest"], "revision": parent_instance["revision"]}
-    body = {"schema": INSTANCE_SCHEMA, "protocol": dict(AUTHORING_PROTOCOL), "blueprint_id": blueprint["id"],
+    body = {"schema": INSTANCE_SCHEMA, "protocol": deepcopy(blueprint["protocol"]), "blueprint_id": blueprint["id"],
             "blueprint_digest": blueprint["digest"], "blueprint": deepcopy(blueprint), "revision": revision,
             "bindings": deepcopy(bindings), "parent_instance": parent}
     item_id, digest = _digest_id("instance", body)
@@ -202,14 +209,63 @@ def _validate_change(change: object, blueprint: dict) -> dict:
     return {"id": item_id, "target_id": target, "operation": operation, "value": deepcopy(change["value"])}
 
 
+def _apply_change(blueprint: dict, bindings: dict, change: dict) -> None:
+    """Apply one already-validated design operation to mutable simulation facts."""
+    operation, target, value = change["operation"], change["target_id"], change["value"]
+    if operation in {"set_binding", "set_creator_binding"}:
+        bindings[target] = deepcopy(value)
+    elif operation == "set_step_intent":
+        next(item for item in blueprint["steps"] if item["id"] == target)["intent"] = value
+    elif operation == "set_source_reference":
+        next(item for item in blueprint["source_references"] if item["id"] == target).update(value)
+    elif operation == "add_source":
+        blueprint["source_references"].append(deepcopy(value))
+    elif operation == "update_source":
+        source = next(item for item in blueprint["source_references"] if item["id"] == target); source.clear(); source.update(deepcopy(value))
+    elif operation == "remove_source":
+        blueprint["source_references"] = [item for item in blueprint["source_references"] if item["id"] != target]
+    elif operation == "add_step":
+        blueprint["steps"].append(deepcopy(value))
+    elif operation == "update_step":
+        step = next(item for item in blueprint["steps"] if item["id"] == target); step.clear(); step.update(deepcopy(value))
+    elif operation == "remove_step":
+        blueprint["steps"] = [item for item in blueprint["steps"] if item["id"] != target]
+        blueprint["relations"] = [item for item in blueprint.get("relations", []) if target not in {item["from_step_id"], item["to_step_id"]}]
+        bindings.pop(target, None)
+    elif operation == "connect_steps":
+        blueprint.setdefault("relations", []).append(deepcopy(value))
+    elif operation == "disconnect_steps":
+        blueprint["relations"] = [item for item in blueprint.get("relations", []) if item["id"] != target]
+    else:
+        raise TuningProtocolError("accepted change operation is unsupported")
+
+
+def _affected_step_ids(blueprint: dict, change: dict) -> set[str]:
+    operation, target = change["operation"], change["target_id"]
+    if operation in {"set_binding", "set_creator_binding", "set_step_intent", "update_step", "remove_step"}:
+        return {target}
+    if operation == "connect_steps":
+        return {change["value"]["from_step_id"], change["value"]["to_step_id"]}
+    if operation == "disconnect_steps":
+        relation = next((item for item in blueprint.get("relations", []) if item["id"] == target), None)
+        return set() if relation is None else {relation["from_step_id"], relation["to_step_id"]}
+    return set()
+
+
 def propose_change_set(instance: dict, changes: list[dict], author: str, summary: str) -> dict:
     validate_recipe_instance(instance)
     if not isinstance(changes, list) or not changes or not isinstance(author, str) or not author.strip() or not isinstance(summary, str) or not summary.strip():
         raise TuningProtocolError("change set requires changes, author, and summary")
-    normalized = [_validate_change(item, instance["blueprint"]) for item in changes]
+    simulated = deepcopy(instance["blueprint"])
+    simulated_bindings = deepcopy(instance["bindings"])
+    normalized = []
+    for item in changes:
+        normalized_change = _validate_change(item, simulated)
+        normalized.append(normalized_change)
+        _apply_change(simulated, simulated_bindings, normalized_change)
     if len({item["id"] for item in normalized}) != len(normalized):
         raise TuningProtocolError("change item ids must be unique")
-    body = {"schema": CHANGE_SET_SCHEMA, "protocol": dict(AUTHORING_PROTOCOL), "instance_id": instance["id"],
+    body = {"schema": CHANGE_SET_SCHEMA, "protocol": deepcopy(instance["protocol"]), "instance_id": instance["id"],
             "instance_digest": instance["digest"], "expected_revision": instance["revision"], "changes": normalized,
             "author": author.strip(), "summary": summary.strip(), "status": "proposed"}
     item_id, digest = _digest_id("change", body)
@@ -231,7 +287,13 @@ def accept_change_set(instance: dict, change_set: dict, selected_change_ids: lis
     validate_change_set(change_set)
     if change_set["instance_id"] != instance["id"] or change_set["instance_digest"] != instance["digest"] or change_set["expected_revision"] != instance["revision"]:
         raise TuningProtocolError("authoring change set is stale")
-    validated_changes = [_validate_change(item, instance["blueprint"]) for item in change_set["changes"]]
+    simulated = deepcopy(instance["blueprint"])
+    simulated_bindings = deepcopy(instance["bindings"])
+    validated_changes = []
+    for item in change_set["changes"]:
+        normalized_change = _validate_change(item, simulated)
+        validated_changes.append(normalized_change)
+        _apply_change(simulated, simulated_bindings, normalized_change)
     if validated_changes != change_set["changes"] or len({item["id"] for item in validated_changes}) != len(validated_changes):
         raise TuningProtocolError("authoring change set items are invalid")
     all_changes = {item["id"]: item for item in validated_changes}
@@ -245,39 +307,13 @@ def accept_change_set(instance: dict, change_set: dict, selected_change_ids: lis
     blueprint = deepcopy(instance["blueprint"])
     bindings = deepcopy(instance["bindings"])
     for change in accepted:
-        if change["operation"] in {"set_binding", "set_creator_binding"}:
-            if change["target_id"] in frozen:
-                raise TuningProtocolError("frozen step requires an explicit new revision path")
-            bindings[change["target_id"]] = change["value"]
-        elif change["operation"] == "set_step_intent":
-            if change["target_id"] in frozen:
-                raise TuningProtocolError("frozen step requires an explicit new revision path")
-            next(item for item in blueprint["steps"] if item["id"] == change["target_id"])["intent"] = change["value"]
-        elif change["operation"] == "set_source_reference":
-            next(item for item in blueprint["source_references"] if item["id"] == change["target_id"]).update(change["value"])
-        elif change["operation"] == "add_source":
-            blueprint["source_references"].append(change["value"])
-        elif change["operation"] == "update_source":
-            source = next(item for item in blueprint["source_references"] if item["id"] == change["target_id"]); source.clear(); source.update(change["value"])
-        elif change["operation"] == "remove_source":
-            blueprint["source_references"] = [item for item in blueprint["source_references"] if item["id"] != change["target_id"]]
-        elif change["operation"] == "add_step":
-            blueprint["steps"].append(change["value"])
-        elif change["operation"] == "update_step":
-            step = next(item for item in blueprint["steps"] if item["id"] == change["target_id"]); step.clear(); step.update(change["value"])
-        elif change["operation"] == "remove_step":
-            blueprint["steps"] = [item for item in blueprint["steps"] if item["id"] != change["target_id"]]
-            blueprint["relations"] = [item for item in blueprint.get("relations", []) if change["target_id"] not in {item["from_step_id"], item["to_step_id"]}]
-            bindings.pop(change["target_id"], None)
-        elif change["operation"] == "connect_steps":
-            blueprint.setdefault("relations", []).append(change["value"])
-        elif change["operation"] == "disconnect_steps":
-            blueprint["relations"] = [item for item in blueprint.get("relations", []) if item["id"] != change["target_id"]]
-        else:  # Defensive: validation guarantees this is unreachable.
-            raise TuningProtocolError("accepted change operation is unsupported")
-    next_blueprint = create_recipe_blueprint(blueprint["recipe_id"], blueprint["intent"], blueprint["steps"], blueprint["source_references"], blueprint.get("relations", []))
+        affected = _affected_step_ids(blueprint, change)
+        if frozen & affected:
+            raise TuningProtocolError("frozen step requires an explicit new revision path")
+        _apply_change(blueprint, bindings, change)
+    next_blueprint = create_recipe_blueprint(blueprint["recipe_id"], blueprint["intent"], blueprint["steps"], blueprint["source_references"], blueprint.get("relations", []), protocol=instance["protocol"])
     next_instance = create_recipe_instance(next_blueprint, bindings, revision=instance["revision"] + 1, parent_instance=instance)
-    body = {"schema": ACCEPTANCE_SCHEMA, "protocol": dict(AUTHORING_PROTOCOL), "change_set_id": change_set["id"],
+    body = {"schema": ACCEPTANCE_SCHEMA, "protocol": deepcopy(instance["protocol"]), "change_set_id": change_set["id"],
             "change_set_digest": change_set["digest"], "source_instance_id": instance["id"], "source_instance_digest": instance["digest"],
             "source_revision": instance["revision"], "accepted_change_ids": list(selected), "accepted_changes": accepted,
             "change_set": deepcopy(change_set), "blueprint": next_blueprint, "instance": next_instance}
@@ -305,7 +341,7 @@ def freeze_snapshot(instance: dict, frozen_steps: list[dict], compile_reference:
             raise TuningProtocolError("freeze step semantic digest is invalid")
         seen.add(step_id)
         normalized.append(deepcopy(step))
-    body = {"schema": FREEZE_SCHEMA, "protocol": dict(AUTHORING_PROTOCOL), "instance_id": instance["id"], "instance_digest": instance["digest"],
+    body = {"schema": FREEZE_SCHEMA, "protocol": deepcopy(instance["protocol"]), "instance_id": instance["id"], "instance_digest": instance["digest"],
             "blueprint_id": instance["blueprint_id"], "blueprint_digest": instance["blueprint_digest"], "instance_revision": instance["revision"],
             "frozen_steps": sorted(normalized, key=lambda item: item["step_id"]), "compile_reference": _reference(compile_reference, "compile reference", kind="compile"),
             "author": str(author or "").strip(), "summary": str(summary or "").strip()}
@@ -316,9 +352,9 @@ def freeze_snapshot(instance: dict, frozen_steps: list[dict], compile_reference:
 
 
 def validate_recipe_blueprint(value: dict) -> dict:
-    if not isinstance(value, dict) or value.get("schema") != BLUEPRINT_SCHEMA or value.get("protocol") != AUTHORING_PROTOCOL:
+    if not isinstance(value, dict) or value.get("schema") != BLUEPRINT_SCHEMA or value.get("protocol") not in _SUPPORTED_AUTHORING_PROTOCOLS:
         raise TuningProtocolError("recipe blueprint identity is invalid")
-    body = _blueprint_body(value.get("recipe_id"), value.get("intent"), value.get("steps"), value.get("source_references"), value.get("relations", []))
+    body = _blueprint_body(value.get("recipe_id"), value.get("intent"), value.get("steps"), value.get("source_references"), value.get("relations", []), protocol=value["protocol"], include_relations="relations" in value)
     item_id, digest = _digest_id("blueprint", body)
     if value.get("id") != item_id or value.get("digest") != digest or set(value) != {*body, "id", "digest"}:
         raise TuningProtocolError("recipe blueprint is not immutable")
@@ -326,10 +362,10 @@ def validate_recipe_blueprint(value: dict) -> dict:
 
 
 def validate_recipe_instance(value: dict) -> dict:
-    if not isinstance(value, dict) or value.get("schema") != INSTANCE_SCHEMA or value.get("protocol") != AUTHORING_PROTOCOL:
+    if not isinstance(value, dict) or value.get("schema") != INSTANCE_SCHEMA or value.get("protocol") not in _SUPPORTED_AUTHORING_PROTOCOLS:
         raise TuningProtocolError("recipe instance identity is invalid")
     validate_recipe_blueprint(value.get("blueprint"))
-    if value.get("blueprint_id") != value["blueprint"]["id"] or value.get("blueprint_digest") != value["blueprint"]["digest"] or not isinstance(value.get("revision"), int) or value["revision"] < 1 or not isinstance(value.get("bindings"), dict):
+    if value.get("protocol") != value["blueprint"].get("protocol") or value.get("blueprint_id") != value["blueprint"]["id"] or value.get("blueprint_digest") != value["blueprint"]["digest"] or not isinstance(value.get("revision"), int) or value["revision"] < 1 or not isinstance(value.get("bindings"), dict):
         raise TuningProtocolError("recipe instance facts are invalid")
     _safe(value["bindings"], "instance bindings")
     parent = value.get("parent_instance")
@@ -343,7 +379,7 @@ def validate_recipe_instance(value: dict) -> dict:
 
 
 def validate_change_set(value: dict) -> dict:
-    if not isinstance(value, dict) or value.get("schema") != CHANGE_SET_SCHEMA or value.get("protocol") != AUTHORING_PROTOCOL or value.get("status") != "proposed":
+    if not isinstance(value, dict) or value.get("schema") != CHANGE_SET_SCHEMA or value.get("protocol") not in _SUPPORTED_AUTHORING_PROTOCOLS or value.get("status") != "proposed":
         raise TuningProtocolError("authoring change set identity is invalid")
     if not isinstance(value.get("expected_revision"), int) or not isinstance(value.get("instance_digest"), str) or not _SHA256.fullmatch(value["instance_digest"]):
         raise TuningProtocolError("authoring change set revision is invalid")
@@ -355,9 +391,11 @@ def validate_change_set(value: dict) -> dict:
 
 
 def validate_acceptance(value: dict) -> dict:
-    if not isinstance(value, dict) or value.get("schema") != ACCEPTANCE_SCHEMA or value.get("protocol") != AUTHORING_PROTOCOL:
+    if not isinstance(value, dict) or value.get("schema") != ACCEPTANCE_SCHEMA or value.get("protocol") not in _SUPPORTED_AUTHORING_PROTOCOLS:
         raise TuningProtocolError("authoring acceptance identity is invalid")
     validate_recipe_blueprint(value.get("blueprint")); validate_recipe_instance(value.get("instance")); validate_change_set(value.get("change_set"))
+    if value["protocol"] != value["instance"].get("protocol") or value["protocol"] != value["change_set"].get("protocol"):
+        raise TuningProtocolError("authoring acceptance protocol lineage is invalid")
     ids = value.get("accepted_change_ids")
     changes = value.get("accepted_changes")
     if not isinstance(ids, list) or not ids or len(ids) != len(set(ids)) or not isinstance(changes, list) or [item.get("id") for item in changes] != ids:
@@ -376,7 +414,7 @@ def validate_acceptance(value: dict) -> dict:
 
 
 def validate_freeze_snapshot(value: dict) -> dict:
-    if not isinstance(value, dict) or value.get("schema") != FREEZE_SCHEMA or value.get("protocol") != AUTHORING_PROTOCOL:
+    if not isinstance(value, dict) or value.get("schema") != FREEZE_SCHEMA or value.get("protocol") not in _SUPPORTED_AUTHORING_PROTOCOLS:
         raise TuningProtocolError("authoring freeze snapshot identity is invalid")
     required = {"schema", "protocol", "instance_id", "instance_digest", "blueprint_id", "blueprint_digest", "instance_revision", "frozen_steps", "compile_reference", "author", "summary", "id", "digest"}
     if set(value) != required or not isinstance(value["instance_revision"], int) or value["instance_revision"] < 1:

@@ -14,7 +14,7 @@ from core.protocol.authoring_contract import (
 from core.protocol.base_manifest import load_base_implementation, supports_subprotocol_release
 from core.protocol.release_catalog import load_protocol_release_catalog
 from core.protocol.capability_registry import ProtocolRegistry
-from core.protocol.authoring_contract import _OPERATIONS
+from core.protocol.authoring_contract import _OPERATIONS, _affected_step_ids, _apply_change
 from core.protocol.tuning import TuningProtocolError
 from core.llm.authoring import AuthoringProposalError, build_authoring_messages, parse_authoring_proposal
 
@@ -307,10 +307,19 @@ class AuthoringSessionStore:
         if any(item["reversal_of"] == acceptance_id for item in state.get("reversals", [])):
             raise AuthoringServiceError("AUTHORING_REVERSAL_ALREADY_APPLIED", "This acceptance has already been reversed.", status=409)
         index = state["history"].index(original)
-        targets = {item["target_id"] for item in original["accepted_changes"]}
+        source = state["instances"].get(original["source_instance_id"])
+        if source is None:
+            raise AuthoringServiceError("AUTHORING_REVERSAL_AMBIGUOUS", "The original revision cannot be reconstructed safely.", status=409)
+        targets = set().union(*(AuthoringSessionStore._change_targets(source["blueprint"], item) for item in original["accepted_changes"]))
         later = state["history"][index + 1:]
         if any(targets & {item["target_id"] for item in acceptance["accepted_changes"]} for acceptance in later):
             raise AuthoringServiceError("AUTHORING_REVERSAL_AMBIGUOUS", "A later accepted revision changed the same design target.", status=409)
+
+    @staticmethod
+    def _change_targets(blueprint: dict, change: dict) -> set[str]:
+        targets = {change["target_id"]}
+        targets.update(_affected_step_ids(blueprint, change))
+        return targets
 
     @staticmethod
     def _impact(acceptance: dict) -> dict:
@@ -335,16 +344,50 @@ class AuthoringSessionStore:
             raise AuthoringServiceError("AUTHORING_PROPOSAL_UNKNOWN", "Proposal was not found or is no longer pending.", status=404)
         return proposal
 
-    def _inverse_changes(self, instances: dict, source_id: str, original_changes: dict) -> list[dict]:
+    def _inverse_changes(self, instances: dict, source_id: str, original_changes: list[dict]) -> list[dict]:
         source = instances.get(source_id)
         if source is None:
             raise AuthoringServiceError("AUTHORING_REVISION_LINEAGE_INVALID", "Cannot reconstruct the requested revision.", status=409)
         changes = []
-        before_steps = {x["id"]: x for x in source["blueprint"]["steps"]}; before_sources = {x["id"]: x for x in source["blueprint"]["source_references"]}
-        for index, change in enumerate(original_changes):
+        working_blueprint = deepcopy(source["blueprint"])
+        working_bindings = deepcopy(source["bindings"])
+        preimages = []
+        for change in original_changes:
+            preimages.append((deepcopy(working_blueprint), deepcopy(working_bindings)))
+            _apply_change(working_blueprint, working_bindings, change)
+        for change, (before_blueprint, before_bindings) in reversed(list(zip(original_changes, preimages))):
             target, op = change["target_id"], change["operation"]
-            value = source["bindings"].get(target, {}) if op == "set_binding" else before_steps[target]["intent"] if op == "set_step_intent" else before_sources[target]
-            changes.append({"id": f"reverse.{index}", "target_id": target, "operation": op, "value": deepcopy(value)})
+            before_steps = {x["id"]: x for x in before_blueprint["steps"]}
+            before_sources = {x["id"]: x for x in before_blueprint["source_references"]}
+            before_relations = {x["id"]: x for x in before_blueprint.get("relations", [])}
+            def append(operation: str, inverse_target: str, value: object) -> None:
+                changes.append({"id": f"reverse.{len(changes)}", "target_id": inverse_target, "operation": operation, "value": deepcopy(value)})
+            if op in {"set_binding", "set_creator_binding"}:
+                append(op, target, before_bindings.get(target, {}))
+            elif op == "set_step_intent":
+                append(op, target, before_steps[target]["intent"])
+            elif op in {"set_source_reference", "update_source"}:
+                append(op, target, before_sources[target])
+            elif op == "add_source":
+                append("remove_source", target, {})
+            elif op == "remove_source":
+                append("add_source", target, before_sources[target])
+            elif op == "add_step":
+                append("remove_step", target, {})
+            elif op == "update_step":
+                append("update_step", target, before_steps[target])
+            elif op == "remove_step":
+                append("add_step", target, before_steps[target])
+                if target in before_bindings:
+                    append("set_creator_binding", target, before_bindings[target])
+                for relation in sorted((item for item in before_relations.values() if target in {item["from_step_id"], item["to_step_id"]}), key=lambda item: item["id"]):
+                    append("connect_steps", relation["id"], relation)
+            elif op == "connect_steps":
+                append("disconnect_steps", target, {})
+            elif op == "disconnect_steps":
+                append("connect_steps", target, before_relations[target])
+            else:
+                raise AuthoringServiceError("AUTHORING_REVERSAL_AMBIGUOUS", "The accepted operation cannot be reversed safely.", status=409)
         return changes
 
     def _path(self, session_id: str) -> Path:
@@ -372,7 +415,7 @@ def _semantic_digest(instance: dict, step_id: str) -> str:
 
 def compile_instance(instance: dict) -> dict:
     """Deterministically compile safe semantic facts; no model, secret, path, or runtime access."""
-    body = {"schema": "cartridgeflow.authoring_compiled_recipe.v1", "protocol": {"id": "CF-TUNING", "version": "1.1"},
+    body = {"schema": "cartridgeflow.authoring_compiled_recipe.v1", "protocol": deepcopy(instance["protocol"]),
             "instance_id": instance["id"], "instance_digest": instance["digest"], "revision": instance["revision"],
             "steps": [{"id": x["id"], "intent": x["intent"], "inputs": x["inputs"], "outputs": x["outputs"], "binding": instance["bindings"].get(x["id"], {})} for x in sorted(instance["blueprint"]["steps"], key=lambda x: x["id"])],
             "sources": sorted(instance["blueprint"]["source_references"], key=lambda x: x["id"])}

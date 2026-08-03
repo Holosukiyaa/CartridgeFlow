@@ -3,7 +3,7 @@
 Project: CartridgeFlow AI-Assisted Authoring
 Repository root: `C:\_HOLOLAB\code\CF WS\CartridgeFlow`
 Active delivery: `creator-ai-authoring-2026-08`
-Last updated: 2026-08-03 20:50 +08:00
+Last updated: 2026-08-03 21:20 +08:00
 Mentor: Codex `/root` using `mentor-orchestrator`
 
 ## Active Baseline
@@ -24,7 +24,7 @@ and CF-FARP topology before generating a cartridge.
 | worker-302-authoring-service | accepted | Implement revisioned design sessions, AI proposal transactions, acceptance/undo, freezing and compilation APIs. | Backend, studio/cartridge core, authoring LLM adapters, direct service/API tests. | Protocol/config, frontends, demos, dependencies, mentor files. | Accepted and merged worker-301 | removed after merge | removed after merge | User-accepted commit `b88b81d958d7069d67d460be12393cbccfc8a1bb` merged as `a59fd632d266a1e12d3620255f12ea315fb0d28a`; post-merge conformance passed 422 tests with 1 skipped; clean worktree and local branch removed. |
 | worker-303-creator-studio | review | Build the AI-first semantic Creator Studio and secondary manual canvas. | New `src/creator-studio/**` package and its own tests/dependencies. | Existing `src/frontend/**`, backend/core/protocol/config, Developer Console, demos, mentor files. | Accepted and merged worker-302; accepted and merged worker-306 before API completion. | `workers/worker-303-creator-studio` | `C:\_HOLOLAB\code\CF WS\CartridgeFlow-worker-303-creator-studio` | Candidate `3e275f9` is a static prototype; resume after Worker 306 exposes the required contract. |
 | worker-304-developer-console | accepted | Build an independent, API-connected full engineering and tuning frontend. | New `src/developer-console/**` package and its own tests/dependencies. | Existing frontend, backend/core/protocol/config, demos, root dependencies, mentor files. | Accepted and merged worker-302 | removed after merge | removed after merge | User-accepted candidate `84bab93` merged as `defb87b`; post-merge evidence passed; clean branch and worktree removed. |
-| worker-306-creator-contract-completion | planned | Release the bounded authoring-contract and Creator API additions required for real Creator Studio transactions. | Required next protocol release/governance/config, `src/core/protocol/**`, `src/core/studio/**`, `src/backend/**`, and direct contract/service/API tests. | Both frontends, demos, runtime execution, root dependencies, mentor files. | Accepted and merged workers 301 and 302 | `workers/worker-306-creator-contract-completion` | `C:\_HOLOLAB\code\CF WS\CartridgeFlow-worker-306-creator-contract-completion` | User-authorized; pending implementation. |
+| worker-306-creator-contract-completion | review | Release the bounded authoring-contract and Creator API additions required for real Creator Studio transactions. | Required next protocol release/governance/config, `src/core/protocol/**`, `src/core/studio/**`, `src/backend/**`, and direct contract/service/API tests. | Both frontends, demos, runtime execution, root dependencies, mentor files. | Accepted and merged workers 301 and 302 | `workers/worker-306-creator-contract-completion` | `C:\_HOLOLAB\code\CF WS\CartridgeFlow-worker-306-creator-contract-completion` | Candidate `60bdef8` is in review; protocol-version and reversal invariants require a follow-up commit. |
 | worker-305-authoring-integration | planned | Own final cross-surface evidence and minimal signed-package runtime handoff updates. | Runtime toolkit, new integration tests, directly related maintained docs. | Product implementation, dependencies, mentor files. | Accepted and merged workers 303, 304, and 306 | `workers/worker-305-authoring-integration` | `C:\_HOLOLAB\code\CF WS\CartridgeFlow-worker-305-authoring-integration` | Pending |
 
 Workers 303 and 304 may run in parallel only after Worker 302 is accepted and
@@ -125,14 +125,22 @@ merged. No active Worker may merge or cherry-pick Worker 201.
 
 ### worker-306-creator-contract-completion
 
-- Prompt issued: User-authorized contract/API completion after Worker 303
-  review found an unmet dependency.
-- Changed files: Pending
-- Commit: Pending
-- Tests: Pending
-- Risks or follow-up: Must release protocol evolution without changing existing
-  published contract behavior or exposing credentials/local paths.
-- Mentor acceptance: Pending
+- Changed files: next FARP/TUNING releases and governance evidence, Base trust
+  facts, authoring contract/service/Creator API, and direct tests.
+- Commit: candidate `60bdef8f815ebd6970678aa681b0d82f331e16d6`.
+- Tests: worker reported governance audit and full conformance (425 passed, 1
+  skipped); independent targeted service/API suite passed 30 tests.
+- Risks or follow-up: acceptance blocked. Reproduction creates a new session
+  whose instance protocol remains `CF-TUNING@1.1`, despite publishing and
+  trusting `CF-TUNING@1.2`; new contract facts cannot be truthfully attributed
+  to the release. Reproduction also accepts `add_source` and then reverses its
+  acceptance: `_inverse_changes` raises `KeyError: 'source.added'`. The inverse
+  implementation has no operations for the new source, step, relation, or
+  `set_creator_binding` mutations. Repair every new operation's exact inverse,
+  preserve frozen guards, and add regression tests for protocol identity and
+  all relevant reversal paths before resubmission.
+- Mentor acceptance: `review`; do not merge or clean up before a follow-up
+  Worker report and acceptance review.
 
 ### worker-305-authoring-integration
 
@@ -165,3 +173,4 @@ merged. No active Worker may merge or cherry-pick Worker 201.
 | 2026-08-03 20:33 +08:00 | Worker 303 reported `3e275f9`. Build and jsdom tests passed, but technical review blocked acceptance: the Creator Studio is a local static prototype with no Worker 302 API integration, no functional reversal or manual-canvas controls, and invalid frozen-step semantics. |
 | 2026-08-03 20:38 +08:00 | Review confirmed Worker 303's contract dependency: the current creator API lacks the creator projection facts and mutation/generation operations required by the frozen plan. A bounded backend contract extension is needed before its frontend can be completed. |
 | 2026-08-03 20:50 +08:00 | User authorized Worker 306 to add the governed authoring-contract and Creator API facts/operations required by Worker 303. Worker 303 now resumes only after Worker 306 is accepted and merged. |
+| 2026-08-03 21:20 +08:00 | Worker 306 reported `60bdef8`. Governance and conformance passed, but review blocked acceptance: created facts still declare CF-TUNING@1.1 and new mutation operations cannot be reversed. |

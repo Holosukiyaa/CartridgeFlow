@@ -31,6 +31,7 @@ from backend.api_models import (
     AuthoringProposalPayload,
     AuthoringRejectPayload,
     AuthoringReversePayload,
+    AuthoringReadinessPayload,
     AuthoringSessionCreatePayload,
     AnnotationSavePayload,
     AuthoringSimulationPayload,
@@ -2202,6 +2203,37 @@ def reverse_authoring_revision(session_id: str, acceptance_id: str, payload: Aut
 def freeze_authoring_steps(session_id: str, payload: AuthoringFreezePayload):
     try:
         return {"freeze": authoring_sessions.freeze(session_id, payload.step_ids, author=payload.author, summary=payload.summary)}
+    except AuthoringServiceError as exc:
+        _authoring_error(exc)
+
+
+@app.get("/api/creator/authoring-sessions/{session_id}/design-checks")
+def get_creator_design_checks(session_id: str):
+    try:
+        return {"design_checks": authoring_sessions.design_checks(authoring_sessions.get(session_id))}
+    except AuthoringServiceError as exc:
+        _authoring_error(exc)
+
+
+@app.post("/api/creator/authoring-sessions/{session_id}/generation-readiness")
+def get_creator_generation_readiness(session_id: str, payload: AuthoringReadinessPayload):
+    try:
+        state = authoring_sessions.get(session_id)
+        authoring_sessions._require_revision(state, payload.expected_revision)
+        return {"generation_readiness": authoring_sessions.generation_readiness(state)}
+    except AuthoringServiceError as exc:
+        _authoring_error(exc)
+
+
+@app.post("/api/creator/authoring-sessions/{session_id}/compile-candidate")
+def get_creator_compile_candidate(session_id: str, payload: AuthoringReadinessPayload):
+    try:
+        state = authoring_sessions.get(session_id)
+        authoring_sessions._require_revision(state, payload.expected_revision)
+        readiness = authoring_sessions.generation_readiness(state)
+        if not readiness["ready"]:
+            raise AuthoringServiceError("AUTHORING_GENERATION_BLOCKED", "Design findings must be resolved and all steps frozen before generation.", status=409)
+        return {"compile_candidate": authoring_sessions.compile_candidate(state)}
     except AuthoringServiceError as exc:
         _authoring_error(exc)
 

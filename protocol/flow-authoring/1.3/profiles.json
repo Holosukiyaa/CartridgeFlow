@@ -1,0 +1,1 @@
+{"schema_version":"0.1","profiles":[{"id":"ai_recipe_authoring","description":"Create creator-safe design facts and reviewed changes."},{"id":"authoring_compile_handoff","description":"Validate design facts and emit non-executing compile candidates."}]}

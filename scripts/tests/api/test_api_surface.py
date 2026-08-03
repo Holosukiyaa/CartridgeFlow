@@ -69,6 +69,24 @@ class ApiSurfaceTests(unittest.TestCase):
         self.assertEqual(1, state["head"]["revision"])
         self.assertEqual({}, state["proposals"])
 
+    def test_creator_generation_candidate_is_gated_by_frozen_design(self):
+        source = {"id": "source.brief", "kind": "source", "digest": "a" * 64, "role": "public brief"}
+        steps = [{"id": "draft", "intent": "Draft a brief.", "inputs": {}, "outputs": {}}]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = AuthoringSessionStore(temp_dir)
+            with patch.object(backend_main, "authoring_sessions", store):
+                created = self.client.post("/api/creator/authoring-sessions", json={"session_id": "api.gate", "recipe_id": "recipe.gate", "intent": "Create brief", "steps": steps, "source_references": [source], "bindings": {}})
+                self.assertEqual(200, created.status_code)
+                blocked = self.client.post("/api/creator/authoring-sessions/api.gate/compile-candidate", json={"expected_revision": 1})
+                self.assertEqual(409, blocked.status_code)
+                self.assertEqual("AUTHORING_GENERATION_BLOCKED", blocked.json()["detail"]["code"])
+                frozen = self.client.post("/api/creator/authoring-sessions/api.gate/freeze", json={"step_ids": ["draft"], "summary": "Reviewed"})
+                self.assertEqual(200, frozen.status_code)
+                candidate = self.client.post("/api/creator/authoring-sessions/api.gate/compile-candidate", json={"expected_revision": 1})
+                self.assertEqual(200, candidate.status_code)
+                self.assertEqual("compile", candidate.json()["compile_candidate"]["kind"])
+                self.assertNotIn("runtime", candidate.json())
+
     def test_resource_detail_is_redacted_and_unbound_connectivity_has_stable_error(self):
         secret = "workbench-resource-secret"
         endpoint = f"https://private.example.test/connector?token={secret}"

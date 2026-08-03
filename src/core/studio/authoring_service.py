@@ -168,11 +168,51 @@ class AuthoringSessionStore:
     @staticmethod
     def creator_projection(state: dict) -> dict:
         head = state["head"]
+        checks = AuthoringSessionStore.design_checks(state)
+        freezes = AuthoringSessionStore._active_freezes(state)
         return {"session_id": state["id"], "revision": head["revision"], "intent": head["blueprint"]["intent"],
+                "semantic_steps": [{"id": item["id"], "intent": item["intent"], "plain_inputs": sorted(item["inputs"]), "plain_outputs": sorted(item["outputs"])} for item in head["blueprint"]["steps"]],
                 "steps": [{"id": item["id"], "intent": item["intent"]} for item in head["blueprint"]["steps"]],
-                "pending_proposals": sorted(state["proposals"]), "frozen_steps": sorted({x["step_id"] for f in AuthoringSessionStore._active_freezes(state) for x in f["frozen_steps"]}),
+                "relationships": deepcopy(head["blueprint"].get("relations", [])),
+                "sources": [AuthoringSessionStore._safe_source(item) for item in head["blueprint"]["source_references"]],
+                "creator_safe_bindings": deepcopy(head["bindings"]), "unresolved_assumptions": [],
+                "pending_proposals": [AuthoringSessionStore.proposal_projection(state["proposals"][key]) for key in sorted(state["proposals"])],
+                "active_freezes": [{"id": item["id"], "steps": [x["step_id"] for x in item["frozen_steps"]], "freeze_revision": {"source_freeze_ids": [item["id"]], "expected_revision": head["revision"]}} for item in freezes],
+                "frozen_steps": sorted({x["step_id"] for f in freezes for x in f["frozen_steps"]}),
                 "history": [{"id": item["id"], "revision": item["instance"]["revision"], "summary": item["change_set"]["summary"]} for item in state["history"]],
-                "reversals": [{"id": item["id"], "reversal_of": item["reversal_of"], "revision": item["revision"]} for item in state.get("reversals", [])]}
+                "reversals": [{"id": item["id"], "reversal_of": item["reversal_of"], "revision": item["revision"]} for item in state.get("reversals", [])],
+                "impact": {"changed_steps": sorted({x["target_id"] for h in state["history"] for x in h["accepted_changes"] if x["operation"] not in {"set_source_reference", "add_source", "update_source", "remove_source"}})},
+                "blocked_findings": [item for item in checks["findings"] if item["severity"] == "blocked"],
+                "design_checks": checks, "generation_readiness": AuthoringSessionStore.generation_readiness(state, checks)}
+
+    @staticmethod
+    def _safe_source(source: dict) -> dict:
+        return {key: source[key] for key in ("id", "kind", "digest", "role", "remote_url", "rss_url") if key in source}
+
+    @staticmethod
+    def design_checks(state: dict) -> dict:
+        head = state["head"]
+        active = AuthoringSessionStore._active_freezes(state)
+        frozen = {step["step_id"] for snapshot in active for step in snapshot["frozen_steps"]}
+        findings = []
+        for step in head["blueprint"]["steps"]:
+            if step["id"] not in frozen:
+                findings.append({"code": "DESIGN_STEP_UNFROZEN", "severity": "blocked", "step_id": step["id"], "message": "This design step is not frozen."})
+        if not head["blueprint"]["source_references"]:
+            findings.append({"code": "DESIGN_SOURCE_MISSING", "severity": "blocked", "message": "At least one declared source or source role is required."})
+        return {"schema": "cartridgeflow.creator_design_checks.v1", "revision": head["revision"], "findings": findings}
+
+    @staticmethod
+    def generation_readiness(state: dict, checks: dict | None = None) -> dict:
+        checks = checks or AuthoringSessionStore.design_checks(state)
+        blocked = [item for item in checks["findings"] if item["severity"] == "blocked"]
+        return {"schema": "cartridgeflow.creator_generation_readiness.v1", "revision": state["head"]["revision"], "ready": not blocked,
+                "blocked_findings": blocked, "compile_candidate": None if blocked else {"reference": AuthoringSessionStore.compile_candidate(state)}}
+
+    @staticmethod
+    def compile_candidate(state: dict) -> dict:
+        compiled = compile_instance(state["head"])
+        return {"id": compiled["id"], "kind": "compile", "digest": compiled["digest"], "revision": state["head"]["revision"]}
 
     @staticmethod
     def proposal_projection(proposal: dict) -> dict:
@@ -183,7 +223,15 @@ class AuthoringSessionStore:
         ids = set(selected or [x["id"] for x in proposal["changes"]])
         active = self._active_freezes(state)
         frozen = {x["step_id"] for f in active for x in f["frozen_steps"]}
-        touched = {x["target_id"] for x in proposal["changes"] if x["id"] in ids and x["operation"] != "set_source_reference"}
+        touched = set()
+        for item in proposal["changes"]:
+            if item["id"] not in ids or item["operation"] in {"set_source_reference", "add_source", "update_source", "remove_source"}:
+                continue
+            if item["operation"] in {"connect_steps", "disconnect_steps"}:
+                if isinstance(item["value"], dict): touched.update({item["value"].get("from_step_id"), item["value"].get("to_step_id")})
+            else:
+                touched.add(item["target_id"])
+        touched.discard(None)
         affected = frozen & touched
         if not affected:
             return active, None
@@ -336,18 +384,18 @@ def resolve_ai_authoring_capabilities(root: str | Path) -> list[str]:
     """Resolve AI permissions from published catalog + Base trust, never client input."""
     try:
         catalog = load_protocol_release_catalog(root)
-        registry = ProtocolRegistry(root, overlay_dirs=[Path(root) / "protocol" / "tuning" / "1.1"])
+        registry = ProtocolRegistry(root, overlay_dirs=[Path(root) / "protocol" / "tuning" / "1.2"])
         base = load_base_implementation(root)
     except Exception as exc:
         raise AuthoringServiceError("AI_AUTHORING_TRUST_UNAVAILABLE", "Published authoring trust facts are unavailable.", status=409) from exc
-    host = catalog.get("CF-FARP", "1.2")
-    host_adapter = catalog.runtime_adapter("CF-FARP", "1.2")
-    if not host or not catalog.published("CF-FARP", "1.2") or not registry.supports_protocol("CF-TUNING", "1.1"):
+    host = catalog.get("CF-FARP", "1.3")
+    host_adapter = catalog.runtime_adapter("CF-FARP", "1.3")
+    if not host or not catalog.published("CF-FARP", "1.3") or not registry.supports_protocol("CF-TUNING", "1.2"):
         raise AuthoringServiceError("AI_AUTHORING_TRUST_UNAVAILABLE", "Required published authoring releases are unavailable.", status=409)
-    trusted = [item for item in catalog.trusted_subprotocols("CF-FARP", "1.2") if item.get("id") == "CF-TUNING" and str(item.get("version")) == "1.1" and item.get("binding") == "ai_authoring_contract"]
+    trusted = [item for item in catalog.trusted_subprotocols("CF-FARP", "1.3") if item.get("id") == "CF-TUNING" and str(item.get("version")) == "1.2" and item.get("binding") == "creator_service_contract"]
     adapters = {item.get("id") for item in base.get("supported_protocol_adapters", []) if item.get("status") == "supported"}
-    required_capability = "ai_change_set_review_v1"
-    if len(trusted) != 1 or "ai_authoring_contract" not in catalog.features("CF-FARP", "1.2") or required_capability not in registry.capabilities or required_capability not in set(base.get("capabilities") or []) or not supports_subprotocol_release(base, "CF-TUNING", "1.1", "CF-FARP", "1.2") or host_adapter not in adapters or "cf-tuning.authoring-contract.v1" not in adapters:
+    required_capability = "creator_reviewed_semantic_changes_v1"
+    if len(trusted) != 1 or "creator_service_contract" not in catalog.features("CF-FARP", "1.3") or required_capability not in registry.capabilities or required_capability not in set(base.get("capabilities") or []) or not supports_subprotocol_release(base, "CF-TUNING", "1.2", "CF-FARP", "1.3") or host_adapter not in adapters or "cf-tuning.authoring-contract.v1" not in adapters:
         raise AuthoringServiceError("AI_AUTHORING_TRUST_UNAVAILABLE", "Published authoring trust binding is not supported by Base.", status=409)
     capabilities = sorted(SERVICE_AUTHORING_OPERATIONS)
     if not capabilities:

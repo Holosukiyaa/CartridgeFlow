@@ -11,6 +11,9 @@ export type Source = { id: string; kind: 'source'; digest: string; role?: string
 export type Proposal = { proposal_id: string; revision: number; summary: string; changes: { id: string; target_id: string; operation: string }[] }
 export type Finding = { code: string; severity: string; message: string; step_id?: string }
 export type Readiness = { ready: boolean; blocked_findings: Finding[]; compile_candidate: unknown }
+export type Impact = { plain_summary?: string; changed_steps?: string[]; changed_sources?: string[] }
+export type FreezeRevision = { source_freeze_ids: string[]; expected_revision: number; reason: string; author: string }
+export type Preview = { accepted_change_ids: string[]; impact: Impact; freeze_revision?: FreezeRevision | null }
 export class ApiError extends Error { constructor(public code: string, message: string, public status: number) { super(message) } }
 
 const base = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
@@ -26,8 +29,8 @@ export const creatorApi = {
   get: (id: string) => request<{ creator: Creator }>(route(id)),
   ai: (id: string, body: unknown) => request<{ proposal: Proposal }>(`${route(id)}/ai-proposals`, 'POST', body),
   propose: (id: string, body: unknown) => request<{ proposal: Proposal }>(`${route(id)}/proposals`, 'POST', body),
-  preview: (id: string, proposal: string, body: unknown) => request<{ accepted_change_ids: string[] }>(`${route(id)}/proposals/${proposal}/preview`, 'POST', body),
-  accept: (id: string, proposal: string, body: unknown) => request<{ creator: Creator; accepted_change_ids: string[] }>(`${route(id)}/proposals/${proposal}/accept`, 'POST', body),
+  preview: (id: string, proposal: string, body: unknown) => request<Preview>(`${route(id)}/proposals/${proposal}/preview`, 'POST', body),
+  accept: (id: string, proposal: string, body: unknown) => request<{ creator: Creator; impact: Impact; accepted_change_ids: string[]; freeze_revision?: FreezeRevision | null }>(`${route(id)}/proposals/${proposal}/accept`, 'POST', body),
   reject: (id: string, proposal: string, body: unknown) => request<{ creator: Creator }>(`${route(id)}/proposals/${proposal}/reject`, 'POST', body),
   reverse: (id: string, acceptance: string, body: unknown) => request<{ creator: Creator }>(`${route(id)}/revisions/${acceptance}/reverse`, 'POST', body),
   freeze: (id: string, body: unknown) => request(`${route(id)}/freeze`, 'POST', body),

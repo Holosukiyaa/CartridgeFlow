@@ -3,7 +3,7 @@
 Project: CartridgeFlow AI-Assisted Authoring
 Repository root: `C:\_HOLOLAB\code\CF WS\CartridgeFlow`
 Active delivery: `creator-ai-authoring-2026-08`
-Last updated: 2026-08-03 21:59 +08:00
+Last updated: 2026-08-03 22:02 +08:00
 Mentor: Codex `/root` using `mentor-orchestrator`
 
 ## Active Baseline
@@ -22,7 +22,7 @@ and CF-FARP topology before generating a cartridge.
 | worker-201-uxp-contract | rejected | Superseded runtime-oriented User Experience Plan contract. | Historical branch only; no further writes authorized. | Main integration and all new delivery work. | None | removed | removed | Rejected before merge; branch and worktree were user-approved deletions. |
 | worker-301-authoring-contract | accepted | Version portable blueprints, instances, AI change sets and freeze semantics while preserving FARP topology ownership. | Next protocol releases, catalog/governance, Base declarations, `src/core/protocol/**`, direct tests/evidence. | Backend, frontends, demos, dependencies, mentor files. | None | removed after merge | removed after merge | Accepted commit `2425eebd9b35634c185ba04ccaf1d9865c462f9b`; merged as `447e5755ac024f573a88b1c435a8875436fdf594`; governance audit and conformance passed. |
 | worker-302-authoring-service | accepted | Implement revisioned design sessions, AI proposal transactions, acceptance/undo, freezing and compilation APIs. | Backend, studio/cartridge core, authoring LLM adapters, direct service/API tests. | Protocol/config, frontends, demos, dependencies, mentor files. | Accepted and merged worker-301 | removed after merge | removed after merge | User-accepted commit `b88b81d958d7069d67d460be12393cbccfc8a1bb` merged as `a59fd632d266a1e12d3620255f12ea315fb0d28a`; post-merge conformance passed 422 tests with 1 skipped; clean worktree and local branch removed. |
-| worker-303-creator-studio | review | Build the AI-first semantic Creator Studio and secondary manual canvas. | New `src/creator-studio/**` package and its own tests/dependencies. | Existing `src/frontend/**`, backend/core/protocol/config, Developer Console, demos, mentor files. | Accepted and merged worker-302; accepted and merged worker-306 before API completion. | `workers/worker-303-creator-studio` | `C:\_HOLOLAB\code\CF WS\CartridgeFlow-worker-303-creator-studio` | Candidate `3e275f9` is a static prototype; resume after Worker 306 exposes the required contract. |
+| worker-303-creator-studio | running | Build the AI-first semantic Creator Studio and secondary manual canvas. | New `src/creator-studio/**` package and its own tests/dependencies. | Existing `src/frontend/**`, backend/core/protocol/config, Developer Console, demos, mentor files. | Accepted and merged workers 302 and 306. | `workers/worker-303-creator-studio` | `C:\_HOLOLAB\code\CF WS\CartridgeFlow-worker-303-creator-studio` | Resuming from static candidate `3e275f9`; merge current main and implement real Creator API workflows. |
 | worker-304-developer-console | accepted | Build an independent, API-connected full engineering and tuning frontend. | New `src/developer-console/**` package and its own tests/dependencies. | Existing frontend, backend/core/protocol/config, demos, root dependencies, mentor files. | Accepted and merged worker-302 | removed after merge | removed after merge | User-accepted candidate `84bab93` merged as `defb87b`; post-merge evidence passed; clean branch and worktree removed. |
 | worker-306-creator-contract-completion | accepted | Release the bounded authoring-contract and Creator API additions required for real Creator Studio transactions. | Required next protocol release/governance/config, `src/core/protocol/**`, `src/core/studio/**`, `src/backend/**`, and direct contract/service/API tests. | Both frontends, demos, runtime execution, root dependencies, mentor files. | Accepted and merged workers 301 and 302 | removed after merge | removed after merge | User-accepted candidate `7bf474d` merged as `05de99a`; post-merge evidence passed; clean branch and worktree removed. |
 | worker-305-authoring-integration | planned | Own final cross-surface evidence and minimal signed-package runtime handoff updates. | Runtime toolkit, new integration tests, directly related maintained docs. | Product implementation, dependencies, mentor files. | Accepted and merged workers 303, 304, and 306 | `workers/worker-305-authoring-integration` | `C:\_HOLOLAB\code\CF WS\CartridgeFlow-worker-305-authoring-integration` | Pending |
@@ -98,8 +98,8 @@ merged. No active Worker may merge or cherry-pick Worker 201.
   remove sources/steps or connect steps. A separately scoped backend contract
   extension is required before Worker 303 can honestly implement the complete
   accepted workflow; source data must remain credential-free references.
-- Mentor acceptance: `review`; do not merge or clean up before a follow-up
-  Worker report and acceptance review.
+- Mentor acceptance: resumed after Worker 306 acceptance; merge current main
+  into the existing branch and submit an API-backed follow-up for review.
 
 ### worker-304-developer-console
 
@@ -181,3 +181,4 @@ merged. No active Worker may merge or cherry-pick Worker 201.
 | 2026-08-03 21:54 +08:00 | User accepted Worker 306 candidate `7bf474d`; automatic merge, post-merge verification and cleanup started. |
 | 2026-08-03 21:58 +08:00 | Worker 306 merged as `05de99a`; post-merge protocol governance audit and full conformance passed 433 tests with 1 skipped. Its clean branch/worktree are eligible for automatic cleanup. |
 | 2026-08-03 21:59 +08:00 | Worker 306 worktree and local branch were removed after merge containment and cleanliness checks. |
+| 2026-08-03 22:02 +08:00 | Worker 303 resumed after Worker 306 integration. It must merge current main and replace the static prototype with API-backed Creator workflows before resubmission. |

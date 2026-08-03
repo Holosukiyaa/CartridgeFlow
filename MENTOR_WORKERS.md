@@ -100,10 +100,10 @@ merged. No active Worker may merge or cherry-pick Worker 201.
   accepted workflow; source data must remain credential-free references.
 - Mentor acceptance: resumed after Worker 306 acceptance; merge current main
   into the existing branch and submit an API-backed follow-up for review.
-- Follow-up candidate: `02ceea083b081953fffe7c582ea480e6bce3aaf6` adds API client
+ - Follow-up candidate: `02ceea083b081953fffe7c582ea480e6bce3aaf6` adds API client
   and fetch-mocked tests; package tests (6) and build pass, and browser review
   confirmed AI proposal, preview and accept request paths.
-- Acceptance blockers: the candidate's merge base with Worker 306 is
+ - Acceptance blockers: the candidate's merge base with Worker 306 is
   `ae9205c`, so it does not contain the accepted Creator contract. Merge current
   main before further work. Add a source update UI through proposal/preview/
   accept; render preview impact; provide valid freeze revision for selected AI

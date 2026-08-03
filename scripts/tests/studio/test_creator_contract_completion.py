@@ -122,6 +122,18 @@ class CreatorContractCompletionTests(unittest.TestCase):
         self.store.reverse("creator.contract", acceptance["id"], author="creator", summary="Restore", expected_revision=3)
         self.assertEqual("rel.research.draft", self.store.get("creator.contract")["head"]["blueprint"]["relations"][0]["id"])
 
+    def test_reversing_added_step_rejects_later_relation_dependency_without_mutation(self):
+        add = self.store.propose("creator.contract", [{"id": "add", "target_id": "review", "operation": "add_step", "value": {"id": "review", "intent": "Review draft.", "inputs": {}, "outputs": {}}}], author="creator", summary="Add review", expected_revision=1)
+        added = self.store.accept("creator.contract", add["proposal_id"])["acceptance"]
+        connect = self.store.propose("creator.contract", [{"id": "connect", "target_id": "rel.draft.review", "operation": "connect_steps", "value": {"id": "rel.draft.review", "from_step_id": "draft", "to_step_id": "review", "relation": "informs"}}], author="creator", summary="Connect review", expected_revision=2)
+        self.store.accept("creator.contract", connect["proposal_id"])
+        before = self.store.get("creator.contract")
+        with self.assertRaises(AuthoringServiceError) as error:
+            self.store.reverse("creator.contract", added["id"], author="creator", summary="Undo review", expected_revision=3)
+        self.assertEqual("AUTHORING_REVERSAL_AMBIGUOUS", error.exception.code)
+        self.assertEqual(before, self.store.get("creator.contract"))
+        self.assertEqual("rel.draft.review", self.store.get("creator.contract")["head"]["blueprint"]["relations"][0]["id"])
+
 
 if __name__ == "__main__":
     unittest.main()

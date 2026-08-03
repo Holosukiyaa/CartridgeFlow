@@ -100,6 +100,23 @@ class ApiSurfaceTests(unittest.TestCase):
                 self.assertEqual(200, response.status_code)
                 self.assertEqual(3, response.json()["reversal"]["revision"])
 
+    def test_creator_reverse_endpoint_rejects_later_relation_dependency(self):
+        source = {"id": "source.brief", "kind": "source", "digest": "a" * 64}
+        steps = [{"id": "research", "intent": "Research.", "inputs": {}, "outputs": {}}, {"id": "draft", "intent": "Draft.", "inputs": {}, "outputs": {}}]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = AuthoringSessionStore(temp_dir)
+            with patch.object(backend_main, "authoring_sessions", store):
+                self.client.post("/api/creator/authoring-sessions", json={"session_id": "api.ambiguous", "recipe_id": "recipe.ambiguous", "intent": "Create brief", "steps": steps, "source_references": [source], "bindings": {}})
+                add = self.client.post("/api/creator/authoring-sessions/api.ambiguous/proposals", json={"expected_revision": 1, "summary": "Add review", "changes": [{"id": "add", "target_id": "review", "operation": "add_step", "value": {"id": "review", "intent": "Review.", "inputs": {}, "outputs": {}}}]}).json()["proposal"]
+                added = self.client.post(f"/api/creator/authoring-sessions/api.ambiguous/proposals/{add['proposal_id']}/accept", json={}).json()
+                connect = self.client.post("/api/creator/authoring-sessions/api.ambiguous/proposals", json={"expected_revision": 2, "summary": "Connect", "changes": [{"id": "connect", "target_id": "rel.draft.review", "operation": "connect_steps", "value": {"id": "rel.draft.review", "from_step_id": "draft", "to_step_id": "review", "relation": "informs"}}]}).json()["proposal"]
+                self.client.post(f"/api/creator/authoring-sessions/api.ambiguous/proposals/{connect['proposal_id']}/accept", json={})
+                response = self.client.post(f"/api/creator/authoring-sessions/api.ambiguous/revisions/{added['creator']['history'][-1]['id']}/reverse", json={"expected_revision": 3, "summary": "Undo review"})
+                self.assertEqual(409, response.status_code)
+                self.assertEqual("AUTHORING_REVERSAL_AMBIGUOUS", response.json()["detail"]["code"])
+                self.assertEqual(3, store.get("api.ambiguous")["head"]["revision"])
+                self.assertEqual("rel.draft.review", store.get("api.ambiguous")["head"]["blueprint"]["relations"][0]["id"])
+
     def test_resource_detail_is_redacted_and_unbound_connectivity_has_stable_error(self):
         secret = "workbench-resource-secret"
         endpoint = f"https://private.example.test/connector?token={secret}"

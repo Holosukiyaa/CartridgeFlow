@@ -310,10 +310,24 @@ class AuthoringSessionStore:
         source = state["instances"].get(original["source_instance_id"])
         if source is None:
             raise AuthoringServiceError("AUTHORING_REVERSAL_AMBIGUOUS", "The original revision cannot be reconstructed safely.", status=409)
-        targets = set().union(*(AuthoringSessionStore._change_targets(source["blueprint"], item) for item in original["accepted_changes"]))
+        targets = AuthoringSessionStore._acceptance_targets(state, original)
         later = state["history"][index + 1:]
-        if any(targets & {item["target_id"] for item in acceptance["accepted_changes"]} for acceptance in later):
+        if any(targets & AuthoringSessionStore._acceptance_targets(state, acceptance) for acceptance in later):
             raise AuthoringServiceError("AUTHORING_REVERSAL_AMBIGUOUS", "A later accepted revision changed the same design target.", status=409)
+
+    @staticmethod
+    def _acceptance_targets(state: dict, acceptance: dict) -> set[str]:
+        source = state["instances"].get(acceptance.get("source_instance_id"))
+        if source is None:
+            raise AuthoringServiceError("AUTHORING_REVERSAL_AMBIGUOUS", "The accepted revision cannot be reconstructed safely.", status=409)
+        blueprint, bindings, targets = deepcopy(source["blueprint"]), deepcopy(source["bindings"]), set()
+        try:
+            for change in acceptance.get("accepted_changes", []):
+                targets.update(AuthoringSessionStore._change_targets(blueprint, change))
+                _apply_change(blueprint, bindings, change)
+        except (KeyError, StopIteration, TuningProtocolError) as exc:
+            raise AuthoringServiceError("AUTHORING_REVERSAL_AMBIGUOUS", "The accepted revision cannot be reconstructed safely.", status=409) from exc
+        return targets
 
     @staticmethod
     def _change_targets(blueprint: dict, change: dict) -> set[str]:

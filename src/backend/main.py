@@ -25,6 +25,12 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from backend.api_models import (
     AIFlowSelection,
     AIFlowStewardPayload,
+    AuthoringAcceptPayload,
+    AuthoringFreezePayload,
+    AuthoringProposalPayload,
+    AuthoringRejectPayload,
+    AuthoringReversePayload,
+    AuthoringSessionCreatePayload,
     AnnotationSavePayload,
     AuthoringSimulationPayload,
     CartridgeAssetPayload,
@@ -64,6 +70,7 @@ from backend.api_models import (
 )
 
 from core.cartridge import CartridgeRegistry, CartridgeRunner
+from core.studio.authoring_service import AuthoringServiceError, AuthoringSessionStore
 from core.cartridge.validator import ManifestValidationError
 from core.data_paths import (
     CARTRIDGE_DATA_DIR,
@@ -301,6 +308,7 @@ async def add_utf8_charset(request, call_next):
     return response
 
 registry = CartridgeRegistry(ROOT)
+authoring_sessions = AuthoringSessionStore(ROOT / ".data" / "user" / "authoring_sessions")
 runner = CartridgeRunner(ROOT, registry)
 artifact_manager = ArtifactManager(ROOT)
 flow_graph_builder = FlowGraphBuilder()
@@ -2095,6 +2103,82 @@ def activate_lab_flow_recipe_release(cartridge_id: str, release_id: str):
         raise HTTPException(status_code=404, detail=str(exc))
     except TuningProtocolError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+
+def _authoring_error(exc: AuthoringServiceError):
+    raise HTTPException(status_code=exc.status, detail=exc.as_dict())
+
+
+@app.post("/api/creator/authoring-sessions")
+def create_authoring_session(payload: AuthoringSessionCreatePayload):
+    try:
+        return {"creator": authoring_sessions.create(payload.session_id, payload.recipe_id, payload.intent, payload.steps, payload.source_references, payload.bindings)}
+    except AuthoringServiceError as exc:
+        _authoring_error(exc)
+
+
+@app.get("/api/creator/authoring-sessions/{session_id}")
+def get_creator_authoring_session(session_id: str):
+    try:
+        return {"creator": authoring_sessions.creator_projection(authoring_sessions.get(session_id))}
+    except AuthoringServiceError as exc:
+        _authoring_error(exc)
+
+
+@app.get("/api/developer/authoring-sessions/{session_id}")
+def get_developer_authoring_session(session_id: str):
+    try:
+        return {"developer": authoring_sessions.get(session_id)}
+    except AuthoringServiceError as exc:
+        _authoring_error(exc)
+
+
+@app.post("/api/creator/authoring-sessions/{session_id}/proposals")
+def create_authoring_proposal(session_id: str, payload: AuthoringProposalPayload):
+    try:
+        return {"proposal": authoring_sessions.propose(session_id, payload.changes, author=payload.author, summary=payload.summary, expected_revision=payload.expected_revision)}
+    except AuthoringServiceError as exc:
+        _authoring_error(exc)
+
+
+@app.post("/api/creator/authoring-sessions/{session_id}/proposals/{proposal_id}/preview")
+def preview_authoring_proposal(session_id: str, proposal_id: str, payload: AuthoringAcceptPayload):
+    try:
+        return authoring_sessions.preview(session_id, proposal_id, payload.selected_change_ids, revision_path=payload.revision_path)
+    except AuthoringServiceError as exc:
+        _authoring_error(exc)
+
+
+@app.post("/api/creator/authoring-sessions/{session_id}/proposals/{proposal_id}/accept")
+def accept_authoring_proposal(session_id: str, proposal_id: str, payload: AuthoringAcceptPayload):
+    try:
+        return authoring_sessions.accept(session_id, proposal_id, payload.selected_change_ids, revision_path=payload.revision_path)
+    except AuthoringServiceError as exc:
+        _authoring_error(exc)
+
+
+@app.post("/api/creator/authoring-sessions/{session_id}/proposals/{proposal_id}/reject")
+def reject_authoring_proposal(session_id: str, proposal_id: str, payload: AuthoringRejectPayload):
+    try:
+        return {"creator": authoring_sessions.reject(session_id, proposal_id, reason=payload.reason)}
+    except AuthoringServiceError as exc:
+        _authoring_error(exc)
+
+
+@app.post("/api/creator/authoring-sessions/{session_id}/revisions/{acceptance_id}/reverse")
+def reverse_authoring_revision(session_id: str, acceptance_id: str, payload: AuthoringReversePayload):
+    try:
+        return authoring_sessions.reverse(session_id, acceptance_id, author=payload.author, summary=payload.summary, expected_revision=payload.expected_revision, revision_path=payload.revision_path)
+    except AuthoringServiceError as exc:
+        _authoring_error(exc)
+
+
+@app.post("/api/creator/authoring-sessions/{session_id}/freeze")
+def freeze_authoring_steps(session_id: str, payload: AuthoringFreezePayload):
+    try:
+        return {"freeze": authoring_sessions.freeze(session_id, payload.step_ids, author=payload.author, summary=payload.summary)}
+    except AuthoringServiceError as exc:
+        _authoring_error(exc)
 
 
 @app.post("/api/lab/flows/{cartridge_id}/ai-steward")

@@ -95,6 +95,44 @@ class AIFlowStewardPayload(BaseModel):
     scope_policy: str = "selected_and_direct_edges"
 
 
+class AuthoringSessionCreatePayload(BaseModel):
+    session_id: str
+    recipe_id: str
+    intent: str
+    steps: list[dict] = Field(default_factory=list)
+    source_references: list[dict] = Field(default_factory=list)
+    bindings: dict = Field(default_factory=dict)
+
+
+class AuthoringProposalPayload(BaseModel):
+    changes: list[dict] = Field(default_factory=list)
+    author: str = "creator"
+    summary: str
+    expected_revision: int
+
+
+class AuthoringAcceptPayload(BaseModel):
+    selected_change_ids: list[str] | None = None
+    revision_path: str = ""
+
+
+class AuthoringRejectPayload(BaseModel):
+    reason: str = ""
+
+
+class AuthoringReversePayload(BaseModel):
+    author: str = "creator"
+    summary: str
+    expected_revision: int
+    revision_path: str = ""
+
+
+class AuthoringFreezePayload(BaseModel):
+    step_ids: list[str] = Field(default_factory=list)
+    author: str = "creator"
+    summary: str
+
+
 class CartridgeAssetPayload(BaseModel):
     id: str
     kind: str

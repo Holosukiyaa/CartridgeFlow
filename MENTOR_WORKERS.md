@@ -3,7 +3,7 @@
 Project: CartridgeFlow AI-Assisted Authoring
 Repository root: `C:\_HOLOLAB\code\CF WS\CartridgeFlow`
 Active delivery: `creator-ai-authoring-2026-08`
-Last updated: 2026-08-03 23:09 +08:00
+Last updated: 2026-08-03 23:30 +08:00
 Mentor: Codex `/root` using `mentor-orchestrator`
 
 ## Active Baseline
@@ -25,7 +25,7 @@ and CF-FARP topology before generating a cartridge.
 | worker-303-creator-studio | accepted | Build the AI-first semantic Creator Studio and secondary manual canvas. | New `src/creator-studio/**` package and its own tests/dependencies. | Existing `src/frontend/**`, backend/core/protocol/config, Developer Console, demos, mentor files. | Accepted and merged workers 302 and 306. | removed after merge | removed after merge | User-accepted candidate `ca8b631` merged as `24038ba`; post-merge evidence passed; clean branch and worktree removed. |
 | worker-304-developer-console | accepted | Build an independent, API-connected full engineering and tuning frontend. | New `src/developer-console/**` package and its own tests/dependencies. | Existing frontend, backend/core/protocol/config, demos, root dependencies, mentor files. | Accepted and merged worker-302 | removed after merge | removed after merge | User-accepted candidate `84bab93` merged as `defb87b`; post-merge evidence passed; clean branch and worktree removed. |
 | worker-306-creator-contract-completion | accepted | Release the bounded authoring-contract and Creator API additions required for real Creator Studio transactions. | Required next protocol release/governance/config, `src/core/protocol/**`, `src/core/studio/**`, `src/backend/**`, and direct contract/service/API tests. | Both frontends, demos, runtime execution, root dependencies, mentor files. | Accepted and merged workers 301 and 302 | removed after merge | removed after merge | User-accepted candidate `7bf474d` merged as `05de99a`; post-merge evidence passed; clean branch and worktree removed. |
-| worker-305-authoring-integration | planned | Own final cross-surface evidence and minimal signed-package runtime handoff updates. | Runtime toolkit, new integration tests, directly related maintained docs. | Product implementation, dependencies, mentor files. | Accepted and merged workers 303, 304, and 306 | `workers/worker-305-authoring-integration` | `C:\_HOLOLAB\code\CF WS\CartridgeFlow-worker-305-authoring-integration` | Pending |
+| worker-305-authoring-integration | blocked | Own final cross-surface evidence and minimal signed-package runtime handoff updates. | Runtime toolkit, new integration tests, directly related maintained docs. | Product implementation, dependencies, mentor files. | Accepted and merged workers 303, 304, and 306 | `workers/worker-305-authoring-integration` | `C:\_HOLOLAB\code\CF WS\CartridgeFlow-worker-305-authoring-integration` | Candidate `00fb57b` passes all scoped evidence but proves the required authoring-to-signed-package bridge is absent and outside Worker 305 ownership. |
 
 Workers 303 and 304 may run in parallel only after Worker 302 is accepted and
 merged. No active Worker may merge or cherry-pick Worker 201.
@@ -182,12 +182,32 @@ merged. No active Worker may merge or cherry-pick Worker 201.
 
 ### worker-305-authoring-integration
 
-- Prompt issued: Planned; wait for accepted/merged workers 303, 304, and 306.
-- Changed files: Pending
-- Commit: Pending
-- Tests: Pending
-- Risks or follow-up: Pending
-- Mentor acceptance: Pending
+- Changed files: `demos/runtime-developer-toolkit/demo/package.json`,
+  `demos/runtime-developer-toolkit/demo/run.mjs`,
+  `demos/runtime-developer-toolkit/demo/test/runtime-handoff.test.mjs`,
+  `docs/development/AUTHORING_RUNTIME_HANDOFF_BOUNDARY.md`, and
+  `docs/development/FILE_INVENTORY.md`.
+- Commit: candidate `00fb57b627fcbf8c8c1948e7d2a282dbf6faa7c7`.
+- Tests: runtime toolkit check and 2 tests passed; Creator Studio build and 8
+  tests passed; Developer Console build and 7 tests passed; full conformance
+  passed 433 tests with 1 skipped; `git diff --check` passed.
+- Scope and evidence: candidate is based on the accepted Worker 303 integration
+  and changes only Worker 305's allowed runtime/demo and documentation paths.
+  It adds signed archive verification that rejects creator/developer private
+  authoring state, plus an accurate runtime boundary document.
+- Blocking condition: PLAN.md requires evidence from creator intent and
+  accepted AI changes through freeze and deterministic Root Flow compilation to
+  a signed cartridge. Current `compile_candidate` is only a deterministic
+  summary; no backend/core bridge materializes `root.flow.json` or sends it to
+  a production package endpoint. The candidate documents that fact accurately,
+  but Worker 305 is explicitly excluded from the backend/core ownership needed
+  to implement it. It therefore cannot meet final integration acceptance.
+- Structured review: blocked before engine review because the required
+  TruffleHog executable is absent. The helper was invoked against candidate
+  `00fb57b` and failed closed with its official installation reference.
+- Mentor acceptance: `blocked`; do not merge or clean up until an authorized
+  backend/core bridge is delivered and Worker 305 can produce the required
+  end-to-end evidence.
 
 ## Update Log
 
@@ -224,3 +244,4 @@ merged. No active Worker may merge or cherry-pick Worker 201.
 | 2026-08-03 23:02 +08:00 | User accepted Worker 303 candidate `ca8b631`; pre-merge scope, ancestry, and cleanliness verification passed. |
 | 2026-08-03 23:07 +08:00 | Worker 303 merged non-fast-forward as `24038ba`; post-merge Creator Studio install, unit tests, build, browser workflow, and diff check passed. |
 | 2026-08-03 23:09 +08:00 | Worker 303 clean worktree and local branch were removed after merge containment verification. |
+| 2026-08-03 23:30 +08:00 | Worker 305 candidate `00fb57b` independently passed all scoped tests, but final acceptance is blocked: the required authoring-to-materialized-Root-Flow-to-signed-package bridge does not exist and is outside its allowed backend/core ownership. Its branch and worktree remain intact. |

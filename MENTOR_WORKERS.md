@@ -3,7 +3,7 @@
 Project: CartridgeFlow AI-Assisted Authoring
 Repository root: `C:\_HOLOLAB\code\CF WS\CartridgeFlow`
 Active delivery: `creator-ai-authoring-2026-08`
-Last updated: 2026-08-03 20:07 +08:00
+Last updated: 2026-08-03 20:23 +08:00
 Mentor: Codex `/root` using `mentor-orchestrator`
 
 ## Active Baseline
@@ -23,7 +23,7 @@ and CF-FARP topology before generating a cartridge.
 | worker-301-authoring-contract | accepted | Version portable blueprints, instances, AI change sets and freeze semantics while preserving FARP topology ownership. | Next protocol releases, catalog/governance, Base declarations, `src/core/protocol/**`, direct tests/evidence. | Backend, frontends, demos, dependencies, mentor files. | None | removed after merge | removed after merge | Accepted commit `2425eebd9b35634c185ba04ccaf1d9865c462f9b`; merged as `447e5755ac024f573a88b1c435a8875436fdf594`; governance audit and conformance passed. |
 | worker-302-authoring-service | accepted | Implement revisioned design sessions, AI proposal transactions, acceptance/undo, freezing and compilation APIs. | Backend, studio/cartridge core, authoring LLM adapters, direct service/API tests. | Protocol/config, frontends, demos, dependencies, mentor files. | Accepted and merged worker-301 | removed after merge | removed after merge | User-accepted commit `b88b81d958d7069d67d460be12393cbccfc8a1bb` merged as `a59fd632d266a1e12d3620255f12ea315fb0d28a`; post-merge conformance passed 422 tests with 1 skipped; clean worktree and local branch removed. |
 | worker-303-creator-studio | planned | Build the AI-first semantic Creator Studio and secondary manual canvas. | New `src/creator-studio/**` package and its own tests/dependencies. | Existing `src/frontend/**`, backend/core/protocol/config, Developer Console, demos, mentor files. | Accepted and merged worker-302 | `workers/worker-303-creator-studio` | `C:\_HOLOLAB\code\CF WS\CartridgeFlow-worker-303-creator-studio` | Pending |
-| worker-304-developer-console | review | Build an independent, API-connected full engineering and tuning frontend. | New `src/developer-console/**` package and its own tests/dependencies. | Existing frontend, backend/core/protocol/config, demos, root dependencies, mentor files. | Accepted and merged worker-302 | `workers/worker-304-developer-console` | `C:\_HOLOLAB\code\CF WS\CartridgeFlow-worker-304-developer-console` | Candidate `b252b67` is in review; two acceptance blockers require a follow-up commit. |
+| worker-304-developer-console | review | Build an independent, API-connected full engineering and tuning frontend. | New `src/developer-console/**` package and its own tests/dependencies. | Existing frontend, backend/core/protocol/config, demos, root dependencies, mentor files. | Accepted and merged worker-302 | `workers/worker-304-developer-console` | `C:\_HOLOLAB\code\CF WS\CartridgeFlow-worker-304-developer-console` | Candidate `84bab93` passed technical review; awaiting user acceptance. |
 | worker-305-authoring-integration | planned | Own final cross-surface evidence and minimal signed-package runtime handoff updates. | Runtime toolkit, new integration tests, directly related maintained docs. | Product implementation, dependencies, mentor files. | Accepted and merged workers 303 and 304 | `workers/worker-305-authoring-integration` | `C:\_HOLOLAB\code\CF WS\CartridgeFlow-worker-305-authoring-integration` | Pending |
 
 Workers 303 and 304 may run in parallel only after Worker 302 is accepted and
@@ -86,20 +86,21 @@ merged. No active Worker may merge or cherry-pick Worker 201.
 
 ### worker-304-developer-console
 
-- Changed files: new `src/developer-console/**` package only.
-- Commit: candidate `b252b67e29197129ca3dfc1c6c8db11922c9defc`.
-- Tests: fresh isolated `npm ci` passed; `npm run typecheck` and `npm run build`
-  passed; direct `tsx` test invocation passed 3 tests; browser rendering with
-  mocked declared API projections passed for the semantic/source UI flow.
-- Risks or follow-up: `npm test` fails on Windows because Node does not expand
-  `test/**/*.test.ts`; replace it with a cross-platform test target and prove
-  `npm test` passes. Client redaction is key-name-only: a raw declaration
-  endpoint containing `?token=plain-text-secret` was displayed verbatim in the
-  source inspector. Redact URL user-info and sensitive query values (and other
-  credential-bearing string forms in scope) before any rendering, with direct
-  regression tests.
-- Mentor acceptance: `review`; do not merge or clean up before an amended
-  Worker report and acceptance review.
+- Changed files: new `src/developer-console/**` package only; follow-up adds
+  `README.md`, `package.json`, API/model redaction, model tests, and a
+  cross-platform test runner.
+- Commits: initial `b252b67e29197129ca3dfc1c6c8db11922c9defc`; reviewed
+  candidate `84bab932cc5d871283e18f49b84c567be5f61144`.
+- Tests: fresh isolated `npm ci` passed; standard `npm test` passed 7 tests;
+  `npm run typecheck`, `npm run build`, and `git diff --check` passed. Browser
+  regression with mocked API responses confirmed raw declarations redact URL
+  query credentials, user-info passwords, and Bearer tokens while preserving
+  non-sensitive query values.
+- Risks or follow-up: local verification used Node `v20.18.0`, below the
+  declared `>=20.19.0` engine floor; npm emitted the expected warning but all
+  checks completed successfully.
+- Mentor acceptance: technical review passed; awaiting explicit user
+  acceptance before merge and automatic cleanup.
 
 ### worker-305-authoring-integration
 
@@ -125,3 +126,4 @@ merged. No active Worker may merge or cherry-pick Worker 201.
 | 2026-08-03 19:46 +08:00 | Worker 302 merged as `a59fd63`; post-merge full conformance passed 422 tests with 1 skipped. Its clean branch/worktree are eligible for automatic cleanup. |
 | 2026-08-03 19:46 +08:00 | Worker 302 worktree and local branch were removed after merge containment and cleanliness checks. |
 | 2026-08-03 20:07 +08:00 | Worker 304 reported `b252b67`. Independent install, typecheck, build and browser rendering passed, but review blocked acceptance: its `npm test` script is not Windows-compatible and the raw source inspector displays sensitive URL query values. |
+| 2026-08-03 20:23 +08:00 | Worker 304 appended `84bab93`. Standard Windows `npm test` now passed 7 tests; browser regression verified query, URL user-info and Bearer credential redaction. Technical review passed; awaiting user acceptance. |

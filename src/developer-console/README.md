@@ -9,4 +9,4 @@ npm --prefix src/developer-console run test
 npm --prefix src/developer-console run build
 ```
 
-The console requests only documented HTTP projections: flow detail/files, analysis, validation, tuning, resource catalog, release preflight, and conformance. Potential credential values are redacted in the client before display.
+The console requests only documented HTTP projections: flow detail/files, analysis, validation, tuning, resource catalog, release preflight, and conformance. Every API response is redacted before it enters React state or an error message: sensitive field values, sensitive URL query values, URL user-info passwords, and Bearer tokens become `[redacted]`; ordinary URLs and reference metadata remain visible.

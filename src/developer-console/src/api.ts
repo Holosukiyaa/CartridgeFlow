@@ -5,7 +5,12 @@ export class ApiError extends Error { constructor(public status: number, message
 
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${base}${path}`, { ...init, headers: { Accept: 'application/json', ...init?.headers } })
-  if (!response.ok) { const body = await response.text(); throw new ApiError(response.status, body || `HTTP ${response.status}`) }
+  if (!response.ok) {
+    const body = await response.text()
+    let message: unknown = body
+    try { message = JSON.stringify(redact(JSON.parse(body))) } catch { message = redact(body) }
+    throw new ApiError(response.status, String(message || `HTTP ${response.status}`))
+  }
   return redact(await response.json()) as T
 }
 

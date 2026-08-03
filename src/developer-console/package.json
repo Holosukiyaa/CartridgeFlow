@@ -8,7 +8,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit --pretty false",
-    "test": "node --import tsx --test test/**/*.test.ts"
+    "test": "node test/run.mjs"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",

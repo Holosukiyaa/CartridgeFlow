@@ -2,10 +2,13 @@ import { createHash, createPublicKey, verify } from 'node:crypto'
 import { inflateRawSync } from 'node:zlib'
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, resolve, sep } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const CONTROL_FILES = new Set(['release.manifest.json', 'hashes.json'])
 const SHA256 = /^sha256:[0-9a-f]{64}$/
 const ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/
+const PRIVATE_HANDOFF_PATH = /(^|\/)(?:chat(?:[-_].*)?|conversations?|creator[-_]?sessions?|authoring[-_]?sessions?|authoring[-_]?repository|developer[-_]?repository|frontend[-_]?state|local[-_]?storage)(?:\/|\.|$)/i
+const PRIVATE_HANDOFF_FIELD = /^(?:chat(?:[_-].*)?|conversations?(?:[_-].*)?|creator[_-]?sessions?(?:[_-].*)?|authoring[_-]?sessions?(?:[_-].*)?|authoring[_-]?repositories?|developer[_-]?repositories?|frontend[_-]?states?|local[_-]?storage)$/i
 
 function fail(message) {
   throw new Error(message)
@@ -26,6 +29,25 @@ function parseJson(bytes, label) {
     return value
   } catch (error) {
     fail(`${label} is not valid UTF-8 JSON: ${error.message}`)
+  }
+}
+
+function assertPublicRuntimeHandoff(files) {
+  for (const [name, bytes] of files.entries()) {
+    if (PRIVATE_HANDOFF_PATH.test(name)) fail(`archive contains private authoring state: ${name}`)
+    if (!name.endsWith('.json')) continue
+    let value
+    try { value = JSON.parse(bytes.toString('utf8')) } catch { continue }
+    const inspect = (item, path) => {
+      if (Array.isArray(item)) return item.forEach((entry, index) => inspect(entry, `${path}[${index}]`))
+      if (!item || typeof item !== 'object') return
+      for (const [key, child] of Object.entries(item)) {
+        const childPath = `${path}.${key}`
+        if (PRIVATE_HANDOFF_FIELD.test(key)) fail(`archive contains private authoring state: ${name}:${childPath}`)
+        inspect(child, childPath)
+      }
+    }
+    inspect(value, '$')
   }
 }
 
@@ -78,6 +100,7 @@ function trustedKeys(trustPath) {
 
 function verifyArchive(archivePath, trustPath) {
   const files = readZip(archivePath)
+  assertPublicRuntimeHandoff(files)
   for (const required of ['release.manifest.json', 'hashes.json', 'public/experience.json', 'public/delivery.contract.json', 'payload/manifest.json', 'payload/root.flow.json']) {
     if (!files.has(required)) fail(`archive is missing ${required}`)
   }
@@ -473,13 +496,17 @@ async function main(args) {
   console.log(`log     : run-log.jsonl (${execution.nodeLogs.length} entries)`)
 }
 
-main(process.argv.slice(2)).catch((error) => {
-  try {
-    const positional = process.argv.slice(2).filter((value) => !value.startsWith('--'))
-    const runRoot = resolve(positional[2] || '.')
-    mkdirSync(runRoot, { recursive: true })
-    writeFileSync(join(runRoot, 'run-log.jsonl'), `${JSON.stringify({ ts: new Date().toISOString(), event: 'run_failed', status: 'failed', reason: error.message })}\n`, 'utf8')
-  } catch { /* log write is best-effort */ }
-  console.error(JSON.stringify({ ok: false, error: error.message }, null, 2))
-  process.exitCode = 1
-})
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main(process.argv.slice(2)).catch((error) => {
+    try {
+      const positional = process.argv.slice(2).filter((value) => !value.startsWith('--'))
+      const runRoot = resolve(positional[2] || '.')
+      mkdirSync(runRoot, { recursive: true })
+      writeFileSync(join(runRoot, 'run-log.jsonl'), `${JSON.stringify({ ts: new Date().toISOString(), event: 'run_failed', status: 'failed', reason: error.message })}\n`, 'utf8')
+    } catch { /* log write is best-effort */ }
+    console.error(JSON.stringify({ ok: false, error: error.message }, null, 2))
+    process.exitCode = 1
+  })
+}
+
+export { assertPublicRuntimeHandoff, verifyArchive }

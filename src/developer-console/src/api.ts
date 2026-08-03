@@ -1,0 +1,22 @@
+import { redact, type AnyRecord } from './model'
+
+const base = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
+export class ApiError extends Error { constructor(public status: number, message: string) { super(message) } }
+
+export async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${base}${path}`, { ...init, headers: { Accept: 'application/json', ...init?.headers } })
+  if (!response.ok) { const body = await response.text(); throw new ApiError(response.status, body || `HTTP ${response.status}`) }
+  return redact(await response.json()) as T
+}
+
+export const developerApi = {
+  flows: () => request<{ items: AnyRecord[] }>('/api/lab/flows'),
+  flow: (id: string) => request<AnyRecord>(`/api/lab/flows/${encodeURIComponent(id)}`),
+  files: (id: string) => request<AnyRecord>(`/api/lab/flows/${encodeURIComponent(id)}/files`),
+  tuning: (id: string) => request<AnyRecord>(`/api/lab/flows/${encodeURIComponent(id)}/tuning`),
+  resources: (id: string) => request<AnyRecord>(`/api/lab/flows/${encodeURIComponent(id)}/resource-catalog`),
+  preflight: (id: string) => request<AnyRecord>(`/api/studio/release/${encodeURIComponent(id)}/preflight`),
+  conformance: () => request<AnyRecord>('/api/studio/conformance'),
+  analyze: (id: string, files: AnyRecord) => request<AnyRecord>(`/api/lab/flows/${encodeURIComponent(id)}/analyze`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ files, target: 'dev' }) }),
+  validate: (id: string, files: AnyRecord) => request<AnyRecord>(`/api/lab/flows/${encodeURIComponent(id)}/validate`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ files }) }),
+}

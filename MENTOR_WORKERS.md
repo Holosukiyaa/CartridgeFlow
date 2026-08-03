@@ -3,7 +3,7 @@
 Project: CartridgeFlow AI-Assisted Authoring
 Repository root: `C:\_HOLOLAB\code\CF WS\CartridgeFlow`
 Active delivery: `creator-ai-authoring-2026-08`
-Last updated: 2026-08-03 23:09 +08:00
+Last updated: 2026-08-04 00:12 +08:00
 Mentor: Codex `/root` using `mentor-orchestrator`
 
 ## Active Baseline
@@ -25,7 +25,8 @@ and CF-FARP topology before generating a cartridge.
 | worker-303-creator-studio | accepted | Build the AI-first semantic Creator Studio and secondary manual canvas. | New `src/creator-studio/**` package and its own tests/dependencies. | Existing `src/frontend/**`, backend/core/protocol/config, Developer Console, demos, mentor files. | Accepted and merged workers 302 and 306. | removed after merge | removed after merge | User-accepted candidate `ca8b631` merged as `24038ba`; post-merge evidence passed; clean branch and worktree removed. |
 | worker-304-developer-console | accepted | Build an independent, API-connected full engineering and tuning frontend. | New `src/developer-console/**` package and its own tests/dependencies. | Existing frontend, backend/core/protocol/config, demos, root dependencies, mentor files. | Accepted and merged worker-302 | removed after merge | removed after merge | User-accepted candidate `84bab93` merged as `defb87b`; post-merge evidence passed; clean branch and worktree removed. |
 | worker-306-creator-contract-completion | accepted | Release the bounded authoring-contract and Creator API additions required for real Creator Studio transactions. | Required next protocol release/governance/config, `src/core/protocol/**`, `src/core/studio/**`, `src/backend/**`, and direct contract/service/API tests. | Both frontends, demos, runtime execution, root dependencies, mentor files. | Accepted and merged workers 301 and 302 | removed after merge | removed after merge | User-accepted candidate `7bf474d` merged as `05de99a`; post-merge evidence passed; clean branch and worktree removed. |
-| worker-305-authoring-integration | planned | Own final cross-surface evidence and minimal signed-package runtime handoff updates. | Runtime toolkit, new integration tests, directly related maintained docs. | Product implementation, dependencies, mentor files. | Accepted and merged workers 303, 304, and 306 | `workers/worker-305-authoring-integration` | `C:\_HOLOLAB\code\CF WS\CartridgeFlow-worker-305-authoring-integration` | Pending |
+| worker-307-authoring-runtime-bridge | accepted | Materialize a frozen Creator revision into a deterministic Root Flow and signed CF-CRE package through an explicit backend/core bridge. | Backend, direct studio/cartridge core, direct API/service/integration tests, related maintenance docs. | Protocol/config, both frontends, demos, root dependencies, mentor files. | Accepted and merged workers 302 and 306 | removed after merge | removed after merge | User-accepted candidate `e98926a` merged as `9498f11`; post-merge evidence passed; clean branch and worktree removed. |
+| worker-305-authoring-integration | review | Own final cross-surface evidence and minimal signed-package runtime handoff updates. | Runtime toolkit, new integration tests, directly related maintained docs. | Product implementation, dependencies, mentor files. | Accepted and merged workers 303, 304, 306, and 307 | `workers/worker-305-authoring-integration` | `C:\_HOLOLAB\code\CF WS\CartridgeFlow-worker-305-authoring-integration` | Resume from `00fb57b`: merge current main and add final cross-surface evidence using Worker 307's signed handoff API. |
 
 Workers 303 and 304 may run in parallel only after Worker 302 is accepted and
 merged. No active Worker may merge or cherry-pick Worker 201.
@@ -182,12 +183,67 @@ merged. No active Worker may merge or cherry-pick Worker 201.
 
 ### worker-305-authoring-integration
 
-- Prompt issued: Planned; wait for accepted/merged workers 303, 304, and 306.
-- Changed files: Pending
-- Commit: Pending
-- Tests: Pending
-- Risks or follow-up: Pending
-- Mentor acceptance: Pending
+- Changed files: `demos/runtime-developer-toolkit/demo/package.json`,
+  `demos/runtime-developer-toolkit/demo/run.mjs`,
+  `demos/runtime-developer-toolkit/demo/test/runtime-handoff.test.mjs`,
+  `docs/development/AUTHORING_RUNTIME_HANDOFF_BOUNDARY.md`, and
+  `docs/development/FILE_INVENTORY.md`.
+- Commit: candidate `00fb57b627fcbf8c8c1948e7d2a282dbf6faa7c7`.
+- Tests: runtime toolkit check and 2 tests passed; Creator Studio build and 8
+  tests passed; Developer Console build and 7 tests passed; full conformance
+  passed 433 tests with 1 skipped; `git diff --check` passed.
+- Scope and evidence: candidate is based on the accepted Worker 303 integration
+  and changes only Worker 305's allowed runtime/demo and documentation paths.
+  It adds signed archive verification that rejects creator/developer private
+  authoring state, plus an accurate runtime boundary document.
+- Blocking condition: PLAN.md requires evidence from creator intent and
+  accepted AI changes through freeze and deterministic Root Flow compilation to
+  a signed cartridge. Current `compile_candidate` is only a deterministic
+  summary; no backend/core bridge materializes `root.flow.json` or sends it to
+  a production package endpoint. The candidate documents that fact accurately,
+  but Worker 305 is explicitly excluded from the backend/core ownership needed
+  to implement it. It therefore cannot meet final integration acceptance.
+- Structured review: blocked before engine review because the required
+  TruffleHog executable is absent. The helper was invoked against candidate
+  `00fb57b` and failed closed with its official installation reference.
+- Resume condition: satisfied by accepted Worker 307 (`9498f11`). The existing
+  candidate must merge current main and add final cross-surface evidence that
+  invokes the signed handoff bridge; until then it remains unaccepted.
+
+### worker-307-authoring-runtime-bridge
+
+- Changed files: `src/backend/api_models.py`, `src/backend/main.py`,
+  `src/core/studio/creator_runtime_bridge.py`,
+  `scripts/tests/api/test_api_surface.py`, and
+  `scripts/tests/integration/test_creator_runtime_handoff.py`.
+- Commit: candidate `e98926ac11ac35a0f6f7988c66d9429b9fb0a27d`.
+- Technical review: passed. The candidate inherits the accepted Creator
+  contract and only changes allowed paths. It materializes current frozen,
+  design-ready Creator facts into CF-FARP@1.1 Root Flow topology, feeds the
+  existing CF-CRE signer, returns only signed-handoff metadata, and does not
+  install or run a cartridge. Integration tests cover determinism, immutable
+  Creator state, signed archive inspection, private-state exclusion, stale and
+  mismatched candidates, invalid freezes, cyclic topology, and tampered
+  signatures.
+- Independent evidence: with `PYTHONPATH=src`, the direct suite passed 42 tests
+  with 1 skipped; conformance discovery passed 123 tests with 1 skipped; full
+  `scripts/run_conformance.py --quiet` passed. `git diff --check` passed.
+- Risks or follow-up: the Worker-provided Python test commands require
+  `PYTHONPATH=src`, which was omitted from the report. Structured autoreview
+  was invoked for `e98926a` but failed closed before reviewer invocation because
+  the required TruffleHog executable is absent. The existing default protocol
+  for new flows is CF-FARP@1.1, so the bridge's supported version is governed.
+- Mentor acceptance: technical review passed; awaiting user acceptance before
+  merge and cleanup.
+- User acceptance: `accepted` at 2026-08-04 00:06 +08:00. Pre-merge
+  verification confirmed candidate `e98926a` is on the declared branch,
+  contains the required Creator baseline, changes only allowed paths, and has a
+  clean worktree.
+- Integration: merged to `main` as `9498f11f9b7347b3cb36dad6ce7800902bd836f4`.
+  Post-merge bridge direct suite, protocol governance audit, full conformance,
+  and `git diff --check` passed.
+- Cleanup: clean worktree and local `workers/worker-307-authoring-runtime-bridge`
+  branch were removed after containment verification.
 
 ## Update Log
 
@@ -224,3 +280,9 @@ merged. No active Worker may merge or cherry-pick Worker 201.
 | 2026-08-03 23:02 +08:00 | User accepted Worker 303 candidate `ca8b631`; pre-merge scope, ancestry, and cleanliness verification passed. |
 | 2026-08-03 23:07 +08:00 | Worker 303 merged non-fast-forward as `24038ba`; post-merge Creator Studio install, unit tests, build, browser workflow, and diff check passed. |
 | 2026-08-03 23:09 +08:00 | Worker 303 clean worktree and local branch were removed after merge containment verification. |
+| 2026-08-03 23:30 +08:00 | Worker 305 candidate `00fb57b` independently passed all scoped tests, but final acceptance is blocked: the required authoring-to-materialized-Root-Flow-to-signed-package bridge does not exist and is outside its allowed backend/core ownership. Its branch and worktree remain intact. |
+| 2026-08-03 23:38 +08:00 | Worker 307 planned to own the missing backend/core materialization and signed-package bridge. Worker 305 remains blocked and resumes only after Worker 307 is accepted and merged. |
+| 2026-08-04 00:03 +08:00 | Worker 307 reported `e98926a`. Independent technical review passed its bridge and conformance evidence; structured autoreview remains unavailable because TruffleHog is not installed. Awaiting user acceptance before integration. |
+| 2026-08-04 00:06 +08:00 | User accepted Worker 307 candidate `e98926a`; pre-merge scope, ancestry, and cleanliness verification passed. |
+| 2026-08-04 00:09 +08:00 | Worker 307 merged non-fast-forward as `9498f11`; post-merge bridge suite, protocol governance audit, full conformance, and diff check passed. |
+| 2026-08-04 00:12 +08:00 | Worker 307 clean worktree and local branch were removed after merge containment verification. Worker 305 may now resume to verify the complete signed handoff path. |

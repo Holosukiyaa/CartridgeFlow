@@ -144,6 +144,10 @@ class AuthoringReadinessPayload(BaseModel):
     expected_revision: int
 
 
+class CreatorHandoffPayload(AuthoringReadinessPayload):
+    compile_candidate: dict
+
+
 class CartridgeAssetPayload(BaseModel):
     id: str
     kind: str

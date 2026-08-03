@@ -28,6 +28,7 @@ from backend.api_models import (
     AuthoringAcceptPayload,
     AuthoringAIProposalPayload,
     AuthoringFreezePayload,
+    CreatorHandoffPayload,
     AuthoringProposalPayload,
     AuthoringRejectPayload,
     AuthoringReversePayload,
@@ -73,6 +74,7 @@ from backend.api_models import (
 
 from core.cartridge import CartridgeRegistry, CartridgeRunner
 from core.studio.authoring_service import AuthoringServiceError, AuthoringSessionStore
+from core.studio.creator_runtime_bridge import CreatorRuntimeBridge, CreatorRuntimeBridgeError
 from core.cartridge.validator import ManifestValidationError
 from core.data_paths import (
     CARTRIDGE_DATA_DIR,
@@ -2234,6 +2236,24 @@ def get_creator_compile_candidate(session_id: str, payload: AuthoringReadinessPa
         if not readiness["ready"]:
             raise AuthoringServiceError("AUTHORING_GENERATION_BLOCKED", "Design findings must be resolved and all steps frozen before generation.", status=409)
         return {"compile_candidate": authoring_sessions.compile_candidate(state)}
+    except AuthoringServiceError as exc:
+        _authoring_error(exc)
+
+
+@app.post("/api/creator/authoring-sessions/{session_id}/runtime-handoff")
+def create_creator_runtime_handoff(session_id: str, payload: CreatorHandoffPayload):
+    """Materialize a signed CF-CRE handoff; this endpoint never installs or executes it."""
+    try:
+        bridge = CreatorRuntimeBridge(ROOT, ROOT / PACKAGES_DIR)
+        result = bridge.materialize(
+            authoring_sessions,
+            session_id,
+            expected_revision=payload.expected_revision,
+            candidate=payload.compile_candidate,
+        )
+        return {**result, "url": f"/packages/{result['filename']}"}
+    except CreatorRuntimeBridgeError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.as_dict()) from exc
     except AuthoringServiceError as exc:
         _authoring_error(exc)
 

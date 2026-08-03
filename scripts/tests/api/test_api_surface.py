@@ -87,6 +87,23 @@ class ApiSurfaceTests(unittest.TestCase):
                 self.assertEqual("compile", candidate.json()["compile_candidate"]["kind"])
                 self.assertNotIn("runtime", candidate.json())
 
+    def test_creator_runtime_handoff_returns_only_signed_artifact_metadata(self):
+        source = {"id": "source.brief", "kind": "source", "digest": "a" * 64, "role": "public brief"}
+        steps = [{"id": "draft", "intent": "Draft a brief.", "inputs": {}, "outputs": {}}]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = AuthoringSessionStore(temp_dir)
+            with patch.object(backend_main, "authoring_sessions", store), patch.object(backend_main, "ROOT", Path(temp_dir)):
+                self.assertEqual(200, self.client.post("/api/creator/authoring-sessions", json={"session_id": "api.handoff", "recipe_id": "recipe.handoff", "intent": "Create brief", "steps": steps, "source_references": [source], "bindings": {}}).status_code)
+                self.assertEqual(200, self.client.post("/api/creator/authoring-sessions/api.handoff/freeze", json={"step_ids": ["draft"], "summary": "Reviewed"}).status_code)
+                candidate = self.client.post("/api/creator/authoring-sessions/api.handoff/compile-candidate", json={"expected_revision": 1}).json()["compile_candidate"]
+                response = self.client.post("/api/creator/authoring-sessions/api.handoff/runtime-handoff", json={"expected_revision": 1, "compile_candidate": candidate})
+                self.assertEqual(200, response.status_code)
+                payload = response.json()
+                self.assertEqual("signed_handoff_ready", payload["status"])
+                self.assertTrue(payload["signature"]["verified"])
+                self.assertNotIn("archive", payload)
+                self.assertNotIn("running", json.dumps(payload).lower())
+
     def test_creator_reverse_endpoint_handles_new_operation_without_server_error(self):
         source = {"id": "source.brief", "kind": "source", "digest": "a" * 64}
         steps = [{"id": "draft", "intent": "Draft a brief.", "inputs": {}, "outputs": {}}]

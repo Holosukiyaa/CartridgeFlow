@@ -3,7 +3,7 @@
 Project: CartridgeFlow AI-Assisted Authoring
 Repository root: `C:\_HOLOLAB\code\CF WS\CartridgeFlow`
 Active delivery: `creator-ai-authoring-2026-08`
-Last updated: 2026-08-04 00:06 +08:00
+Last updated: 2026-08-04 00:09 +08:00
 Mentor: Codex `/root` using `mentor-orchestrator`
 
 ## Active Baseline
@@ -239,6 +239,9 @@ merged. No active Worker may merge or cherry-pick Worker 201.
   verification confirmed candidate `e98926a` is on the declared branch,
   contains the required Creator baseline, changes only allowed paths, and has a
   clean worktree.
+- Integration: merged to `main` as `9498f11f9b7347b3cb36dad6ce7800902bd836f4`.
+  Post-merge bridge direct suite, protocol governance audit, full conformance,
+  and `git diff --check` passed.
 
 ## Update Log
 
@@ -279,3 +282,4 @@ merged. No active Worker may merge or cherry-pick Worker 201.
 | 2026-08-03 23:38 +08:00 | Worker 307 planned to own the missing backend/core materialization and signed-package bridge. Worker 305 remains blocked and resumes only after Worker 307 is accepted and merged. |
 | 2026-08-04 00:03 +08:00 | Worker 307 reported `e98926a`. Independent technical review passed its bridge and conformance evidence; structured autoreview remains unavailable because TruffleHog is not installed. Awaiting user acceptance before integration. |
 | 2026-08-04 00:06 +08:00 | User accepted Worker 307 candidate `e98926a`; pre-merge scope, ancestry, and cleanliness verification passed. |
+| 2026-08-04 00:09 +08:00 | Worker 307 merged non-fast-forward as `9498f11`; post-merge bridge suite, protocol governance audit, full conformance, and diff check passed. |

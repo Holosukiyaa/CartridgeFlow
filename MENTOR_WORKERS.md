@@ -3,7 +3,7 @@
 Project: CartridgeFlow AI-Assisted Authoring
 Repository root: `C:\_HOLOLAB\code\CF WS\CartridgeFlow`
 Active delivery: `creator-ai-authoring-2026-08`
-Last updated: 2026-08-04 00:27 +08:00
+Last updated: 2026-08-04 00:30 +08:00
 Mentor: Codex `/root` using `mentor-orchestrator`
 
 ## Active Baseline
@@ -26,7 +26,7 @@ and CF-FARP topology before generating a cartridge.
 | worker-304-developer-console | accepted | Build an independent, API-connected full engineering and tuning frontend. | New `src/developer-console/**` package and its own tests/dependencies. | Existing frontend, backend/core/protocol/config, demos, root dependencies, mentor files. | Accepted and merged worker-302 | removed after merge | removed after merge | User-accepted candidate `84bab93` merged as `defb87b`; post-merge evidence passed; clean branch and worktree removed. |
 | worker-306-creator-contract-completion | accepted | Release the bounded authoring-contract and Creator API additions required for real Creator Studio transactions. | Required next protocol release/governance/config, `src/core/protocol/**`, `src/core/studio/**`, `src/backend/**`, and direct contract/service/API tests. | Both frontends, demos, runtime execution, root dependencies, mentor files. | Accepted and merged workers 301 and 302 | removed after merge | removed after merge | User-accepted candidate `7bf474d` merged as `05de99a`; post-merge evidence passed; clean branch and worktree removed. |
 | worker-307-authoring-runtime-bridge | accepted | Materialize a frozen Creator revision into a deterministic Root Flow and signed CF-CRE package through an explicit backend/core bridge. | Backend, direct studio/cartridge core, direct API/service/integration tests, related maintenance docs. | Protocol/config, both frontends, demos, root dependencies, mentor files. | Accepted and merged workers 302 and 306 | removed after merge | removed after merge | User-accepted candidate `e98926a` merged as `9498f11`; post-merge evidence passed; clean branch and worktree removed. |
-| worker-305-authoring-integration | accepted | Own final cross-surface evidence and minimal signed-package runtime handoff updates. | Runtime toolkit, new integration tests, directly related maintained docs. | Product implementation, dependencies, mentor files. | Accepted and merged workers 303, 304, 306, and 307 | `workers/worker-305-authoring-integration` | `C:\_HOLOLAB\code\CF WS\CartridgeFlow-worker-305-authoring-integration` | User accepted `b24af65`; integration and cleanup in progress. |
+| worker-305-authoring-integration | accepted | Own final cross-surface evidence and minimal signed-package runtime handoff updates. | Runtime toolkit, new integration tests, directly related maintained docs. | Product implementation, dependencies, mentor files. | Accepted and merged workers 303, 304, 306, and 307 | removed after merge | removed after merge | User-accepted candidate `b24af65` merged as `df94cac`; post-merge evidence passed; clean branch and worktree removed. |
 
 Workers 303 and 304 may run in parallel only after Worker 302 is accepted and
 merged. No active Worker may merge or cherry-pick Worker 201.
@@ -234,6 +234,8 @@ merged. No active Worker may merge or cherry-pick Worker 201.
   Post-merge runtime toolkit checks, API handoff conformance, full conformance,
   Creator Studio and Developer Console builds/tests, and `git diff --check`
   passed.
+- Cleanup: clean worktree and local `workers/worker-305-authoring-integration`
+  branch were removed after containment verification.
 
 ### worker-307-authoring-runtime-bridge
 
@@ -314,3 +316,4 @@ merged. No active Worker may merge or cherry-pick Worker 201.
 | 2026-08-04 00:18 +08:00 | Worker 305 reported `b24af65`. Independent review confirmed real public API-to-signed-package-to-Node-verification evidence; full conformance passed 438 tests with 1 skipped. Awaiting user acceptance before integration. |
 | 2026-08-04 00:21 +08:00 | User accepted Worker 305 candidate `b24af65`; pre-merge scope, ancestry, and cleanliness verification passed. |
 | 2026-08-04 00:27 +08:00 | Worker 305 merged non-fast-forward as `df94cac`; post-merge runtime, API handoff, full conformance, independent frontend, and diff evidence passed. |
+| 2026-08-04 00:30 +08:00 | Worker 305 clean worktree and local branch were removed after merge containment verification. |

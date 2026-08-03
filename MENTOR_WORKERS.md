@@ -100,7 +100,7 @@ merged. No active Worker may merge or cherry-pick Worker 201.
   declared `>=20.19.0` engine floor; npm emitted the expected warning but all
   checks completed successfully.
 - Mentor acceptance: `accepted` by the user at 2026-08-03 20:25 +08:00;
-  merged to `main` as `defb87b8b01d6c4e6bfe06b613793aceae1f6d75`.
+  merged to `main` as `defb87beaa40a8482c4ae3874f7010f73e4688fc`.
 - Post-merge evidence: isolated `npm ci` passed; `npm test` passed 7 tests;
   `npm run typecheck`, `npm run build`, and `git diff --check` passed.
 - Cleanup: accepted clean worker worktree and local branch removal in progress.

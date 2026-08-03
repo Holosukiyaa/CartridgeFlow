@@ -3,7 +3,7 @@
 Project: CartridgeFlow AI-Assisted Authoring
 Repository root: `C:\_HOLOLAB\code\CF WS\CartridgeFlow`
 Active delivery: `creator-ai-authoring-2026-08`
-Last updated: 2026-08-03 20:26 +08:00
+Last updated: 2026-08-03 20:29 +08:00
 Mentor: Codex `/root` using `mentor-orchestrator`
 
 ## Active Baseline
@@ -23,7 +23,7 @@ and CF-FARP topology before generating a cartridge.
 | worker-301-authoring-contract | accepted | Version portable blueprints, instances, AI change sets and freeze semantics while preserving FARP topology ownership. | Next protocol releases, catalog/governance, Base declarations, `src/core/protocol/**`, direct tests/evidence. | Backend, frontends, demos, dependencies, mentor files. | None | removed after merge | removed after merge | Accepted commit `2425eebd9b35634c185ba04ccaf1d9865c462f9b`; merged as `447e5755ac024f573a88b1c435a8875436fdf594`; governance audit and conformance passed. |
 | worker-302-authoring-service | accepted | Implement revisioned design sessions, AI proposal transactions, acceptance/undo, freezing and compilation APIs. | Backend, studio/cartridge core, authoring LLM adapters, direct service/API tests. | Protocol/config, frontends, demos, dependencies, mentor files. | Accepted and merged worker-301 | removed after merge | removed after merge | User-accepted commit `b88b81d958d7069d67d460be12393cbccfc8a1bb` merged as `a59fd632d266a1e12d3620255f12ea315fb0d28a`; post-merge conformance passed 422 tests with 1 skipped; clean worktree and local branch removed. |
 | worker-303-creator-studio | planned | Build the AI-first semantic Creator Studio and secondary manual canvas. | New `src/creator-studio/**` package and its own tests/dependencies. | Existing `src/frontend/**`, backend/core/protocol/config, Developer Console, demos, mentor files. | Accepted and merged worker-302 | `workers/worker-303-creator-studio` | `C:\_HOLOLAB\code\CF WS\CartridgeFlow-worker-303-creator-studio` | Pending |
-| worker-304-developer-console | accepted | Build an independent, API-connected full engineering and tuning frontend. | New `src/developer-console/**` package and its own tests/dependencies. | Existing frontend, backend/core/protocol/config, demos, root dependencies, mentor files. | Accepted and merged worker-302 | `workers/worker-304-developer-console` | `C:\_HOLOLAB\code\CF WS\CartridgeFlow-worker-304-developer-console` | User-accepted candidate `84bab93` merged as `defb87b`; post-merge evidence passed; cleanup in progress. |
+| worker-304-developer-console | accepted | Build an independent, API-connected full engineering and tuning frontend. | New `src/developer-console/**` package and its own tests/dependencies. | Existing frontend, backend/core/protocol/config, demos, root dependencies, mentor files. | Accepted and merged worker-302 | removed after merge | removed after merge | User-accepted candidate `84bab93` merged as `defb87b`; post-merge evidence passed; clean branch and worktree removed. |
 | worker-305-authoring-integration | planned | Own final cross-surface evidence and minimal signed-package runtime handoff updates. | Runtime toolkit, new integration tests, directly related maintained docs. | Product implementation, dependencies, mentor files. | Accepted and merged workers 303 and 304 | `workers/worker-305-authoring-integration` | `C:\_HOLOLAB\code\CF WS\CartridgeFlow-worker-305-authoring-integration` | Pending |
 
 Workers 303 and 304 may run in parallel only after Worker 302 is accepted and
@@ -103,7 +103,8 @@ merged. No active Worker may merge or cherry-pick Worker 201.
   merged to `main` as `defb87beaa40a8482c4ae3874f7010f73e4688fc`.
 - Post-merge evidence: isolated `npm ci` passed; `npm test` passed 7 tests;
   `npm run typecheck`, `npm run build`, and `git diff --check` passed.
-- Cleanup: accepted clean worker worktree and local branch removal in progress.
+- Cleanup: clean worktree and local `workers/worker-304-developer-console`
+  branch were removed after containment verification.
 
 ### worker-305-authoring-integration
 
@@ -132,3 +133,4 @@ merged. No active Worker may merge or cherry-pick Worker 201.
 | 2026-08-03 20:23 +08:00 | Worker 304 appended `84bab93`. Standard Windows `npm test` now passed 7 tests; browser regression verified query, URL user-info and Bearer credential redaction. Technical review passed; awaiting user acceptance. |
 | 2026-08-03 20:25 +08:00 | User accepted Worker 304 candidate `84bab93`; automatic merge, post-merge verification and cleanup started. |
 | 2026-08-03 20:26 +08:00 | Worker 304 merged as `defb87b`; post-merge `npm ci`, 7-test standard suite, typecheck and production build passed. Its clean branch/worktree are eligible for automatic cleanup. |
+| 2026-08-03 20:29 +08:00 | Worker 304 worktree and local branch were removed after merge containment and cleanliness checks. |

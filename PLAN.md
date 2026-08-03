@@ -715,7 +715,7 @@ Worker 305 的审查确认：当前 Creator `compile_candidate` 只表达经验�
 `PLAN.md`、`MENTOR_WORKERS.md`。若现有发布契约不足以表达上述事实，停止并报告所需的
 协议所有者工作，不得隐式扩展已发布协议。
 
-**依赖和分支：** 已接受并合并的 Workers 302、303、304、306；
+**依赖和分支：** 已接受并合并的 Workers 302、306；
 `workers/worker-307-authoring-runtime-bridge`。
 
 **验收：** API/服务/集成测试证明完整正向路径从 Creator 已接受 revision 和 freeze 事实到

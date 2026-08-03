@@ -2,9 +2,17 @@
 
 ## Product Boundary
 
-CartridgeFlow is a single local development workbench. The backend entry point
-is `src/backend/main.py`; `src/frontend/src/App.tsx` is the frontend entry.
-There is no alternate API whitelist or limited product surface.
+The frozen product and delivery baseline is `PLAN.md` revision
+`creator-ai-authoring-2026-08-r1`. CartridgeFlow owns creator authoring and a
+separate developer console; the runtime product owns production execution and
+receives only signed cartridge packages. Do not add production run, queue,
+history, artifact-delivery, or runtime-interaction UI to Creator Studio.
+
+The current v0.7 implementation is still a single local development workbench.
+Its backend entry point is `src/backend/main.py`; `src/frontend/src/App.tsx` is
+the frontend entry. Existing runtime routes and modules remain compatibility
+implementation until an explicitly scoped delivery changes them; they do not
+define the Creator Studio product surface.
 
 Business-specific behavior belongs in a cartridge or its DLC. The Base owns
 cross-cartridge contracts, execution safety, storage boundaries, and extension

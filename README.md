@@ -1,8 +1,11 @@
 # CartridgeFlow
 
-CartridgeFlow is a local development workbench for designing, validating, and
-running portable cartridge flows. The product ships one FastAPI application and
-one React workbench; there is no separate capability-limited application mode.
+CartridgeFlow is a local authoring product for designing, validating, and
+packaging portable cartridge flows. The current v0.7 implementation ships one
+FastAPI application and one React workbench. The frozen delivery baseline in
+`PLAN.md` evolves that workbench into a creator-facing AI authoring studio and
+adds a separate developer console. Production execution belongs to the runtime
+product and receives only signed cartridge packages.
 
 ## Start
 

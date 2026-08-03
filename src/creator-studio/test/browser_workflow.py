@@ -42,7 +42,7 @@ def main():
                 seen.append((path, body))
                 if request.method == "GET": payload = {"creator": projection()}
                 elif path.endswith("/ai-proposals"):
-                    payload = {"proposal": {"proposal_id": "ai-1", "revision": 1, "summary": "Frozen AI edit", "changes": [{"id": "ai-change", "target_id": "start", "operation": "set_step_intent"}]}}
+                    payload = {"proposal": {"proposal_id": "ai-1", "revision": 1, "summary": "Frozen AI edit", "changes": [{"id": "ai-change-primary", "target_id": "start", "operation": "set_step_intent"}, {"id": "ai-change-secondary", "target_id": "start", "operation": "set_creator_binding"}]}}
                 elif path.endswith("/proposals"):
                     value = body["changes"][0]["value"]
                     assert body["changes"][0]["operation"] == "update_source"
@@ -51,7 +51,8 @@ def main():
                 elif path.endswith("/preview"):
                     if "ai-1" in path:
                         assert body["freeze_revision"] == {"source_freeze_ids": ["freeze-1"], "expected_revision": 1, "reason": "Creator approved this revision to the selected frozen design step.", "author": "creator"}
-                        payload = {"accepted_change_ids": ["ai-change"], "impact": {"plain_summary": "Frozen AI edit will create revision 2.", "changed_steps": ["start"], "changed_sources": []}}
+                        selected = body["selected_change_ids"]
+                        payload = {"accepted_change_ids": selected, "impact": {"plain_summary": "Frozen AI edit will create revision 2.", "changed_steps": ["start"], "changed_sources": []}}
                     else: payload = {"accepted_change_ids": ["source-change"], "impact": {"plain_summary": "Source edit will create revision 2.", "changed_steps": [], "changed_sources": ["source-1"]}}
                 elif path.endswith("/accept"):
                     if "ai-1" in path: assert body["freeze_revision"]["source_freeze_ids"] == ["freeze-1"]
@@ -76,10 +77,17 @@ def main():
             page.get_by_role("button", name="Accept selected (1)").click(); page.get_by_role("status").get_by_text("Accepted 1 selected change(s).").wait_for()
             page.get_by_label("Ask AI to modify the design").fill("Improve the frozen step")
             page.get_by_role("button", name="Ask AI").click(); page.get_by_text("Frozen AI edit will create revision 2.").wait_for()
+            page.locator(".change input").nth(1).uncheck()
+            page.get_by_role("button", name="Preview selected (1)").click(); page.get_by_text("Frozen AI edit will create revision 2.").wait_for()
             page.get_by_role("button", name="Accept selected (1)").click()
+            page.get_by_role("status").get_by_text("Accepted 1 selected change(s).").wait_for()
             page.get_by_role("button", name="Reverse").click(); page.get_by_role("status").get_by_text("AUTHORING_REVERSAL_AMBIGUOUS").wait_for()
             page.get_by_role("button", name="Run design check").click(); page.get_by_role("button", name="Check readiness").click(); page.get_by_role("button", name="Create handoff candidate").click(); page.get_by_role("status").get_by_text("not signed or executing").wait_for()
             page.screenshot(path=str(OUTPUT), full_page=True)
+            ai_previews = [body for path, body in seen if path.endswith("/ai-1/preview")]
+            ai_accepts = [body for path, body in seen if path.endswith("/ai-1/accept")]
+            assert ai_previews[-1]["selected_change_ids"] == ["ai-change-primary"]
+            assert ai_accepts == [{"selected_change_ids": ["ai-change-primary"], "freeze_revision": {"source_freeze_ids": ["freeze-1"], "expected_revision": 1, "reason": "Creator approved this revision to the selected frozen design step.", "author": "creator"}}]
             assert any(path.endswith("/compile-candidate") for path, _ in seen)
             browser.close()
     finally:

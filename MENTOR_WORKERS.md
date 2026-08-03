@@ -3,7 +3,7 @@
 Project: CartridgeFlow AI-Assisted Authoring
 Repository root: `C:\_HOLOLAB\code\CF WS\CartridgeFlow`
 Active delivery: `creator-ai-authoring-2026-08`
-Last updated: 2026-08-03 19:15 +08:00
+Last updated: 2026-08-03 19:26 +08:00
 Mentor: Codex `/root` using `mentor-orchestrator`
 
 ## Active Baseline
@@ -21,7 +21,7 @@ and CF-FARP topology before generating a cartridge.
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | worker-201-uxp-contract | rejected | Superseded runtime-oriented User Experience Plan contract. | Historical branch only; no further writes authorized. | Main integration and all new delivery work. | None | removed | removed | Rejected before merge; branch and worktree were user-approved deletions. |
 | worker-301-authoring-contract | accepted | Version portable blueprints, instances, AI change sets and freeze semantics while preserving FARP topology ownership. | Next protocol releases, catalog/governance, Base declarations, `src/core/protocol/**`, direct tests/evidence. | Backend, frontends, demos, dependencies, mentor files. | None | removed after merge | removed after merge | Accepted commit `2425eebd9b35634c185ba04ccaf1d9865c462f9b`; merged as `447e5755ac024f573a88b1c435a8875436fdf594`; governance audit and conformance passed. |
-| worker-302-authoring-service | review | Implement revisioned design sessions, AI proposal transactions, acceptance/undo, freezing and compilation APIs. | Backend, studio/cartridge core, authoring LLM adapters, direct service/API tests. | Protocol/config, frontends, demos, dependencies, mentor files. | Accepted and merged worker-301 | `workers/worker-302-authoring-service` | `C:\_HOLOLAB\code\CF WS\CartridgeFlow-worker-302-authoring-service` | Commit `a18fe045f46a418312cd325e77a0ae645aab80b9` is under review; acceptance blocked by reversal immutability and AI-service integration findings. |
+| worker-302-authoring-service | review | Implement revisioned design sessions, AI proposal transactions, acceptance/undo, freezing and compilation APIs. | Backend, studio/cartridge core, authoring LLM adapters, direct service/API tests. | Protocol/config, frontends, demos, dependencies, mentor files. | Accepted and merged worker-301 | `workers/worker-302-authoring-service` | `C:\_HOLOLAB\code\CF WS\CartridgeFlow-worker-302-authoring-service` | Latest commit `858f261c7a6acc3aef25f0af1e9eee84ec2a3116` resolves prior findings but remains blocked: multi-step freeze snapshots can be entirely deactivated, and AI capabilities are hard-coded rather than catalog-derived. |
 | worker-303-creator-studio | planned | Build the AI-first semantic Creator Studio and secondary manual canvas. | New `src/creator-studio/**` package and its own tests/dependencies. | Existing `src/frontend/**`, backend/core/protocol/config, Developer Console, demos, mentor files. | Accepted and merged worker-302 | `workers/worker-303-creator-studio` | `C:\_HOLOLAB\code\CF WS\CartridgeFlow-worker-303-creator-studio` | Pending |
 | worker-304-developer-console | planned | Build an independent, API-connected full engineering and tuning frontend. | New `src/developer-console/**` package and its own tests/dependencies. | Existing frontend, backend/core/protocol/config, demos, root dependencies, mentor files. | Accepted and merged worker-302 | `workers/worker-304-developer-console` | `C:\_HOLOLAB\code\CF WS\CartridgeFlow-worker-304-developer-console` | Pending |
 | worker-305-authoring-integration | planned | Own final cross-surface evidence and minimal signed-package runtime handoff updates. | Runtime toolkit, new integration tests, directly related maintained docs. | Product implementation, dependencies, mentor files. | Accepted and merged workers 303 and 304 | `workers/worker-305-authoring-integration` | `C:\_HOLOLAB\code\CF WS\CartridgeFlow-worker-305-authoring-integration` | Pending |
@@ -62,12 +62,15 @@ merged. No active Worker may merge or cherry-pick Worker 201.
 - Changed files: `src/backend/api_models.py`, `src/backend/main.py`,
   `src/core/studio/authoring_service.py`, `src/core/llm/authoring.py`, and
   `scripts/tests/studio/test_authoring_service.py`.
-- Commit: `a18fe045f46a418312cd325e77a0ae645aab80b9`.
+- Commits: initial `a18fe045f46a418312cd325e77a0ae645aab80b9`; latest
+  `858f261c7a6acc3aef25f0af1e9eee84ec2a3116`.
 - Tests reported: targeted unittest suite passed 12 tests; `py_compile` and
   `git diff --check` passed.
-- Risks or follow-up: Review found an invalid mutable reversal acceptance, a
-  partial-acceptance reversal that includes unaccepted items, no service/API
-  integration of the AI adapter, and an ineffective frozen-step revision path.
+- Risks or follow-up: Prior reversal, partial-acceptance, AI integration and
+  frozen-step path findings are addressed. Review remains blocked because a
+  freeze revision removes an entire snapshot even when only one contained step
+  is revised, and because AI proposal capability selection is hard-coded rather
+  than derived from trusted protocol capability facts.
 - Mentor acceptance: `review`; do not merge or clean up until the findings are
   fixed and re-verified.
 
@@ -107,3 +110,4 @@ merged. No active Worker may merge or cherry-pick Worker 201.
 | 2026-08-03 13:24 +08:00 | Baseline revision `creator-ai-authoring-2026-08-r1` frozen before Worker 301 starts. Root engineering documents aligned to the three-surface product boundary. |
 | 2026-08-03 17:57 +08:00 | Baseline updated to r2. Worker 301 was accepted after contract review and full conformance, merged as `447e575`, and its branch/worktree were removed. Worker 201 historical branch/worktree were also removed with user approval. |
 | 2026-08-03 19:15 +08:00 | Worker 302 reported commit `a18fe045`; scope and dependency baseline were verified, but acceptance is blocked during review. Its branch and worktree remain intact. |
+| 2026-08-03 19:26 +08:00 | Worker 302 appended `858f261`, resolving the first review findings. The delivery remains in review pending multi-step freeze-snapshot preservation and trusted capability-catalog derivation. |

@@ -3,7 +3,7 @@
 Project: CartridgeFlow AI-Assisted Authoring
 Repository root: `C:\_HOLOLAB\code\CF WS\CartridgeFlow`
 Active delivery: `creator-ai-authoring-2026-08`
-Last updated: 2026-08-03 23:02 +08:00
+Last updated: 2026-08-03 23:07 +08:00
 Mentor: Codex `/root` using `mentor-orchestrator`
 
 ## Active Baseline
@@ -131,6 +131,9 @@ merged. No active Worker may merge or cherry-pick Worker 201.
   Pre-merge verification confirmed candidate `ca8b631` is on the declared
   branch, contains Worker 306, changes only permitted package paths, and has a
   clean worktree.
+- Integration: merged to `main` as `24038ba233f2ddefc67af9d9dd89214bf8e2b690`.
+  Post-merge `npm ci`, `npm test` (8 tests), `npm run build`,
+  `python test/browser_workflow.py`, and `git diff --check` passed.
 
 ### worker-304-developer-console
 
@@ -217,3 +220,4 @@ merged. No active Worker may merge or cherry-pick Worker 201.
 | 2026-08-03 22:57 +08:00 | Worker 303 reported `b384a33`. Baseline, scope, unit tests, build, and browser workflow all verify. Acceptance remains blocked only because the browser workflow does not exercise partial AI acceptance, as required by its explicit browser-regression criterion. |
 | 2026-08-03 22:59 +08:00 | Worker 303 reported `ca8b631`. Independent review passed all reported checks and confirmed browser partial acceptance asserts exact preview/accept selected IDs. Awaiting user acceptance before merge and cleanup. |
 | 2026-08-03 23:02 +08:00 | User accepted Worker 303 candidate `ca8b631`; pre-merge scope, ancestry, and cleanliness verification passed. |
+| 2026-08-03 23:07 +08:00 | Worker 303 merged non-fast-forward as `24038ba`; post-merge Creator Studio install, unit tests, build, browser workflow, and diff check passed. |

@@ -355,6 +355,14 @@
       "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/flow-workbench/views.tsx", "src/frontend/src/pages/flow-workbench/EngineeringInspector.tsx"]},
       "notes": "Base validates trusted CF-TUNING host identity, stores immutable node revisions outside packages, packages only active recipe snapshots, materializes deterministic node-local patches, and records recipe provenance on every run."
     },
+    "ai_authoring_contract": {
+      "verification": "verified",
+      "implementation": ["src/core/protocol/authoring_contract.py"],
+      "positive_tests": ["test_authoring_contract_v12.AuthoringContractV12Tests.test_accepted_revision_and_freeze_are_deterministic"],
+      "failure_tests": ["test_authoring_contract_v12.AuthoringContractV12Tests.test_stale_changes_and_unsafe_or_silent_freezes_fail_closed"],
+      "ui": {"status": "not_applicable", "entries": []},
+      "notes": "Protocol-only contract: immutable recipe facts, revision-checked proposals, explicit freezes, source-reference redaction, and deterministic compilation references; it owns no runtime surface."
+    },
     "release_envelope": {
       "verification": "verified",
       "implementation": ["src/core/protocol/release_envelope.py#validate_release_envelope", "src/core/protocol/release_signing.py#verify_signature_metadata", "src/core/protocol/release_builder.py#build_release_archive", "src/core/protocol/release_builder.py#extract_release_payload", "src/backend/main.py#import_cartridge"],
@@ -518,6 +526,12 @@
     "recipe_release_activate": "tuning_versioning",
     "recipe_release_rollback": "tuning_versioning",
     "tuning_materialize": "tuning_versioning",
-    "run_recipe_provenance": "tuning_versioning"
+    "run_recipe_provenance": "tuning_versioning",
+    "recipe_blueprint_immutable_v1": "ai_authoring_contract",
+    "recipe_instance_revision_v1": "ai_authoring_contract",
+    "ai_change_set_review_v1": "ai_authoring_contract",
+    "progressive_freeze_snapshot_v1": "ai_authoring_contract",
+    "source_reference_redaction_v1": "ai_authoring_contract",
+    "deterministic_compile_reference_v1": "ai_authoring_contract"
   }
 }

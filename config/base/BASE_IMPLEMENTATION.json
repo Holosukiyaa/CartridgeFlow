@@ -44,6 +44,11 @@
       "status": "supported"
     },
     {
+      "id": "CF-FARP",
+      "version": "1.2",
+      "status": "supported"
+    },
+    {
       "id": "CF-CRE",
       "version": "1",
       "status": "supported"
@@ -56,6 +61,13 @@
       "status": "supported",
       "runtime_adapter": "cf-tuning.repository.v1",
       "host_protocols": [{"id": "CF-FARP", "version": "1.1"}]
+    },
+    {
+      "id": "CF-TUNING",
+      "version": "1.1",
+      "status": "supported",
+      "runtime_adapter": "cf-tuning.authoring-contract.v1",
+      "host_protocols": [{"id": "CF-FARP", "version": "1.2"}]
     }
   ],
   "supported_protocol_adapters": [
@@ -86,6 +98,10 @@
     {
       "id": "cf-tuning.repository.v1",
       "status": "supported"
+    },
+    {
+      "id": "cf-tuning.authoring-contract.v1",
+      "status": "supported"
     }
   ],
   "profiles": [
@@ -102,6 +118,8 @@
     "release_envelope_runtime",
     "tuning_authoring",
     "recipe_release_runtime"
+    ,"ai_recipe_authoring",
+    "authoring_compile_handoff"
   ],
   "capabilities": [
     "manifest_load",
@@ -258,6 +276,12 @@
     "recipe_release_rollback",
     "tuning_materialize",
     "run_recipe_provenance"
+    ,"recipe_blueprint_immutable_v1",
+    "recipe_instance_revision_v1",
+    "ai_change_set_review_v1",
+    "progressive_freeze_snapshot_v1",
+    "source_reference_redaction_v1",
+    "deterministic_compile_reference_v1"
   ],
   "tool_packs": [
     "builtin.filesystem",

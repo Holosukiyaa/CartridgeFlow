@@ -363,6 +363,14 @@
       "ui": {"status": "not_applicable", "entries": []},
       "notes": "Protocol-only contract: immutable recipe facts, revision-checked proposals, explicit freezes, source-reference redaction, and deterministic compilation references; it owns no runtime surface."
     },
+    "creator_service_contract": {
+      "verification": "verified",
+      "implementation": ["src/core/studio/authoring_service.py#AuthoringSessionStore", "src/core/protocol/authoring_contract.py#accept_change_set"],
+      "positive_tests": ["test_authoring_service.AuthoringServiceTests.test_partial_accept_and_reversal_history"],
+      "failure_tests": ["test_creator_contract_completion.CreatorContractCompletionTests.test_unsafe_sources_and_generation_gate_fail_closed"],
+      "ui": {"status": "api_only", "entries": ["src/backend/main.py"]},
+      "notes": "Creator-service facts are reviewed, revision checked, safe projected, and compile-candidate only; no runtime behavior is created."
+    },
     "release_envelope": {
       "verification": "verified",
       "implementation": ["src/core/protocol/release_envelope.py#validate_release_envelope", "src/core/protocol/release_signing.py#verify_signature_metadata", "src/core/protocol/release_builder.py#build_release_archive", "src/core/protocol/release_builder.py#extract_release_payload", "src/backend/main.py#import_cartridge"],
@@ -533,5 +541,9 @@
     "progressive_freeze_snapshot_v1": "ai_authoring_contract",
     "source_reference_redaction_v1": "ai_authoring_contract",
     "deterministic_compile_reference_v1": "ai_authoring_contract"
+    ,"creator_safe_projection_v1": "creator_service_contract"
+    ,"creator_reviewed_semantic_changes_v1": "creator_service_contract"
+    ,"creator_source_safety_v1": "creator_service_contract"
+    ,"creator_generation_readiness_v1": "creator_service_contract"
   }
 }

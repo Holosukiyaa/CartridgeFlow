@@ -4,13 +4,15 @@ import type { FlowGraph, FlowNode, McpSourceResponse, StudioToolResource } from 
 import { showToast } from '../../toast.tsx'
 import { buildEngineeringRecipe, humanizeEngineeringKey, humanizeEngineeringValue, type EngineeringNodeView, type EngineeringRecipeItem, type EngineeringSection } from './engineeringNode.ts'
 import { connectionStatusLabel, getMcpPresentationMode, mcpPresentationLabel } from './McpDetailTemplates.tsx'
+import { NodeExperiencePanel } from './NodeExperiencePanel.tsx'
 import type { NodeDraft } from './types.ts'
 
-type InspectorTab = 'machine' | 'production' | 'contract' | 'fixture' | 'technical'
+type InspectorTab = 'experience' | 'machine' | 'production' | 'contract' | 'fixture' | 'technical'
 type TechnicalView = 'raw' | 'diff'
 
 const BASE_TABS: Array<{ id: InspectorTab; label: string }> = [
-  { id: 'production', label: '生产配置' },
+  { id: 'experience', label: '用户体验' },
+  { id: 'production', label: '节点调优' },
   { id: 'machine', label: '节点基础' },
   { id: 'contract', label: '数据契约' },
   { id: 'technical', label: '技术视图' },
@@ -35,13 +37,12 @@ const BASIC_FACTS = [
 ] as const
 
 const DRAFT_FIELD_LABELS: Partial<Record<keyof NodeDraft, string>> = {
-  title: '节点名称', displayName: '显示名称', description: '说明', action: '动作', type: '类型',
+  title: '节点名称', displayName: '显示名称', description: '说明', systemPrompt: '系统指令', prompt: '处理指令', temperature: '温度', maxTokens: '最大输出', action: '动作', type: '类型',
   kind: '处理类别', executor: '执行器', effect: '副作用', next: '下一步', modelRole: '模型角色',
-  input: '输入', output: '输出',
+  input: '输入', output: '输出', timeoutMs: '超时（毫秒）',
 }
 
-const PRIMARY_DRAFT_FIELDS: Array<keyof NodeDraft> = ['title', 'displayName', 'description']
-const ADVANCED_DRAFT_FIELDS: Array<keyof NodeDraft> = ['action', 'type', 'kind', 'executor', 'effect', 'next', 'modelRole', 'input', 'output']
+const KEY_PARAMETER_FIELDS: Array<keyof NodeDraft> = ['title', 'displayName', 'description', 'systemPrompt', 'prompt', 'modelRole', 'temperature', 'maxTokens', 'timeoutMs']
 
 const SECTION_PATHS: Record<EngineeringSection['id'], string> = {
   inputs: 'input_schema.properties',
@@ -436,12 +437,13 @@ function ContractConfiguration({ inputs, outputs, bindings, nodeId, selectable, 
   )
 }
 
-export function EngineeringInspector({ node, graph, view, unlocked, canEdit, onToggleLock, draft, dirty, saving, onDraftChange, onResetDraft, onSaveDraft, stewardTool = 'none', onStewardFieldSelect, mcpTool, mcpSource, mcpLoading = false, onOpenMcp, onOpenMcpSource }: {
+export function EngineeringInspector({ node, graph, view, unlocked, canEdit, versioned, onToggleLock, draft, dirty, saving, onDraftChange, onResetDraft, onSaveDraft, stewardTool = 'none', onStewardFieldSelect, mcpTool, mcpSource, mcpLoading = false, onOpenMcp, onOpenMcpSource }: {
   node: FlowNode | null
   graph: FlowGraph
   view: EngineeringNodeView | null
   unlocked: boolean
   canEdit: boolean
+  versioned: boolean
   onToggleLock: () => void
   draft?: NodeDraft
   dirty?: boolean
@@ -457,13 +459,13 @@ export function EngineeringInspector({ node, graph, view, unlocked, canEdit, onT
   onOpenMcp?: () => void
   onOpenMcpSource?: () => void
 }) {
-  const [tab, setTab] = useState<InspectorTab>('production')
+  const [tab, setTab] = useState<InspectorTab>('experience')
   const [technicalView, setTechnicalView] = useState<TechnicalView>('raw')
   const [technicalSearch, setTechnicalSearch] = useState('')
   const [jsonWrap, setJsonWrap] = useState(true)
   const [technicalFullscreen, setTechnicalFullscreen] = useState(false)
   const [jsonDialog, setJsonDialog] = useState<{ title: string; value: unknown } | null>(null)
-  useEffect(() => { setTab('production'); setTechnicalView('raw'); setTechnicalSearch(''); setTechnicalFullscreen(false); setJsonDialog(null) }, [node?.id])
+  useEffect(() => { setTab('experience'); setTechnicalView('raw'); setTechnicalSearch(''); setTechnicalFullscreen(false); setJsonDialog(null) }, [node?.id])
 
   if (!node || !view) {
     return (
@@ -480,7 +482,7 @@ export function EngineeringInspector({ node, graph, view, unlocked, canEdit, onT
   const recipe = buildEngineeringRecipe(node)
   const testFixture = buildTestFixtureView(node)
   const tabs = testFixture
-    ? [...BASE_TABS.slice(0, 3), { id: 'fixture' as const, label: '测试夹具' }, BASE_TABS[3]]
+    ? [...BASE_TABS.slice(0, 4), { id: 'fixture' as const, label: '测试夹具' }, BASE_TABS[4]]
     : BASE_TABS
   const copyValue = async (value: string, label: string) => {
     try {
@@ -506,7 +508,7 @@ export function EngineeringInspector({ node, graph, view, unlocked, canEdit, onT
           <button
             type="button"
             className={`cf-engineering-edit-toggle ${unlocked ? 'editing' : ''}`}
-            onClick={() => { if (!unlocked) setTab('machine'); onToggleLock() }}
+            onClick={() => { if (!unlocked) setTab('experience'); onToggleLock() }}
             title={!canEdit ? '该节点由流程边界或工程投影管理，不能直接编辑' : unlocked ? '退出节点编辑' : '编辑节点配置'}
             aria-label={unlocked ? '退出节点编辑' : '编辑节点配置'}
             aria-pressed={unlocked}
@@ -532,30 +534,21 @@ export function EngineeringInspector({ node, graph, view, unlocked, canEdit, onT
       </div>}
 
       <div className="cf-engineering-inspector-body">
+        {tab === 'experience' && draft && <NodeExperiencePanel
+          node={node}
+          draft={draft}
+          editing={Boolean(unlocked && canEdit)}
+          versioned={versioned}
+          dirty={dirty}
+          saving={saving}
+          onDraftChange={onDraftChange}
+          onReset={onResetDraft}
+          onSave={onSaveDraft}
+        />}
+
         {tab === 'machine' && (
           <section className="cf-engineering-overview">
             <p className="cf-engineering-basic-intro">节点基础描述节点身份、执行方式和运行边界；业务内容请前往生产配置查看。</p>
-            {unlocked && canEdit && draft && onDraftChange && (
-              <section className="cf-engineering-direct-editor">
-                <header><Settings2 aria-hidden="true" /><strong>编辑节点配置</strong><span>{dirty ? '有未保存的修改' : '已保存'}</span></header>
-                <div className="cf-engineering-direct-editor-grid">
-                  {PRIMARY_DRAFT_FIELDS.map((key) => {
-                    const multiline = key === 'description'
-                    return <label key={String(key)} className={multiline ? 'wide' : undefined}><span>{DRAFT_FIELD_LABELS[key] || String(key)}</span>{multiline ? <textarea value={String(draft[key] ?? '')} onChange={(event) => onDraftChange({ [key]: event.target.value } as Partial<NodeDraft>)} /> : <input value={String(draft[key] ?? '')} onChange={(event) => onDraftChange({ [key]: event.target.value } as Partial<NodeDraft>)} />}</label>
-                  })}
-                </div>
-                <details className="cf-engineering-advanced-editor">
-                  <summary><span>运行与契约字段</span><small>{ADVANCED_DRAFT_FIELDS.length} 项</small></summary>
-                  <div className="cf-engineering-direct-editor-grid">
-                    {ADVANCED_DRAFT_FIELDS.map((key) => <label key={String(key)}><span>{DRAFT_FIELD_LABELS[key] || String(key)}</span><input value={String(draft[key] ?? '')} onChange={(event) => onDraftChange({ [key]: event.target.value } as Partial<NodeDraft>)} /></label>)}
-                  </div>
-                </details>
-                <footer>
-                  <button type="button" disabled={!dirty || saving} onClick={onResetDraft}><RotateCcw aria-hidden="true" />重置</button>
-                  <button type="button" className="primary" disabled={!dirty || saving} onClick={onSaveDraft}><Save aria-hidden="true" />{saving ? '保存中...' : '保存节点'}</button>
-                </footer>
-              </section>
-            )}
             <div className="cf-engineering-basic-identity"><Settings2 aria-hidden="true" /><strong>{humanizeEngineeringValue(view.semanticKind)}</strong><span>·</span><strong>{humanizeEngineeringValue(node.action || '-')}</strong><span>·</span><strong>{humanizeEngineeringValue(node.scope || 'root')}内运行</strong></div>
             {BASIC_FACTS.map((fact) => {
               const rawValue = fact.key === 'kind' ? view.semanticKind : fact.key === 'action' ? node.action || '-' : fact.key === 'scope' ? node.scope || 'root' : fact.key === 'executor' ? node.executor || '-' : fact.key === 'effect' ? node.effect || 'none' : node.type
@@ -600,7 +593,23 @@ export function EngineeringInspector({ node, graph, view, unlocked, canEdit, onT
           </section>
         )}
 
-        {tab === 'production' && <ProductionConfiguration node={node} items={recipe} sources={view.remoteSources} onCopy={(value, label) => void copyValue(value, label)} onOpenJson={(title, value) => setJsonDialog({ title, value })} />}
+        {tab === 'production' && <>
+          {unlocked && canEdit && draft && onDraftChange && <section className="cf-engineering-direct-editor cf-key-parameter-editor">
+            <header><Settings2 aria-hidden="true" /><strong>关键参数</strong><span>{dirty ? '有未保存的修改' : '已保存'}</span></header>
+            <div className="cf-engineering-direct-editor-grid">
+              {KEY_PARAMETER_FIELDS.map((key) => {
+                const multiline = key === 'description' || key === 'systemPrompt' || key === 'prompt'
+                const numeric = key === 'temperature' || key === 'maxTokens' || key === 'timeoutMs'
+                return <label key={String(key)} className={multiline ? 'wide' : undefined}><span>{DRAFT_FIELD_LABELS[key] || String(key)}</span>{multiline ? <textarea value={String(draft[key] ?? '')} onChange={(event) => onDraftChange({ [key]: event.target.value } as Partial<NodeDraft>)} /> : <input type={numeric ? 'number' : 'text'} step={key === 'temperature' ? '0.1' : '1'} value={String(draft[key] ?? '')} onChange={(event) => onDraftChange({ [key]: event.target.value } as Partial<NodeDraft>)} />}</label>
+              })}
+            </div>
+            <footer>
+              <button type="button" disabled={!dirty || saving} onClick={onResetDraft}><RotateCcw aria-hidden="true" />重置</button>
+              <button type="button" className="primary" disabled={!dirty || saving} onClick={onSaveDraft}><Save aria-hidden="true" />{saving ? '保存中...' : '保存调优'}</button>
+            </footer>
+          </section>}
+          <ProductionConfiguration node={node} items={recipe} sources={view.remoteSources} onCopy={(value, label) => void copyValue(value, label)} onOpenJson={(title, value) => setJsonDialog({ title, value })} />
+        </>}
 
         {tab === 'contract' && <ContractConfiguration inputs={sectionById.get('inputs')} outputs={sectionById.get('outputs')} bindings={sectionById.get('bindings')} nodeId={node.id} selectable={stewardTool === 'pointer'} onFieldSelect={onStewardFieldSelect} />}
 
@@ -633,7 +642,7 @@ export function EngineeringInspector({ node, graph, view, unlocked, canEdit, onT
         <span>输入 <b>{sectionById.get('inputs')?.fields.length || 0}</b></span>
         <span>输出 <b>{sectionById.get('outputs')?.fields.length || 0}</b></span>
         <span>连接 <b>{graph.edges.filter((edge) => edge.from === node.id || edge.to === node.id).length}</b></span>
-        <strong>{tab === 'production' ? '完整配方' : tab === 'machine' ? '静态定义' : tab === 'contract' ? '数据边界' : tab === 'fixture' ? '测试数据' : '技术数据'}</strong>
+        <strong>{tab === 'experience' ? '用户投影' : tab === 'production' ? '内部调优' : tab === 'machine' ? '静态定义' : tab === 'contract' ? '数据边界' : tab === 'fixture' ? '测试数据' : '技术数据'}</strong>
       </footer>
     </aside>
     {jsonDialog && <JsonDetailDialog title={jsonDialog.title} value={jsonDialog.value} onCopy={() => void copyValue(fixtureValue(jsonDialog.value), jsonDialog.title)} onClose={() => setJsonDialog(null)} />}

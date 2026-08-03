@@ -418,6 +418,25 @@ def _analyze_v10_execution_plan(
         if isinstance(tool, dict) and str(tool.get("id") or "").strip()
     }
     _validate_tool_transparency(manifest, declared_tools, add, protocol_version=protocol_version)
+    if "trusted_tuning_subprotocol" in _catalog_features(protocol_id, protocol_version):
+        tuning_contract = manifest.get("tuning_contract") if isinstance(manifest.get("tuning_contract"), dict) else {}
+        if tuning_contract.get("protocol") != "CF-TUNING" or str(tuning_contract.get("protocol_version") or "") != "1.0":
+            add(
+                "TUNING_CONTRACT_MISSING",
+                f"{protocol_id}@{protocol_version} requires a CF-TUNING@1.0 tuning contract.",
+                stage="tuning",
+                path="manifest.tuning_contract",
+            )
+        if target in {"production", "package", "publish"}:
+            context = manifest.get("_tuning_context") or manifest.get("tuning_context") or {}
+            active_release = context.get("release_id") if isinstance(context, dict) else None
+            if not active_release:
+                add(
+                    "RECIPE_RELEASE_REQUIRED",
+                    "A published recipe release is required for production, package, and publish targets.",
+                    stage="tuning",
+                    path="tuning/release.json",
+                )
     counts = _finding_counts(findings)
     return {
         "schema": ANALYSIS_SCHEMA,

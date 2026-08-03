@@ -85,7 +85,8 @@ class ProtocolV06ContractTest(unittest.TestCase):
         self.assertTrue(registry.supports_protocol("CF-FARP", "0.6"))
 
         base = load_base_implementation(ROOT)
-        self.assertEqual({"id": "CARTRIDGEFLOW-BASE", "version": "0.2"}, base["base_contract"])
+        self.assertEqual({"id": "CARTRIDGEFLOW-BASE", "version": "0.3"}, base["base_contract"])
+        self.assertIn({"id": "CARTRIDGEFLOW-BASE", "version": "0.2", "status": "supported_previous"}, base["supported_base_contracts"])
         self.assertIn(("CF-FARP", "0.6"), {(item["id"], item["version"]) for item in base["supported_protocols"]})
 
     def test_v06_documents_are_complete_standalone_protocols(self):

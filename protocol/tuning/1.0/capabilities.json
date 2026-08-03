@@ -1,0 +1,14 @@
+{
+  "schema_version": "1.0",
+  "capabilities": [
+    {"id": "tuning_repository_v1", "profile": "tuning_authoring"},
+    {"id": "tuning_revision_validate", "profile": "tuning_authoring"},
+    {"id": "tuning_node_head", "profile": "tuning_authoring"},
+    {"id": "node_experience_projection_v1", "profile": "tuning_authoring"},
+    {"id": "recipe_release_snapshot_v1", "profile": "recipe_release_runtime"},
+    {"id": "recipe_release_activate", "profile": "recipe_release_runtime"},
+    {"id": "recipe_release_rollback", "profile": "recipe_release_runtime"},
+    {"id": "tuning_materialize", "profile": "recipe_release_runtime"},
+    {"id": "run_recipe_provenance", "profile": "recipe_release_runtime"}
+  ]
+}

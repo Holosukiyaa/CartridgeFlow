@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Box, Button } from '../../ui.tsx'
-import { fetchStudioResources } from '../../api.ts'
-import { Activity, AlertTriangle, Bot, ChevronDown, ChevronUp, ClipboardCopy, Copy, Download, FileOutput, History, PanelRight, Pause, PlayCircle, RefreshCw, Square, SquarePen, X } from 'lucide-react'
-import { analyzeLabFlow, fetchFlowResourceCatalog, fetchMcpSource, type AIFlowSelection, type AIFlowStewardContext, type FlowAnnotation, type FlowEdge, type FlowEngineeringRelation, type FlowEvent, type FlowFiles, type FlowGraph, type FlowLabDetail, type FlowNode, type McpSourceResponse, type RunResult, type StudioToolResource } from '../../api.ts'
+import { activateRecipeRelease, fetchFlowTuning, fetchStudioResources, publishRecipeRelease } from '../../api.ts'
+import { Activity, AlertTriangle, Bot, ChevronDown, ChevronUp, ClipboardCopy, Copy, Download, FileOutput, GitCommit, History, PanelRight, Pause, PlayCircle, RefreshCw, Square, SquarePen, UserRoundCheck, X } from 'lucide-react'
+import { analyzeLabFlow, fetchFlowResourceCatalog, fetchMcpSource, type AIFlowSelection, type AIFlowStewardContext, type FlowAnnotation, type FlowEdge, type FlowEngineeringRelation, type FlowEvent, type FlowFiles, type FlowGraph, type FlowLabDetail, type FlowNode, type McpSourceResponse, type RunResult, type StudioToolResource, type TuningRepository } from '../../api.ts'
 import type { CreateNodeHandler, DesignDisplayMode, GraphResult, NodeDraft } from './types.ts'
 import { FlowGraphView, type CanvasTool, type ProtocolDisplayInfo } from './FlowGraphView.tsx'
 import { NodeDetailCard } from './NodeDetailCard.tsx'
@@ -11,13 +11,14 @@ import { BrandMark } from './BrandMark.tsx'
 import { NODE_DETAIL_SECTION_BY_ID, nodeDetailId, type NodeDetailSection, type OpenNodeDetail } from './nodeDetails.ts'
 import type { NodeRunState } from './runState.ts'
 import { makeNodeDraft } from './nodeModel.ts'
-import { saveNodeDraft } from './nodeEditing.ts'
+import { saveLegacyNodeDraft, saveNodeDraft } from './nodeEditing.ts'
 import { showToast } from '../../toast.tsx'
 import { buildNodeAuthoringPath } from './nodeAuthoring.ts'
 import { EngineeringInspector } from './EngineeringInspector.tsx'
 import { buildEngineeringNodeModels, buildEngineeringProjection, isEngineeringResourceNode, type EngineeringEdgeVisibility } from './engineeringNode.ts'
 import { AIFlowStewardPanel } from './AIFlowStewardPanel.tsx'
 import { McpTransparencyOverlay } from './McpTransparencyOverlay.tsx'
+import { nodeExperienceIssues } from './nodeExperience.ts'
 
 type ExecutionPlanAnalysis = NonNullable<FlowGraph['analysis']> & {
   protocol?: { id?: string; version?: string; runtime_adapter?: string }
@@ -34,6 +35,36 @@ function isExecutionPlanV1(files: FlowFiles, graph: FlowGraph) {
   } catch {
     return false
   }
+}
+
+function orderedUserJourneyNodes(graph: FlowGraph) {
+  const candidates = graph.nodes.filter((node) => !isEngineeringResourceNode(node))
+  const candidateIds = new Set(candidates.map((node) => node.id))
+  const outgoing = new Map<string, FlowEdge[]>()
+  for (const edge of graph.edges) {
+    if (edge.kind === 'failure_route' || edge.to === 'flow_failed') continue
+    outgoing.set(edge.from, [...(outgoing.get(edge.from) || []), edge])
+  }
+  for (const relation of graph.engineering_relations || []) {
+    const from = relation.from?.node_id
+    const to = relation.to?.node_id
+    if (!from || !to || relation.plan_edge_kind === 'failure' || to === 'flow_failed') continue
+    const edge: FlowEdge = { from, to, kind: relation.plan_edge_kind || relation.kind }
+    if (!(outgoing.get(from) || []).some((item) => item.to === to)) outgoing.set(from, [...(outgoing.get(from) || []), edge])
+  }
+  const ordered: FlowNode[] = []
+  const visited = new Set<string>()
+  const queue = ['start']
+  while (queue.length) {
+    const nodeId = queue.shift()!
+    if (visited.has(nodeId)) continue
+    visited.add(nodeId)
+    const node = graph.nodes.find((item) => item.id === nodeId)
+    if (node && candidateIds.has(node.id)) ordered.push(node)
+    for (const edge of outgoing.get(nodeId) || []) if (!visited.has(edge.to)) queue.push(edge.to)
+  }
+  for (const node of candidates) if (!visited.has(node.id)) ordered.push(node)
+  return ordered
 }
 
 function collectNodeArtifacts(state: NodeRunState): string[] {
@@ -252,7 +283,7 @@ export function WorkbenchHeader({
         <nav className="cf-workbench-mode-switch" aria-label="工作台模式">
           <Button className="active" aria-current="page"><SquarePen aria-hidden="true" />设计</Button>
           <div className="cf-workbench-runtime-controls" aria-label="运行控制">
-            <button type="button" onClick={onRun} disabled={running || paused || runBusy} title="使用真实模型与真实工具运行当前流程">
+            <button type="button" onClick={onRun} disabled={running || paused || runBusy} title="使用真实模型与真实工具测试当前调优草稿">
               <PlayCircle aria-hidden="true" />运行
             </button>
             <button type="button" className={paused ? 'active' : ''} onClick={onPause} disabled={(!running && !paused) || runBusy} title={paused ? '从最近检查点继续运行' : '在当前节点完成后暂停'}>
@@ -345,6 +376,27 @@ export function DesignView({
   const [stewardRevision, setStewardRevision] = useState('')
   const [stewardSelection, setStewardSelection] = useState<AIFlowSelection>({ node_ids: [], edge_ids: [], field_paths: [] })
   const [engineeringUnlocked, setEngineeringUnlocked] = useState(false)
+  const tuningEnabled = useMemo(() => {
+    try {
+      const protocol = JSON.parse(files.root_flow || '{}')?.protocol
+      return protocol?.id === 'CF-FARP' && String(protocol?.version) === '1.1'
+    } catch {
+      return false
+    }
+  }, [files.root_flow])
+  const [tuningRepository, setTuningRepository] = useState<TuningRepository | null>(null)
+  const [versionBusy, setVersionBusy] = useState(false)
+  useEffect(() => {
+    let active = true
+    setTuningRepository(null)
+    if (!editable || !tuningEnabled) return () => { active = false }
+    void fetchFlowTuning(flowId).then((response) => {
+      if (active) setTuningRepository(response.repository)
+    }).catch((error: any) => {
+      if (active) showToast({ title: '配方版本读取失败', description: error?.message || String(error), type: 'error' })
+    })
+    return () => { active = false }
+  }, [editable, flowId, tuningEnabled])
   const [mcpTool, setMcpTool] = useState<StudioToolResource | null>(null)
   const [mcpSource, setMcpSource] = useState<McpSourceResponse | null>(null)
   const [mcpLoading, setMcpLoading] = useState(false)
@@ -379,7 +431,7 @@ export function DesignView({
     }
   }, [executionPlanAnalysis, graph])
   const engineeringProjection = useMemo(
-    () => buildEngineeringProjection(planAwareGraph, { executionPlanV1 }),
+    () => buildEngineeringProjection(planAwareGraph, { executionPlanV1, includeResources: false }),
     [executionPlanV1, planAwareGraph],
   )
   const engineeringGraph = useMemo(() => {
@@ -449,7 +501,16 @@ export function DesignView({
     const draft = nodeDrafts[node.id] || makeNodeDraft(node)
     setSavingNodeIds((current) => new Set(current).add(node.id))
     try {
-      const result = await saveNodeDraft(flowId, files, node, draft)
+      let result: GraphResult
+      if (tuningEnabled) {
+        const repository = tuningRepository || (await fetchFlowTuning(flowId)).repository
+        if (!tuningRepository) setTuningRepository(repository)
+        const tuningResult = await saveNodeDraft(flowId, node, draft, repository.node_heads[node.id] || null)
+        setTuningRepository(tuningResult.repository)
+        result = tuningResult
+      } else {
+        result = await saveLegacyNodeDraft(flowId, files, node, draft)
+      }
       resetNodeDraft(node.id)
       onSaved(result)
       return result
@@ -463,7 +524,34 @@ export function DesignView({
         return next
       })
     }
-  }, [files, flowId, nodeDrafts, onSaved, resetNodeDraft])
+  }, [files, flowId, nodeDrafts, onSaved, resetNodeDraft, tuningEnabled, tuningRepository])
+
+  const publishTuningRelease = useCallback(async () => {
+    setVersionBusy(true)
+    try {
+      const result = await publishRecipeRelease(flowId, { message: `发布工作台配方版本 ${new Date().toLocaleString('zh-CN')}` })
+      setTuningRepository(result.repository)
+      showToast({ title: `已发布并启用 v${result.release.sequence}`, description: result.release.id, type: 'success' })
+    } catch (error: any) {
+      showToast({ title: '配方发布失败', description: error?.message || String(error), type: 'error' })
+    } finally {
+      setVersionBusy(false)
+    }
+  }, [flowId])
+
+  const activateTuningRelease = useCallback(async (releaseId: string) => {
+    if (!releaseId || releaseId === tuningRepository?.active_release_id) return
+    setVersionBusy(true)
+    try {
+      const result = await activateRecipeRelease(flowId, releaseId)
+      setTuningRepository(result.repository)
+      showToast({ title: `已激活发布版 v${result.release.sequence}`, description: '普通运行与打包使用此版本；工作台测试仍使用调优草稿', type: 'success' })
+    } catch (error: any) {
+      showToast({ title: '版本切换失败', description: error?.message || String(error), type: 'error' })
+    } finally {
+      setVersionBusy(false)
+    }
+  }, [flowId, tuningRepository?.active_release_id])
 
   const nodeEditors = openNodeEditors.flatMap((editor) => {
     const node = graph.nodes.find((item) => item.id === editor.nodeId)
@@ -574,6 +662,11 @@ export function DesignView({
   }, [engineering, flowId, selectedNode?.id, selectedNode?.scope, selectedNode?.params?.resource_id])
   const canMutateGraph = editable
   const canEditSelectedNode = Boolean(editable && selectedNode && !selectedNode.locked && selectedNode.scope !== 'root')
+  const userJourneyReadiness = useMemo(() => {
+    const nodes = orderedUserJourneyNodes(engineeringGraph)
+    const pending = nodes.filter((node) => nodeExperienceIssues(node).length > 0)
+    return { total: nodes.length, ready: nodes.length - pending.length }
+  }, [engineeringGraph])
   const visibleEngineeringRelations = useMemo(() => engineeringDataRelations.filter((relation) => (
     relation.kind === 'dependency' ? edgeVisibility.dependency : edgeVisibility.data
   )), [edgeVisibility.data, edgeVisibility.dependency, engineeringDataRelations])
@@ -620,18 +713,31 @@ export function DesignView({
           <div className={`cf-design-canvas-status ${canvasTool === 'connect' ? 'active' : ''}`} aria-live="polite"><i />{canvasTool === 'connect' ? '连线模式' : '选择模式'}</div>
           {engineering && <div className="cf-engineering-legend" aria-label="工程关系筛选">
             {([
-              ['control', '主流程'],
-              ['data', '数据流'],
-              ['dependency', '资源依赖'],
+              ['control', '配方流向'],
+              ['data', '物料流向'],
               ['branch', '条件分支'],
               ['failure', '失败处理'],
             ] as Array<[keyof EngineeringEdgeVisibility, string]>).map(([kind, label]) => (
               <label key={kind}><input type="checkbox" checked={edgeVisibility[kind]} onChange={() => setEdgeVisibility((current) => ({ ...current, [kind]: !current[kind] }))} /><i className={kind} />{label}</label>
             ))}
-            <b>{graph.nodes.length} 节点 · {engineeringProjection.resourceCount} 资源 · {engineeringProjection.controlEdgeCount} 控制 · {engineeringRelationCounts.data} 数据 · {engineeringRelationCounts.dependency} 依赖</b>
+            <b>{graph.nodes.length} 个配方步骤 · {engineeringProjection.controlEdgeCount} 条配方流 · {engineeringRelationCounts.data} 条物料流</b>
             {executionPlanV1 && <span>{executionPlanAnalysis?.execution_plan?.status === 'compiled' ? executionPlanAnalysis.execution_plan.runtime_status === 'supported' ? `ExecutionPlan 已编译 · ${executionPlanAnalysis.execution_plan.edge_count || 0} 条计划边` : `ExecutionPlan 已编译，仅工程投影 · 当前 Base 尚未支持运行` : 'ExecutionPlan 未编译 · 旧连线不会显示为运行路线'}</span>}
             {executionPlanAnalysisError && <span title={executionPlanAnalysisError}>ExecutionPlan 分析失败</span>}
           </div>}
+          {tuningEnabled && tuningRepository && <div className="cf-recipe-version-control" aria-label="配方版本控制">
+            <History aria-hidden="true" />
+            <div><strong>{tuningRepository.active_release_id ? `已发布 v${tuningRepository.releases.find((item) => item.id === tuningRepository.active_release_id)?.sequence || '-'}` : '调优草稿'}</strong><span>{Object.keys(tuningRepository.node_heads).length} 个节点已调优</span></div>
+            <select aria-label="当前发布配方版本" value={tuningRepository.active_release_id || ''} disabled={versionBusy || !tuningRepository.releases.length} onChange={(event) => void activateTuningRelease(event.target.value)}>
+              {!tuningRepository.releases.length && <option value="">尚未发布</option>}
+              {tuningRepository.releases.slice().reverse().map((release) => <option key={release.id} value={release.id}>v{release.sequence} · {release.message}</option>)}
+            </select>
+            <button type="button" disabled={versionBusy} onClick={() => void publishTuningRelease()} title="固定当前节点调优并发布为运行配方"><GitCommit aria-hidden="true" /><span>{versionBusy ? '处理中' : '发布版本'}</span></button>
+          </div>}
+          {engineering && <button type="button" className={`cf-user-journey-readiness ${userJourneyReadiness.ready === userJourneyReadiness.total ? 'ready' : ''}`} onClick={() => setEngineeringInspectorOpen(true)} title="检查当前配方步骤的普通用户体验，并查看全流程配置完成度">
+            <UserRoundCheck aria-hidden="true" />
+            <span>用户旅程</span>
+            <b>{userJourneyReadiness.ready}/{userJourneyReadiness.total}</b>
+          </button>}
           <div className="cf-design-panel-toggles">
             {engineering && <button type="button" className={engineeringInspectorOpen ? 'active' : ''} onClick={() => setEngineeringInspectorOpen((current) => !current)} title={engineeringInspectorOpen ? '收起节点详情' : '展开节点详情'} aria-pressed={engineeringInspectorOpen}><PanelRight aria-hidden="true" /><span>详情</span></button>}
             <button type="button" className={stewardOpen ? 'active' : ''} onClick={() => setStewardOpen((current) => !current)} title={stewardOpen ? '收起 AI 管家' : '展开 AI 管家'} aria-pressed={stewardOpen}><Bot aria-hidden="true" /><span>AI 管家</span></button>
@@ -686,6 +792,7 @@ export function DesignView({
         view={selectedNode ? engineeringNodeModels.get(selectedNode.id)?.view || null : null}
         unlocked={engineeringUnlocked}
         canEdit={canEditSelectedNode}
+        versioned={tuningEnabled}
         onToggleLock={() => {
           if (engineeringUnlocked) onCloseUnpinnedNodeEditors()
           setEngineeringUnlocked((current) => !current)

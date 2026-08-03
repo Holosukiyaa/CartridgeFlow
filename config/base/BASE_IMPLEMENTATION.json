@@ -1,13 +1,17 @@
 {
-  "schema_version": "0.2",
+  "schema_version": "0.3",
   "implementation_id": "cartridgeflow.reference-dev",
   "implementation_name": "CartridgeFlow Reference Development Base",
-  "implementation_version": "0.3.0",
+  "implementation_version": "0.4.0",
   "environment": "development",
   "base_contract": {
     "id": "CARTRIDGEFLOW-BASE",
-    "version": "0.2"
+    "version": "0.3"
   },
+  "supported_base_contracts": [
+    {"id": "CARTRIDGEFLOW-BASE", "version": "0.2", "status": "supported_previous"},
+    {"id": "CARTRIDGEFLOW-BASE", "version": "0.3", "status": "current"}
+  ],
   "supported_protocols": [
     {
       "id": "CF-FARP",
@@ -35,9 +39,23 @@
       "status": "supported"
     },
     {
+      "id": "CF-FARP",
+      "version": "1.1",
+      "status": "supported"
+    },
+    {
       "id": "CF-CRE",
       "version": "1",
       "status": "supported"
+    }
+  ],
+  "supported_subprotocols": [
+    {
+      "id": "CF-TUNING",
+      "version": "1.0",
+      "status": "supported",
+      "runtime_adapter": "cf-tuning.repository.v1",
+      "host_protocols": [{"id": "CF-FARP", "version": "1.1"}]
     }
   ],
   "supported_protocol_adapters": [
@@ -64,6 +82,10 @@
     {
       "id": "cf-cre.release-envelope.v1",
       "status": "supported"
+    },
+    {
+      "id": "cf-tuning.repository.v1",
+      "status": "supported"
     }
   ],
   "profiles": [
@@ -77,7 +99,9 @@
     "flow_analysis",
     "tool_transparency",
     "execution_plan_runtime",
-    "release_envelope_runtime"
+    "release_envelope_runtime",
+    "tuning_authoring",
+    "recipe_release_runtime"
   ],
   "capabilities": [
     "manifest_load",
@@ -224,7 +248,16 @@
     "execution_plan_join_runtime",
     "execution_plan_wait_resume",
     "execution_plan_cancellation",
-    "execution_plan_source_digest_guard"
+    "execution_plan_source_digest_guard",
+    "trusted_subprotocol_registry",
+    "tuning_repository_v1",
+    "tuning_revision_validate",
+    "tuning_node_head",
+    "recipe_release_snapshot_v1",
+    "recipe_release_activate",
+    "recipe_release_rollback",
+    "tuning_materialize",
+    "run_recipe_provenance"
   ],
   "tool_packs": [
     "builtin.filesystem",

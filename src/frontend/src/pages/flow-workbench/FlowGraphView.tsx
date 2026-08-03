@@ -32,7 +32,7 @@ import { createPortCounts, getPortHandleId, type EdgePortAssignment, type PortCo
 import { CanvasAnnotationCard } from './CanvasAnnotationCard.tsx'
 import { buildClusterAwareLayout } from './clusterLayout.ts'
 import { EngineeringNodeCard } from './EngineeringNodeCard.tsx'
-import { buildEngineeringDataRelations, buildEngineeringNodeModels, engineeringControlHandleId, engineeringHandleId, isEngineeringResourceNode, type EngineeringDataRelation, type EngineeringEdgeVisibility, type EngineeringNodeRenderModel } from './engineeringNode.ts'
+import { buildEngineeringDataRelations, buildEngineeringNodeModels, engineeringControlHandleId, engineeringHandleId, isEngineeringResourceNode, recipeDisplayName, type EngineeringDataRelation, type EngineeringEdgeVisibility, type EngineeringNodeRenderModel } from './engineeringNode.ts'
 import { buildOutcomeNodeModels, plainOutcomeFieldLabel, type OutcomeNodeRenderModel } from './flowNodeView.ts'
 
 /** 资源节点连线到 Root Flow 控制流的拒绝提示（供 UI 与静态断言共用，防止文案漂移） */
@@ -615,6 +615,9 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
     () => selectedLibraryCategory ? getPreset(selectedLibraryCategory.id, selectedLibraryPresetId) : null,
     [selectedLibraryCategory, selectedLibraryPresetId],
   )
+  const recipeTemplates = useMemo(() => NODE_CATEGORIES
+    .filter((category) => category.id !== 'custom')
+    .flatMap((category) => getPresets(category.id).map((preset) => ({ category, preset }))), [])
   const canvasVariables = useMemo(() => {
     const variables = new Map<string, { name: string; source: string; kind: string }>()
     graph.nodes.forEach((node) => {
@@ -785,6 +788,7 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
       const isRunActive = runEdgeStatus === 'active'
       const isRunVisited = runEdgeStatus === 'visited'
       const sourceNode = nodeById.get(edge.from)
+      const targetNode = nodeById.get(edge.to)
       const sourceAccent = isStartNode(sourceNode, edge.from)
         ? '#7d8791'
         : sourceNode ? getNodeCategory(sourceNode).color : 'var(--accent)'
@@ -797,18 +801,26 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
       const sourcePoint = layout[edge.from]
       const targetPoint = layout[edge.to]
       const loopY = sourcePoint && targetPoint ? Math.min(sourcePoint.y, targetPoint.y) - 72 - lane * 42 : undefined
+      const sourceRecipeTitle = recipeDisplayName(sourceNode, edge.from)
+      const targetRecipeTitle = recipeDisplayName(targetNode, edge.to)
+      const recipeFlowLabel = `${sourceRecipeTitle} → ${targetRecipeTitle}`
+      const routedRecipeFlowLabel = failureRoute
+        ? `失败处理：${recipeFlowLabel}`
+        : branch
+          ? `${edgeLabel ? `条件：${plainOutcomeFieldLabel(edgeLabel)}` : '条件分支'} → ${targetRecipeTitle}`
+          : recipeFlowLabel
       return {
         id: planEdgeId ? `plan-edge-${planEdgeId}-${planTransition || 'transition'}-${edge.from}-${edge.to}` : `edge-${index}-${edge.from}-${edge.to}`,
         source: edge.from,
         target: edge.to,
         sourceHandle: displayMode === 'engineering' ? engineeringControlHandleId('source', ports.sourceSide) : getPortHandleId('source', ports.sourceSide, ports.sourceIndex),
         targetHandle: displayMode === 'engineering' ? engineeringControlHandleId('target', ports.targetSide) : getPortHandleId('target', ports.targetSide, ports.targetIndex),
-        className: `${displayMode === 'engineering' ? `cf-engineering-control-edge${failureRoute ? ' failure' : branch ? ' branch' : ''}` : ''} ${runActive
+        className: `${displayMode === 'engineering' ? `cf-engineering-control-edge cf-recipe-flow-edge${failureRoute ? ' failure' : branch ? ' branch' : ''}` : ''} ${runActive
           ? isRunActive ? 'cf-run-edge-active' : isRunVisited ? 'cf-run-edge-visited' : 'cf-run-edge-pending'
           : ''}`,
         animated: isRunActive,
         type: 'default',
-        label: displayMode === 'engineering' ? edgeLabel || (failureRoute ? '失败处理' : branch ? '条件分支' : undefined) : branch ? edgeLabel || '分支' : undefined,
+        label: displayMode === 'engineering' ? routedRecipeFlowLabel : branch ? edgeLabel || '分支' : undefined,
         data: {
           scope: edge.scope || 'root',
           label: edge.label || '',
@@ -841,7 +853,7 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
         targetHandle: engineeringRelation ? engineeringHandleId('target', relation.toField!) : getPortHandleId('target', ports.targetSide, ports.targetIndex),
         className: `cf-data-edge${relation.kind === 'dependency' ? ' dependency' : ''}`,
         type: 'default',
-        label: relation.label || relation.key,
+        label: engineeringRelation ? `物料：${plainOutcomeFieldLabel(relation.fromField!)} → ${plainOutcomeFieldLabel(relation.toField!)}` : relation.label || relation.key,
         selectable: false,
         deletable: false,
         focusable: false,
@@ -1502,21 +1514,21 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
     onCloseNodeEditor?.()
   }, [onCloseNodeEditor])
 
-  const selectLibraryCategory = useCallback((categoryId: NodeCategoryId) => {
-    const preset = getPreset(categoryId)
+  const selectLibraryRecipe = useCallback((categoryId: NodeCategoryId, presetId?: string) => {
+    const preset = getPreset(categoryId, presetId)
     onCloseNodeEditor?.()
     setSelectedLibraryCategoryId(categoryId)
     setSelectedLibraryPresetId(preset.id)
     setLibraryPresetConfig({})
   }, [onCloseNodeEditor])
 
-  const startNodeTemplateDrag = useCallback((event: React.DragEvent<HTMLButtonElement>, categoryId: NodeCategoryId) => {
-    const preset = getPreset(categoryId, categoryId === selectedLibraryCategoryId ? selectedLibraryPresetId : undefined)
-    const config = categoryId === selectedLibraryCategoryId ? libraryPresetConfig : {}
+  const startNodeTemplateDrag = useCallback((event: React.DragEvent<HTMLButtonElement>, categoryId: NodeCategoryId, presetId?: string) => {
+    const preset = getPreset(categoryId, presetId || (categoryId === selectedLibraryCategoryId ? selectedLibraryPresetId : undefined))
+    const config = categoryId === selectedLibraryCategoryId && preset.id === selectedLibraryPresetId ? libraryPresetConfig : {}
     event.dataTransfer.setData(NODE_TEMPLATE_MIME, JSON.stringify({ categoryId, presetId: preset.id, presetConfig: config }))
     event.dataTransfer.effectAllowed = 'copy'
-    if (categoryId !== selectedLibraryCategoryId) selectLibraryCategory(categoryId)
-  }, [libraryPresetConfig, selectLibraryCategory, selectedLibraryCategoryId, selectedLibraryPresetId])
+    if (categoryId !== selectedLibraryCategoryId || preset.id !== selectedLibraryPresetId) selectLibraryRecipe(categoryId, preset.id)
+  }, [libraryPresetConfig, selectLibraryRecipe, selectedLibraryCategoryId, selectedLibraryPresetId])
 
   const handleNodeTemplateDragOver = useCallback((event: React.DragEvent) => {
     const types = Array.from(event.dataTransfer.types || [])
@@ -2021,24 +2033,23 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
         )}
         {!compactStatic && canvasPanel && (
           <Panel position="top-left" className={`cf-canvas-tool-panel ${canvasPanel === 'tools' || canvasPanel === 'models' || canvasPanel === 'package' ? 'resource-panel' : ''}`}>
-            <header><strong>{canvasPanel === 'nodes' ? '节点库' : canvasPanel === 'notes' ? '画布注释' : canvasPanel === 'models' ? '模型管理' : canvasPanel === 'variables' ? '流程变量' : canvasPanel === 'tools' ? '工具管理' : canvasPanel === 'package' ? '卡带打包' : canvasPanel === 'base-info' ? '基座信息' : '卡带与画布配置'}</strong><button type="button" onClick={() => { setCanvasPanel(null); setSelectedLibraryCategoryId(null) }}>×</button></header>
+            <header><strong>{canvasPanel === 'nodes' ? '配方步骤' : canvasPanel === 'notes' ? '画布注释' : canvasPanel === 'models' ? '模型管理' : canvasPanel === 'variables' ? '流程变量' : canvasPanel === 'tools' ? '工具管理' : canvasPanel === 'package' ? '卡带打包' : canvasPanel === 'base-info' ? '基座信息' : '卡带与画布配置'}</strong><button type="button" onClick={() => { setCanvasPanel(null); setSelectedLibraryCategoryId(null) }}>×</button></header>
             {canvasPanel === 'nodes' && (
               <div className="cf-canvas-node-library">
-                <p>拖到画布创建节点；右键打开新节点预配置。</p>
-                {NODE_CATEGORIES.map((category) => (
+                {recipeTemplates.map(({ category, preset }) => (
                   <button
                     type="button"
-                    key={category.id}
-                    className={selectedLibraryCategoryId === category.id ? 'active' : ''}
+                    key={`${category.id}:${preset.id}`}
+                    className={selectedLibraryCategoryId === category.id && selectedLibraryPresetId === preset.id ? 'active' : ''}
                     disabled={!onCreateNode}
                     draggable={Boolean(onCreateNode)}
-                    onDragStart={(event) => startNodeTemplateDrag(event, category.id)}
-                    onContextMenu={(event) => { event.preventDefault(); selectLibraryCategory(category.id) }}
-                    title="拖动创建；右键配置"
+                    onDragStart={(event) => startNodeTemplateDrag(event, category.id, preset.id)}
+                    onClick={() => selectLibraryRecipe(category.id, preset.id)}
+                    title={`${preset.label}配方`}
                   >
                     <GripVertical className="cf-node-library-grip" aria-hidden="true" />
                     <i style={{ background: category.color }} />
-                    <span><b>{category.label}</b><small>{category.description}</small></span>
+                    <span><b>{preset.label}</b><small>{preset.description}</small></span>
                     <Settings className="cf-node-library-arrow" aria-hidden="true" />
                   </button>
                 ))}
@@ -2108,29 +2119,13 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
         {!compactStatic && canvasPanel === 'nodes' && selectedLibraryCategory && selectedLibraryPreset && (
           <Panel position="top-left" className="cf-node-template-config">
             <header>
-              <div><span>新节点预配置</span><strong>{selectedLibraryCategory.label}</strong></div>
+              <div><span>配方参数</span><strong>{selectedLibraryPreset.label}</strong></div>
               <button type="button" onClick={() => setSelectedLibraryCategoryId(null)}>×</button>
             </header>
             <div className="cf-node-template-config-body">
               <section className="cf-node-template-summary" style={{ '--node-accent': selectedLibraryCategory.color } as React.CSSProperties}>
                 <i />
-                <div><strong>{selectedLibraryCategory.label}</strong><p>{selectedLibraryCategory.description}</p></div>
-              </section>
-              <section className="cf-node-template-presets">
-                <label>节点用途</label>
-                <div>
-                  {getPresets(selectedLibraryCategory.id).map((preset) => (
-                    <button
-                      type="button"
-                      key={preset.id}
-                      className={selectedLibraryPreset.id === preset.id ? 'active' : ''}
-                      onClick={() => { setSelectedLibraryPresetId(preset.id); setLibraryPresetConfig({}) }}
-                    >
-                      <strong>{preset.label}</strong>
-                      <span>{preset.description}</span>
-                    </button>
-                  ))}
-                </div>
+                <div><strong>{selectedLibraryPreset.label}</strong><p>{selectedLibraryPreset.description}</p></div>
               </section>
               <section className="cf-node-template-fields">
                 <label>预设参数</label>

@@ -9,6 +9,7 @@ from core.cartridge.validator import ManifestValidator
 from core.cartridge.validator import ManifestValidationError
 from core.data_paths import DEV_CARTRIDGES_DIR
 from core.protocol import load_protocol_release_catalog
+from core.studio.tuning_repository import TuningRepositoryStore
 
 
 class DevFlowManager:
@@ -31,6 +32,7 @@ class DevFlowManager:
         self.base_contract = self.release_catalog.data["base_contract"]
         self.dev_dir = self.root / DEV_CARTRIDGES_DIR
         self.validator = ManifestValidator()
+        self.tuning = TuningRepositoryStore(self.root)
         self.dev_dir.mkdir(parents=True, exist_ok=True)
 
     def create_flow(self, flow_id: str, name: str, description: str = "") -> dict:
@@ -72,6 +74,8 @@ class DevFlowManager:
         root_flow = self._root_flow_template(flow_id, name)
         self._write_json(path / "manifest.json", manifest)
         self._write_json(path / "root.flow.json", root_flow)
+        if self._has_feature(root_flow["protocol"], "recipe_versioning"):
+            self.tuning.initialize(flow_id, root_flow)
         return {"id": flow_id, "path": str(path), "manifest": manifest, "root_flow": root_flow}
 
     def read_files(self, flow_id: str) -> dict:
@@ -84,6 +88,7 @@ class DevFlowManager:
     def delete_flow(self, flow_id: str) -> dict:
         path = self._flow_path(flow_id)
         shutil.rmtree(path)
+        self.tuning.delete(flow_id)
         return {"ok": True, "id": flow_id}
 
     def save_file(self, flow_id: str, file_type: str, content: str) -> dict:
@@ -100,6 +105,10 @@ class DevFlowManager:
         temp_target = target.with_suffix(target.suffix + ".tmp")
         temp_target.write_text(content, encoding="utf-8")
         temp_target.replace(target)
+        if file_type == "root_flow" and isinstance(parsed_content, dict):
+            protocol = parsed_content.get("protocol") if isinstance(parsed_content.get("protocol"), dict) else {}
+            if self._has_feature(protocol, "recipe_versioning"):
+                self.tuning.reconcile_node_heads(flow_id, parsed_content)
         return {"file_type": file_type, "saved": True}
 
     def validate_files(self, flow_id: str, files: dict | None = None) -> dict:
@@ -139,6 +148,10 @@ class DevFlowManager:
         current.update(files or {})
         manifest = json.loads(current.get("manifest") or "{}")
         root_flow = json.loads(current.get("root_flow") or "{}")
+        protocol = root_flow.get("protocol") if isinstance(root_flow.get("protocol"), dict) else {}
+        if self._has_feature(protocol, "recipe_versioning"):
+            root_flow, tuning_context = self.tuning.materialize_draft(flow_id, root_flow)
+            return {**manifest, "root_flow": root_flow, "tuning_context": tuning_context}
         return {**manifest, "root_flow": root_flow}
 
     def _flow_path(self, flow_id: str) -> Path:
@@ -244,7 +257,7 @@ class DevFlowManager:
             "runtime_contract": {
                 "protocol": self.default_protocol_id,
                 "protocol_version": self.default_protocol_version,
-                "required_profiles": ["runtime_core", "flow_analysis", "tool_transparency", "execution_plan_runtime", "dynamic_decision_runtime", "interactive_decision_runtime", "interaction_runtime"],
+                "required_profiles": ["runtime_core", "flow_analysis", "tool_transparency", "execution_plan_runtime", "dynamic_decision_runtime", "interactive_decision_runtime", "interaction_runtime", "tuning_authoring", "recipe_release_runtime"],
                 "recommended_profiles": ["testbench_core", "dev_authoring"],
                 "required_capabilities": [
                     "manifest_load",
@@ -321,6 +334,15 @@ class DevFlowManager:
                     "execution_plan_wait_resume",
                     "execution_plan_cancellation",
                     "execution_plan_source_digest_guard",
+                    "trusted_subprotocol_registry",
+                    "tuning_repository_v1",
+                    "tuning_revision_validate",
+                    "tuning_node_head",
+                    "recipe_release_snapshot_v1",
+                    "recipe_release_activate",
+                    "recipe_release_rollback",
+                    "tuning_materialize",
+                    "run_recipe_provenance",
                 ],
                 "optional_capabilities": [
                     "artifact_preview",
@@ -331,6 +353,13 @@ class DevFlowManager:
                 ],
                 "required_tools": [],
                 "optional_tools": [],
+            },
+            "tuning_contract": {
+                "protocol": "CF-TUNING",
+                "protocol_version": "1.0",
+                "adapter": "cf-tuning.repository.v1",
+                "release_entry": "tuning/release.json",
+                "required_for": ["production", "package", "publish"],
             },
             "delivery_readiness": {"level": "dev", "certification_target": f"{self.default_protocol_id}@{self.default_protocol_version}", "notes": "Development flow generated by Flow Developer Lab."},
             "runtime": {"type": "html_generator", "adapter": "builtin:html_generator"},

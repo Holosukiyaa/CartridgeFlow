@@ -1,4 +1,4 @@
-from .base_manifest import BaseManifestError, load_base_implementation, protocol_adapter_status, supports_protocol_release
+from .base_manifest import BaseManifestError, load_base_implementation, protocol_adapter_status, supports_base_contract, supports_protocol_release, supports_subprotocol_release
 from .capability_registry import ProtocolRegistry, ProtocolRegistryError
 from .release_catalog import ProtocolReleaseCatalog, ProtocolReleaseCatalogError, load_protocol_release_catalog
 from .features import has_protocol_feature, protocol_features
@@ -59,4 +59,6 @@ __all__ = [
     "validate_v09_flow_contract",
     "validate_v10_flow_contract",
     "supports_protocol_release",
+    "supports_base_contract",
+    "supports_subprotocol_release",
 ]

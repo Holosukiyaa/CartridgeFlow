@@ -99,8 +99,9 @@ class ApiSurfaceTests(unittest.TestCase):
         response = self.client.get("/api/base")
         self.assertEqual(200, response.status_code)
         catalog = response.json()["protocol_catalog"]
-        self.assertEqual("CF-FARP@1.0", catalog["default_for_new_flows"]["label"])
-        self.assertEqual("current", next(item["lifecycle"] for item in catalog["releases"] if item["version"] == "1.0"))
+        self.assertEqual("CF-FARP@1.1", catalog["default_for_new_flows"]["label"])
+        self.assertEqual("supported_previous", next(item["lifecycle"] for item in catalog["releases"] if item["version"] == "1.0"))
+        self.assertEqual("current", next(item["lifecycle"] for item in catalog["releases"] if item["version"] == "1.1"))
 
     def test_node_create_applies_complete_business_configuration_atomically(self):
         with tempfile.TemporaryDirectory() as temp_dir:

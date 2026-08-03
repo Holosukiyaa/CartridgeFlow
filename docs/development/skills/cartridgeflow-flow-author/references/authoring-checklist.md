@@ -6,7 +6,7 @@ Create through `POST /api/lab/flows` or the workbench's **新建卡带** action.
 
 Use a `dev.` cartridge ID, a Chinese business name, and a one-sentence Chinese description by default. Use English only for code symbols, protocol values, field keys, paths, and external tool parameters. Do not place secrets, generated output, or local credentials in the cartridge.
 
-## Typed CF-FARP@1.0 Process Node
+## Typed CF-FARP@1.1 Process Node
 
 Use this shape for every process node:
 
@@ -168,4 +168,3 @@ npm --prefix src/frontend run build
 ```
 
 Resolve analyzer blockers instead of bypassing a contract. Warnings are still design evidence and should be explained at handoff.
-

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .base_manifest import supports_protocol_release
+from .base_manifest import supports_base_contract, supports_protocol_release, supports_subprotocol_release
 from .capability_registry import ProtocolRegistry
 from .flow_contract import build_flow_contract_report_for_adapter, build_v02_flow_contract_report, build_v03_flow_contract_report, build_v04_flow_contract_report, build_v05_flow_contract_report
 from .report import report_status, summarize_findings
@@ -80,12 +80,7 @@ def build_compatibility_report(
     base_contract_supported = True
     requires_base_contract = bool(release and "base_contract" in (release.get("features") or []))
     if requires_base_contract:
-        base_contract_supported = bool(
-            required_base_id
-            and required_base_version
-            and required_base_id == implementation_base_id
-            and required_base_version == implementation_base_version
-        )
+        base_contract_supported = bool(required_base_id and required_base_version and supports_base_contract(base, required_base_id, required_base_version))
         if not required_base_id or not required_base_version:
             findings.append(_finding("blocker", "missing_base_contract", f"CF-FARP@{protocol_version} requires manifest.base_contract."))
         elif not base_contract_supported:
@@ -93,6 +88,25 @@ def build_compatibility_report(
                 "blocker",
                 "unsupported_base_contract",
                 f"Base implements {implementation_base_id}@{implementation_base_version}, but cartridge requires {required_base_id}@{required_base_version}",
+            ))
+
+    for subprotocol in (release or {}).get("trusted_subprotocols") or []:
+        if not isinstance(subprotocol, dict) or not subprotocol.get("required"):
+            continue
+        sub_id = str(subprotocol.get("id") or "")
+        sub_version = str(subprotocol.get("version") or "")
+        tuning_contract = manifest.get("tuning_contract") if isinstance(manifest.get("tuning_contract"), dict) else {}
+        if str(tuning_contract.get("protocol") or "") != sub_id or str(tuning_contract.get("protocol_version") or "") != sub_version:
+            findings.append(_finding(
+                "blocker",
+                "trusted_subprotocol_contract_missing",
+                f"{protocol_id}@{protocol_version} requires manifest.tuning_contract for {sub_id}@{sub_version}.",
+            ))
+        if not supports_subprotocol_release(base, sub_id, sub_version, protocol_id, protocol_version):
+            findings.append(_finding(
+                "blocker",
+                "trusted_subprotocol_unsupported",
+                f"Base does not support trusted subprotocol {sub_id}@{sub_version} for {protocol_id}@{protocol_version}.",
             ))
 
     base_profiles = set(base.get("profiles") or [])

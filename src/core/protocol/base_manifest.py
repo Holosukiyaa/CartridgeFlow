@@ -33,7 +33,7 @@ def validate_base_implementation(data: dict) -> None:
             raise BaseManifestError(f"base.{field} is required")
     if data.get("environment") not in {"development", "production", "test"}:
         raise BaseManifestError("base.environment must be development, production, or test")
-    if data.get("schema_version") == "0.2":
+    if data.get("schema_version") in {"0.2", "0.3"}:
         base_contract = data.get("base_contract")
         if not isinstance(base_contract, dict):
             raise BaseManifestError("base.base_contract is required for schema 0.2")
@@ -41,6 +41,14 @@ def validate_base_implementation(data: dict) -> None:
             raise BaseManifestError("base.base_contract.id is required")
         if not isinstance(base_contract.get("version"), str) or not base_contract.get("version").strip():
             raise BaseManifestError("base.base_contract.version is required")
+    supported_base_contracts = data.get("supported_base_contracts", [])
+    if data.get("schema_version") == "0.3" and not isinstance(supported_base_contracts, list):
+        raise BaseManifestError("base.supported_base_contracts must be an array")
+    for index, item in enumerate(supported_base_contracts if isinstance(supported_base_contracts, list) else []):
+        if not isinstance(item, dict) or not item.get("id") or not item.get("version"):
+            raise BaseManifestError(f"base.supported_base_contracts[{index}] requires id and version")
+        if item.get("status") not in {"current", "supported_previous"}:
+            raise BaseManifestError(f"base.supported_base_contracts[{index}].status is invalid")
     if not isinstance(data.get("supported_protocols"), list):
         raise BaseManifestError("base.supported_protocols must be an array")
     for index, item in enumerate(data.get("supported_protocols") or []):
@@ -50,6 +58,21 @@ def validate_base_implementation(data: dict) -> None:
             raise BaseManifestError(f"base.supported_protocols[{index}] requires id and version")
         if item.get("status") not in _ADAPTER_STATUSES:
             raise BaseManifestError(f"base.supported_protocols[{index}].status is invalid")
+    supported_subprotocols = data.get("supported_subprotocols", [])
+    if data.get("schema_version") == "0.3" and not isinstance(supported_subprotocols, list):
+        raise BaseManifestError("base.supported_subprotocols must be an array")
+    for index, item in enumerate(supported_subprotocols if isinstance(supported_subprotocols, list) else []):
+        if not isinstance(item, dict):
+            raise BaseManifestError(f"base.supported_subprotocols[{index}] must be an object")
+        if not item.get("id") or not item.get("version"):
+            raise BaseManifestError(f"base.supported_subprotocols[{index}] requires id and version")
+        if item.get("status") not in _ADAPTER_STATUSES:
+            raise BaseManifestError(f"base.supported_subprotocols[{index}].status is invalid")
+        if not isinstance(item.get("runtime_adapter"), str) or not item["runtime_adapter"].strip():
+            raise BaseManifestError(f"base.supported_subprotocols[{index}].runtime_adapter is required")
+        hosts = item.get("host_protocols")
+        if not isinstance(hosts, list) or not hosts or any(not isinstance(host, dict) or not host.get("id") or not host.get("version") for host in hosts):
+            raise BaseManifestError(f"base.supported_subprotocols[{index}].host_protocols requires protocol identities")
     adapters = data.get("supported_protocol_adapters", [])
     if not isinstance(adapters, list):
         raise BaseManifestError("base.supported_protocol_adapters must be an array")
@@ -101,3 +124,36 @@ def supports_protocol_release(base: dict, release: dict | None) -> bool:
         and item.get("status") in _ADAPTER_STATUSES
         for item in base.get("supported_protocols") or []
     )
+
+
+def supports_base_contract(base: dict, contract_id: str, contract_version: str) -> bool:
+    current = base.get("base_contract") if isinstance(base.get("base_contract"), dict) else {}
+    if (str(current.get("id") or ""), str(current.get("version") or "")) == (str(contract_id), str(contract_version)):
+        return True
+    return any(
+        isinstance(item, dict)
+        and item.get("status") in {"current", "supported_previous"}
+        and (str(item.get("id") or ""), str(item.get("version") or "")) == (str(contract_id), str(contract_version))
+        for item in base.get("supported_base_contracts") or []
+    )
+
+
+def supports_subprotocol_release(
+    base: dict,
+    subprotocol_id: str,
+    subprotocol_version: str,
+    host_protocol_id: str,
+    host_protocol_version: str,
+) -> bool:
+    for item in base.get("supported_subprotocols") or []:
+        if not isinstance(item, dict) or item.get("status") != "supported":
+            continue
+        if str(item.get("id")) != str(subprotocol_id) or str(item.get("version")) != str(subprotocol_version):
+            continue
+        return any(
+            isinstance(host, dict)
+            and str(host.get("id")) == str(host_protocol_id)
+            and str(host.get("version")) == str(host_protocol_version)
+            for host in item.get("host_protocols") or []
+        )
+    return False

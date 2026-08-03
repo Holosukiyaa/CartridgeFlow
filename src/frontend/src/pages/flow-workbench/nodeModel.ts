@@ -1,11 +1,12 @@
 import dagre from '@dagrejs/dagre'
 import type { FlowEdge, FlowGraph, FlowNode } from '../../api.ts'
 import type { NodeCategory, NodeDraft, NodePreset, NodeCategoryId } from './types.ts'
+import { normalizeNodeExperience } from './nodeExperience.ts'
 
 export type FlowNodeViewMode = 'engineering' | 'detailed' | 'compact'
 
 export const FLOW_NODE_DIMENSIONS: Record<FlowNodeViewMode, { width: number; height: number }> = {
-  engineering: { width: 334, height: 600 },
+  engineering: { width: 320, height: 360 },
   detailed: { width: 440, height: 436 },
   compact: { width: 280, height: 146 },
 }
@@ -113,25 +114,16 @@ export function getFlowNodeDimensions(
 
   const inputs = countEntries(node.inputs) + countEntries(node.input_binding) + (node.input_schema ? 1 : 0)
   const outputs = countEntries(node.outputs) + (node.output || node.primary_output || node.output_contract ? 1 : 0)
-  // Only input/output sections render on the engineering card (data-chain
-  // ports); bindings/execution/routes/policies live in the detail panel.
-  const sections = [inputs, outputs].filter(Boolean)
   const boundary = isBoundaryNodeForDimensions(node)
-  // Every section and every field is shown (no hidden info) — estimate them all.
-  const visibleSections = sections
-  const fieldRows = visibleSections.reduce((total, count) => total + count, 0)
-  const moreRows = 0
 
   if (viewMode === 'engineering') {
     const recipeHeight = estimateEngineeringRecipeHeight(node)
-    // Guided copy block (recipe strip + what + tip) absorbed from the outcome view.
-    const guidedHeight = 78
-    // Conservative estimate: recipe rows wrap long values (see .cf-engineering-recipe dd),
-    // sections render up to 3 field rows each. The wrapper height must fit all content.
-    const height = 106 + visibleSections.length * 27 + fieldRows * 17 + moreRows * 16 + recipeHeight + guidedHeight
+    const descriptionHeight = node.params?.description || node.description ? 58 : 0
+    const materialHeight = inputs || outputs ? 70 : 0
+    const height = 76 + recipeHeight + descriptionHeight + materialHeight
     return {
-      width: boundary ? 292 : 334,
-      height: Math.max(boundary ? 196 : 246, height),
+      width: boundary ? 284 : 320,
+      height: Math.max(boundary ? 166 : 210, height),
     }
   }
 
@@ -656,7 +648,12 @@ export function makeNodeDraft(node: FlowNode): NodeDraft {
     failurePolicy: String(node.failure_policy || node.data?.failure_policy || defaults.failurePolicy || ''),
     permission: String(node.permission || node.data?.permission || defaults.permission || ''),
     auditLog: Boolean(node.audit_log ?? node.data?.audit_log ?? defaults.auditLog ?? false),
+    experience: normalizeNodeExperience(node),
     description: params.description || params.message || params.prompt || '',
+    systemPrompt: String(params.system_prompt || params.system || ''),
+    prompt: String(params.prompt || ''),
+    temperature: String(params.temperature ?? ''),
+    maxTokens: String(params.max_tokens ?? params.maxTokens ?? ''),
     input: params.input || params.source || '',
     optionalInput: params.optional_input || params.optional_inputs || '',
     output: params.output || params.target || '',
@@ -722,6 +719,7 @@ export function buildProtocolNodePayload(draft: NodeDraft, category: NodeCategor
     executor: draft.executor || defaults.executor,
     effect: draft.effect || defaults.effect,
     display_name: draft.displayName || draft.title || null,
+    experience: draft.experience,
     component_ref: kind === 'interaction' ? draft.componentRef || null : null,
     interaction_mode: kind === 'interaction' ? draft.interactionMode || 'display' : null,
     input_binding: kind === 'interaction' ? inputBinding : null,

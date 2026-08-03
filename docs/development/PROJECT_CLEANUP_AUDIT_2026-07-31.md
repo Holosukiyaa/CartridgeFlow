@@ -437,6 +437,8 @@ src/
           newFlowSetup.ts
           nodeAuthoring.ts
           nodeBuilder.ts
+          NodeExperiencePanel.tsx
+          nodeExperience.ts
           NodeDetailCard.tsx
           nodeDetails.ts
           nodeEditing.ts

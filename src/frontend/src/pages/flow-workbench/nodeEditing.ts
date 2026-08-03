@@ -1,6 +1,7 @@
-import { updateFlowNode, type FlowFiles, type FlowNode } from '../../api.ts'
+import { createNodeTuningRevision, updateFlowNode, type FlowFiles, type FlowNode } from '../../api.ts'
 import { buildPresetRuntimeParams, buildUserFormInputs } from './nodeBuilder.ts'
-import { CATEGORY_BY_ID, buildProtocolNodePayload } from './nodeModel.ts'
+import { buildProtocolNodePayload, CATEGORY_BY_ID } from './nodeModel.ts'
+import type { TuningRevisionResult } from '../../api.ts'
 import type { GraphResult, NodeDraft } from './types.ts'
 
 function parseJsonField(value: string, label: string, fallback: unknown) {
@@ -18,7 +19,62 @@ function setOptionalParam(params: Record<string, any>, key: string, value: unkno
   else params[key] = value
 }
 
-export async function saveNodeDraft(flowId: string, files: FlowFiles, node: FlowNode, draft: NodeDraft): Promise<GraphResult> {
+export async function saveNodeDraft(flowId: string, node: FlowNode, draft: NodeDraft, expectedHead: string | null): Promise<TuningRevisionResult> {
+  const category = CATEGORY_BY_ID.get(draft.category)
+  if (!category) throw new Error(`未知节点类型：${draft.category}`)
+
+  const tools = parseJsonField(draft.tools, 'Tools', null)
+  if (tools !== null && !Array.isArray(tools)) throw new Error('Tools JSON 必须是数组')
+  const params = parseJsonField(draft.params, 'Params', {})
+  if (!params || Array.isArray(params) || typeof params !== 'object') throw new Error('Params JSON 必须是对象')
+  const inputBinding = parseJsonField(draft.inputBinding, '输入绑定', {})
+  parseJsonField(draft.actionRoutes, '动作路由', {})
+  parseJsonField(draft.mcpBinding, 'MCP 绑定', {})
+  if (draft.decisionContract.trim()) parseJsonField(draft.decisionContract, '决策契约', {})
+  if (draft.timeoutMs && (!Number.isFinite(Number(draft.timeoutMs)) || Number(draft.timeoutMs) <= 0)) throw new Error('超时时间必须是大于 0 的数字')
+  if (draft.temperature && (!Number.isFinite(Number(draft.temperature)) || Number(draft.temperature) < 0 || Number(draft.temperature) > 2)) throw new Error('温度必须是 0 到 2 之间的数字')
+  if (draft.maxTokens && (!Number.isInteger(Number(draft.maxTokens)) || Number(draft.maxTokens) <= 0)) throw new Error('最大输出必须是大于 0 的整数')
+
+  const nextParams = buildPresetRuntimeParams(params, draft.category, draft.preset, draft.presetConfig, {
+    description: draft.description,
+    input: draft.input,
+    output: draft.output,
+  })
+  nextParams.save_to = draft.saveTo
+  nextParams.condition = draft.condition
+  setOptionalParam(nextParams, 'system_prompt', draft.systemPrompt)
+  setOptionalParam(nextParams, 'prompt', draft.prompt)
+  setOptionalParam(nextParams, 'temperature', draft.temperature === '' ? '' : Number(draft.temperature))
+  setOptionalParam(nextParams, 'max_tokens', draft.maxTokens === '' ? '' : Number(draft.maxTokens))
+  setOptionalParam(nextParams, 'optional_input', draft.optionalInput)
+  setOptionalParam(nextParams, 'replay_policy', draft.replayPolicy)
+  setOptionalParam(nextParams, 'idempotency', draft.idempotency)
+  setOptionalParam(nextParams, 'artifact_type', draft.artifactType)
+  setOptionalParam(nextParams, 'delivery_path', draft.deliveryPath)
+  setOptionalParam(nextParams, 'model_role', draft.modelRole)
+
+  return createNodeTuningRevision(flowId, node.id, {
+    expected_head: expectedHead,
+    message: `更新“${draft.displayName || draft.title || node.id}”节点配置`,
+    patch: {
+      title: draft.title,
+      display_name: draft.displayName || draft.title,
+      description: draft.description,
+      experience: draft.experience,
+      agent: draft.agent || null,
+      model_role: draft.modelRole || null,
+      tools,
+      params: nextParams,
+      endpoint: draft.endpoint || null,
+      timeout_ms: draft.timeoutMs ? Number(draft.timeoutMs) : null,
+      input_binding: inputBinding,
+      inputs: node.inputs || {},
+      outputs: node.outputs || {},
+    },
+  })
+}
+
+export async function saveLegacyNodeDraft(flowId: string, files: FlowFiles, node: FlowNode, draft: NodeDraft): Promise<GraphResult> {
   const category = CATEGORY_BY_ID.get(draft.category)
   if (!category) throw new Error(`未知节点类型：${draft.category}`)
 
@@ -31,6 +87,8 @@ export async function saveNodeDraft(flowId: string, files: FlowFiles, node: Flow
   parseJsonField(draft.mcpBinding, 'MCP 绑定', {})
   if (draft.decisionContract.trim()) parseJsonField(draft.decisionContract, '决策契约', {})
   if (draft.timeoutMs && (!Number.isFinite(Number(draft.timeoutMs)) || Number(draft.timeoutMs) <= 0)) throw new Error('超时时间必须是大于 0 的数字')
+  if (draft.temperature && (!Number.isFinite(Number(draft.temperature)) || Number(draft.temperature) < 0 || Number(draft.temperature) > 2)) throw new Error('温度必须是 0 到 2 之间的数字')
+  if (draft.maxTokens && (!Number.isInteger(Number(draft.maxTokens)) || Number(draft.maxTokens) <= 0)) throw new Error('最大输出必须是大于 0 的整数')
 
   const nextParams = buildPresetRuntimeParams(params, draft.category, draft.preset, draft.presetConfig, {
     description: draft.description,
@@ -39,6 +97,10 @@ export async function saveNodeDraft(flowId: string, files: FlowFiles, node: Flow
   })
   nextParams.save_to = draft.saveTo
   nextParams.condition = draft.condition
+  setOptionalParam(nextParams, 'system_prompt', draft.systemPrompt)
+  setOptionalParam(nextParams, 'prompt', draft.prompt)
+  setOptionalParam(nextParams, 'temperature', draft.temperature === '' ? '' : Number(draft.temperature))
+  setOptionalParam(nextParams, 'max_tokens', draft.maxTokens === '' ? '' : Number(draft.maxTokens))
   setOptionalParam(nextParams, 'optional_input', draft.optionalInput)
   setOptionalParam(nextParams, 'replay_policy', draft.replayPolicy)
   setOptionalParam(nextParams, 'idempotency', draft.idempotency)

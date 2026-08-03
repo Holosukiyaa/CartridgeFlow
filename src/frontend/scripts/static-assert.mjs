@@ -44,6 +44,10 @@ check(
   src.includes('<FlowNodeInternalsSync nodeIds={canvasNodeIds} />'),
   'React Flow remeasures node handles after a canvas mode remount',
 )
+check(
+  src.includes("label: displayMode === 'engineering' ? routedRecipeFlowLabel"),
+  '工程画布的控制线使用配方流向标签，不泄露内部边 ID',
+)
 
 const decl = src.match(/export const RESOURCE_EDGE_REJECT_MESSAGE = '([^']+)'/)
 check(Boolean(decl), 'RESOURCE_EDGE_REJECT_MESSAGE 常量已声明')

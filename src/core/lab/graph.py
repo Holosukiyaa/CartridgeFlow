@@ -29,6 +29,8 @@ class FlowGraphBuilder:
                 "executor": state.get("executor"),
                 "effect": state.get("effect"),
                 "display_name": state.get("display_name"),
+                "description": state.get("description"),
+                "experience": state.get("experience"),
                 "component_ref": state.get("component_ref"),
                 "interaction_mode": state.get("interaction_mode"),
                 "input_binding": state.get("input_binding"),

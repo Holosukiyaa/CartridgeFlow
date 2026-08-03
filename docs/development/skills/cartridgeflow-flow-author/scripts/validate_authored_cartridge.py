@@ -93,7 +93,7 @@ def required_text_findings(manifest: dict[str, Any], root_flow: dict[str, Any]) 
 def execution_plan_findings(root_flow: dict[str, Any]) -> list[dict[str, str]]:
     """Flag a broken main chain without rejecting protocol-legal dead ends.
 
-    CF-FARP@1.0 allows a state to end the flow with no successful outgoing
+    CF-FARP@1.1 allows a state to end the flow with no successful outgoing
     edge, so this is a warning, not a blocker. It exists because a lost
     sequence edge (e.g. an interaction node whose approval path was not saved)
     silently breaks the chain and degrades both the runner and the canvas.
@@ -475,7 +475,7 @@ def interaction_prompt_findings(root_flow: dict[str, Any]) -> list[dict[str, str
 
 
 def node_semantic_findings(root_flow: dict[str, Any]) -> list[dict[str, str]]:
-    """Reject common runtime-valid but CF-FARP@1.0-invalid node disguises."""
+    """Reject common runtime-valid but CF-FARP@1.1-invalid node disguises."""
     findings: list[dict[str, str]] = []
     states = root_flow.get("states") if isinstance(root_flow.get("states"), dict) else {}
     for node_id, state in states.items():

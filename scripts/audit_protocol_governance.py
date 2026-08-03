@@ -12,7 +12,7 @@ if str(SOURCE_ROOT) not in sys.path:
     sys.path.insert(0, str(SOURCE_ROOT))
 
 from core.protocol import load_base_implementation, load_protocol_release_catalog
-from core.protocol.base_manifest import supports_protocol_release
+from core.protocol.base_manifest import supports_protocol_release, supports_subprotocol_release
 
 
 def audit(root: Path = ROOT) -> list[str]:
@@ -22,7 +22,7 @@ def audit(root: Path = ROOT) -> list[str]:
     root_files = sorted(path.name for path in protocol_dir.iterdir() if path.is_file() and path.name != "README.md")
     if root_files:
         errors.append(f"protocol root must only contain README.md and category directories: {root_files}")
-    for directory in ("base", "catalog", "flow-authoring", "governance", "release-envelope"):
+    for directory in ("base", "catalog", "flow-authoring", "governance", "release-envelope", "tuning"):
         if not (protocol_dir / directory).is_dir():
             errors.append(f"protocol/{directory}/ directory is missing")
 
@@ -52,6 +52,18 @@ def audit(root: Path = ROOT) -> list[str]:
         for field in ("runtime_adapter", "features"):
             if field in release and registry and registry.get(field) != release[field]:
                 errors.append(f"{label}: release manifest {field} does not match registry {field}")
+        for subprotocol in release.get("trusted_subprotocols") or []:
+            registry_path = protocol_dir / str(subprotocol.get("registry") or "")
+            sub_label = f"{subprotocol.get('id')}@{subprotocol.get('version')}"
+            if not registry_path.is_file():
+                errors.append(f"{label}: trusted subprotocol registry is missing: {subprotocol.get('registry')}")
+                continue
+            sub_registry = _read_json(registry_path, errors)
+            if sub_registry and (str(sub_registry.get("id")), str(sub_registry.get("version"))) != (str(subprotocol.get("id")), str(subprotocol.get("version"))):
+                errors.append(f"{label}: trusted subprotocol identity does not match {sub_label}")
+            hosts = sub_registry.get("host_protocols") if sub_registry else []
+            if not any(isinstance(host, dict) and str(host.get("id")) == release["id"] and str(host.get("version")) == release["version"] for host in hosts or []):
+                errors.append(f"{label}: trusted subprotocol {sub_label} does not declare this host release")
         for field, registry_field in (("profiles", "profiles_file"), ("capabilities", "capabilities_file")):
             value = release.get(field)
             if not isinstance(value, str) or not (protocol_dir / value).is_file():
@@ -103,7 +115,7 @@ def audit(root: Path = ROOT) -> list[str]:
     if base_document != expected_base_document:
         errors.append(f"{base_contract['id']}@{base_version} document must live under protocol/base/{base_version}/")
     elif not (root / base_document).is_file():
-        errors.append("CARTRIDGEFLOW-BASE-0.2 document is missing")
+        errors.append(f"{base_contract['id']}@{base_version} document is missing")
 
     snapshot_keys = {
         (data.get("id"), str(data.get("version")))
@@ -141,6 +153,15 @@ def audit(root: Path = ROOT) -> list[str]:
     default_release = catalog.get(*default_key)
     if not supports_protocol_release(base, default_release):
         errors.append(f"Base must support the default new-flow release through its adapter or legacy release declaration: {default_key[0]}@{default_key[1]}")
+    for subprotocol in (default_release or {}).get("trusted_subprotocols") or []:
+        if subprotocol.get("required") and not supports_subprotocol_release(
+            base,
+            str(subprotocol.get("id") or ""),
+            str(subprotocol.get("version") or ""),
+            default_key[0],
+            default_key[1],
+        ):
+            errors.append(f"Base must support required trusted subprotocol {subprotocol.get('id')}@{subprotocol.get('version')} for {default_key[0]}@{default_key[1]}")
 
     _require_text(root / "src/core/protocol/capability_registry.py", "load_protocol_release_catalog", errors)
     _require_text(root / "src/core/lab/dev_flow.py", "self.default_protocol_version", errors)
@@ -155,12 +176,12 @@ def audit(root: Path = ROOT) -> list[str]:
         _require_text(root / document, "release_manifest.json", errors)
 
     baseline_headers = {
-        "protocol/governance/GOVERNANCE.md": "CF-FARP@1.0",
+        "protocol/governance/GOVERNANCE.md": "CF-FARP@1.1",
     }
     for document, marker in baseline_headers.items():
         header = "\n".join((root / document).read_text(encoding="utf-8").splitlines()[:24])
         if marker not in header:
-            errors.append(f"{document} must present the v1.0 release baseline in its header")
+            errors.append(f"{document} must present the v1.1 release baseline in its header")
 
     stale_phrases = ("最新 FARP v0.8", "v0.7 是最新目标规范", "目标协议基线：`CARTRIDGEFLOW-BASE@0.2`、`CF-FARP@0.8`")
     for path in (root / "docs").rglob("*.md"):

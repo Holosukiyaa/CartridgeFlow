@@ -498,7 +498,10 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
   const selectNode = useCallback((node: FlowNode) => {
     setSelectedNode(node)
     setFocusNodeId(node.id)
-    setOpenNodeEditors((current) => current.filter((editor) => editor.pinned || editor.nodeId === node.id))
+    setOpenNodeEditors((current) => {
+      const next = current.filter((editor) => editor.pinned || editor.nodeId === node.id)
+      return next.length === current.length && next.every((editor, index) => editor === current[index]) ? current : next
+    })
   }, [])
 
   const openGuidedNodeEditor = useCallback((node: FlowNode, section: NodeDetailSection) => {
@@ -559,6 +562,8 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
     const nodeId = `${categoryId}_${Date.now().toString(36)}`
     try {
       const presetId = options?.presetId || (category.id === 'custom' ? 'blank' : getPreset(category.id).id)
+      const preset = getPreset(category.id, presetId)
+      const recipeTitle = preset.label || category.defaultTitle
       const sourceOutput = firstText(sourceNode?.params?.output, sourceNode?.primary_output, sourceNode?.output)
       const presetConfig = buildPresetConfig({ input: sourceOutput, preset_config: options?.presetConfig || {} }, category.id, presetId, nodeId, 0)
       const outputText = firstText(presetConfig.output_name, presetConfig.path, presetConfig.key)
@@ -574,11 +579,12 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
         files,
         template_id: category.templateId,
         node_id: nodeId,
-        title: category.defaultTitle,
+        title: recipeTitle,
         after_node_id: sourceNode?.id,
         insert_mode: insertMode,
         node: {
-          title: category.defaultTitle,
+          title: recipeTitle,
+          display_name: recipeTitle,
           ...protocolPatch,
           agent: null,
           model_role: category.id === 'process' ? 'runtime' : null,

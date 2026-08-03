@@ -1,4 +1,4 @@
-import type { FlowFiles, FlowGraph, FlowLabDetail, FlowNode, ValidationResponse } from '../../api.ts'
+import type { FlowFiles, FlowGraph, FlowLabDetail, FlowNode, NodeExperience, ValidationResponse } from '../../api.ts'
 
 export type WorkbenchMode = 'design' | 'run'
 export type DesignDisplayMode = 'engineering' | 'outcome'
@@ -56,7 +56,12 @@ export type NodeDraft = {
   failurePolicy: string
   permission: string
   auditLog: boolean
+  experience: NodeExperience
   description: string
+  systemPrompt: string
+  prompt: string
+  temperature: string
+  maxTokens: string
   input: string
   optionalInput: string
   output: string

@@ -30,6 +30,10 @@ lifecycle, default flow version, release snapshots, runtime adapters, and
 features. Base support is declared by
 `config/base/BASE_IMPLEMENTATION.json.supported_protocol_adapters`; exact
 `supported_protocols` entries are historical compatibility declarations.
+Trusted internal protocols additionally require an exact host declaration in
+the CF-FARP release and a matching `supported_subprotocols` Base adapter. The
+current `CF-TUNING@1.0` owns node-local tuning revisions and recipe releases;
+it never owns Root Flow topology or executable code.
 
 Do not rewrite a published protocol release. A semantics-preserving new release
 gets an independent version directory and may reuse its runtime adapter. A

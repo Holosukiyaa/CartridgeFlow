@@ -2,6 +2,8 @@ import json
 from pathlib import Path
 
 from core.data_paths import DEV_CARTRIDGES_DIR, INSTALLED_CARTRIDGES_DIR
+from core.protocol.tuning import materialize_tuning
+from core.studio.tuning_repository import TuningRepositoryStore
 
 from .validator import ManifestValidator, ManifestValidationError, resolve_package_entry
 
@@ -13,6 +15,7 @@ class CartridgeRegistry:
         self.dev_dir = self.root / DEV_CARTRIDGES_DIR
         self.installed_dir = self.root / INSTALLED_CARTRIDGES_DIR
         self.validator = ManifestValidator()
+        self.tuning = TuningRepositoryStore(self.root)
 
     def list_cartridges(self) -> list[dict]:
         items = []
@@ -27,7 +30,9 @@ class CartridgeRegistry:
                     continue
                 try:
                     manifest = self.validator.validate_package(path, self._read_json(manifest_path))
-                except ManifestValidationError:
+                    if source != "dev" and isinstance(manifest.get("tuning_contract"), dict):
+                        self._materialize_published_tuning(path, manifest)
+                except (ManifestValidationError, OSError, ValueError, json.JSONDecodeError):
                     continue
                 item = self._public_manifest(manifest)
                 item["source"] = source
@@ -35,7 +40,9 @@ class CartridgeRegistry:
                 items.append(item)
         return items
 
-    def get_cartridge(self, cartridge_id: str) -> dict:
+    def get_cartridge(self, cartridge_id: str, *, tuning_mode: str = "draft") -> dict:
+        if tuning_mode not in {"draft", "runtime"}:
+            raise ValueError(f"Unknown tuning materialization mode: {tuning_mode}")
         path = self._find_cartridge_path(cartridge_id)
         manifest = self.validator.validate_package(path, self._read_json(path / "manifest.json"))
         root_flow_path = resolve_package_entry(
@@ -48,6 +55,19 @@ class CartridgeRegistry:
         except json.JSONDecodeError:
             root_flow = {}
         root_flow = root_flow if isinstance(root_flow, dict) else {}
+        source = self._source_for_path(path)
+        tuning_context = None
+        tuning_contract = manifest.get("tuning_contract") if isinstance(manifest.get("tuning_contract"), dict) else None
+        if tuning_contract:
+            if source == "dev":
+                repository = self.tuning.load(cartridge_id, root_flow)
+                root_flow, tuning_context = materialize_tuning(
+                    root_flow,
+                    repository,
+                    draft=tuning_mode == "draft",
+                )
+            else:
+                root_flow, tuning_context = self._materialize_published_tuning(path, manifest, root_flow)
         welcome_content = self._read_welcome(path, manifest)
         welcome_html_content = self._read_ui_html_welcome(path, root_flow) if not welcome_content else ""
         if not welcome_html_content and not welcome_content:
@@ -57,11 +77,61 @@ class CartridgeRegistry:
             "manifest": manifest,
             "root_flow": root_flow,
             "package_path": str(path),
-            "source": self._source_for_path(path),
-            "editable": self._source_for_path(path) == "dev",
+            "source": source,
+            "editable": source == "dev",
+            "tuning_context": tuning_context,
             "welcome_content": welcome_content,
             "welcome_html_content": welcome_html_content,
         }
+
+    def get_runtime_cartridge(self, cartridge_id: str) -> dict:
+        return self.get_cartridge(cartridge_id, tuning_mode="runtime")
+
+    def get_packaging_cartridge(self, cartridge_id: str) -> dict:
+        cartridge = self.get_runtime_cartridge(cartridge_id)
+        tuning_contract = cartridge.get("tuning_contract") if isinstance(cartridge.get("tuning_contract"), dict) else None
+        if not tuning_contract or cartridge.get("source") != "dev":
+            return cartridge
+        package_path = Path(cartridge["package_path"])
+        packaged_flow, packaged_context = self._materialize_published_tuning(
+            package_path,
+            cartridge["manifest"],
+        )
+        active_context = cartridge.get("tuning_context") or {}
+        if (
+            packaged_context.get("release_id") != active_context.get("release_id")
+            or packaged_context.get("release_digest") != active_context.get("release_digest")
+        ):
+            raise ValueError("Published recipe snapshot does not match the active recipe release")
+        return {**cartridge, "root_flow": packaged_flow, "tuning_context": packaged_context}
+
+    def _materialize_published_tuning(
+        self,
+        path: Path,
+        manifest: dict,
+        root_flow: dict | None = None,
+    ) -> tuple[dict, dict]:
+        tuning_contract = manifest.get("tuning_contract") if isinstance(manifest.get("tuning_contract"), dict) else {}
+        release_path = resolve_package_entry(
+            path,
+            str(tuning_contract.get("release_entry") or "tuning/release.json"),
+            "manifest.tuning_contract.release_entry",
+        )
+        if not release_path.is_file():
+            raise ValueError(f"Published recipe release is missing: {release_path.relative_to(path).as_posix()}")
+        if root_flow is None:
+            root_flow_path = resolve_package_entry(
+                path,
+                manifest.get("root_flow", {}).get("entry", "root.flow.json"),
+                "manifest.root_flow.entry",
+            )
+            root_flow = self._read_json(root_flow_path)
+        release = self._read_json(release_path)
+        if not isinstance(root_flow, dict) or not isinstance(release, dict):
+            raise ValueError("Published recipe root flow and release must be objects")
+        if release.get("flow_id") != manifest.get("id"):
+            raise ValueError("Published recipe release flow identity does not match manifest")
+        return materialize_tuning(root_flow, release, draft=False)
 
     def _find_cartridge_path(self, cartridge_id: str) -> Path:
         for directory in (self.dev_dir, self.installed_dir, self.builtin_dir):
@@ -190,4 +260,5 @@ class CartridgeRegistry:
             "resource_requirements": manifest.get("resource_requirements", []),
             "llm_recipe": manifest.get("llm_recipe"),
             "portable_dlc": manifest.get("portable_dlc"),
+            "tuning_contract": manifest.get("tuning_contract"),
         }

@@ -1,7 +1,7 @@
 // API 工具：封装所有对后端的 fetch 调用，统一走 /api 前缀
 
 // 基础请求方法：所有 API 调用共用
-import type { RuntimeErrorEnvelope, CartridgeDetail, RunResult, FlowGraph, FlowEdge, FlowAnnotation, FlowLabItem, FlowLabDetail, FlowEvent, TestProbeRange, FlowFiles, CartridgeAsset, InteractionComponent, CartridgeAssetsResponse, McpSourceResponse, McpSourceEditResponse, BaseImplementationResponse, StudioConformanceResponse, McpToolsResponse, ValidationResponse, NodeUpdateResult, NodeCreatePayload, LlmProvider, LlmAssignments, LlmConfigBundle, LlmDetectionResult, LlmTestResult, StudioResources, FlowResourceCatalog, FlowResourceDetail, FlowResourceConnectivityResult, StudioCredential, StudioEnvironmentSnapshot, StudioPackageItem, PortabilityReport, StudioReleasePreflight, AIFlowStewardContext, AIFlowStewardMessage, AIFlowStewardMode, AuthoringReadiness } from './api.types.ts'
+import type { RuntimeErrorEnvelope, CartridgeDetail, RunResult, FlowGraph, FlowEdge, FlowAnnotation, FlowLabItem, FlowLabDetail, FlowEvent, TestProbeRange, FlowFiles, CartridgeAsset, InteractionComponent, CartridgeAssetsResponse, McpSourceResponse, McpSourceEditResponse, BaseImplementationResponse, StudioConformanceResponse, McpToolsResponse, ValidationResponse, NodeUpdateResult, NodeCreatePayload, LlmProvider, LlmAssignments, LlmConfigBundle, LlmDetectionResult, LlmTestResult, StudioResources, FlowResourceCatalog, FlowResourceDetail, FlowResourceConnectivityResult, StudioCredential, StudioEnvironmentSnapshot, StudioPackageItem, PortabilityReport, StudioReleasePreflight, AIFlowStewardContext, AIFlowStewardMessage, AIFlowStewardMode, AuthoringReadiness, TuningResponse, TuningRevisionResult, RecipeReleaseResult } from './api.types.ts'
 export type * from './api.types.ts'
 
 export class ApiError extends Error {
@@ -269,6 +269,30 @@ export const updateFlowNode = (id: string, nodeId: string, payload: any) =>
   api<NodeUpdateResult>(`/api/lab/flows/${id}/nodes/${nodeId}`, {
     method: 'PUT',
     body: JSON.stringify(payload),
+  })
+
+export const fetchFlowTuning = (id: string) =>
+  api<TuningResponse>(`/api/lab/flows/${id}/tuning`)
+
+export const createNodeTuningRevision = (id: string, nodeId: string, payload: {
+  patch: Record<string, any>
+  expected_head?: string | null
+  author?: string
+  message?: string
+}) => api<TuningRevisionResult>(`/api/lab/flows/${id}/tuning/nodes/${nodeId}/revisions`, {
+  method: 'POST',
+  body: JSON.stringify(payload),
+})
+
+export const publishRecipeRelease = (id: string, payload: { author?: string; message?: string } = {}) =>
+  api<RecipeReleaseResult>(`/api/lab/flows/${id}/tuning/releases`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+
+export const activateRecipeRelease = (id: string, releaseId: string) =>
+  api<RecipeReleaseResult>(`/api/lab/flows/${id}/tuning/releases/${encodeURIComponent(releaseId)}/activate`, {
+    method: 'POST',
   })
 
 export const createFlowNode = (id: string, payload: NodeCreatePayload) =>

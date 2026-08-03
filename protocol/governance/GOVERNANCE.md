@@ -1,9 +1,10 @@
 ﻿# CartridgeFlow Protocol Documents Agent Note
 
-## CF-FARP@1.0 当前边界
+## CF-FARP@1.1 当前边界
 
-`CF-FARP@1.0` 是当前执行计划协议。参考 Base 已完成执行、签名打包、认证和 handoff
-证据闭环，当前为 active/supported；在证据闭环完成前，协议必须保持 draft。
+`CF-FARP@1.1` 是当前完整 Flow 协议。它继续使用显式执行计划，并通过受信任
+`CF-TUNING@1.0` 子协议管理内部调优修订、配方发布和运行来源。参考 Base 已完成
+宿主信任、物化、执行、签名打包和 handoff 证据，当前为 active/supported。
 历史版本只能通过其自身契约运行，任何升级都必须显式完成并重新校验，不能由
 保存、打开或运行操作静默触发。
 
@@ -13,20 +14,22 @@
 
 ## 当前基准
 
-新协议设计和新卡带目标默认使用 `CARTRIDGEFLOW-BASE@0.2 + CF-FARP@1.0`：
+新协议设计和新卡带目标默认使用 `CARTRIDGEFLOW-BASE@0.3 + CF-FARP@1.1 + CF-TUNING@1.0`：
 
 ```text
-protocol/base/0.2/specification.md
-protocol/flow-authoring/1.0/README.md
-protocol/base/0.2/release.json
-protocol/flow-authoring/1.0/release.json
+protocol/base/0.3/specification.md
+protocol/flow-authoring/1.1/README.md
+protocol/tuning/1.0/specification.md
+protocol/base/0.3/release.json
+protocol/flow-authoring/1.1/release.json
+protocol/tuning/1.0/release.json
 ```
 
-Base v0.2 与 FARP v1.0 都是完整独立协议。阅读或实现目标版本不得依赖历史正文，也不得依赖任意领域伴随协议。Base Contract 约束宿主边界，CF-FARP 约束 Flow 创作、静态分析、运行语义与 MCP/DLC 透明执行，两者版本不要求相同。
+Base v0.3、FARP v1.1 与 TUNING v1.0 都是完整独立发布。阅读或实现目标版本不得依赖历史正文。Base Contract 约束宿主边界，CF-FARP 约束 Flow 创作、静态分析和运行语义；CF-TUNING 仅在宿主显式信任时拥有节点局部调优与发布快照，不能修改拓扑、执行器、权限或代码。
 
 ## 版本支持策略
 
-`CF-FARP@1.0` 当前为 active/supported，Base 通过 `cf-farp.execution-plan.v1` 执行适配器运行显式执行计划。`CF-CRE@1` 当前为 active/supported，Base 通过 `cf-cre.release-envelope.v1` 构建归档、验证 Ed25519 签名、检查本地信任并在兼容性和资源预检通过后激活载荷。v0.8 已实现 Analyzer、typed control filtering、结构化 I/O、统一 Flow 资源目录、目标门禁、失败路径和 conformance 证据；`CF-FARP@0.1` 至 `0.5` 继续处于 `recognized` 状态。
+`CF-FARP@1.1` 当前为 active/supported，Base 通过 `cf-farp.execution-plan.v1` 运行显式执行计划，通过 `cf-tuning.repository.v1` 承载受信任调优仓库。`CF-FARP@1.0` 为 supported_previous。`CF-CRE@1` 继续负责签名发布包、信任检查与激活 handoff；`CF-FARP@0.1` 至 `0.5` 继续处于 `recognized` 状态。
 
 版本判断必须经过三层：
 
@@ -40,7 +43,16 @@ Base v0.2 与 FARP v1.0 都是完整独立协议。阅读或实现目标版本�
 
 核心不承诺永久保留旧 validator、adapter 或 DLC 激活路径。旧正文和 registry 快照在独立只读归档建立之前保留为发布证据；归档必须保存稳定地址、SHA-256 和迁移说明。完成归档后，仓库可移除旧正文和旧 registry，只保留轻量历史索引。
 
-## v1.0 重点
+## v1.1 重点
+
+- Root Flow 拥有节点身份、执行契约和拓扑；调优子协议不能越权修改这些事实。
+- 开发仓库保存不可变节点修订和发布历史，卡带包只携带活动的不可变发布快照。
+- 节点修订使用 `expected_head` 乐观并发；发布固定所有节点头，激活与回滚只移动活动指针。
+- 普通运行只消费发布快照；开发测试可以消费草稿头，但必须标明 draft 来源。
+- Run 固化 release id/digest、Flow digest、节点修订映射和物化摘要。
+- 秘密、本机绝对路径、代码、权限、执行器和拓扑字段不得进入调优仓库。
+
+## v1.0 历史重点
 
 - v1.0 不改写 v0.8，旧 DLC/MCP 工具必须诚实标记为 `legacy_opaque`。
 - 画布拥有 MCP/DLC 复合工具的业务编排；Python 只实现原子 operation。

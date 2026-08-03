@@ -1,18 +1,18 @@
 ---
 name: cartridgeflow-flow-author
-description: Create, extend, or repair editable CartridgeFlow development cartridges and root flows. Use when a user asks Codex to turn a business goal into a CartridgeFlow Flow, add process nodes, configure typed data contracts, bind models or MCP/DLC tools, or make a Flow pass the current executable CF-FARP@1.0 validation without repeated trial-and-error.
+description: Create, extend, or repair editable CartridgeFlow development cartridges and root flows. Use when a user asks Codex to turn a business goal into a CartridgeFlow Flow, add process nodes, configure typed data contracts, bind models or MCP/DLC tools, or make a Flow pass the current executable CF-FARP@1.1 validation without repeated trial-and-error.
 metadata:
   version: "2.4.0"
   protocol_alignment:
-    label: "cf-farp-1-0-authoring-verified"
-    protocol: "CF-FARP@1.0"
+    label: "cf-farp-1-1-authoring-verified"
+    protocol: "CF-FARP@1.1"
     scope: "skill workflow"
     evidence: "workbench simulation, v1 conformance, package preflight, protocol governance audit, and end-to-end run verification"
 ---
 
 # CartridgeFlow Flow Author
 
-Create the smallest executable Flow that satisfies the user's business goal and the current executable CF-FARP contract. The verified authoring baseline is `CARTRIDGEFLOW-BASE@0.2 + CF-FARP@1.0`. Prefer Chinese titles, display names, cartridge names, and user-facing descriptions; retain original text only for code symbols, protocol values, field keys, paths, and external tool parameters.
+Create the smallest executable Flow that satisfies the user's business goal and the current executable CF-FARP contract. The verified authoring baseline is `CARTRIDGEFLOW-BASE@0.3 + CF-FARP@1.1 + CF-TUNING@1.0`. Prefer Chinese titles, display names, cartridge names, and user-facing descriptions; retain original text only for code symbols, protocol values, field keys, paths, and external tool parameters.
 
 ## Required Reads
 
@@ -23,7 +23,7 @@ Read before editing:
 - `protocol/catalog/release_manifest.json`
 - `protocol/governance/GOVERNANCE.md`
 
-Read `protocol/flow-authoring/1.0/README.md` and its listed normative modules before creating or modifying a v1 Flow or a DLC MCP tool. Read the document path named by the release catalog rather than guessing a version.
+Read `protocol/flow-authoring/1.1/README.md` and its listed normative modules before creating or modifying a v1 Flow or a DLC MCP tool. Read the document path named by the release catalog rather than guessing a version.
 
 ## Workflow
 
@@ -118,7 +118,7 @@ Design guidance:
 
 - **Decision/LLM nodes**: output-format drift is normal. Declare a `failure` edge (retry the node or a fallback path) instead of assuming the LLM succeeds first try.
 - **Tool/remote nodes**: timeouts and connectivity are retryable. A failure edge to a retry/degraded path is correct design; `retryable: true` in the envelope tells you so.
-- **Every `type: process` node must declare at least one `failure` edge** (CF-FARP@1.0 `v10_failure_exit_missing` blocker) — this is a protocol requirement, not optional. But **failure exits can share one generic terminal** ("流程失败"): the precise failing node/code/message lives in `run.error` (`runtime_error_envelope.v1`), so per-step failure terminals are redundant. One shared failure terminal keeps the graph readable without losing detail. `validate_authored_cartridge.py` suggests sharing via `FAILURE_TERMINALS_MULTIPLE` (info) when several failure terminals exist.
+- **Every `type: process` node must declare at least one `failure` edge** (CF-FARP@1.1 `v10_failure_exit_missing` blocker) — this is a protocol requirement, not optional. But **failure exits can share one generic terminal** ("流程失败"): the precise failing node/code/message lives in `run.error` (`runtime_error_envelope.v1`), so per-step failure terminals are redundant. One shared failure terminal keeps the graph readable without losing detail. `validate_authored_cartridge.py` suggests sharing via `FAILURE_TERMINALS_MULTIPLE` (info) when several failure terminals exist.
 - Every non-terminal node should have a non-failure outgoing edge or a failure edge; a node whose failure is not absorbed aborts the run. `validate_authored_cartridge.py` warns (`FLOW_SUCCESSOR_EDGE_MISSING`) when a node with a non-failure incoming edge has no non-failure outgoing edge.
 - Never pattern-match on the raw `message` string; key off `code` / `recovery_actions`.
 

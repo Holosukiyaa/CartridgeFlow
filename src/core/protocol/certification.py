@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .base_manifest import supports_base_contract
+
 from .compatibility import build_compatibility_report
 from .flow_contract import build_flow_contract_report_for_adapter
 from .report import summarize_findings
@@ -49,11 +51,10 @@ def build_protocol_certification_report(
         base_version = str(base_contract.get("version") or "")
         protocol_id = str(runtime_contract.get("protocol") or "")
         protocol_version = str(runtime_contract.get("protocol_version") or "")
-        expected_base = base.get("base_contract") if isinstance(base.get("base_contract"), dict) else {}
         protocol_features = (compatibility.get("protocol") or {}).get("features") or []
         if "base_contract" in protocol_features:
-            contract_matches = base_id == str(expected_base.get("id") or "") and base_version == str(expected_base.get("version") or "")
-            mismatch_message = "manifest.base_contract must match the Base implementation contract."
+            contract_matches = supports_base_contract(base, base_id, base_version)
+            mismatch_message = "manifest.base_contract must be supported by the Base implementation."
         else:
             contract_matches = base_id == protocol_id and base_version == protocol_version
             mismatch_message = "manifest.base_contract must match runtime_contract protocol and protocol_version."

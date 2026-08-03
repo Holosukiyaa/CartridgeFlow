@@ -347,6 +347,14 @@
       "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/flow-workbench/FlowGraphView.tsx"]},
       "notes": "覆盖显式计划校验、稳定编译摘要、分叉汇合、等待恢复、取消和副作用恢复保护；所有执行关系均由 execution_plan.edges 声明。"
     },
+    "tuning_versioning": {
+      "verification": "verified",
+      "implementation": ["src/core/protocol/tuning.py", "src/core/studio/tuning_repository.py#TuningRepositoryStore", "src/core/cartridge/registry.py#CartridgeRegistry.get_cartridge", "src/core/cartridge/runner.py#CartridgeRunner.create_run", "src/backend/main.py#create_lab_flow_tuning_revision"],
+      "positive_tests": ["test_tuning_protocol.TuningProtocolTests.test_revision_is_immutable_and_uses_optimistic_head", "test_tuning_protocol.TuningProtocolTests.test_release_materialization_and_rollback_are_deterministic", "test_tuning_protocol.TuningProtocolTests.test_layout_does_not_change_effect_source_digest"],
+      "failure_tests": ["test_tuning_protocol.TuningProtocolTests.test_forbidden_topology_secrets_and_local_paths_fail_closed", "test_tuning_protocol.TuningProtocolTests.test_release_tampering_and_stale_flow_are_rejected"],
+      "ui": {"status": "developer_visible", "entries": ["src/frontend/src/pages/flow-workbench/views.tsx", "src/frontend/src/pages/flow-workbench/EngineeringInspector.tsx"]},
+      "notes": "Base validates trusted CF-TUNING host identity, stores immutable node revisions outside packages, packages only active recipe snapshots, materializes deterministic node-local patches, and records recipe provenance on every run."
+    },
     "release_envelope": {
       "verification": "verified",
       "implementation": ["src/core/protocol/release_envelope.py#validate_release_envelope", "src/core/protocol/release_signing.py#verify_signature_metadata", "src/core/protocol/release_builder.py#build_release_archive", "src/core/protocol/release_builder.py#extract_release_payload", "src/backend/main.py#import_cartridge"],
@@ -501,6 +509,15 @@
     "execution_plan_join_runtime": "execution_plan_runtime",
     "execution_plan_wait_resume": "execution_plan_runtime",
     "execution_plan_cancellation": "execution_plan_runtime",
-    "execution_plan_source_digest_guard": "execution_plan_runtime"
+    "execution_plan_source_digest_guard": "execution_plan_runtime",
+    "trusted_subprotocol_registry": "tuning_versioning",
+    "tuning_repository_v1": "tuning_versioning",
+    "tuning_revision_validate": "tuning_versioning",
+    "tuning_node_head": "tuning_versioning",
+    "recipe_release_snapshot_v1": "tuning_versioning",
+    "recipe_release_activate": "tuning_versioning",
+    "recipe_release_rollback": "tuning_versioning",
+    "tuning_materialize": "tuning_versioning",
+    "run_recipe_provenance": "tuning_versioning"
   }
 }

@@ -211,7 +211,8 @@ class CartridgeRunner:
         test_mode: dict | None = None,
     ) -> dict:
         run_id = run_id or f"run_{uuid.uuid4().hex[:12]}"
-        cartridge = self.registry.get_cartridge(cartridge_id)
+        normalized_test_mode = self._normalize_test_mode(test_mode)
+        cartridge = self._load_cartridge_for_run(cartridge_id, use_draft=bool(probe_range or normalized_test_mode))
         manifest = deepcopy(cartridge["manifest"])
         source_root_flow = cartridge.get("root_flow") or {}
         runtime_contract = manifest.get("runtime_contract") if isinstance(manifest.get("runtime_contract"), dict) else {}
@@ -300,7 +301,6 @@ class CartridgeRunner:
         artifacts_dir = run_dir / "artifacts"
         artifacts_dir.mkdir(parents=True, exist_ok=True)
         created_at = now_iso()
-        normalized_test_mode = self._normalize_test_mode(test_mode)
         run = {
             "run_id": run_id,
             "cartridge_id": cartridge_id,
@@ -316,6 +316,7 @@ class CartridgeRunner:
             "runtime_contract": manifest.get("runtime_contract", {}),
             "base": compatibility.get("base", {}),
             "protocol": compatibility.get("protocol", {}),
+            "recipe_provenance": deepcopy(cartridge.get("tuning_context") or {}),
             "compatibility": {
                 "ok": compatibility.get("ok"),
                 "status": compatibility.get("status"),
@@ -349,6 +350,8 @@ class CartridgeRunner:
             "created_at": created_at,
             "updated_at": created_at,
         }
+        self._write_json(run_dir / "manifest.snapshot.json", manifest)
+        self._write_json(run_dir / "root_flow.snapshot.json", source_root_flow)
         engine = RootFlowEngine(root_flow)
         state_doc = engine.create_state(run_id, inputs)
         if execution_plan:
@@ -853,13 +856,30 @@ class CartridgeRunner:
             overlay_dirs.append(Path(package_path) / "dlc" / "protocols")
         return build_compatibility_report(base, manifest, root_flow, self.root, overlay_dirs, analysis_target=analysis_target)
 
-    def build_cartridge_compatibility_report(self, cartridge_id: str) -> dict:
-        cartridge = self.registry.get_cartridge(cartridge_id)
+    def build_cartridge_compatibility_report(self, cartridge_id: str, *, use_draft: bool = False) -> dict:
+        cartridge = self._load_cartridge_for_run(cartridge_id, use_draft=use_draft)
         return self.build_compatibility_report(
             cartridge.get("manifest") or {},
             cartridge.get("root_flow") or {},
             cartridge.get("package_path"),
         )
+
+    def _load_cartridge_for_run(self, cartridge_id: str, *, use_draft: bool) -> dict:
+        runtime_loader = getattr(self.registry, "get_runtime_cartridge", None)
+        if not use_draft and callable(runtime_loader):
+            return runtime_loader(cartridge_id)
+        return self.registry.get_cartridge(cartridge_id)
+
+    def _load_run_definition(self, run: dict, run_dir: Path) -> tuple[dict, dict]:
+        manifest_path = run_dir / "manifest.snapshot.json"
+        root_flow_path = run_dir / "root_flow.snapshot.json"
+        if manifest_path.is_file() and root_flow_path.is_file():
+            return self._read_json(manifest_path), self._read_json(root_flow_path)
+        cartridge = self._load_cartridge_for_run(
+            str(run.get("cartridge_id") or ""),
+            use_draft=bool(run.get("probe_range") or run.get("test_mode")),
+        )
+        return cartridge.get("manifest") or {}, cartridge.get("root_flow") or {}
 
     def _flow_output_bindings(self, root_flow: dict) -> dict[str, dict]:
         result: dict[str, dict] = {}
@@ -1683,9 +1703,7 @@ class CartridgeRunner:
         store.pop("_pending_interaction", None)
 
         cartridge_id = run.get("cartridge_id")
-        cartridge = self.registry.get_cartridge(cartridge_id)
-        manifest = cartridge.get("manifest") or {}
-        source_root_flow = cartridge.get("root_flow") or {}
+        manifest, source_root_flow = self._load_run_definition(run, run_dir)
         probe_range = run.get("probe_range")
         root_flow = self._build_probe_root_flow(source_root_flow, probe_range) if probe_range else source_root_flow
         execution_plan = run.get("execution_plan") if isinstance(run.get("execution_plan"), dict) else self._compile_execution_plan(root_flow)
@@ -2757,13 +2775,12 @@ class CartridgeRunner:
             "Execution wait resume requested",
             {"resume_key": selected_key, "token_ids": [token.get("token_id") for token in selected]},
         )
-        cartridge = self.registry.get_cartridge(run.get("cartridge_id") or "")
-        source_root_flow = cartridge.get("root_flow") or {}
+        manifest, source_root_flow = self._load_run_definition(run, run_dir)
         root_flow = self._build_probe_root_flow(source_root_flow, run.get("probe_range")) if run.get("probe_range") else source_root_flow
         return self._continue_run(
             run=run,
             run_dir=run_dir,
-            manifest=cartridge.get("manifest") or {},
+            manifest=manifest,
             root_flow=root_flow,
             source_root_flow=source_root_flow,
             state_doc=state_doc,
@@ -2900,9 +2917,7 @@ class CartridgeRunner:
         checkpoint = self.checkpoint_manager.load(run_dir, str(summary["checkpoint_id"]))
         restored = checkpoint.get("run_snapshot") if isinstance(checkpoint.get("run_snapshot"), dict) else {}
         state_doc = checkpoint.get("state_snapshot") if isinstance(checkpoint.get("state_snapshot"), dict) else {}
-        cartridge = self.registry.get_cartridge(current.get("cartridge_id") or "")
-        manifest = cartridge.get("manifest") or {}
-        source_root_flow = cartridge.get("root_flow") or {}
+        manifest, source_root_flow = self._load_run_definition(current, run_dir)
         probe_range = current.get("probe_range")
         root_flow = self._build_probe_root_flow(source_root_flow, probe_range) if probe_range else source_root_flow
         execution_plan = self._compile_execution_plan(root_flow)

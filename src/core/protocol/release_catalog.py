@@ -53,6 +53,17 @@ class ProtocolReleaseCatalog:
     def has_feature(self, protocol_id: str, version: str, feature: str) -> bool:
         return str(feature) in self.features(protocol_id, version)
 
+    def trusted_subprotocols(self, protocol_id: str, version: str) -> tuple[dict, ...]:
+        item = self.get(protocol_id, version) or {}
+        return tuple(dict(entry) for entry in item.get("trusted_subprotocols") or [])
+
+    def trusts_subprotocol(self, protocol_id: str, version: str, subprotocol_id: str, subprotocol_version: str) -> bool:
+        return any(
+            str(item.get("id")) == str(subprotocol_id)
+            and str(item.get("version")) == str(subprotocol_version)
+            for item in self.trusted_subprotocols(protocol_id, version)
+        )
+
     def lifecycle(self, protocol_id: str, version: str) -> dict | None:
         item = self.get(protocol_id, version)
         if not item or item["lifecycle"] != "recognized_legacy":
@@ -90,7 +101,7 @@ class ProtocolReleaseCatalog:
                 {
                     key: value
                     for key, value in item.items()
-                    if key in {"id", "version", "lifecycle", "status", "implementation_status", "migration_target", "runtime_adapter", "features"}
+                    if key in {"id", "version", "lifecycle", "status", "implementation_status", "migration_target", "runtime_adapter", "features", "trusted_subprotocols"}
                 }
                 for item in self.releases
             ],
@@ -154,6 +165,20 @@ def _load_release_manifest(root: Path) -> dict:
             raise ProtocolReleaseCatalogError(f"protocol release manifest releases[{index}].features must be an array of non-empty strings")
         if len(set(features)) != len(features):
             raise ProtocolReleaseCatalogError(f"protocol release manifest releases[{index}].features must not contain duplicates")
+        trusted_subprotocols = item.get("trusted_subprotocols", [])
+        if not isinstance(trusted_subprotocols, list):
+            raise ProtocolReleaseCatalogError(f"protocol release manifest releases[{index}].trusted_subprotocols must be an array")
+        trusted_seen: set[tuple[str, str]] = set()
+        for sub_index, subprotocol in enumerate(trusted_subprotocols):
+            if not isinstance(subprotocol, dict) or not subprotocol.get("id") or not subprotocol.get("version"):
+                raise ProtocolReleaseCatalogError(f"protocol release manifest releases[{index}].trusted_subprotocols[{sub_index}] requires id and version")
+            sub_key = (str(subprotocol["id"]), str(subprotocol["version"]))
+            if sub_key in trusted_seen:
+                raise ProtocolReleaseCatalogError(f"protocol release manifest releases[{index}] duplicates trusted subprotocol {sub_key[0]}@{sub_key[1]}")
+            trusted_seen.add(sub_key)
+            for field in ("registry", "binding"):
+                if not isinstance(subprotocol.get(field), str) or not subprotocol[field].strip():
+                    raise ProtocolReleaseCatalogError(f"protocol release manifest releases[{index}].trusted_subprotocols[{sub_index}].{field} is required")
         if item["lifecycle"] == "recognized_legacy":
             target = item.get("migration_target")
             if not isinstance(target, dict) or not target.get("id") or not target.get("version"):

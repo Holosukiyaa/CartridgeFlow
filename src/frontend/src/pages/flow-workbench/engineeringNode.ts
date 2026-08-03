@@ -78,6 +78,12 @@ type ExecutionPlanRelation = FlowEngineeringRelation & {
 
 export type EngineeringProjectionOptions = {
   executionPlanV1?: boolean
+  includeResources?: boolean
+}
+
+export function recipeDisplayName(node: FlowNode | undefined, fallback = '') {
+  const value = String(node?.display_name || node?.title || fallback).trim()
+  return value.toLowerCase() === 'failed' ? '失败结束' : value
 }
 
 const ENGINEERING_RESOURCE_PREFIX = '__engineering_resource__:'
@@ -326,10 +332,11 @@ export function buildEngineeringProjection(graph: FlowGraph, options: Engineerin
     resourceCount: 0,
     controlEdgeCount: executionPlanEdges?.length || 0,
   }
-  const resourceNodes = buildEngineeringResourceNodes(analyzerRelations)
+  const includeResources = options.includeResources !== false
+  const resourceNodes = includeResources ? buildEngineeringResourceNodes(analyzerRelations) : []
   return {
     graph: resourceNodes.length ? { ...projectedGraph, nodes: [...projectedGraph.nodes, ...resourceNodes] } : projectedGraph,
-    relations: authoritativeRelations,
+    relations: includeResources ? authoritativeRelations : authoritativeRelations.filter((relation) => relation.kind === 'data'),
     resourceCount: resourceNodes.length,
     controlEdgeCount: executionPlanEdges?.length ?? projectedGraph.edges.length,
   }

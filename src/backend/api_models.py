@@ -63,6 +63,18 @@ class DevFlowFilesPayload(BaseModel):
     files: dict = Field(default_factory=dict)
 
 
+class TuningRevisionPayload(BaseModel):
+    patch: dict = Field(default_factory=dict)
+    expected_head: str | None = None
+    author: str = "local-developer"
+    message: str = "更新关键参数"
+
+
+class RecipeReleasePayload(BaseModel):
+    author: str = "local-developer"
+    message: str = "发布配方版本"
+
+
 class FlowAnalysisPayload(DevFlowFilesPayload):
     target: str = "draft"
 
@@ -177,6 +189,7 @@ class NodeUpdatePayload(BaseModel):
     executor: str | None = None
     effect: str | None = None
     display_name: str | None = None
+    experience: dict | None = None
     component_ref: str | None = None
     interaction_mode: str | None = None
     input_binding: dict | None = None

@@ -462,7 +462,7 @@ class RuntimeErrorEnvelopeTests(unittest.TestCase):
                 return {"id": cartridge_id, "root_flow": {}, "inputs": [], "editable": True}
 
         class BlockedRunner:
-            def build_cartridge_compatibility_report(self, cartridge_id):
+            def build_cartridge_compatibility_report(self, cartridge_id, *, use_draft=False):
                 return {
                     "ok": False,
                     "summary": {"blocker": 1},

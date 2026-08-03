@@ -38,10 +38,10 @@ class ProtocolV10ExecutionPlanTests(unittest.TestCase):
     def test_registry_is_current_and_base_supports_execution(self):
         catalog = load_protocol_release_catalog(ROOT)
         release = catalog.get("CF-FARP", "1.0")
-        self.assertEqual("current", release["lifecycle"])
+        self.assertEqual("supported_previous", release["lifecycle"])
         self.assertEqual("active", release["status"])
         self.assertEqual("supported", release["implementation_status"])
-        self.assertEqual({"id": "CF-FARP", "version": "1.0"}, catalog.data["default_for_new_flows"])
+        self.assertEqual({"id": "CF-FARP", "version": "1.1"}, catalog.data["default_for_new_flows"])
 
         registry = ProtocolRegistry(ROOT)
         self.assertTrue(registry.recognizes_protocol("CF-FARP", "1.0"))

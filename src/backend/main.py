@@ -55,9 +55,11 @@ from backend.api_models import (
     NodeDeletePayload,
     NodeUpdatePayload,
     PendingInteractionAnswerPayload,
+    RecipeReleasePayload,
     SandboxHostRequestPayload,
     StudioCredentialPayload,
     StudioResourcesPayload,
+    TuningRevisionPayload,
     UploadTextPayload,
 )
 
@@ -109,6 +111,7 @@ from core.protocol import (
     supports_protocol_release,
     trusted_public_keys,
 )
+from core.protocol.tuning import TuningConflictError, TuningProtocolError
 
 ensure_data_layout(ROOT)
 PRODUCT_VERSION = (ROOT / "VERSION").read_text(encoding="utf-8").strip().removeprefix("CartridgeFlow-")
@@ -1033,7 +1036,7 @@ def _compatibility_for_manifest(manifest: dict, root_flow: dict | None, analysis
 
 
 def _compatibility_for_cartridge(cartridge: dict, analysis_target: str = "dev") -> dict:
-    manifest = cartridge.get("manifest") or {}
+    manifest = {**(cartridge.get("manifest") or {}), "_tuning_context": cartridge.get("tuning_context")}
     overlay_dirs = []
     if manifest.get("portable_dlc") and cartridge.get("package_path"):
         overlay_dirs.append(Path(cartridge["package_path"]) / "dlc" / "protocols")
@@ -1063,7 +1066,7 @@ def _certification_for_manifest(manifest: dict, root_flow: dict | None) -> dict:
 
 
 def _certification_for_cartridge(cartridge: dict) -> dict:
-    manifest = cartridge.get("manifest") or {}
+    manifest = {**(cartridge.get("manifest") or {}), "_tuning_context": cartridge.get("tuning_context")}
     overlay_dirs = []
     if manifest.get("portable_dlc") and cartridge.get("package_path"):
         overlay_dirs.append(Path(cartridge["package_path"]) / "dlc" / "protocols")
@@ -1451,40 +1454,51 @@ def get_cartridge_compatibility(cartridge_id: str):
 @app.get("/api/cartridges/{cartridge_id}/certification")
 def get_cartridge_certification(cartridge_id: str):
     try:
-        cartridge = registry.get_cartridge(cartridge_id)
+        cartridge = registry.get_packaging_cartridge(cartridge_id)
         return _certification_for_cartridge(cartridge)
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except BaseManifestError as e:
         raise HTTPException(status_code=500, detail=str(e))
+    except (OSError, json.JSONDecodeError, TuningProtocolError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @app.get("/api/studio/release/{cartridge_id}/preflight")
 def get_studio_release_preflight(cartridge_id: str):
     try:
-        return _release_preflight_for_cartridge(registry.get_cartridge(cartridge_id))
+        return _release_preflight_for_cartridge(registry.get_packaging_cartridge(cartridge_id))
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except BaseManifestError as exc:
         raise HTTPException(status_code=500, detail=str(exc))
+    except (OSError, json.JSONDecodeError, TuningProtocolError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @app.get("/api/cartridges/{cartridge_id}/portability")
 def get_cartridge_portability(cartridge_id: str):
     try:
-        return _release_preflight_for_cartridge(registry.get_cartridge(cartridge_id))["portability"]
+        return _release_preflight_for_cartridge(registry.get_packaging_cartridge(cartridge_id))["portability"]
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except BaseManifestError as exc:
         raise HTTPException(status_code=500, detail=str(exc))
+    except (OSError, json.JSONDecodeError, TuningProtocolError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @app.post("/api/cartridges/{cartridge_id}/package")
 def package_cartridge(cartridge_id: str, payload: CartridgePackagePayload | None = None):
     try:
-        cartridge = registry.get_cartridge(cartridge_id)
+        cartridge = registry.get_packaging_cartridge(cartridge_id)
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
+    except (OSError, json.JSONDecodeError, TuningProtocolError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail={
+            "error": "recipe_release_required",
+            "message": str(exc),
+        }) from exc
     try:
         compatibility = _compatibility_for_cartridge(cartridge, analysis_target="package")
     except BaseManifestError as e:
@@ -1498,6 +1512,13 @@ def package_cartridge(cartridge_id: str, payload: CartridgePackagePayload | None
     package_path = Path(cartridge.get("package_path") or "")
     if not package_path.is_dir():
         raise HTTPException(status_code=404, detail="Cartridge package path not found")
+    tuning_contract = cartridge.get("tuning_contract") if isinstance(cartridge.get("tuning_contract"), dict) else None
+    if tuning_contract and not compatibility.get("ok"):
+        raise HTTPException(status_code=400, detail={
+            "error": "recipe_release_incompatible",
+            "message": "当前配方发布未通过打包兼容性检查",
+            "report": compatibility,
+        })
     from core.studio.hygiene import scan_package_hygiene
     package_hygiene = scan_package_hygiene(package_path)
     if package_hygiene.get("status") != "ok":
@@ -1982,6 +2003,98 @@ def get_lab_flow_files(cartridge_id: str):
         return {"cartridge_id": cartridge_id, "files": dev_flow_manager.read_files(cartridge_id)}
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.get("/api/lab/flows/{cartridge_id}/tuning")
+def get_lab_flow_tuning(cartridge_id: str):
+    try:
+        cartridge = registry.get_cartridge(cartridge_id)
+        if not cartridge.get("editable"):
+            raise HTTPException(status_code=403, detail="Only dev flows expose tuning history")
+        raw_flow = json.loads(dev_flow_manager.read_files(cartridge_id)["root_flow"] or "{}")
+        repository = dev_flow_manager.tuning.load(cartridge_id, raw_flow)
+        return {
+            "repository": dev_flow_manager.tuning.release_summary(repository),
+            "tuning_context": cartridge.get("tuning_context"),
+        }
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except TuningProtocolError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/api/lab/flows/{cartridge_id}/tuning/nodes/{node_id}/revisions")
+def create_lab_flow_tuning_revision(cartridge_id: str, node_id: str, payload: TuningRevisionPayload):
+    try:
+        cartridge = registry.get_cartridge(cartridge_id)
+        if not cartridge.get("editable"):
+            raise HTTPException(status_code=403, detail="Only dev flows can create tuning revisions")
+        repository, revision, root_flow, context = dev_flow_manager.tuning.create_revision(
+            cartridge_id,
+            node_id,
+            payload.patch,
+            expected_head=payload.expected_head,
+            author=payload.author,
+            message=payload.message,
+        )
+        files = dev_flow_manager.read_files(cartridge_id)
+        manifest = json.loads(files["manifest"] or "{}")
+        graph = flow_graph_builder.build({**manifest, "root_flow": root_flow, "tuning_context": context})
+        return {
+            "status": "tuning_revision_created",
+            "node_id": node_id,
+            "revision": revision,
+            "repository": dev_flow_manager.tuning.release_summary(repository),
+            "tuning_context": context,
+            "files": files,
+            "graph": graph,
+        }
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except TuningConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except TuningProtocolError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/api/lab/flows/{cartridge_id}/tuning/releases")
+def publish_lab_flow_recipe_release(cartridge_id: str, payload: RecipeReleasePayload):
+    try:
+        cartridge = registry.get_cartridge(cartridge_id)
+        if not cartridge.get("editable"):
+            raise HTTPException(status_code=403, detail="Only dev flows can publish recipe releases")
+        repository, release = dev_flow_manager.tuning.publish(
+            cartridge_id,
+            author=payload.author,
+            message=payload.message,
+        )
+        return {
+            "status": "recipe_release_published",
+            "release": release,
+            "repository": dev_flow_manager.tuning.release_summary(repository),
+        }
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except TuningProtocolError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/api/lab/flows/{cartridge_id}/tuning/releases/{release_id}/activate")
+def activate_lab_flow_recipe_release(cartridge_id: str, release_id: str):
+    try:
+        cartridge = registry.get_cartridge(cartridge_id)
+        if not cartridge.get("editable"):
+            raise HTTPException(status_code=403, detail="Only dev flows can activate recipe releases")
+        repository, release = dev_flow_manager.tuning.activate(cartridge_id, release_id)
+        return {
+            "status": "recipe_release_activated",
+            "release": release,
+            "repository": dev_flow_manager.tuning.release_summary(repository),
+        }
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except TuningProtocolError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @app.post("/api/lab/flows/{cartridge_id}/ai-steward")
@@ -2640,7 +2753,7 @@ def get_lab_flow_readiness(cartridge_id: str, payload: DevFlowFilesPayload):
 
 _NODE_UPDATE_FIELDS = (
     "title", "type", "action", "next", "kind", "executor", "effect",
-    "display_name", "component_ref", "interaction_mode", "input_binding",
+    "display_name", "experience", "component_ref", "interaction_mode", "input_binding",
     "action_routes", "output", "display", "input_kind", "source",
     "input_schema", "output_contract", "decision_contract", "decision_test_mode",
     "mock_decision_envelope", "primary_output", "tool_binding", "allowed_tools",
@@ -2883,7 +2996,7 @@ def create_lab_flow_node(cartridge_id: str, payload: NodeCreatePayload):
         if new_state.get("type") == "process":
             failed_id = f"{node_id}_failed"
             if failed_id not in states:
-                states[failed_id] = {"type": "terminal", "title": f"{new_state.get('title') or node_id} failed", "display_name": "Failed", "locked": True}
+                states[failed_id] = {"type": "terminal", "title": f"{new_state.get('title') or node_id}失败结束", "display_name": "失败结束", "locked": True}
             edges.append({
                 "id": f"{node_id}_failure",
                 "kind": "failure",
@@ -2989,6 +3102,9 @@ def delete_lab_flow_node(cartridge_id: str, node_id: str, payload: NodeDeletePay
 
     files["root_flow"] = _json.dumps(root_flow, ensure_ascii=False, indent=2)
     dev_flow_manager.save_file(cartridge_id, "root_flow", files["root_flow"])
+    flow_protocol = root_flow.get("protocol") if isinstance(root_flow.get("protocol"), dict) else {}
+    if has_protocol_feature(str(flow_protocol.get("id") or ""), str(flow_protocol.get("version") or ""), "recipe_versioning"):
+        dev_flow_manager.tuning.retire_node_head(cartridge_id, node_id)
     validation = dev_flow_manager.validate_files(cartridge_id, files)
     graph = flow_graph_builder.build(dev_flow_manager.preview_graph(cartridge_id, files))
     return {"status": "node_deleted", "node_id": node_id, "files": files, "validation": validation, "graph": graph}
@@ -3243,7 +3359,7 @@ def create_lab_flow_test_run(cartridge_id: str, payload: LabTestRunCreate | None
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
     try:
-        compatibility = runner.build_cartridge_compatibility_report(cartridge_id)
+        compatibility = runner.build_cartridge_compatibility_report(cartridge_id, use_draft=True)
     except BaseManifestError as e:
         raise HTTPException(status_code=500, detail=str(e))
     if not compatibility.get("ok"):

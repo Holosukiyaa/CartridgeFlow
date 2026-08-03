@@ -431,6 +431,35 @@ li.focus.expanded .cf-runtime-material-body p {
   }
 }
 
+@media (max-width: 900px) {
+  .cf-workbench-page .cf-design-studio.engineering-mode,
+  .cf-workbench-page .cf-design-studio.engineering-mode.inspector-open:not(.ai-steward-open),
+  .cf-workbench-page .cf-design-studio.engineering-mode.ai-steward-open:not(.inspector-open),
+  .cf-workbench-page .cf-design-studio.engineering-mode.inspector-open.ai-steward-open,
+  .cf-workbench-page .cf-design-studio.outcome-mode,
+  .cf-workbench-page .cf-design-studio.outcome-mode.ai-steward-open,
+  .cf-workbench-page .cf-design-studio.runtime-inspector-open,
+  .cf-workbench-page .cf-design-studio.runtime-inspector-open.ai-steward-open {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .cf-workbench-page .cf-engineering-inspector,
+  .cf-workbench-page .cf-ai-steward,
+  .cf-workbench-page .cf-runtime-node-inspector { display: none; }
+  .cf-design-modebar {
+    padding-inline: 82px 8px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px;
+  }
+  .cf-design-modebar .cf-engineering-legend { display: none; }
+  .cf-design-modebar .cf-recipe-version-control {
+    width: 100%;
+    grid-template-columns: 16px minmax(72px, 1fr) auto;
+  }
+  .cf-design-panel-toggles { margin-left: 0; }
+  .cf-design-panel-toggles button:first-child { display: none; }
+}
+
 .cf-node-template-fields input:focus,
 .cf-node-template-fields textarea:focus,
 .cf-resource-form input:focus,

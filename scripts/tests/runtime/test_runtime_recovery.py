@@ -146,6 +146,15 @@ class RuntimeRecoveryTests(unittest.TestCase):
             self.assertEqual("paused", result["run"]["status"])
             self.assertEqual(["collect"], executed)
 
+            run_dir = Path(temp_dir) / ".data" / "runtime" / "runs" / "run_pause"
+            self.assertTrue((run_dir / "manifest.snapshot.json").is_file())
+            self.assertTrue((run_dir / "root_flow.snapshot.json").is_file())
+            runner.registry.cartridge["root_flow"] = {
+                "id": "changed.after.run.started",
+                "start": "complete",
+                "states": {"complete": {"type": "terminal"}},
+            }
+
             resumed = runner.control_with_options("run_pause", "resume")
             self.assertEqual("completed", resumed["status"])
             self.assertEqual(1, executed.count("collect"))

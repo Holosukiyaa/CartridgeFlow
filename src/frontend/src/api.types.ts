@@ -193,6 +193,9 @@ export interface FlowEngineeringRelation {
   derived_from?: string[]
   confidence?: string
   runtime_effect?: boolean
+  executable?: boolean
+  plan_edge_id?: string
+  plan_edge_kind?: string
 }
 
 export interface FlowAnnotation {
@@ -208,6 +211,70 @@ export interface FlowAnnotation {
   anchor?: { type: 'node'; id: string }
 }
 
+export type NodeExperienceInteractionMode = 'automatic' | 'input' | 'review' | 'choice'
+export type NodeExperienceMaterialVisibility = 'none' | 'output' | 'input_output'
+export type NodeExperienceControlType = 'text' | 'number' | 'slider' | 'select' | 'toggle'
+export type NodeExperienceInputControlType = 'text' | 'textarea' | 'number' | 'date' | 'select' | 'toggle'
+
+export interface NodeExperienceInputField {
+  field: string
+  label: string
+  help: string
+  placeholder: string
+  control: NodeExperienceInputControlType
+  required: boolean
+  options: string[]
+}
+
+export interface NodeExperienceControl {
+  parameter: string
+  label: string
+  help: string
+  control: NodeExperienceControlType
+  required: boolean
+  options: string[]
+  minimum: number | null
+  maximum: number | null
+  step: number | null
+}
+
+export interface NodeExperience {
+  schema: 'cartridgeflow.node_experience.v1'
+  visible: boolean
+  stage: {
+    label: string
+    description: string
+    waiting: string
+    running: string
+    success: string
+  }
+  interaction: {
+    mode: NodeExperienceInteractionMode
+    prompt: string
+    action_labels: Record<string, string>
+    fields: NodeExperienceInputField[]
+    allow_retry: boolean
+    allow_cancel: boolean
+  }
+  materials: {
+    visibility: NodeExperienceMaterialVisibility
+    label: string
+    live_updates: boolean
+    allow_download: boolean
+    hidden_fields: string[]
+  }
+  outcome: {
+    success_title: string
+    result_label: string
+    empty_text: string
+    error_title: string
+    error_message: string
+    retry_label: string
+    preserve_partial: boolean
+  }
+  controls: NodeExperienceControl[]
+}
+
 export interface FlowNode {
   id: string
   title: string
@@ -218,6 +285,8 @@ export interface FlowNode {
   executor?: string
   effect?: string
   display_name?: string
+  description?: string
+  experience?: NodeExperience
   component_ref?: string
   interaction_mode?: 'display' | 'collect' | 'review' | string
   input_binding?: Record<string, string>
@@ -261,6 +330,7 @@ export interface FlowEdge {
   to: string
   scope?: string
   label?: string
+  kind?: string
 }
 
 export interface FlowLabItem extends CartridgeSummary {
@@ -494,6 +564,71 @@ export interface NodeUpdateResult {
   files: FlowFiles
   validation: ValidationResponse
   graph: FlowGraph
+}
+
+export interface TuningRevision {
+  id: string
+  node_id: string
+  parent_id?: string | null
+  flow_digest: string
+  patch: Record<string, any>
+  author: string
+  message: string
+  created_at: string
+  digest: string
+}
+
+export interface RecipeRelease {
+  id: string
+  sequence: number
+  status: 'published'
+  flow_digest: string
+  node_revisions: Record<string, string>
+  patches: Record<string, Record<string, any>>
+  created_at: string
+  created_by: string
+  message: string
+  digest: string
+}
+
+export interface TuningRepository {
+  schema: 'cartridgeflow.tuning_repository.v1'
+  protocol: { id: 'CF-TUNING'; version: '1.0' }
+  flow_id: string
+  repository_revision: number
+  node_heads: Record<string, string>
+  revisions: TuningRevision[]
+  releases: RecipeRelease[]
+  active_release_id?: string | null
+}
+
+export interface TuningContext {
+  mode: 'draft' | 'published'
+  protocol: { id: string; version: string }
+  release_id?: string | null
+  active_release_id?: string | null
+  release_digest?: string | null
+  flow_digest: string
+  node_revisions: Record<string, string>
+  repository_revision?: number | null
+  materialization_digest: string
+}
+
+export interface TuningResponse {
+  repository: TuningRepository
+  tuning_context?: TuningContext | null
+}
+
+export interface TuningRevisionResult extends NodeUpdateResult {
+  revision: TuningRevision
+  repository: TuningRepository
+  tuning_context: TuningContext
+}
+
+export interface RecipeReleaseResult {
+  status: string
+  release: RecipeRelease
+  repository: TuningRepository
 }
 
 export interface NodeCreatePayload {

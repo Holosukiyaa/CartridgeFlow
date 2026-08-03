@@ -95,6 +95,42 @@ class AuthoringServiceTests(unittest.TestCase):
             self.store.reverse("session.demo", acceptance["id"], author="creator", summary="Undo", expected_revision=3)
         self.assertEqual("AUTHORING_REVERSAL_AMBIGUOUS", error.exception.code)
 
+    def test_freeze_revision_preserves_unaffected_steps_and_preview_is_pure(self):
+        snapshot = self.store.freeze("session.demo", ["research", "draft"], author="creator", summary="Freeze both steps.")
+        proposal = self.proposal([{"id": "c.draft", "target_id": "draft", "operation": "set_step_intent", "value": "Revise only draft."}])
+        request = {"source_freeze_ids": [snapshot["id"]], "reason": "Approved draft correction.", "author": "creator", "expected_revision": 1}
+        before = self.store.get("session.demo")
+        self.store.preview("session.demo", proposal["proposal_id"], freeze_revision=request)
+        self.assertEqual(before, self.store.get("session.demo"))
+        self.store.accept("session.demo", proposal["proposal_id"], freeze_revision=request)
+        reloaded = AuthoringSessionStore(self.temp.name)
+        current = reloaded.get("session.demo")
+        self.assertIn("research", reloaded.creator_projection(current)["frozen_steps"])
+        self.assertNotIn("draft", reloaded.creator_projection(current)["frozen_steps"])
+        research = reloaded.propose("session.demo", [{"id": "c.research", "target_id": "research", "operation": "set_step_intent", "value": "Change frozen research."}], author="creator", summary="bad", expected_revision=2)
+        with self.assertRaises(AuthoringServiceError) as error:
+            reloaded.accept("session.demo", research["proposal_id"])
+        self.assertEqual("AUTHORING_FROZEN_STEP", error.exception.code)
+        replacement = current["freeze_replacements"][0]
+        replacement["digest"] = "0" * 64
+        path = Path(self.temp.name) / "session.demo.json"
+        path.write_text(__import__("json").dumps(current), encoding="utf-8")
+        with self.assertRaises(AuthoringServiceError) as invalid:
+            reloaded.get("session.demo") and reloaded.creator_projection(reloaded.get("session.demo"))
+        self.assertEqual("AUTHORING_FREEZE_LINEAGE_INVALID", invalid.exception.code)
+
+    def test_overlapping_freezes_require_exact_active_snapshot_set(self):
+        first = self.store.freeze("session.demo", ["research", "draft"], author="creator", summary="Freeze both.")
+        second = self.store.freeze("session.demo", ["draft"], author="creator", summary="Freeze draft again.")
+        proposal = self.proposal([{"id": "c.draft", "target_id": "draft", "operation": "set_step_intent", "value": "Revise draft."}])
+        bad = {"source_freeze_ids": [first["id"]], "reason": "incomplete", "author": "creator", "expected_revision": 1}
+        with self.assertRaises(AuthoringServiceError) as error:
+            self.store.preview("session.demo", proposal["proposal_id"], freeze_revision=bad)
+        self.assertEqual("AUTHORING_FREEZE_REVISION_INVALID", error.exception.code)
+        good = {**bad, "source_freeze_ids": [first["id"], second["id"]]}
+        self.store.accept("session.demo", proposal["proposal_id"], freeze_revision=good)
+        self.assertEqual(["research"], self.store.creator_projection(self.store.get("session.demo"))["frozen_steps"])
+
 
 if __name__ == "__main__":
     unittest.main()

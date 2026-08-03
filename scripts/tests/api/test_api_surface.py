@@ -56,6 +56,19 @@ class ApiSurfaceTests(unittest.TestCase):
         self.assertEqual(409, response.status_code)
         self.assertEqual("AI_AUTHORING_MODEL_UNBOUND", response.json()["detail"]["code"])
 
+    def test_creator_ai_proposal_rejects_untrusted_capability_resolution_without_writing(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = AuthoringSessionStore(temp_dir)
+            source = {"id": "source.brief", "kind": "source", "digest": "a" * 64}
+            store.create("api.trust", "recipe.api", "Create brief", [{"id": "draft", "intent": "Draft.", "inputs": {}, "outputs": {}}], [source], {})
+            with patch.object(backend_main, "authoring_sessions", store), patch("core.llm.config_manager.resolve_model", return_value=type("Model", (), {"api_key": "configured"})()), patch("core.studio.authoring_service.resolve_ai_authoring_capabilities", side_effect=backend_main.AuthoringServiceError("AI_AUTHORING_TRUST_UNAVAILABLE", "no trust", status=409)):
+                response = self.client.post("/api/creator/authoring-sessions/api.trust/ai-proposals", json={"prompt": "Clarify", "expected_revision": 1})
+            state = store.get("api.trust")
+        self.assertEqual(409, response.status_code)
+        self.assertEqual("AI_AUTHORING_TRUST_UNAVAILABLE", response.json()["detail"]["code"])
+        self.assertEqual(1, state["head"]["revision"])
+        self.assertEqual({}, state["proposals"])
+
     def test_resource_detail_is_redacted_and_unbound_connectivity_has_stable_error(self):
         secret = "workbench-resource-secret"
         endpoint = f"https://private.example.test/connector?token={secret}"

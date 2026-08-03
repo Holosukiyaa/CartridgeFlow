@@ -9,12 +9,16 @@ from typing import Any, Awaitable, Callable
 
 from core.protocol.authoring_contract import (
     accept_change_set, canonical_digest, create_recipe_blueprint,
-    create_recipe_instance, freeze_snapshot, propose_change_set,
+    create_recipe_instance, freeze_snapshot, propose_change_set, validate_freeze_snapshot,
 )
+from core.protocol.base_manifest import load_base_implementation, supports_subprotocol_release
+from core.protocol.release_catalog import load_protocol_release_catalog
+from core.protocol.capability_registry import ProtocolRegistry
+from core.protocol.authoring_contract import _OPERATIONS
 from core.protocol.tuning import TuningProtocolError
 from core.llm.authoring import AuthoringProposalError, build_authoring_messages, parse_authoring_proposal
 
-DECLARED_AUTHORING_CAPABILITIES = ("set_binding", "set_source_reference", "set_step_intent")
+SERVICE_AUTHORING_OPERATIONS = frozenset(_OPERATIONS)
 
 
 class AuthoringServiceError(ValueError):
@@ -47,7 +51,7 @@ class AuthoringSessionStore:
             except TuningProtocolError as exc:
                 raise AuthoringServiceError("AUTHORING_FACT_INVALID", str(exc)) from exc
             state = {"schema": "cartridgeflow.authoring_session.v1", "id": session_id,
-                     "head": instance, "instances": {instance["id"]: instance}, "history": [], "proposals": {}, "rejections": [], "freezes": [], "freeze_revisions": [], "reversals": []}
+                     "head": instance, "instances": {instance["id"]: instance}, "history": [], "proposals": {}, "rejections": [], "freezes": [], "freeze_replacements": [], "freeze_revisions": [], "reversals": []}
             self._write(path, state)
             return self.creator_projection(state)
 
@@ -75,8 +79,9 @@ class AuthoringSessionStore:
             self._require_revision(state, expected_revision)
             head = deepcopy(state["head"])
         try:
-            content = await model_call(build_authoring_messages(head, list(DECLARED_AUTHORING_CAPABILITIES), prompt))
-            changes = parse_authoring_proposal(content, head, list(DECLARED_AUTHORING_CAPABILITIES))
+            capabilities = resolve_ai_authoring_capabilities(Path(__file__).resolve().parents[3])
+            content = await model_call(build_authoring_messages(head, capabilities, prompt))
+            changes = parse_authoring_proposal(content, head, capabilities)
         except AuthoringProposalError as exc:
             raise AuthoringServiceError("AI_AUTHORING_PROPOSAL_INVALID", str(exc), status=422) from exc
         # Re-read after the await: the proposal must not be based on a stale head.
@@ -101,17 +106,20 @@ class AuthoringSessionStore:
             state = self.get(session_id)
             proposal = self._proposal(state, proposal_id)
             self._require_proposal_current(state, proposal)
+            prior_active_freezes = self._active_freezes(state)
             active_freezes, freeze_audit = self._freeze_guard(state, proposal, selected_change_ids, freeze_revision)
             try:
                 acceptance = accept_change_set(state["head"], proposal, selected_change_ids, frozen_snapshots=active_freezes)
             except TuningProtocolError as exc:
                 raise AuthoringServiceError("AUTHORING_ACCEPT_REJECTED", str(exc), status=409) from exc
             # The sole state transition occurs after every validation has passed.
+            replacements = self._next_freeze_replacements(prior_active_freezes, acceptance, freeze_audit)
             state["history"].append(acceptance)
             state["head"] = acceptance["instance"]
             state["instances"][acceptance["instance"]["id"]] = acceptance["instance"]
             if freeze_audit:
-                state["freeze_revisions"].append(self._freeze_revision_record(freeze_audit, acceptance))
+                state["freeze_revisions"].append(self._freeze_revision_record(freeze_audit, acceptance, replacements))
+            state["freeze_replacements"].extend(replacements)
             state["proposals"].pop(proposal_id, None)
             self._write(self._path(session_id), state)
             return {"acceptance": acceptance, "creator": self.creator_projection(state), "impact": self._impact(acceptance), "freeze_revision": freeze_audit}
@@ -184,8 +192,23 @@ class AuthoringSessionStore:
 
     @staticmethod
     def _active_freezes(state: dict) -> list[dict]:
-        superseded = {freeze_id for item in state.get("freeze_revisions", []) for freeze_id in item["source_freeze_ids"]}
-        return [item for item in state["freezes"] if item["id"] not in superseded]
+        head = state["head"]
+        replacements = state.get("freeze_replacements", [])
+        for item in replacements:
+            body = {key: value for key, value in item.items() if key not in {"id", "digest"}}
+            digest = canonical_digest(body)
+            if item.get("id") != f"freeze-replacement-{digest[:16]}" or item.get("digest") != digest:
+                raise AuthoringServiceError("AUTHORING_FREEZE_LINEAGE_INVALID", "Freeze replacement lineage validation failed.", status=409)
+        candidates = list(state.get("freezes", [])) + [item["snapshot"] for item in replacements]
+        active = []
+        for snapshot in candidates:
+            try:
+                validate_freeze_snapshot(snapshot)
+            except TuningProtocolError as exc:
+                raise AuthoringServiceError("AUTHORING_FREEZE_LINEAGE_INVALID", "Freeze snapshot validation failed.", status=409) from exc
+            if snapshot["instance_id"] == head["id"] and snapshot["instance_revision"] == head["revision"] and snapshot["instance_digest"] == head["digest"]:
+                active.append(snapshot)
+        return active
 
     def _validate_freeze_revision(self, state: dict, affected: set[str], request: dict | None) -> dict:
         if not isinstance(request, dict) or set(request) != {"source_freeze_ids", "reason", "author", "expected_revision"}:
@@ -202,10 +225,28 @@ class AuthoringSessionStore:
         return {"source_freeze_ids": sorted(ids), "reason": request["reason"].strip(), "author": request["author"].strip(), "expected_revision": request["expected_revision"], "affected_steps": sorted(affected)}
 
     @staticmethod
-    def _freeze_revision_record(audit: dict, acceptance: dict) -> dict:
-        body = {"schema": "cartridgeflow.authoring_freeze_revision.v1", "source_freeze_ids": audit["source_freeze_ids"], "affected_steps": audit["affected_steps"], "reason": audit["reason"], "author": audit["author"], "source_revision": audit["expected_revision"], "acceptance_id": acceptance["id"], "acceptance_digest": acceptance["digest"], "result_revision": acceptance["instance"]["revision"]}
+    def _freeze_revision_record(audit: dict, acceptance: dict, replacements: list[dict]) -> dict:
+        body = {"schema": "cartridgeflow.authoring_freeze_revision.v1", "source_freeze_ids": audit["source_freeze_ids"], "affected_steps": audit["affected_steps"], "reason": audit["reason"], "author": audit["author"], "source_revision": audit["expected_revision"], "acceptance_id": acceptance["id"], "acceptance_digest": acceptance["digest"], "result_revision": acceptance["instance"]["revision"], "replacement_ids": sorted(item["snapshot"]["id"] for item in replacements if item["source_snapshot_id"] in audit["source_freeze_ids"])}
         digest = canonical_digest(body)
         return {"id": f"freeze-revision-{digest[:16]}", **body, "digest": digest}
+
+    def _next_freeze_replacements(self, active_freezes: list[dict], acceptance: dict, audit: dict | None) -> list[dict]:
+        """Carry each still-frozen step into the new immutable instance facts."""
+        replacements = []
+        changed = set((audit or {}).get("affected_steps", []))
+        source_ids = set((audit or {}).get("source_freeze_ids", []))
+        compiled = compile_instance(acceptance["instance"])
+        reference = {"id": compiled["id"], "kind": "compile", "digest": compiled["digest"]}
+        for source in active_freezes:
+            preserved = [item["step_id"] for item in source["frozen_steps"] if not (source["id"] in source_ids and item["step_id"] in changed)]
+            if not preserved:
+                continue
+            steps = [{"step_id": step_id, "semantic_digest": _semantic_digest(acceptance["instance"], step_id)} for step_id in preserved]
+            snapshot = freeze_snapshot(acceptance["instance"], steps, reference, author="freeze-lineage", summary="Carry forward unaffected frozen steps")
+            body = {"schema": "cartridgeflow.authoring_freeze_replacement.v1", "source_snapshot_id": source["id"], "source_snapshot_digest": source["digest"], "acceptance_id": acceptance["id"], "preserved_steps": sorted(preserved), "affected_steps": sorted(changed & {item["step_id"] for item in source["frozen_steps"]}), "snapshot": snapshot}
+            digest = canonical_digest(body)
+            replacements.append({"id": f"freeze-replacement-{digest[:16]}", **body, "digest": digest})
+        return replacements
 
     @staticmethod
     def _reversal_record(reversal_of: str, acceptance: dict) -> dict:
@@ -289,3 +330,26 @@ def compile_instance(instance: dict) -> dict:
             "sources": sorted(instance["blueprint"]["source_references"], key=lambda x: x["id"])}
     digest = canonical_digest(body)
     return {"id": f"compile-{digest[:16]}", **body, "digest": digest}
+
+
+def resolve_ai_authoring_capabilities(root: str | Path) -> list[str]:
+    """Resolve AI permissions from published catalog + Base trust, never client input."""
+    try:
+        catalog = load_protocol_release_catalog(root)
+        registry = ProtocolRegistry(root, overlay_dirs=[Path(root) / "protocol" / "tuning" / "1.1"])
+        base = load_base_implementation(root)
+    except Exception as exc:
+        raise AuthoringServiceError("AI_AUTHORING_TRUST_UNAVAILABLE", "Published authoring trust facts are unavailable.", status=409) from exc
+    host = catalog.get("CF-FARP", "1.2")
+    host_adapter = catalog.runtime_adapter("CF-FARP", "1.2")
+    if not host or not catalog.published("CF-FARP", "1.2") or not registry.supports_protocol("CF-TUNING", "1.1"):
+        raise AuthoringServiceError("AI_AUTHORING_TRUST_UNAVAILABLE", "Required published authoring releases are unavailable.", status=409)
+    trusted = [item for item in catalog.trusted_subprotocols("CF-FARP", "1.2") if item.get("id") == "CF-TUNING" and str(item.get("version")) == "1.1" and item.get("binding") == "ai_authoring_contract"]
+    adapters = {item.get("id") for item in base.get("supported_protocol_adapters", []) if item.get("status") == "supported"}
+    required_capability = "ai_change_set_review_v1"
+    if len(trusted) != 1 or "ai_authoring_contract" not in catalog.features("CF-FARP", "1.2") or required_capability not in registry.capabilities or required_capability not in set(base.get("capabilities") or []) or not supports_subprotocol_release(base, "CF-TUNING", "1.1", "CF-FARP", "1.2") or host_adapter not in adapters or "cf-tuning.authoring-contract.v1" not in adapters:
+        raise AuthoringServiceError("AI_AUTHORING_TRUST_UNAVAILABLE", "Published authoring trust binding is not supported by Base.", status=409)
+    capabilities = sorted(SERVICE_AUTHORING_OPERATIONS)
+    if not capabilities:
+        raise AuthoringServiceError("AI_AUTHORING_CAPABILITIES_EMPTY", "No trusted AI authoring operations are available.", status=409)
+    return capabilities

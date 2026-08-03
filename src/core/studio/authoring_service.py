@@ -5,13 +5,16 @@ from copy import deepcopy
 import json
 from pathlib import Path
 from threading import RLock
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 from core.protocol.authoring_contract import (
     accept_change_set, canonical_digest, create_recipe_blueprint,
     create_recipe_instance, freeze_snapshot, propose_change_set,
 )
 from core.protocol.tuning import TuningProtocolError
+from core.llm.authoring import AuthoringProposalError, build_authoring_messages, parse_authoring_proposal
+
+DECLARED_AUTHORING_CAPABILITIES = ("set_binding", "set_source_reference", "set_step_intent")
 
 
 class AuthoringServiceError(ValueError):
@@ -44,7 +47,7 @@ class AuthoringSessionStore:
             except TuningProtocolError as exc:
                 raise AuthoringServiceError("AUTHORING_FACT_INVALID", str(exc)) from exc
             state = {"schema": "cartridgeflow.authoring_session.v1", "id": session_id,
-                     "head": instance, "instances": {instance["id"]: instance}, "history": [], "proposals": {}, "rejections": [], "freezes": []}
+                     "head": instance, "instances": {instance["id"]: instance}, "history": [], "proposals": {}, "rejections": [], "freezes": [], "freeze_revisions": [], "reversals": []}
             self._write(path, state)
             return self.creator_projection(state)
 
@@ -64,37 +67,54 @@ class AuthoringSessionStore:
             self._write(self._path(session_id), state)
             return self.proposal_projection(proposal)
 
-    def preview(self, session_id: str, proposal_id: str, selected_change_ids: list[str] | None = None, *, revision_path: str = "") -> dict:
+    async def propose_ai(self, session_id: str, *, prompt: str, author: str, summary: str, expected_revision: int,
+                         model_call: Callable[[list[dict]], Awaitable[str]]) -> dict:
+        """Generate a pending proposal through the configured LLM, never persisting chat text."""
+        with self._lock:
+            state = self.get(session_id)
+            self._require_revision(state, expected_revision)
+            head = deepcopy(state["head"])
+        try:
+            content = await model_call(build_authoring_messages(head, list(DECLARED_AUTHORING_CAPABILITIES), prompt))
+            changes = parse_authoring_proposal(content, head, list(DECLARED_AUTHORING_CAPABILITIES))
+        except AuthoringProposalError as exc:
+            raise AuthoringServiceError("AI_AUTHORING_PROPOSAL_INVALID", str(exc), status=422) from exc
+        # Re-read after the await: the proposal must not be based on a stale head.
+        return self.propose(session_id, changes, author=author, summary=summary, expected_revision=expected_revision)
+
+    def preview(self, session_id: str, proposal_id: str, selected_change_ids: list[str] | None = None, *, freeze_revision: dict | None = None) -> dict:
         state = self.get(session_id)
         proposal = self._proposal(state, proposal_id)
         self._require_proposal_current(state, proposal)
-        self._freeze_guard(state, proposal, selected_change_ids, revision_path)
+        active_freezes, freeze_audit = self._freeze_guard(state, proposal, selected_change_ids, freeze_revision)
         try:
-            acceptance = accept_change_set(state["head"], proposal, selected_change_ids, frozen_snapshots=state["freezes"])
+            acceptance = accept_change_set(state["head"], proposal, selected_change_ids, frozen_snapshots=active_freezes)
         except TuningProtocolError as exc:
             raise AuthoringServiceError("AUTHORING_PREVIEW_REJECTED", str(exc), status=409) from exc
         return {"schema": "cartridgeflow.authoring_preview.v1", "would_change": True,
                 "base_revision": state["head"]["revision"], "next_revision": acceptance["instance"]["revision"],
-                "accepted_change_ids": acceptance["accepted_change_ids"], "impact": self._impact(acceptance),
+                "accepted_change_ids": acceptance["accepted_change_ids"], "impact": self._impact(acceptance), "freeze_revision": freeze_audit,
                 "developer": {"acceptance": acceptance, "compiled": compile_instance(acceptance["instance"])}}
 
-    def accept(self, session_id: str, proposal_id: str, selected_change_ids: list[str] | None = None, *, revision_path: str = "") -> dict:
+    def accept(self, session_id: str, proposal_id: str, selected_change_ids: list[str] | None = None, *, freeze_revision: dict | None = None) -> dict:
         with self._lock:
             state = self.get(session_id)
             proposal = self._proposal(state, proposal_id)
             self._require_proposal_current(state, proposal)
-            self._freeze_guard(state, proposal, selected_change_ids, revision_path)
+            active_freezes, freeze_audit = self._freeze_guard(state, proposal, selected_change_ids, freeze_revision)
             try:
-                acceptance = accept_change_set(state["head"], proposal, selected_change_ids, frozen_snapshots=state["freezes"])
+                acceptance = accept_change_set(state["head"], proposal, selected_change_ids, frozen_snapshots=active_freezes)
             except TuningProtocolError as exc:
                 raise AuthoringServiceError("AUTHORING_ACCEPT_REJECTED", str(exc), status=409) from exc
             # The sole state transition occurs after every validation has passed.
             state["history"].append(acceptance)
             state["head"] = acceptance["instance"]
             state["instances"][acceptance["instance"]["id"]] = acceptance["instance"]
+            if freeze_audit:
+                state["freeze_revisions"].append(self._freeze_revision_record(freeze_audit, acceptance))
             state["proposals"].pop(proposal_id, None)
             self._write(self._path(session_id), state)
-            return {"acceptance": acceptance, "creator": self.creator_projection(state), "impact": self._impact(acceptance)}
+            return {"acceptance": acceptance, "creator": self.creator_projection(state), "impact": self._impact(acceptance), "freeze_revision": freeze_audit}
 
     def reject(self, session_id: str, proposal_id: str, *, reason: str = "") -> dict:
         with self._lock:
@@ -105,21 +125,23 @@ class AuthoringSessionStore:
             self._write(self._path(session_id), state)
             return self.creator_projection(state)
 
-    def reverse(self, session_id: str, acceptance_id: str, *, author: str, summary: str, expected_revision: int, revision_path: str = "") -> dict:
+    def reverse(self, session_id: str, acceptance_id: str, *, author: str, summary: str, expected_revision: int, freeze_revision: dict | None = None) -> dict:
         with self._lock:
             state = self.get(session_id)
             self._require_revision(state, expected_revision)
             original = next((item for item in state["history"] if item["id"] == acceptance_id), None)
             if not original:
                 raise AuthoringServiceError("AUTHORING_REVISION_UNKNOWN", "Acceptance revision was not found.", status=404)
-            prior = original["change_set"]
-            inverse = self._inverse_changes(state["instances"], original["source_instance_id"], prior)
+            self._ensure_reversal_unambiguous(state, acceptance_id, original)
+            inverse = self._inverse_changes(state["instances"], original["source_instance_id"], original["accepted_changes"])
             proposal = propose_change_set(state["head"], inverse, author, summary)
             state["proposals"][proposal["id"]] = proposal
-            self._freeze_guard(state, proposal, None, revision_path)
+            self._freeze_guard(state, proposal, None, freeze_revision)
             self._write(self._path(session_id), state)
-            result = self.accept(session_id, proposal["id"], revision_path=revision_path)
-            result["acceptance"]["reversal_of"] = acceptance_id
+            result = self.accept(session_id, proposal["id"], freeze_revision=freeze_revision)
+            reversal = self._reversal_record(acceptance_id, result["acceptance"])
+            state = self.get(session_id); state["reversals"].append(reversal); self._write(self._path(session_id), state)
+            result["reversal"] = reversal
             return result
 
     def freeze(self, session_id: str, step_ids: list[str], *, author: str, summary: str) -> dict:
@@ -140,20 +162,66 @@ class AuthoringSessionStore:
         head = state["head"]
         return {"session_id": state["id"], "revision": head["revision"], "intent": head["blueprint"]["intent"],
                 "steps": [{"id": item["id"], "intent": item["intent"]} for item in head["blueprint"]["steps"]],
-                "pending_proposals": sorted(state["proposals"]), "frozen_steps": sorted({x["step_id"] for f in state["freezes"] for x in f["frozen_steps"]}),
-                "history": [{"id": item["id"], "revision": item["instance"]["revision"], "summary": item["change_set"]["summary"]} for item in state["history"]]}
+                "pending_proposals": sorted(state["proposals"]), "frozen_steps": sorted({x["step_id"] for f in AuthoringSessionStore._active_freezes(state) for x in f["frozen_steps"]}),
+                "history": [{"id": item["id"], "revision": item["instance"]["revision"], "summary": item["change_set"]["summary"]} for item in state["history"]],
+                "reversals": [{"id": item["id"], "reversal_of": item["reversal_of"], "revision": item["revision"]} for item in state.get("reversals", [])]}
 
     @staticmethod
     def proposal_projection(proposal: dict) -> dict:
         return {"proposal_id": proposal["id"], "revision": proposal["expected_revision"], "summary": proposal["summary"],
                 "changes": [{"id": x["id"], "target_id": x["target_id"], "operation": x["operation"]} for x in proposal["changes"]]}
 
-    def _freeze_guard(self, state: dict, proposal: dict, selected: list[str] | None, revision_path: str) -> None:
+    def _freeze_guard(self, state: dict, proposal: dict, selected: list[str] | None, freeze_revision: dict | None) -> tuple[list[dict], dict | None]:
         ids = set(selected or [x["id"] for x in proposal["changes"]])
-        frozen = {x["step_id"] for f in state["freezes"] for x in f["frozen_steps"]}
+        active = self._active_freezes(state)
+        frozen = {x["step_id"] for f in active for x in f["frozen_steps"]}
         touched = {x["target_id"] for x in proposal["changes"] if x["id"] in ids and x["operation"] != "set_source_reference"}
-        if frozen & touched and not str(revision_path).strip():
-            raise AuthoringServiceError("AUTHORING_FROZEN_STEP", "Frozen steps require an explicit revision path.", status=409)
+        affected = frozen & touched
+        if not affected:
+            return active, None
+        audit = self._validate_freeze_revision(state, affected, freeze_revision)
+        return [item for item in active if item["id"] not in set(audit["source_freeze_ids"])], audit
+
+    @staticmethod
+    def _active_freezes(state: dict) -> list[dict]:
+        superseded = {freeze_id for item in state.get("freeze_revisions", []) for freeze_id in item["source_freeze_ids"]}
+        return [item for item in state["freezes"] if item["id"] not in superseded]
+
+    def _validate_freeze_revision(self, state: dict, affected: set[str], request: dict | None) -> dict:
+        if not isinstance(request, dict) or set(request) != {"source_freeze_ids", "reason", "author", "expected_revision"}:
+            raise AuthoringServiceError("AUTHORING_FROZEN_STEP", "Frozen steps require a structured freeze revision request.", status=409)
+        if request.get("expected_revision") != state["head"]["revision"] or not isinstance(request.get("reason"), str) or not request["reason"].strip() or not isinstance(request.get("author"), str) or not request["author"].strip():
+            raise AuthoringServiceError("AUTHORING_FREEZE_REVISION_INVALID", "Freeze revision request is invalid.", status=409)
+        ids = request.get("source_freeze_ids")
+        if not isinstance(ids, list) or not ids or len(ids) != len(set(ids)) or any(not isinstance(x, str) for x in ids):
+            raise AuthoringServiceError("AUTHORING_FREEZE_REVISION_INVALID", "Freeze revision snapshot ids are invalid.", status=409)
+        active = {item["id"]: item for item in self._active_freezes(state)}
+        required = {item["id"] for item in active.values() if affected & {x["step_id"] for x in item["frozen_steps"]}}
+        if set(ids) != required:
+            raise AuthoringServiceError("AUTHORING_FREEZE_REVISION_INVALID", "Freeze revision must name exactly the affected active snapshots.", status=409)
+        return {"source_freeze_ids": sorted(ids), "reason": request["reason"].strip(), "author": request["author"].strip(), "expected_revision": request["expected_revision"], "affected_steps": sorted(affected)}
+
+    @staticmethod
+    def _freeze_revision_record(audit: dict, acceptance: dict) -> dict:
+        body = {"schema": "cartridgeflow.authoring_freeze_revision.v1", "source_freeze_ids": audit["source_freeze_ids"], "affected_steps": audit["affected_steps"], "reason": audit["reason"], "author": audit["author"], "source_revision": audit["expected_revision"], "acceptance_id": acceptance["id"], "acceptance_digest": acceptance["digest"], "result_revision": acceptance["instance"]["revision"]}
+        digest = canonical_digest(body)
+        return {"id": f"freeze-revision-{digest[:16]}", **body, "digest": digest}
+
+    @staticmethod
+    def _reversal_record(reversal_of: str, acceptance: dict) -> dict:
+        body = {"schema": "cartridgeflow.authoring_reversal.v1", "reversal_of": reversal_of, "acceptance_id": acceptance["id"], "acceptance_digest": acceptance["digest"], "revision": acceptance["instance"]["revision"]}
+        digest = canonical_digest(body)
+        return {"id": f"reversal-{digest[:16]}", **body, "digest": digest}
+
+    @staticmethod
+    def _ensure_reversal_unambiguous(state: dict, acceptance_id: str, original: dict) -> None:
+        if any(item["reversal_of"] == acceptance_id for item in state.get("reversals", [])):
+            raise AuthoringServiceError("AUTHORING_REVERSAL_ALREADY_APPLIED", "This acceptance has already been reversed.", status=409)
+        index = state["history"].index(original)
+        targets = {item["target_id"] for item in original["accepted_changes"]}
+        later = state["history"][index + 1:]
+        if any(targets & {item["target_id"] for item in acceptance["accepted_changes"]} for acceptance in later):
+            raise AuthoringServiceError("AUTHORING_REVERSAL_AMBIGUOUS", "A later accepted revision changed the same design target.", status=409)
 
     @staticmethod
     def _impact(acceptance: dict) -> dict:
@@ -184,7 +252,7 @@ class AuthoringSessionStore:
             raise AuthoringServiceError("AUTHORING_REVISION_LINEAGE_INVALID", "Cannot reconstruct the requested revision.", status=409)
         changes = []
         before_steps = {x["id"]: x for x in source["blueprint"]["steps"]}; before_sources = {x["id"]: x for x in source["blueprint"]["source_references"]}
-        for index, change in enumerate(original_changes["changes"]):
+        for index, change in enumerate(original_changes):
             target, op = change["target_id"], change["operation"]
             value = source["bindings"].get(target, {}) if op == "set_binding" else before_steps[target]["intent"] if op == "set_step_intent" else before_sources[target]
             changes.append({"id": f"reverse.{index}", "target_id": target, "operation": op, "value": deepcopy(value)})

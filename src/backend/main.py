@@ -26,6 +26,7 @@ from backend.api_models import (
     AIFlowSelection,
     AIFlowStewardPayload,
     AuthoringAcceptPayload,
+    AuthoringAIProposalPayload,
     AuthoringFreezePayload,
     AuthoringProposalPayload,
     AuthoringRejectPayload,
@@ -2133,6 +2134,27 @@ def get_developer_authoring_session(session_id: str):
         _authoring_error(exc)
 
 
+@app.post("/api/creator/authoring-sessions/{session_id}/ai-proposals")
+async def create_ai_authoring_proposal(session_id: str, payload: AuthoringAIProposalPayload):
+    from core.llm import chat
+    from core.llm.config_manager import resolve_model
+    try:
+        model = resolve_model("mentor")
+        if not str(model.api_key or "").strip():
+            raise AuthoringServiceError("AI_AUTHORING_MODEL_UNBOUND", "No configured authoring model is available.", status=409)
+        async def model_call(messages):
+            response = await chat(model, messages, agent_name="creator_authoring", phase="authoring_proposal")
+            return str(response.get("content") or "")
+        proposal = await authoring_sessions.propose_ai(session_id, prompt=payload.prompt, author=payload.author, summary=payload.summary, expected_revision=payload.expected_revision, model_call=model_call)
+        return {"proposal": proposal}
+    except AuthoringServiceError as exc:
+        _authoring_error(exc)
+    except ValueError as exc:
+        _authoring_error(AuthoringServiceError("AI_AUTHORING_MODEL_UNBOUND", str(exc), status=409))
+    except Exception as exc:
+        _authoring_error(AuthoringServiceError("AI_AUTHORING_MODEL_FAILED", str(exc), status=502))
+
+
 @app.post("/api/creator/authoring-sessions/{session_id}/proposals")
 def create_authoring_proposal(session_id: str, payload: AuthoringProposalPayload):
     try:
@@ -2144,7 +2166,8 @@ def create_authoring_proposal(session_id: str, payload: AuthoringProposalPayload
 @app.post("/api/creator/authoring-sessions/{session_id}/proposals/{proposal_id}/preview")
 def preview_authoring_proposal(session_id: str, proposal_id: str, payload: AuthoringAcceptPayload):
     try:
-        return authoring_sessions.preview(session_id, proposal_id, payload.selected_change_ids, revision_path=payload.revision_path)
+        result = authoring_sessions.preview(session_id, proposal_id, payload.selected_change_ids, freeze_revision=payload.freeze_revision)
+        return {key: value for key, value in result.items() if key != "developer"}
     except AuthoringServiceError as exc:
         _authoring_error(exc)
 
@@ -2152,7 +2175,8 @@ def preview_authoring_proposal(session_id: str, proposal_id: str, payload: Autho
 @app.post("/api/creator/authoring-sessions/{session_id}/proposals/{proposal_id}/accept")
 def accept_authoring_proposal(session_id: str, proposal_id: str, payload: AuthoringAcceptPayload):
     try:
-        return authoring_sessions.accept(session_id, proposal_id, payload.selected_change_ids, revision_path=payload.revision_path)
+        result = authoring_sessions.accept(session_id, proposal_id, payload.selected_change_ids, freeze_revision=payload.freeze_revision)
+        return {"creator": result["creator"], "impact": result["impact"], "accepted_change_ids": result["acceptance"]["accepted_change_ids"], "freeze_revision": result["freeze_revision"]}
     except AuthoringServiceError as exc:
         _authoring_error(exc)
 
@@ -2168,7 +2192,8 @@ def reject_authoring_proposal(session_id: str, proposal_id: str, payload: Author
 @app.post("/api/creator/authoring-sessions/{session_id}/revisions/{acceptance_id}/reverse")
 def reverse_authoring_revision(session_id: str, acceptance_id: str, payload: AuthoringReversePayload):
     try:
-        return authoring_sessions.reverse(session_id, acceptance_id, author=payload.author, summary=payload.summary, expected_revision=payload.expected_revision, revision_path=payload.revision_path)
+        result = authoring_sessions.reverse(session_id, acceptance_id, author=payload.author, summary=payload.summary, expected_revision=payload.expected_revision, freeze_revision=payload.freeze_revision)
+        return {"creator": result["creator"], "impact": result["impact"], "reversal": result["reversal"]}
     except AuthoringServiceError as exc:
         _authoring_error(exc)
 

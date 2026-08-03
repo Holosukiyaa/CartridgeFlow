@@ -7,6 +7,7 @@ ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "src"))
 
 from core.studio.authoring_service import AuthoringServiceError, AuthoringSessionStore, compile_instance
+from core.protocol.authoring_contract import validate_acceptance
 from core.llm.authoring import AuthoringProposalError, build_authoring_messages, parse_authoring_proposal
 
 
@@ -48,8 +49,11 @@ class AuthoringServiceTests(unittest.TestCase):
         self.assertEqual(["c.draft"], accepted["acceptance"]["accepted_change_ids"])
         self.assertEqual("Collect declared source material.", self.store.get("session.demo")["head"]["blueprint"]["steps"][0]["intent"])
         reversed_result = self.store.reverse("session.demo", accepted["acceptance"]["id"], author="creator", summary="Undo draft revision.", expected_revision=2)
-        self.assertEqual(accepted["acceptance"]["id"], reversed_result["acceptance"]["reversal_of"])
+        self.assertEqual(accepted["acceptance"]["id"], reversed_result["reversal"]["reversal_of"])
+        validate_acceptance(reversed_result["acceptance"])
         self.assertEqual("Prepare a plain-language draft.", self.store.get("session.demo")["head"]["blueprint"]["steps"][1]["intent"])
+        reloaded = AuthoringSessionStore(self.temp.name).get("session.demo")
+        self.assertEqual(reversed_result["reversal"], reloaded["reversals"][0])
 
     def test_freeze_and_source_safety_are_fail_closed(self):
         self.store.freeze("session.demo", ["draft"], author="creator", summary="Freeze reviewed wording.")
@@ -57,6 +61,12 @@ class AuthoringServiceTests(unittest.TestCase):
         with self.assertRaises(AuthoringServiceError) as error:
             self.store.accept("session.demo", proposal["proposal_id"])
         self.assertEqual("AUTHORING_FROZEN_STEP", error.exception.code)
+        state = self.store.get("session.demo")
+        request = {"source_freeze_ids": [state["freezes"][0]["id"]], "reason": "Correct a reviewed requirement.", "author": "creator", "expected_revision": 1}
+        accepted = self.store.accept("session.demo", proposal["proposal_id"], freeze_revision=request)
+        self.assertIsNotNone(accepted["freeze_revision"])
+        reloaded = AuthoringSessionStore(self.temp.name).get("session.demo")
+        self.assertEqual(accepted["freeze_revision"]["source_freeze_ids"], reloaded["freeze_revisions"][0]["source_freeze_ids"])
         with self.assertRaises(AuthoringServiceError) as unsafe:
             self.store.create("session.unsafe", "recipe.unsafe", "x", STEPS, [SOURCE], {"draft": {"api_key": "nope"}})
         self.assertEqual("AUTHORING_FACT_INVALID", unsafe.exception.code)
@@ -75,6 +85,15 @@ class AuthoringServiceTests(unittest.TestCase):
         self.assertEqual("set_step_intent", changes[0]["operation"])
         with self.assertRaises(AuthoringProposalError):
             parse_authoring_proposal('{"changes":[{"id":"ai.bad","target_id":"draft","operation":"set_binding","value":{}}]}', head, ["set_step_intent"])
+
+    def test_reversal_rejects_later_change_to_same_target(self):
+        first = self.proposal([{"id": "c.first", "target_id": "draft", "operation": "set_step_intent", "value": "First revision."}])
+        acceptance = self.store.accept("session.demo", first["proposal_id"])["acceptance"]
+        second = self.proposal([{"id": "c.second", "target_id": "draft", "operation": "set_step_intent", "value": "Second revision."}], revision=2)
+        self.store.accept("session.demo", second["proposal_id"])
+        with self.assertRaises(AuthoringServiceError) as error:
+            self.store.reverse("session.demo", acceptance["id"], author="creator", summary="Undo", expected_revision=3)
+        self.assertEqual("AUTHORING_REVERSAL_AMBIGUOUS", error.exception.code)
 
 
 if __name__ == "__main__":

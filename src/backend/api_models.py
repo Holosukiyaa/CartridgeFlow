@@ -113,7 +113,7 @@ class AuthoringProposalPayload(BaseModel):
 
 class AuthoringAcceptPayload(BaseModel):
     selected_change_ids: list[str] | None = None
-    revision_path: str = ""
+    freeze_revision: dict | None = None
 
 
 class AuthoringRejectPayload(BaseModel):
@@ -124,13 +124,20 @@ class AuthoringReversePayload(BaseModel):
     author: str = "creator"
     summary: str
     expected_revision: int
-    revision_path: str = ""
+    freeze_revision: dict | None = None
 
 
 class AuthoringFreezePayload(BaseModel):
     step_ids: list[str] = Field(default_factory=list)
     author: str = "creator"
     summary: str
+
+
+class AuthoringAIProposalPayload(BaseModel):
+    prompt: str
+    expected_revision: int
+    author: str = "creator"
+    summary: str = "AI-assisted design proposal"
 
 
 class CartridgeAssetPayload(BaseModel):

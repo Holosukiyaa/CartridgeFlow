@@ -14,6 +14,7 @@ from backend import main as backend_main
 from backend.api_models import NodeCreatePayload, NodeUpdatePayload
 from backend.main import app
 from core.lab.dev_flow import DevFlowManager
+from core.studio.authoring_service import AuthoringSessionStore
 
 
 class ApiSurfaceTests(unittest.TestCase):
@@ -24,6 +25,36 @@ class ApiSurfaceTests(unittest.TestCase):
     def test_health_and_base_routes_are_available(self):
         self.assertEqual(200, self.client.get("/api/health").status_code)
         self.assertEqual(200, self.client.get("/api/base").status_code)
+
+    def test_creator_ai_proposal_uses_configured_dispatch_and_creator_projection(self):
+        source = {"id": "source.brief", "kind": "source", "digest": "a" * 64}
+        steps = [{"id": "draft", "intent": "Draft a brief.", "inputs": {}, "outputs": {}}]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = AuthoringSessionStore(temp_dir)
+            with patch.object(backend_main, "authoring_sessions", store), patch("core.llm.config_manager.resolve_model") as resolve_model, patch("core.llm.chat") as chat:
+                model = type("Model", (), {"api_key": "configured"})()
+                resolve_model.return_value = model
+                async def fake_chat(*args, **kwargs):
+                    return {"content": '{"changes":[{"id":"ai.draft","target_id":"draft","operation":"set_step_intent","value":"Draft a clearer brief."}]}' }
+                chat.side_effect = fake_chat
+                created = self.client.post("/api/creator/authoring-sessions", json={"session_id": "api.session", "recipe_id": "recipe.api", "intent": "Create brief", "steps": steps, "source_references": [source], "bindings": {}})
+                self.assertEqual(200, created.status_code)
+                proposal = self.client.post("/api/creator/authoring-sessions/api.session/ai-proposals", json={"prompt": "Clarify the draft", "expected_revision": 1})
+                self.assertEqual(200, proposal.status_code)
+                self.assertEqual("set_step_intent", proposal.json()["proposal"]["changes"][0]["operation"])
+                preview = self.client.post(f"/api/creator/authoring-sessions/api.session/proposals/{proposal.json()['proposal']['proposal_id']}/preview", json={})
+                self.assertEqual(200, preview.status_code)
+                self.assertNotIn("developer", preview.json())
+
+    def test_creator_ai_proposal_without_model_is_stable(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = AuthoringSessionStore(temp_dir)
+            source = {"id": "source.brief", "kind": "source", "digest": "a" * 64}
+            store.create("api.unbound", "recipe.api", "Create brief", [{"id": "draft", "intent": "Draft.", "inputs": {}, "outputs": {}}], [source], {})
+            with patch.object(backend_main, "authoring_sessions", store), patch("core.llm.config_manager.resolve_model", side_effect=ValueError("unbound")):
+                response = self.client.post("/api/creator/authoring-sessions/api.unbound/ai-proposals", json={"prompt": "Clarify", "expected_revision": 1})
+        self.assertEqual(409, response.status_code)
+        self.assertEqual("AI_AUTHORING_MODEL_UNBOUND", response.json()["detail"]["code"])
 
     def test_resource_detail_is_redacted_and_unbound_connectivity_has_stable_error(self):
         secret = "workbench-resource-secret"

@@ -339,13 +339,15 @@ worker-301-authoring-contract
   -> worker-302-authoring-service
      -> worker-306-creator-contract-completion
         -> worker-303-creator-studio --+
-     -> worker-304-developer-console -+-> worker-305-authoring-integration
+        -> worker-307-authoring-runtime-bridge -+
+     -> worker-304-developer-console -----------+-> worker-305-authoring-integration
 ```
 
 Worker 304 可在 Worker 302 合并后启动。Worker 303 的 API 驱动完成必须等待 Worker 306
 被接受并合并；其已有原型不得作为可接受实现。只有 Workers 303、304 与 306 都被接受
-并合并后，Worker 305 才可启动。任何 Worker 都不得 cherry-pick 被拒绝的 Worker 201
-分支。
+并合并后，Worker 305 才可启动。Worker 305 的最终验收还必须等待 Worker 307 被接受并
+合并；在此之前它只能记录交接边界，不能以既有样本包替代创作事实到签名包的端到端证据。
+任何 Worker 都不得 cherry-pick 被拒绝的 Worker 201 分支。
 
 ## 15. Worker 卡片
 
@@ -680,7 +682,49 @@ cartridge 生成的完整路径。验证两个前端独立构建。仅在公共 
 codex -C $worktree $prompt
 ```
 
-## 16. 视觉设计里程碑
+## 16. 创作到运行时物化桥接
+
+Worker 305 的审查确认：当前 Creator `compile_candidate` 只表达经验证的创作修订摘要，
+并不会物化为 `root.flow.json`，也不会进入现有的 CF-CRE 签名打包基础设施。因此在声称
+存在“从创作到生产包”的路径之前，必须先交付一个受限的后端/核心桥接。
+
+桥接必须：
+
+1. 仅接受当前、已接受、无阻塞发现且具有有效冻结事实的 Creator revision；过期 revision、
+   未冻结步骤、未解决设计检查或不匹配的 compile candidate 必须稳定拒绝。
+2. 从该 revision 的已接受语义步骤和关系确定性物化有效的 CF-FARP `root.flow.json`；不从
+   聊天、提示词、浏览器本地状态或未接受提案推断运行时事实。
+3. 将该 Root Flow 及最小公开发布元数据交给既有 CF-CRE 打包和签名能力，保留可审计的
+   接受 revision、冻结快照和编译摘要/摘要值谱系。
+4. 不将聊天、Creator 会话、来源内容或私有 URL、开发者仓库、前端状态、提示词、凭据或
+   本地路径写入 Root Flow、公开发布载荷、签名归档或 API 响应。
+5. 只生成签名的可移交 package；不得启动、模拟或宣称生产运行时执行。
+
+### Worker 307
+
+**名称与目标：** `worker-307-authoring-runtime-bridge`：将可生成的冻结 Creator revision
+确定性物化为 CF-FARP Root Flow，并交给现有 CF-CRE 签名打包路径。
+
+**状态：** `planned`
+
+**允许写入：** `src/backend/**`、`src/core/studio/**`、直接相关的
+`src/core/cartridge/**`、`scripts/tests/api/**`、`scripts/tests/studio/**`、
+`scripts/tests/integration/**`，以及直接相关的维护性开发文档。
+
+**排除：** `protocol/**`、`config/**`、两个前端实现、`demos/**`、根依赖文件、
+`PLAN.md`、`MENTOR_WORKERS.md`。若现有发布契约不足以表达上述事实，停止并报告所需的
+协议所有者工作，不得隐式扩展已发布协议。
+
+**依赖和分支：** 已接受并合并的 Workers 302、303、304、306；
+`workers/worker-307-authoring-runtime-bridge`。
+
+**验收：** API/服务/集成测试证明完整正向路径从 Creator 已接受 revision 和 freeze 事实到
+确定性 `root.flow.json`、已签名 CF-CRE 归档及既有签名验证；重复请求在相同事实下产生
+稳定输出或受控的幂等结果。测试还必须证明过期、未冻结、被阻塞、候选不匹配、篡改签名和
+任何私有创作/开发者/前端状态均被拒绝，且所有失败均不产生可安装包。两个前端与运行时
+工具包不在本 Worker 修改范围内。
+
+## 17. 视觉设计里程碑
 
 在 Worker 303 实现验收前进行视觉探索：
 

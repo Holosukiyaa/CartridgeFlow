@@ -358,8 +358,8 @@
     "ai_authoring_contract": {
       "verification": "verified",
       "implementation": ["src/core/protocol/authoring_contract.py"],
-      "positive_tests": ["test_authoring_contract_v12.AuthoringContractV12Tests.test_accepted_revision_and_freeze_are_deterministic"],
-      "failure_tests": ["test_authoring_contract_v12.AuthoringContractV12Tests.test_stale_changes_and_unsafe_or_silent_freezes_fail_closed"],
+      "positive_tests": ["test_authoring_contract_v12.AuthoringContractV12Tests.test_full_acceptance_applies_every_supported_operation_immutably", "test_authoring_contract_v12.AuthoringContractV12Tests.test_partial_acceptance_is_atomic_and_retains_unselected_provenance"],
+      "failure_tests": ["test_authoring_contract_v12.AuthoringContractV12Tests.test_selection_and_operation_validation_fail_closed_without_result", "test_authoring_contract_v12.AuthoringContractV12Tests.test_tampering_staleness_and_invalid_item_abort_entire_acceptance", "test_authoring_contract_v12.AuthoringContractV12Tests.test_freeze_binds_exact_semantics_and_blocks_silent_step_change"],
       "ui": {"status": "not_applicable", "entries": []},
       "notes": "Protocol-only contract: immutable recipe facts, revision-checked proposals, explicit freezes, source-reference redaction, and deterministic compilation references; it owns no runtime surface."
     },

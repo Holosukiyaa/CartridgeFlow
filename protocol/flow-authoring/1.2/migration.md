@@ -5,7 +5,9 @@
 Migration creates a new v1.2 revision. Preserve the v1.1 Root Flow and recipe
 release as evidence; create redacted source references, a v1.1 blueprint and
 fixed instance, then require creator review of a proposed change set and an
-explicit semantic freeze. Compile only accepted frozen facts into v1.2 CF-FARP
+explicit semantic freeze. The migration must create a separate immutable
+acceptance result with selected change items; it must not alter the proposal or
+silently interpret old v1.0 or early v1.1 proposal facts as accepted. Compile only accepted frozen facts into v1.2 CF-FARP
 topology. Opening, saving, or running v1.1 MUST NOT migrate it.
 
 ## Historical v1.1 material

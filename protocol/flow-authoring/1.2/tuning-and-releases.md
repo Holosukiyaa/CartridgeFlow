@@ -14,6 +14,13 @@ executable contract; their provenance pins the freeze and compilation digests
 for independent runtime handoff. v1.1 artifacts remain v1.1 until explicitly
 migrated.
 
+Each CF-TUNING proposal has stable change item identities. Full acceptance and
+atomic partial acceptance produce a separate immutable acceptance result that
+pins the original instance, complete proposal, selected items, and resulting
+blueprint/instance facts. CF-FARP MUST consume only the resulting pinned facts,
+never infer acceptance from proposal status. Invalid, stale, empty, duplicate,
+unknown, unsafe, or frozen-step semantic selections fail closed.
+
 ## Historical v1.1 material
 
 This file is a normative module of CF-FARP@1.1. The release is defined only by the same-version modules listed in README, CARTRIDGEFLOW-BASE@0.3, and the explicitly trusted CF-TUNING@1.0 registry.

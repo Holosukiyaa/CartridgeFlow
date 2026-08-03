@@ -14,7 +14,7 @@ from core.protocol.authoring_contract import (
 from core.protocol.base_manifest import load_base_implementation, supports_subprotocol_release
 from core.protocol.release_catalog import load_protocol_release_catalog
 from core.protocol.capability_registry import ProtocolRegistry
-from core.protocol.authoring_contract import _OPERATIONS
+from core.protocol.authoring_contract import _OPERATIONS, _affected_step_ids, _apply_change
 from core.protocol.tuning import TuningProtocolError
 from core.llm.authoring import AuthoringProposalError, build_authoring_messages, parse_authoring_proposal
 
@@ -168,11 +168,51 @@ class AuthoringSessionStore:
     @staticmethod
     def creator_projection(state: dict) -> dict:
         head = state["head"]
+        checks = AuthoringSessionStore.design_checks(state)
+        freezes = AuthoringSessionStore._active_freezes(state)
         return {"session_id": state["id"], "revision": head["revision"], "intent": head["blueprint"]["intent"],
+                "semantic_steps": [{"id": item["id"], "intent": item["intent"], "plain_inputs": sorted(item["inputs"]), "plain_outputs": sorted(item["outputs"])} for item in head["blueprint"]["steps"]],
                 "steps": [{"id": item["id"], "intent": item["intent"]} for item in head["blueprint"]["steps"]],
-                "pending_proposals": sorted(state["proposals"]), "frozen_steps": sorted({x["step_id"] for f in AuthoringSessionStore._active_freezes(state) for x in f["frozen_steps"]}),
+                "relationships": deepcopy(head["blueprint"].get("relations", [])),
+                "sources": [AuthoringSessionStore._safe_source(item) for item in head["blueprint"]["source_references"]],
+                "creator_safe_bindings": deepcopy(head["bindings"]), "unresolved_assumptions": [],
+                "pending_proposals": [AuthoringSessionStore.proposal_projection(state["proposals"][key]) for key in sorted(state["proposals"])],
+                "active_freezes": [{"id": item["id"], "steps": [x["step_id"] for x in item["frozen_steps"]], "freeze_revision": {"source_freeze_ids": [item["id"]], "expected_revision": head["revision"]}} for item in freezes],
+                "frozen_steps": sorted({x["step_id"] for f in freezes for x in f["frozen_steps"]}),
                 "history": [{"id": item["id"], "revision": item["instance"]["revision"], "summary": item["change_set"]["summary"]} for item in state["history"]],
-                "reversals": [{"id": item["id"], "reversal_of": item["reversal_of"], "revision": item["revision"]} for item in state.get("reversals", [])]}
+                "reversals": [{"id": item["id"], "reversal_of": item["reversal_of"], "revision": item["revision"]} for item in state.get("reversals", [])],
+                "impact": {"changed_steps": sorted({x["target_id"] for h in state["history"] for x in h["accepted_changes"] if x["operation"] not in {"set_source_reference", "add_source", "update_source", "remove_source"}})},
+                "blocked_findings": [item for item in checks["findings"] if item["severity"] == "blocked"],
+                "design_checks": checks, "generation_readiness": AuthoringSessionStore.generation_readiness(state, checks)}
+
+    @staticmethod
+    def _safe_source(source: dict) -> dict:
+        return {key: source[key] for key in ("id", "kind", "digest", "role", "remote_url", "rss_url") if key in source}
+
+    @staticmethod
+    def design_checks(state: dict) -> dict:
+        head = state["head"]
+        active = AuthoringSessionStore._active_freezes(state)
+        frozen = {step["step_id"] for snapshot in active for step in snapshot["frozen_steps"]}
+        findings = []
+        for step in head["blueprint"]["steps"]:
+            if step["id"] not in frozen:
+                findings.append({"code": "DESIGN_STEP_UNFROZEN", "severity": "blocked", "step_id": step["id"], "message": "This design step is not frozen."})
+        if not head["blueprint"]["source_references"]:
+            findings.append({"code": "DESIGN_SOURCE_MISSING", "severity": "blocked", "message": "At least one declared source or source role is required."})
+        return {"schema": "cartridgeflow.creator_design_checks.v1", "revision": head["revision"], "findings": findings}
+
+    @staticmethod
+    def generation_readiness(state: dict, checks: dict | None = None) -> dict:
+        checks = checks or AuthoringSessionStore.design_checks(state)
+        blocked = [item for item in checks["findings"] if item["severity"] == "blocked"]
+        return {"schema": "cartridgeflow.creator_generation_readiness.v1", "revision": state["head"]["revision"], "ready": not blocked,
+                "blocked_findings": blocked, "compile_candidate": None if blocked else {"reference": AuthoringSessionStore.compile_candidate(state)}}
+
+    @staticmethod
+    def compile_candidate(state: dict) -> dict:
+        compiled = compile_instance(state["head"])
+        return {"id": compiled["id"], "kind": "compile", "digest": compiled["digest"], "revision": state["head"]["revision"]}
 
     @staticmethod
     def proposal_projection(proposal: dict) -> dict:
@@ -183,7 +223,15 @@ class AuthoringSessionStore:
         ids = set(selected or [x["id"] for x in proposal["changes"]])
         active = self._active_freezes(state)
         frozen = {x["step_id"] for f in active for x in f["frozen_steps"]}
-        touched = {x["target_id"] for x in proposal["changes"] if x["id"] in ids and x["operation"] != "set_source_reference"}
+        touched = set()
+        for item in proposal["changes"]:
+            if item["id"] not in ids or item["operation"] in {"set_source_reference", "add_source", "update_source", "remove_source"}:
+                continue
+            if item["operation"] in {"connect_steps", "disconnect_steps"}:
+                if isinstance(item["value"], dict): touched.update({item["value"].get("from_step_id"), item["value"].get("to_step_id")})
+            else:
+                touched.add(item["target_id"])
+        touched.discard(None)
         affected = frozen & touched
         if not affected:
             return active, None
@@ -259,10 +307,33 @@ class AuthoringSessionStore:
         if any(item["reversal_of"] == acceptance_id for item in state.get("reversals", [])):
             raise AuthoringServiceError("AUTHORING_REVERSAL_ALREADY_APPLIED", "This acceptance has already been reversed.", status=409)
         index = state["history"].index(original)
-        targets = {item["target_id"] for item in original["accepted_changes"]}
+        source = state["instances"].get(original["source_instance_id"])
+        if source is None:
+            raise AuthoringServiceError("AUTHORING_REVERSAL_AMBIGUOUS", "The original revision cannot be reconstructed safely.", status=409)
+        targets = AuthoringSessionStore._acceptance_targets(state, original)
         later = state["history"][index + 1:]
-        if any(targets & {item["target_id"] for item in acceptance["accepted_changes"]} for acceptance in later):
+        if any(targets & AuthoringSessionStore._acceptance_targets(state, acceptance) for acceptance in later):
             raise AuthoringServiceError("AUTHORING_REVERSAL_AMBIGUOUS", "A later accepted revision changed the same design target.", status=409)
+
+    @staticmethod
+    def _acceptance_targets(state: dict, acceptance: dict) -> set[str]:
+        source = state["instances"].get(acceptance.get("source_instance_id"))
+        if source is None:
+            raise AuthoringServiceError("AUTHORING_REVERSAL_AMBIGUOUS", "The accepted revision cannot be reconstructed safely.", status=409)
+        blueprint, bindings, targets = deepcopy(source["blueprint"]), deepcopy(source["bindings"]), set()
+        try:
+            for change in acceptance.get("accepted_changes", []):
+                targets.update(AuthoringSessionStore._change_targets(blueprint, change))
+                _apply_change(blueprint, bindings, change)
+        except (KeyError, StopIteration, TuningProtocolError) as exc:
+            raise AuthoringServiceError("AUTHORING_REVERSAL_AMBIGUOUS", "The accepted revision cannot be reconstructed safely.", status=409) from exc
+        return targets
+
+    @staticmethod
+    def _change_targets(blueprint: dict, change: dict) -> set[str]:
+        targets = {change["target_id"]}
+        targets.update(_affected_step_ids(blueprint, change))
+        return targets
 
     @staticmethod
     def _impact(acceptance: dict) -> dict:
@@ -287,16 +358,50 @@ class AuthoringSessionStore:
             raise AuthoringServiceError("AUTHORING_PROPOSAL_UNKNOWN", "Proposal was not found or is no longer pending.", status=404)
         return proposal
 
-    def _inverse_changes(self, instances: dict, source_id: str, original_changes: dict) -> list[dict]:
+    def _inverse_changes(self, instances: dict, source_id: str, original_changes: list[dict]) -> list[dict]:
         source = instances.get(source_id)
         if source is None:
             raise AuthoringServiceError("AUTHORING_REVISION_LINEAGE_INVALID", "Cannot reconstruct the requested revision.", status=409)
         changes = []
-        before_steps = {x["id"]: x for x in source["blueprint"]["steps"]}; before_sources = {x["id"]: x for x in source["blueprint"]["source_references"]}
-        for index, change in enumerate(original_changes):
+        working_blueprint = deepcopy(source["blueprint"])
+        working_bindings = deepcopy(source["bindings"])
+        preimages = []
+        for change in original_changes:
+            preimages.append((deepcopy(working_blueprint), deepcopy(working_bindings)))
+            _apply_change(working_blueprint, working_bindings, change)
+        for change, (before_blueprint, before_bindings) in reversed(list(zip(original_changes, preimages))):
             target, op = change["target_id"], change["operation"]
-            value = source["bindings"].get(target, {}) if op == "set_binding" else before_steps[target]["intent"] if op == "set_step_intent" else before_sources[target]
-            changes.append({"id": f"reverse.{index}", "target_id": target, "operation": op, "value": deepcopy(value)})
+            before_steps = {x["id"]: x for x in before_blueprint["steps"]}
+            before_sources = {x["id"]: x for x in before_blueprint["source_references"]}
+            before_relations = {x["id"]: x for x in before_blueprint.get("relations", [])}
+            def append(operation: str, inverse_target: str, value: object) -> None:
+                changes.append({"id": f"reverse.{len(changes)}", "target_id": inverse_target, "operation": operation, "value": deepcopy(value)})
+            if op in {"set_binding", "set_creator_binding"}:
+                append(op, target, before_bindings.get(target, {}))
+            elif op == "set_step_intent":
+                append(op, target, before_steps[target]["intent"])
+            elif op in {"set_source_reference", "update_source"}:
+                append(op, target, before_sources[target])
+            elif op == "add_source":
+                append("remove_source", target, {})
+            elif op == "remove_source":
+                append("add_source", target, before_sources[target])
+            elif op == "add_step":
+                append("remove_step", target, {})
+            elif op == "update_step":
+                append("update_step", target, before_steps[target])
+            elif op == "remove_step":
+                append("add_step", target, before_steps[target])
+                if target in before_bindings:
+                    append("set_creator_binding", target, before_bindings[target])
+                for relation in sorted((item for item in before_relations.values() if target in {item["from_step_id"], item["to_step_id"]}), key=lambda item: item["id"]):
+                    append("connect_steps", relation["id"], relation)
+            elif op == "connect_steps":
+                append("disconnect_steps", target, {})
+            elif op == "disconnect_steps":
+                append("connect_steps", target, before_relations[target])
+            else:
+                raise AuthoringServiceError("AUTHORING_REVERSAL_AMBIGUOUS", "The accepted operation cannot be reversed safely.", status=409)
         return changes
 
     def _path(self, session_id: str) -> Path:
@@ -324,7 +429,7 @@ def _semantic_digest(instance: dict, step_id: str) -> str:
 
 def compile_instance(instance: dict) -> dict:
     """Deterministically compile safe semantic facts; no model, secret, path, or runtime access."""
-    body = {"schema": "cartridgeflow.authoring_compiled_recipe.v1", "protocol": {"id": "CF-TUNING", "version": "1.1"},
+    body = {"schema": "cartridgeflow.authoring_compiled_recipe.v1", "protocol": deepcopy(instance["protocol"]),
             "instance_id": instance["id"], "instance_digest": instance["digest"], "revision": instance["revision"],
             "steps": [{"id": x["id"], "intent": x["intent"], "inputs": x["inputs"], "outputs": x["outputs"], "binding": instance["bindings"].get(x["id"], {})} for x in sorted(instance["blueprint"]["steps"], key=lambda x: x["id"])],
             "sources": sorted(instance["blueprint"]["source_references"], key=lambda x: x["id"])}
@@ -336,18 +441,18 @@ def resolve_ai_authoring_capabilities(root: str | Path) -> list[str]:
     """Resolve AI permissions from published catalog + Base trust, never client input."""
     try:
         catalog = load_protocol_release_catalog(root)
-        registry = ProtocolRegistry(root, overlay_dirs=[Path(root) / "protocol" / "tuning" / "1.1"])
+        registry = ProtocolRegistry(root, overlay_dirs=[Path(root) / "protocol" / "tuning" / "1.2"])
         base = load_base_implementation(root)
     except Exception as exc:
         raise AuthoringServiceError("AI_AUTHORING_TRUST_UNAVAILABLE", "Published authoring trust facts are unavailable.", status=409) from exc
-    host = catalog.get("CF-FARP", "1.2")
-    host_adapter = catalog.runtime_adapter("CF-FARP", "1.2")
-    if not host or not catalog.published("CF-FARP", "1.2") or not registry.supports_protocol("CF-TUNING", "1.1"):
+    host = catalog.get("CF-FARP", "1.3")
+    host_adapter = catalog.runtime_adapter("CF-FARP", "1.3")
+    if not host or not catalog.published("CF-FARP", "1.3") or not registry.supports_protocol("CF-TUNING", "1.2"):
         raise AuthoringServiceError("AI_AUTHORING_TRUST_UNAVAILABLE", "Required published authoring releases are unavailable.", status=409)
-    trusted = [item for item in catalog.trusted_subprotocols("CF-FARP", "1.2") if item.get("id") == "CF-TUNING" and str(item.get("version")) == "1.1" and item.get("binding") == "ai_authoring_contract"]
+    trusted = [item for item in catalog.trusted_subprotocols("CF-FARP", "1.3") if item.get("id") == "CF-TUNING" and str(item.get("version")) == "1.2" and item.get("binding") == "creator_service_contract"]
     adapters = {item.get("id") for item in base.get("supported_protocol_adapters", []) if item.get("status") == "supported"}
-    required_capability = "ai_change_set_review_v1"
-    if len(trusted) != 1 or "ai_authoring_contract" not in catalog.features("CF-FARP", "1.2") or required_capability not in registry.capabilities or required_capability not in set(base.get("capabilities") or []) or not supports_subprotocol_release(base, "CF-TUNING", "1.1", "CF-FARP", "1.2") or host_adapter not in adapters or "cf-tuning.authoring-contract.v1" not in adapters:
+    required_capability = "creator_reviewed_semantic_changes_v1"
+    if len(trusted) != 1 or "creator_service_contract" not in catalog.features("CF-FARP", "1.3") or required_capability not in registry.capabilities or required_capability not in set(base.get("capabilities") or []) or not supports_subprotocol_release(base, "CF-TUNING", "1.2", "CF-FARP", "1.3") or host_adapter not in adapters or "cf-tuning.authoring-contract.v1" not in adapters:
         raise AuthoringServiceError("AI_AUTHORING_TRUST_UNAVAILABLE", "Published authoring trust binding is not supported by Base.", status=409)
     capabilities = sorted(SERVICE_AUTHORING_OPERATIONS)
     if not capabilities:

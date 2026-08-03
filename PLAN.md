@@ -36,6 +36,10 @@ cartridge 包移交。
 本文件是此交付唯一有效的行动基线。Worker 不得实现已替代的普通用户运行页，或前一
 计划中的 `cartridgeflow.user_experience_plan.v1` 方向。
 
+2026-08-03 的 Creator 合同补充是本 r2 基线的受控后续：Worker 303 审查发现，已发布
+的 Worker 302 投影与变更操作不足以诚实实现完整创作工作流。该补充不改变三界面、
+运行时边界或来源安全决策，只补齐其已要求的版本化创作合同与 Creator API。
+
 r2 修订解决了 r1 的前端所有权冲突。创作者工作室是新的 `src/creator-studio/` 应用，
 开发者控制台是新的 `src/developer-console/` 应用；现有 `src/frontend/` 工作台仍是
 此交付范围外的兼容性实现。冻结的六图视觉基线位于
@@ -260,6 +264,53 @@ CF-TUNING@1.0 的作用域是宿主 Flow 与节点 ID，不能单独表达可移
 9. 运行时 UI 与生产执行在创作者工作室之外。
 10. 已签名 cartridge 是唯一生产运行时移交物。
 
+### 12.1 Creator 合同补全补充
+
+Creator Studio 不能以本地 UI 状态模拟已接受设计。它必须使用服务端修订、提案、冻结和
+检查事实；因此在 Worker 303 的 API 驱动完成前，需要一个受版本治理的合同补全交付。
+
+**版本与所有权：**
+
+- 不得改变已发布 `CF-FARP@1.2`、`CF-TUNING@1.1` 或已接受 Worker 302 API 的既有
+  语义；按协议目录、发布目录与治理证据确定并发布正确的下一版本。
+- CF-FARP 继续拥有可执行拓扑；创作合同拥有创作修订、蓝图/实例、来源、冻结和变更集
+  事实。
+- 设计检查和生成就绪 API 只验证创作事实并生成确定性的编译/移交候选；它们不得伪造
+  生产执行或签名运行时行为。
+
+**Creator API 与投影：**
+
+- Creator projection 必须是创作者安全且足够完整的事实来源：当前 revision、语义步骤、
+  通俗输入/输出和关系、来源角色和安全远程引用元数据、creator-safe bindings、未解决
+  假设、通俗影响、pending proposals、active freezes、history、reversals、阻塞发现项、
+  设计检查结果与 generation readiness。
+- 投影不得泄露提示词、原始 schema、模型/工具绑定、执行器、凭据、令牌、密码、Cookie、
+  Authorization 或机器本地路径。
+- 冻结相关投影必须提供构造有效 `freeze_revision` 请求所需的创作者安全快照引用、受影响
+  步骤与 revision 事实。
+
+**受审阅的创作变更：**
+
+- 扩展变更集以支持添加、更新、移除来源；添加、更新、移除语义步骤；连接、断开步骤的
+  创作者安全输入/输出关系；以及创作者安全绑定值更新。
+- 所有 mutation 均必须使用 `proposal -> preview -> accept`，保持乐观 revision、部分接受、
+  原子应用与 reversal；不得新增绕过已接受修订的直接写入 API。
+- 冻结步骤绝不静默变化。涉及冻结步骤的提案必须经服务验证明确的冻结修订，或以稳定、
+  通俗的错误拒绝。
+- “请 AI 修改”表示使用当前已接受 revision 再次创建 AI proposal，不引入只有本地 UI
+  才理解的隐式状态。
+
+**来源与生成门禁：**
+
+- 允许创作者添加安全的远程 URL、RSS 或其他来源角色；来源保持可移植、可审计且无凭据。
+  必须拒绝 URL user-info、敏感查询参数、凭据和机器本地路径。
+- blocked findings、未解决契约、过期 revision 或无有效冻结事实时，generation readiness
+  必须为失败，Creator Studio 不得显示可生成状态。
+
+**证据：**协议/治理、服务和 API 测试必须证明上述操作只能经事务完成，接受前无状态变化，
+部分接受精确匹配 selected change ids，reversal 创建新修订，冻结守卫生效，来源安全规则
+生效，Creator projection 不泄露工程/秘密字段，且 generation readiness 正确阻止生成。
+
 ## 13. 验收矩阵
 
 | 场景 | 必需证据 |
@@ -286,13 +337,15 @@ CF-TUNING@1.0 的作用域是宿主 Flow 与节点 ID，不能单独表达可移
 ```text
 worker-301-authoring-contract
   -> worker-302-authoring-service
-     -> worker-303-creator-studio --+
+     -> worker-306-creator-contract-completion
+        -> worker-303-creator-studio --+
      -> worker-304-developer-console -+-> worker-305-authoring-integration
 ```
 
-只有 Worker 302 被接受并合并后，Workers 303 和 304 才可并行启动。只有两个前端
-Worker 都被接受并合并后，Worker 305 才可启动。任何 Worker 都不得 cherry-pick 被拒绝
-的 Worker 201 分支。
+Worker 304 可在 Worker 302 合并后启动。Worker 303 的 API 驱动完成必须等待 Worker 306
+被接受并合并；其已有原型不得作为可接受实现。只有 Workers 303、304 与 306 都被接受
+并合并后，Worker 305 才可启动。任何 Worker 都不得 cherry-pick 被拒绝的 Worker 201
+分支。
 
 ## 15. Worker 卡片
 
@@ -411,7 +464,8 @@ codex -C $worktree $prompt
 **排除：** 现有 `src/frontend/**`、backend/core/protocol/config、新开发者控制台包、
 demos、导师文件。
 
-**依赖和分支：** 已接受并合并的 Worker 302；`workers/worker-303-creator-studio`。
+**依赖和分支：** 已接受并合并的 Workers 302、306；
+`workers/worker-303-creator-studio`。
 
 **验收：** 意图/来源录入、语义画布、可部分接受的提案审阅、同一事务路径直接编辑、
 可见固化状态、通俗影响、手动画布模式、cartridge 生成门禁；前端测试和构建通过。
@@ -499,6 +553,82 @@ demos、根依赖文件、PLAN.md、MENTOR_WORKERS.md。
 codex -C $worktree $prompt
 ```
 
+### Worker 306
+
+**名称与目标：** `worker-306-creator-contract-completion`：发布受版本治理的创作合同与
+Creator API 补全，使 Creator Studio 能以服务端事实实现来源、语义画布、提案、冻结、
+撤销、设计检查与生成门禁。
+
+**状态：** `planned`
+
+**允许写入：** 所需下一版 `protocol/flow-authoring/**`、`protocol/tuning/**`、
+`protocol/catalog/**`、必要 `config/base/**` 与治理证据、`src/core/protocol/**`、
+`src/core/studio/**`、`src/backend/**`，以及直接相关协议/服务/API/一致性测试。
+
+**排除：** 两个新前端、现有 `src/frontend/**`、demos、运行时执行、根依赖、导师文件。
+
+**依赖和分支：** 已接受并合并的 Workers 301、302；
+`workers/worker-306-creator-contract-completion`。
+
+**验收：** 遵循 12.1 的版本、投影、事务、冻结、来源安全与生成门禁要求；已发布合同
+保持兼容；协议治理、服务/API、负向安全测试与完整一致性证据通过。
+
+```powershell
+Set-Location -LiteralPath "C:\_HOLOLAB\code\CF WS\CartridgeFlow"
+$worktree = "C:\_HOLOLAB\code\CF WS\CartridgeFlow-worker-306-creator-contract-completion"
+git worktree add $worktree -b "workers/worker-306-creator-contract-completion"
+
+$prompt = @'
+你是 worker-306-creator-contract-completion。为已合并的 Worker 302 创作服务补齐受版本
+治理的协议、Creator API 和创作者安全投影，使 Worker 303 能实现真正的 API 驱动
+Creator Studio。只从当前 main 基线开始；不得修改 Worker 303 工作树或实现任何前端。
+
+允许写入：所需下一版 protocol/flow-authoring/**、protocol/tuning/**、protocol/catalog/**、
+必要 config/base/** 与治理证据、src/core/protocol/**、src/core/studio/**、src/backend/**，
+以及直接相关协议/服务/API/一致性测试。
+
+排除：src/creator-studio/**、src/developer-console/**、src/frontend/**、demos/**、运行时
+执行、队列、运行历史、结果交付 UI、根依赖、PLAN.md、MENTOR_WORKERS.md 和其他工作树。
+
+先检查当前协议目录、发布目录、治理脚本和 capability evidence，确定正确的下一版发布；
+不得改变已发布 CF-FARP@1.2、CF-TUNING@1.1 或已接受 Worker 302 API 的既有语义。
+CF-FARP 保持可执行拓扑所有权；创作合同持有创作 revision、蓝图/实例、来源、冻结和
+变更集事实。
+
+按 PLAN.md 12.1 实现：
+1. Creator projection 成为创作者安全且完整的事实来源，含 revision、语义步骤、通俗
+   输入/输出和关系、来源角色/安全远程引用、creator-safe bindings、未解决假设、影响、
+   pending proposals、active freezes、history、reversals、blocked findings、设计检查及
+   generation readiness。
+2. 扩展受审阅变更集，支持来源和语义步骤的添加/更新/移除、步骤输入输出关系的连接/
+   断开及 creator-safe binding 更新；所有 mutation 必须走 proposal -> preview -> accept，
+   保持乐观 revision、部分接受、原子应用和 reversal。禁止直接写入 API。
+3. 冻结步骤绝不静默变化。Creator projection 必须提供构造有效 freeze_revision 所需的
+   安全快照引用；服务必须验证冻结步骤变更或以稳定、通俗错误拒绝。
+4. 来源可接受安全远程 URL、RSS 或来源角色，但必须拒绝 URL user-info、敏感查询参数、
+   凭据和机器本地路径；不得让秘密进入工件、投影、日志、编译物或错误。
+5. 提供设计检查与确定性 generation readiness/编译候选 API。它们只验证创作事实与
+   移交候选，绝不伪造生产执行或已签名运行时行为。
+6. “请 AI 修改”重用当前 accepted revision 再次创建 AI proposal，不引入本地隐式状态。
+
+添加协议/治理、服务和 API 正反向测试，证明接受前无状态变化、部分接受精确匹配
+selected change ids、reversal 创建新 revision、冻结守卫生效、来源安全规则生效、Creator
+projection 无工程/秘密泄露，以及 blocked/过期/未冻结设计阻止 generation readiness。
+运行协议治理审计、相关测试和完整 conformance。
+
+仅创建普通提交；不 amend、不 rebase、不改写历史。提交前运行 git diff --check 且确保
+git status --short 为空。
+
+## Worker Delivery Report
+Changed files: <one path per line>
+Commit SHA: <full SHA>
+Tests: <command and result per line>
+Known risks: <none or concrete risks>
+Scope confirmation: <confirm no excluded paths changed>
+'@
+codex -C $worktree $prompt
+```
+
 ### Worker 305
 
 **名称与目标：** `worker-305-authoring-integration`：负责最终跨界面验收，并仅更新
@@ -512,7 +642,7 @@ codex -C $worktree $prompt
 **排除：** 产品协议/core/backend/frontend 实现、依赖、导师文件；缺陷应退回所有者
 Worker。
 
-**依赖和分支：** 已接受并合并的 Workers 303、304；
+**依赖和分支：** 已接受并合并的 Workers 303、304、306；
 `workers/worker-305-authoring-integration`。
 
 **验收：** 从意图到包的端到端证据；两个前端均能构建；包保持独立运行时移交；工具包

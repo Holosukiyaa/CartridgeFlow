@@ -140,6 +140,10 @@ class AuthoringAIProposalPayload(BaseModel):
     summary: str = "AI-assisted design proposal"
 
 
+class AuthoringReadinessPayload(BaseModel):
+    expected_revision: int
+
+
 class CartridgeAssetPayload(BaseModel):
     id: str
     kind: str

@@ -43,9 +43,10 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 it('requests an AI proposal through the review endpoint', async () => {
   localStorage.setItem('creator-session-id', 's1')
   render(<App />)
-  const prompt = await screen.findByLabelText('Ask AI to modify the design')
+  fireEvent.click(await screen.findByRole('button', { name: 'Clarify the story' }))
+  const prompt = await screen.findByLabelText('Node refinement request')
   fireEvent.change(prompt, { target: { value: 'Improve it' } })
-  fireEvent.click(screen.getByLabelText('Request AI proposal'))
+  fireEvent.click(screen.getByLabelText('Request node AI proposal'))
   await waitFor(() => expect(calls.some((call) => call.url.endsWith('/ai-proposals'))).toBe(true))
 })
 

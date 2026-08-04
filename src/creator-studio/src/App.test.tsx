@@ -8,6 +8,7 @@ const creator = (overrides = {}) => ({
   steps: [{ id: 'start', intent: 'Clarify the story' }], relationships: [], sources: [],
   pending_proposals: [], active_freezes: [], frozen_steps: [], history: [], blocked_findings: [],
   design_checks: { findings: [] }, generation_readiness: { ready: true, blocked_findings: [], compile_candidate: {} },
+  journey_graph: { project_id: 'p1', revision: 1, nodes: [{ id: 'project', kind: 'project', label: '项目', level: 0, status: 'active' }, { id: 'step:start', kind: 'recipe_step', label: 'Clarify the story', level: 1, status: 'review_needed' }, { id: 'engineering', kind: 'engineering', label: '工程验证', level: 2, status: 'ready' }], edges: [{ id: 'project-start', from: 'project', to: 'step:start', relation: 'contains' }, { id: 'start-engineering', from: 'step:start', to: 'engineering', relation: 'hands_off_to' }] },
   ...overrides,
 })
 const response = (value: unknown) => Promise.resolve(new Response(JSON.stringify(value), { status: 200, headers: { 'Content-Type': 'application/json' } }))

@@ -30,6 +30,7 @@ The current release baseline is `CF-FARP@1.0` plus `CF-CRE@1`. Both are active/s
 - Added same-origin static route delivery for the independently built Creator and Developer applications at `/creator/` and `/developer/`; local Vite ports remain development-only.
 - Replaced the Creator Studio's static direction templates with a strict model adapter. The model can only return three creator-language possibilities through a validated JSON contract; unbound, timed-out, or invalid responses fail closed.
 - Added a Creator-only source-candidate contract. Candidates remain non-persistent review suggestions until the creator accepts the normal source-change proposal; accepted source projections retain plain-language rationale and risk fields only.
+- Added `cartridgeflow.project_journey_graph.v1` as the common project-chain carrier. Creator sees the intent-to-recipe chain; Developer receives the same confirmed recipe, source, and engineering path without private exploration context.
 
 ## Intentional Retention
 

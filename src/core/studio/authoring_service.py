@@ -194,6 +194,7 @@ class AuthoringSessionStore:
                 "history": [{"id": item["id"], "revision": item["instance"]["revision"], "summary": item["change_set"]["summary"]} for item in state["history"]],
                 "reversals": [{"id": item["id"], "reversal_of": item["reversal_of"], "revision": item["revision"]} for item in state.get("reversals", [])],
                 "impact": {"changed_steps": sorted({x["target_id"] for h in state["history"] for x in h["accepted_changes"] if x["operation"] not in {"set_source_reference", "add_source", "update_source", "remove_source"}})},
+                "journey_graph": AuthoringSessionStore.journey_graph(state, audience="creator"),
                 "blocked_findings": [item for item in checks["findings"] if item["severity"] == "blocked"],
                 "design_checks": checks, "generation_readiness": AuthoringSessionStore.generation_readiness(state, checks)}
 
@@ -209,9 +210,41 @@ class AuthoringSessionStore:
                 "steps": [{"id": item["id"], "intent": item["intent"]} for item in head["blueprint"]["steps"]],
                 "sources": [AuthoringSessionStore._safe_source(item) for item in head["blueprint"]["source_references"]],
             },
+            "journey_graph": AuthoringSessionStore.journey_graph(state, audience="developer"),
             "generation_readiness": readiness,
             "creator_url": f"/projects/{state.get('project_id', state['id'])}/creator",
         }
+
+    @staticmethod
+    def journey_graph(state: dict, *, audience: str) -> dict:
+        """Project-wide chain projection with only audience-appropriate facts."""
+        head = state["head"]
+        project_id = state.get("project_id", state["id"])
+        frozen = {step["step_id"] for snapshot in AuthoringSessionStore._active_freezes(state) for step in snapshot["frozen_steps"]}
+        nodes = [{"id": "project", "kind": "project", "label": "项目", "level": 0, "status": "active"}]
+        edges: list[dict] = []
+        if audience == "creator":
+            nodes.append({"id": "intent", "kind": "intent", "label": head["blueprint"]["intent"], "level": 1, "status": "active"})
+            edges.append({"id": "project-intent", "from": "project", "to": "intent", "relation": "starts_with"})
+        step_level = 2 if audience == "creator" else 1
+        for step in head["blueprint"]["steps"]:
+            node_id = f"step:{step['id']}"
+            nodes.append({"id": node_id, "kind": "recipe_step", "label": step["intent"], "level": step_level, "status": "frozen" if step["id"] in frozen else "review_needed"})
+            if audience == "creator":
+                edges.append({"id": f"intent-{step['id']}", "from": "intent", "to": node_id, "relation": "shapes"})
+            else:
+                edges.append({"id": f"project-{step['id']}", "from": "project", "to": node_id, "relation": "contains"})
+        for source in head["blueprint"]["source_references"]:
+            source_id = f"source:{source['id']}"
+            nodes.append({"id": source_id, "kind": "source", "label": source.get("name") or source.get("role") or "已采用来源", "level": step_level, "status": "adopted"})
+            edges.append({"id": f"source-{source['id']}", "from": source_id, "to": "intent" if audience == "creator" else "project", "relation": "informs"})
+        for relation in head["blueprint"].get("relations", []):
+            edges.append({"id": f"relation:{relation['id']}", "from": f"step:{relation['from_step_id']}", "to": f"step:{relation['to_step_id']}", "relation": relation["relation"]})
+        readiness = AuthoringSessionStore.generation_readiness(state)
+        nodes.append({"id": "engineering", "kind": "engineering", "label": "工程验证", "level": step_level + 1, "status": "ready" if readiness["ready"] else "waiting"})
+        for step in head["blueprint"]["steps"]:
+            edges.append({"id": f"engineering-{step['id']}", "from": f"step:{step['id']}", "to": "engineering", "relation": "hands_off_to"})
+        return {"schema": "cartridgeflow.project_journey_graph.v1", "project_id": project_id, "revision": head["revision"], "nodes": nodes, "edges": edges}
 
     @staticmethod
     def _safe_source(source: dict) -> dict:

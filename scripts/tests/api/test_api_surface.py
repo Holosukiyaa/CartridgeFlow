@@ -104,6 +104,10 @@ class ApiSurfaceTests(unittest.TestCase):
         projection = developer.json()["developer"]
         self.assertEqual("project.demo", projection["project_id"])
         self.assertEqual("Draft a brief.", projection["recipe"]["steps"][0]["intent"])
+        self.assertEqual("cartridgeflow.project_journey_graph.v1", creator.json()["creator"]["journey_graph"]["schema"])
+        self.assertIn("Private exploration context", json.dumps(creator.json()["creator"]["journey_graph"]))
+        self.assertNotIn("Private exploration context", json.dumps(projection["journey_graph"]))
+        self.assertTrue(any(node["kind"] == "engineering" for node in projection["journey_graph"]["nodes"]))
         self.assertNotIn("Private exploration context", json.dumps(projection))
         self.assertNotIn("history", projection)
         self.assertNotIn("session_id", projection)

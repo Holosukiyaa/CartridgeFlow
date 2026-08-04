@@ -11,13 +11,21 @@ const array = (value: unknown) => Array.isArray(value) ? value as AnyRecord[] : 
 const status = (good: unknown) => good === true || good === 'ok' || good === 'ready' || good === 'passed'
 
 function Panel({ title, icon, children, className = '' }: { title: string; icon: React.ReactNode; children: React.ReactNode; className?: string }) { return <section className={`panel ${className}`}><h2>{icon}{title}</h2>{children}</section> }
+function ProjectJourneyCanvas({ graph }: { graph: AnyRecord }) {
+  const nodes = array(graph.nodes); const edges = array(graph.edges)
+  const levels = new Map<number, AnyRecord[]>(); nodes.forEach((node) => { const level = Number(node.level || 0); levels.set(level, [...(levels.get(level) || []), node]) })
+  const positions = new Map<string, { x: number; y: number }>(); levels.forEach((items, level) => items.forEach((node, index) => positions.set(String(node.id), { x: 24 + level * 210, y: 40 + index * 88 })))
+  const width = Math.max(460, (Math.max(...nodes.map((node) => Number(node.level || 0)), 0) + 1) * 210 + 24); const height = Math.max(170, ...[...levels.values()].map((items) => items.length * 88 + 36))
+  const label = (item: unknown) => { const text = String(item || ''); return text.length > 22 ? `${text.slice(0, 21)}...` : text }
+  return <section><h2>项目链路图</h2><svg aria-label="Project journey graph" viewBox={`0 0 ${width} ${height}`} width={width} height={height} role="img">{edges.map((edge) => { const from = positions.get(String(edge.from)); const to = positions.get(String(edge.to)); return from && to ? <line key={String(edge.id)} x1={from.x + 160} y1={from.y + 28} x2={to.x} y2={to.y + 28} stroke="currentColor"><title>{String(edge.relation || '')}</title></line> : null })}{nodes.map((node) => { const point = positions.get(String(node.id))!; return <g key={String(node.id)} transform={`translate(${point.x} ${point.y})`}><title>{String(node.label)}，{String(node.status)}</title><rect width="160" height="56" fill="none" stroke="currentColor" /><text x="8" y="22">{label(node.label)}</text><text x="8" y="44">{String(node.kind)} · {String(node.status)}</text></g> })}</svg></section>
+}
 function ProjectWorkspace({ projectId }: { projectId: string }) {
   const [project, setProject] = useState<AnyRecord | null>(null); const [error, setError] = useState('')
   useEffect(() => { developerApi.project(projectId).then((result) => setProject(result.developer as AnyRecord)).catch((reason) => setError(reason instanceof Error ? reason.message : 'Unable to load this project.')) }, [projectId])
   if (error) return <main><header><div><b>CARTRIDGEFLOW</b><span>Developer Console</span></div></header><p role="alert">{error}</p></main>
   if (!project) return <main><header><div><b>CARTRIDGEFLOW</b><span>Developer Console</span></div></header><p>Loading project...</p></main>
-  const recipe = project.recipe as AnyRecord; const readiness = project.generation_readiness as AnyRecord; const steps = array(recipe?.steps)
-  return <main><header><div><b>CARTRIDGEFLOW</b><span>Developer Console</span><small>project engineering workspace</small></div></header><section><h1>工程验证</h1><p>项目：{String(project.project_id)}</p><p>配方修订：{String(recipe?.revision ?? 'pending')}</p><p>工程状态：{readiness?.ready ? '可进入工程物化' : '等待创作配方完成'}</p><h2>已确认的配方步骤</h2><ul>{steps.map((step) => <li key={String(step.id)}>{String(step.intent)}</li>)}</ul><a href={String(project.creator_url)}>返回创作配方</a></section></main>
+  const recipe = project.recipe as AnyRecord; const readiness = project.generation_readiness as AnyRecord; const steps = array(recipe?.steps); const journey = project.journey_graph as AnyRecord
+  return <main><header><div><b>CARTRIDGEFLOW</b><span>Developer Console</span><small>project engineering workspace</small></div></header><section><h1>工程验证</h1><p>项目：{String(project.project_id)}</p><p>配方修订：{String(recipe?.revision ?? 'pending')}</p><p>工程状态：{readiness?.ready ? '可进入工程物化' : '等待创作配方完成'}</p><ProjectJourneyCanvas graph={journey} /><h2>已确认的配方步骤</h2><ul>{steps.map((step) => <li key={String(step.id)}>{String(step.intent)}</li>)}</ul><a href={String(project.creator_url)}>返回创作配方</a></section></main>
 }
 
 function Console() {

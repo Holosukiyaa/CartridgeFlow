@@ -6,6 +6,7 @@ export type Creator = {
   sources: Source[]; pending_proposals: Proposal[]; active_freezes: { id: string; steps: string[]; freeze_revision: { source_freeze_ids: string[]; expected_revision: number } }[]
   frozen_steps: string[]; history: { id: string; revision: number; summary: string }[]
   blocked_findings: Finding[]; design_checks: { findings: Finding[] }; generation_readiness: Readiness
+  journey_graph: JourneyGraph
 }
 export type Source = { id: string; kind: 'source'; digest: string; role?: string; name?: string; provides?: string; why_recommended?: string; risk?: string; review_focus?: string; remote_url?: string; rss_url?: string }
 export type Proposal = { proposal_id: string; revision: number; summary: string; changes: { id: string; target_id: string; operation: string }[] }
@@ -17,6 +18,9 @@ export type FreezeRevision = { source_freeze_ids: string[]; expected_revision: n
 export type Preview = { accepted_change_ids: string[]; impact: Impact; freeze_revision?: FreezeRevision | null }
 export type Possibility = { id: string; title: string; outcome: string; why_it_fits: string; first_week_output: string; needs_confirmation: string[]; recipe: { intent: string; steps: unknown[] } }
 export type SourceCandidate = { id: string; name: string; provides: string; why_recommended: string; risk: string; review_focus: string; remote_url: string; rss_url: string }
+export type JourneyGraph = { project_id: string; revision: number; nodes: JourneyNode[]; edges: JourneyEdge[] }
+export type JourneyNode = { id: string; kind: string; label: string; level: number; status: string }
+export type JourneyEdge = { id: string; from: string; to: string; relation: string }
 export class ApiError extends Error { constructor(public code: string, message: string, public status: number) { super(message) } }
 
 const base = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')

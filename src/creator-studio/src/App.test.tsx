@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import App from './App'
 
 const creator = (overrides = {}) => ({
-  session_id: 's1', revision: 1, intent: 'Create a clear story',
+  project_id: 'p1', session_id: 's1', revision: 1, intent: 'Create a clear story',
   semantic_steps: [{ id: 'start', intent: 'Clarify the story', plain_inputs: [], plain_outputs: [] }],
   steps: [{ id: 'start', intent: 'Clarify the story' }], relationships: [], sources: [],
   pending_proposals: [], active_freezes: [], frozen_steps: [], history: [], blocked_findings: [],
@@ -41,8 +41,8 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 it('requests an AI proposal through the review endpoint', async () => {
   localStorage.setItem('creator-session-id', 's1')
   render(<App />)
-  await screen.findByText('CartridgeFlow 创作工作室')
-  fireEvent.change(screen.getByLabelText('Ask AI to modify the design'), { target: { value: 'Improve it' } })
+  const prompt = await screen.findByLabelText('Ask AI to modify the design')
+  fireEvent.change(prompt, { target: { value: 'Improve it' } })
   fireEvent.click(screen.getByLabelText('Request AI proposal'))
   await waitFor(() => expect(calls.some((call) => call.url.endsWith('/ai-proposals'))).toBe(true))
 })
@@ -50,8 +50,7 @@ it('requests an AI proposal through the review endpoint', async () => {
 it('renders a signed handoff download after generation', async () => {
   localStorage.setItem('creator-session-id', 's1')
   render(<App />)
-  await screen.findByText('CartridgeFlow 创作工作室')
-  fireEvent.click(screen.getByLabelText('Generate handoff'))
+  fireEvent.click(await screen.findByLabelText('Generate handoff'))
   await screen.findByText(/release-1/)
   expect(screen.getByRole('link', { name: '下载 CF-CRE' })).toHaveAttribute('href', '/packages/handoff.zip')
 })

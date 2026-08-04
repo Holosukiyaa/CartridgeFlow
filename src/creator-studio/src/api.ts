@@ -1,5 +1,5 @@
 export type Creator = {
-  session_id: string; revision: number; intent: string
+  project_id: string; session_id: string; revision: number; intent: string
   semantic_steps: { id: string; intent: string; plain_inputs: string[]; plain_outputs: string[] }[]
   steps: { id: string; intent: string }[]
   relationships: { id: string; from_step_id: string; to_step_id: string; relation: string }[]
@@ -28,8 +28,9 @@ async function request<T>(path: string, method = 'GET', body?: unknown): Promise
 const route = (id: string) => `/api/creator/authoring-sessions/${encodeURIComponent(id)}`
 export const creatorApi = {
   discover: (context: string) => request<{ possibilities: Possibility[] }>('/api/creator/possibilities', 'POST', { context }),
-  create: (body: { session_id: string; recipe_id: string; intent: string; steps: unknown[]; source_references: unknown[]; bindings: Record<string, unknown> }) => request<{ creator: Creator }>('/api/creator/authoring-sessions', 'POST', body),
+  create: (body: { session_id: string; project_id: string; recipe_id: string; intent: string; steps: unknown[]; source_references: unknown[]; bindings: Record<string, unknown> }) => request<{ creator: Creator }>('/api/creator/authoring-sessions', 'POST', body),
   get: (id: string) => request<{ creator: Creator }>(route(id)),
+  getProject: (id: string) => request<{ creator: Creator }>(`/api/creator/projects/${encodeURIComponent(id)}`),
   ai: (id: string, body: unknown) => request<{ proposal: Proposal }>(`${route(id)}/ai-proposals`, 'POST', body),
   propose: (id: string, body: unknown) => request<{ proposal: Proposal }>(`${route(id)}/proposals`, 'POST', body),
   preview: (id: string, proposal: string, body: unknown) => request<Preview>(`${route(id)}/proposals/${proposal}/preview`, 'POST', body),

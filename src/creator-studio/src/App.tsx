@@ -20,15 +20,17 @@ const errorText = (error: unknown) => {
 }
 const changeLabel = (operation: string) => ({ add_source: '添加来源', update_source: '更新来源', remove_source: '移除来源', add_step: '添加步骤', set_step_intent: '调整步骤目标', connect_steps: '连接步骤', disconnect_steps: '断开步骤连接' }[operation] || '调整设计')
 const routeSessionId = () => {
-  const match = window.location.pathname.match(/^\/creator\/designs\/([^/]+)$/)
-  return match?.[1] ? decodeURIComponent(match[1]) : localStorage.getItem('creator-session-id') || ''
+  return localStorage.getItem('creator-session-id') || ''
+}
+const routeProjectId = () => {
+  const match = window.location.pathname.match(/^\/projects\/([^/]+)\/creator$/)
+  return match?.[1] ? decodeURIComponent(match[1]) : localStorage.getItem('creator-project-id') || ''
 }
 
 export default function App() {
   const [creator, setCreator] = useState<Creator | null>(null)
   const [intent, setIntent] = useState('')
   const [possibilities, setPossibilities] = useState<Possibility[]>([])
-  const [sessionId, setSessionId] = useState('')
   const [sourceInput, setSourceInput] = useState('')
   const [prompt, setPrompt] = useState('')
   const [newStep, setNewStep] = useState('')
@@ -44,14 +46,16 @@ export default function App() {
   const [handoff, setHandoff] = useState<Handoff | null>(null)
 
   const save = (next: Creator) => {
-    setCreator(next); setSessionId(next.session_id)
+    setCreator(next); localStorage.setItem('creator-project-id', next.project_id)
     const current = next.semantic_steps.find((step) => step.id === selectedStep) || next.semantic_steps[0]
     setSelectedStep(current?.id || ''); setStepIntent(current?.intent || '')
   }
   useEffect(() => {
-    const stored = routeSessionId()
-    if (!stored) return
-    creatorApi.get(stored).then(({ creator: next }) => { save(next); setIntent(next.intent); setProposal(next.pending_proposals[0] || null) }).catch((error) => { localStorage.removeItem('creator-session-id'); setNotice(errorText(error)) })
+    const projectId = routeProjectId()
+    const sessionId = routeSessionId()
+    if (!projectId && !sessionId) return
+    const load = projectId ? creatorApi.getProject(projectId) : creatorApi.get(sessionId)
+    load.then(({ creator: next }) => { save(next); setIntent(next.intent); setProposal(next.pending_proposals[0] || null) }).catch((error) => { localStorage.removeItem('creator-project-id'); localStorage.removeItem('creator-session-id'); setNotice(errorText(error)) })
   }, [])
   const freezeRevision = (changes: Proposal['changes']): FreezeRevision | undefined => {
     if (!creator) return undefined
@@ -75,10 +79,11 @@ export default function App() {
   const create = async (possibility?: Possibility) => {
     setBusy(true)
     try {
-      const id = sessionId || idFor('design')
+      const id = idFor('authoring')
+      const projectId = idFor('project')
       const recipe = possibility?.recipe || { intent, steps: [{ id: 'collect', intent: '收集指定来源', inputs: [], outputs: [] }] }
-      const result = await creatorApi.create({ session_id: id, recipe_id: idFor('recipe'), intent: recipe.intent, steps: recipe.steps, source_references: [], bindings: {} })
-      localStorage.setItem('creator-session-id', id); window.history.replaceState({}, '', `/creator/designs/${encodeURIComponent(id)}`); save(result.creator); setNotice('创作会话已创建。')
+      const result = await creatorApi.create({ session_id: id, project_id: projectId, recipe_id: idFor('recipe'), intent: recipe.intent, steps: recipe.steps, source_references: [], bindings: {} })
+      localStorage.removeItem('creator-session-id'); window.history.replaceState({}, '', `/projects/${encodeURIComponent(projectId)}/creator`); save(result.creator); setNotice('项目创作会话已创建。')
     } catch (error) { setNotice(errorText(error)) } finally { setBusy(false) }
   }
   const discover = async (event: FormEvent) => {
@@ -133,12 +138,12 @@ export default function App() {
     catch (error) { setNotice(errorText(error)) } finally { setBusy(false) }
   }
 
-  if (!creator) return <main><header><h1>CartridgeFlow 创作工作室</h1></header><form onSubmit={discover}><p><label>你最近在关注、困惑或想探索什么？<textarea aria-label="Creative intent" value={intent} onChange={(event) => { setIntent(event.target.value); setPossibilities([]) }} required /></label></p><button type="submit" disabled={busy || intent.trim().length < 3}>帮我打开思路</button></form>{possibilities.length > 0 && <section aria-labelledby="possibilities-heading"><h2 id="possibilities-heading">可以从这里开始</h2>{possibilities.map((possibility) => <article key={possibility.id}><h3>{possibility.title}</h3><p>你将得到：{possibility.outcome}</p><p>适合你的原因：{possibility.why_it_fits}</p><p>第一周：{possibility.first_week_output}</p><p>还需要确认：{possibility.needs_confirmation.join('、')}</p><button onClick={() => void create(possibility)} disabled={busy}>选择这个方向</button></article>)}</section>}<p><label>继续现有会话（可选）<input aria-label="Session ID" value={sessionId} onChange={(event) => setSessionId(event.target.value)} /></label></p>{notice && <p role="status">{notice}</p>}</main>
+  if (!creator) return <main><header><h1>CartridgeFlow 创作工作室</h1></header><form onSubmit={discover}><p><label>你最近在关注、困惑或想探索什么？<textarea aria-label="Creative intent" value={intent} onChange={(event) => { setIntent(event.target.value); setPossibilities([]) }} required /></label></p><button type="submit" disabled={busy || intent.trim().length < 3}>帮我打开思路</button></form>{possibilities.length > 0 && <section aria-labelledby="possibilities-heading"><h2 id="possibilities-heading">可以从这里开始</h2>{possibilities.map((possibility) => <article key={possibility.id}><h3>{possibility.title}</h3><p>你将得到：{possibility.outcome}</p><p>适合你的原因：{possibility.why_it_fits}</p><p>第一周：{possibility.first_week_output}</p><p>还需要确认：{possibility.needs_confirmation.join('、')}</p><button onClick={() => void create(possibility)} disabled={busy}>选择这个方向</button></article>)}</section>}{notice && <p role="status">{notice}</p>}</main>
 
   const current = creator.semantic_steps.find((step) => step.id === selectedStep) || creator.semantic_steps[0]
   const base = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
   return <main>
-    <header><h1>CartridgeFlow 创作工作室</h1><p>{creator.intent}</p><p>设计修订：{creator.revision}</p><button onClick={undo} disabled={!creator.history.length || busy}>撤销最近修改</button><button onClick={check} disabled={busy}>检查设计</button><button onClick={handoffDesign} disabled={busy || !creator.generation_readiness.ready} aria-label="Generate handoff">生成交付包</button></header>
+    <header><h1>CartridgeFlow 创作工作室</h1><p>{creator.intent}</p><p>设计修订：{creator.revision}</p><button onClick={undo} disabled={!creator.history.length || busy}>撤销最近修改</button><button onClick={check} disabled={busy}>检查设计</button><button onClick={handoffDesign} disabled={busy || !creator.generation_readiness.ready} aria-label="Generate handoff">生成交付包</button>{creator.generation_readiness.ready && <a href={`/projects/${encodeURIComponent(creator.project_id)}/developer`}>进入工程验证</a>}</header>
     {notice && <p role="status">{notice}</p>}
     <section aria-labelledby="sources-heading"><h2 id="sources-heading">来源</h2><ul>{creator.sources.map((source) => <li key={source.id}>{source.role || '创作者来源'}：{source.remote_url || source.rss_url || '需要补充地址'}</li>)}</ul><label>添加来源<input aria-label="Add source URL" value={sourceInput} onChange={(event) => setSourceInput(event.target.value)} /></label><button onClick={() => void addSource()} disabled={busy}>提交来源审阅</button></section>
     <section aria-labelledby="ai-heading"><h2 id="ai-heading">AI 协作</h2><label>希望如何调整设计？<textarea aria-label="Ask AI to modify the design" value={prompt} onChange={(event) => setPrompt(event.target.value)} /></label><button onClick={() => void askAi()} disabled={busy || !prompt.trim()} aria-label="Request AI proposal">请求 AI 建议</button></section>

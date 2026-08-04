@@ -1,5 +1,6 @@
 """Browser smoke test for the Creator Studio discovery-to-recipe loop."""
 import os
+from urllib.parse import urlsplit
 
 from playwright.sync_api import sync_playwright
 
@@ -21,7 +22,17 @@ def main() -> None:
             raise AssertionError(f"Discovery did not render: {page.locator('main').inner_text()}; requests={requests}; console={errors}") from exc
         page.get_by_role("button", name="选择这个方向").first.click()
         page.get_by_role("heading", name="设计流程").wait_for()
+        assert "/projects/project-" in page.url and page.url.endswith("/creator")
         assert page.get_by_role("button", name="发现并审核相关公开来源").is_visible()
+        if os.environ.get("SAME_ORIGIN_PRODUCT") == "1":
+            location = urlsplit(page.url)
+            project_id = page.url.split("/projects/", 1)[1].split("/", 1)[0]
+            page.goto(f"{location.scheme}://{location.netloc}/projects/{project_id}/developer", wait_until="networkidle")
+            try:
+                page.get_by_role("heading", name="工程验证").wait_for(timeout=5000)
+            except Exception as exc:
+                raise AssertionError(f"Developer project view did not render: {page.locator('main').inner_text()}; console={errors}") from exc
+            assert "我想持续了解 AI 行业的变化" not in page.locator("main").inner_text()
         assert not errors, f"Browser console errors: {errors}"
         browser.close()
 

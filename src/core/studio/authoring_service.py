@@ -97,17 +97,21 @@ class AuthoringSessionStore:
         self.root.mkdir(parents=True, exist_ok=True)
         self._lock = RLock()
 
-    def create(self, session_id: str, recipe_id: str, intent: str, steps: list[dict], sources: list[dict], bindings: dict) -> dict:
+    def create(self, session_id: str, recipe_id: str, intent: str, steps: list[dict], sources: list[dict], bindings: dict, project_id: str | None = None) -> dict:
         with self._lock:
             path = self._path(session_id)
             if path.exists():
                 raise AuthoringServiceError("AUTHORING_SESSION_EXISTS", "Authoring session already exists.", status=409)
+            project_id = project_id or session_id
+            self._validate_identifier(project_id, "PROJECT")
+            if self._state_for_project_id(project_id) is not None:
+                raise AuthoringServiceError("AUTHORING_PROJECT_EXISTS", "A project already owns an authoring session.", status=409)
             try:
                 blueprint = create_recipe_blueprint(recipe_id, intent, steps, sources)
                 instance = create_recipe_instance(blueprint, bindings)
             except TuningProtocolError as exc:
                 raise AuthoringServiceError("AUTHORING_FACT_INVALID", str(exc)) from exc
-            state = {"schema": "cartridgeflow.authoring_session.v1", "id": session_id,
+            state = {"schema": "cartridgeflow.authoring_session.v1", "id": session_id, "project_id": project_id,
                      "head": instance, "instances": {instance["id"]: instance}, "history": [], "proposals": {}, "rejections": [], "freezes": [], "freeze_replacements": [], "freeze_revisions": [], "reversals": []}
             self._write(path, state)
             return self.creator_projection(state)
@@ -115,6 +119,14 @@ class AuthoringSessionStore:
     def get(self, session_id: str) -> dict:
         with self._lock:
             return self._read(self._path(session_id))
+
+    def get_by_project_id(self, project_id: str) -> dict:
+        with self._lock:
+            self._validate_identifier(project_id, "PROJECT")
+            state = self._state_for_project_id(project_id)
+            if state is None:
+                raise AuthoringServiceError("AUTHORING_PROJECT_UNKNOWN", "Project was not found.", status=404)
+            return state
 
     def propose(self, session_id: str, changes: list[dict], *, author: str, summary: str, expected_revision: int) -> dict:
         with self._lock:
@@ -227,7 +239,7 @@ class AuthoringSessionStore:
         head = state["head"]
         checks = AuthoringSessionStore.design_checks(state)
         freezes = AuthoringSessionStore._active_freezes(state)
-        return {"session_id": state["id"], "revision": head["revision"], "intent": head["blueprint"]["intent"],
+        return {"project_id": state.get("project_id", state["id"]), "session_id": state["id"], "revision": head["revision"], "intent": head["blueprint"]["intent"],
                 "semantic_steps": [{"id": item["id"], "intent": item["intent"], "plain_inputs": sorted(item["inputs"]), "plain_outputs": sorted(item["outputs"])} for item in head["blueprint"]["steps"]],
                 "steps": [{"id": item["id"], "intent": item["intent"]} for item in head["blueprint"]["steps"]],
                 "relationships": deepcopy(head["blueprint"].get("relations", [])),
@@ -241,6 +253,22 @@ class AuthoringSessionStore:
                 "impact": {"changed_steps": sorted({x["target_id"] for h in state["history"] for x in h["accepted_changes"] if x["operation"] not in {"set_source_reference", "add_source", "update_source", "remove_source"}})},
                 "blocked_findings": [item for item in checks["findings"] if item["severity"] == "blocked"],
                 "design_checks": checks, "generation_readiness": AuthoringSessionStore.generation_readiness(state, checks)}
+
+    @staticmethod
+    def developer_projection(state: dict) -> dict:
+        head = state["head"]
+        readiness = AuthoringSessionStore.generation_readiness(state)
+        return {
+            "schema": "cartridgeflow.developer_project_projection.v1",
+            "project_id": state.get("project_id", state["id"]),
+            "recipe": {
+                "revision": head["revision"],
+                "steps": [{"id": item["id"], "intent": item["intent"]} for item in head["blueprint"]["steps"]],
+                "sources": [AuthoringSessionStore._safe_source(item) for item in head["blueprint"]["source_references"]],
+            },
+            "generation_readiness": readiness,
+            "creator_url": f"/projects/{state.get('project_id', state['id'])}/creator",
+        }
 
     @staticmethod
     def _safe_source(source: dict) -> dict:
@@ -462,9 +490,20 @@ class AuthoringSessionStore:
         return changes
 
     def _path(self, session_id: str) -> Path:
-        if not isinstance(session_id, str) or not session_id or any(x in session_id for x in ("/", "\\", "..")):
-            raise AuthoringServiceError("AUTHORING_SESSION_ID_INVALID", "Session id is invalid.")
+        self._validate_identifier(session_id, "SESSION")
         return self.root / f"{session_id}.json"
+
+    @staticmethod
+    def _validate_identifier(value: str, kind: str) -> None:
+        if not isinstance(value, str) or not value or any(item in value for item in ("/", "\\", "..")):
+            raise AuthoringServiceError(f"AUTHORING_{kind}_ID_INVALID", f"{kind.title()} id is invalid.")
+
+    def _state_for_project_id(self, project_id: str) -> dict | None:
+        for path in sorted(self.root.glob("*.json")):
+            state = self._read(path)
+            if state.get("project_id", state.get("id")) == project_id:
+                return state
+        return None
 
     @staticmethod
     def _read(path: Path) -> dict:

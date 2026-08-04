@@ -112,8 +112,9 @@ External Runtime
 
 部署时，Creator、Developer 与旧 Workbench 必须由同一产品域名和同一 API 提供服务。
 它们可以是独立代码包和静态构建产物，但只能作为路由域出现，例如 `/creator/`、
-`/developer/` 和兼容 Workbench 路由；不得将端口、跨前端本地状态或手工复制 ID
-作为用户交接机制。
+`/developer/` 和兼容 Workbench 路由。项目内的工作地址必须是
+`/projects/:projectId/creator` 与 `/projects/:projectId/developer`；不得将端口、
+跨前端本地状态或手工复制 ID 作为用户交接机制。
 
 若工程验证发现缺少业务决定，Developer Console 必须创建自然语言的澄清
 项回流 Creator。Creator 确认后产生新配方修订，旧候选失效并重新物化、

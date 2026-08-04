@@ -15,6 +15,7 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const developerApi = {
+  project: (id: string) => request<AnyRecord>(`/api/developer/projects/${encodeURIComponent(id)}`),
   flows: () => request<{ items: AnyRecord[] }>('/api/lab/flows'),
   flow: (id: string) => request<AnyRecord>(`/api/lab/flows/${encodeURIComponent(id)}`),
   files: (id: string) => request<AnyRecord>(`/api/lab/flows/${encodeURIComponent(id)}/files`),

@@ -97,6 +97,7 @@ class AIFlowStewardPayload(BaseModel):
 
 class AuthoringSessionCreatePayload(BaseModel):
     session_id: str
+    project_id: str | None = None
     recipe_id: str
     intent: str
     steps: list[dict] = Field(default_factory=list)

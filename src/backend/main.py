@@ -2134,7 +2134,7 @@ def discover_creator_possibilities_endpoint(payload: CreatorDiscoveryPayload):
 @app.post("/api/creator/authoring-sessions")
 def create_authoring_session(payload: AuthoringSessionCreatePayload):
     try:
-        return {"creator": authoring_sessions.create(payload.session_id, payload.recipe_id, payload.intent, payload.steps, payload.source_references, payload.bindings)}
+        return {"creator": authoring_sessions.create(payload.session_id, payload.recipe_id, payload.intent, payload.steps, payload.source_references, payload.bindings, payload.project_id)}
     except AuthoringServiceError as exc:
         _authoring_error(exc)
 
@@ -2147,10 +2147,26 @@ def get_creator_authoring_session(session_id: str):
         _authoring_error(exc)
 
 
+@app.get("/api/creator/projects/{project_id}")
+def get_creator_project(project_id: str):
+    try:
+        return {"creator": authoring_sessions.creator_projection(authoring_sessions.get_by_project_id(project_id))}
+    except AuthoringServiceError as exc:
+        _authoring_error(exc)
+
+
 @app.get("/api/developer/authoring-sessions/{session_id}")
 def get_developer_authoring_session(session_id: str):
     try:
-        return {"developer": authoring_sessions.get(session_id)}
+        return {"developer": authoring_sessions.developer_projection(authoring_sessions.get(session_id))}
+    except AuthoringServiceError as exc:
+        _authoring_error(exc)
+
+
+@app.get("/api/developer/projects/{project_id}")
+def get_developer_project(project_id: str):
+    try:
+        return {"developer": authoring_sessions.developer_projection(authoring_sessions.get_by_project_id(project_id))}
     except AuthoringServiceError as exc:
         _authoring_error(exc)
 
@@ -4164,6 +4180,11 @@ def serve_creator_studio(full_path: str = ""):
     return response
 
 
+@app.get("/projects/{project_id}/creator")
+def serve_creator_project(project_id: str):
+    return serve_creator_studio()
+
+
 @app.get("/developer")
 @app.get("/developer/{full_path:path}")
 def serve_developer_console(full_path: str = ""):
@@ -4171,6 +4192,11 @@ def serve_developer_console(full_path: str = ""):
     if response is None:
         raise HTTPException(status_code=404, detail="Developer Console has not been built")
     return response
+
+
+@app.get("/projects/{project_id}/developer")
+def serve_developer_project(project_id: str):
+    return serve_developer_console()
 
 
 @app.get("/")

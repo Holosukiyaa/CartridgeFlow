@@ -47,6 +47,26 @@ class ApiSurfaceTests(unittest.TestCase):
         self.assertNotIn("developer", json.dumps(payload).lower())
         self.assertNotIn("runtime", json.dumps(payload).lower())
 
+    def test_project_identity_restores_creator_and_limits_developer_to_safe_projection(self):
+        source = {"id": "source.brief", "kind": "source", "digest": "a" * 64, "role": "public brief"}
+        steps = [{"id": "draft", "intent": "Draft a brief.", "inputs": {}, "outputs": {}}]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = AuthoringSessionStore(temp_dir)
+            with patch.object(backend_main, "authoring_sessions", store):
+                created = self.client.post("/api/creator/authoring-sessions", json={"session_id": "internal.session", "project_id": "project.demo", "recipe_id": "recipe.demo", "intent": "Private exploration context", "steps": steps, "source_references": [source], "bindings": {}})
+                self.assertEqual(200, created.status_code)
+                self.assertEqual("project.demo", created.json()["creator"]["project_id"])
+                creator = self.client.get("/api/creator/projects/project.demo")
+                developer = self.client.get("/api/developer/projects/project.demo")
+        self.assertEqual(200, creator.status_code)
+        self.assertEqual(200, developer.status_code)
+        projection = developer.json()["developer"]
+        self.assertEqual("project.demo", projection["project_id"])
+        self.assertEqual("Draft a brief.", projection["recipe"]["steps"][0]["intent"])
+        self.assertNotIn("Private exploration context", json.dumps(projection))
+        self.assertNotIn("history", projection)
+        self.assertNotIn("session_id", projection)
+
     def test_creator_ai_proposal_uses_configured_dispatch_and_creator_projection(self):
         source = {"id": "source.brief", "kind": "source", "digest": "a" * 64}
         steps = [{"id": "draft", "intent": "Draft a brief.", "inputs": {}, "outputs": {}}]

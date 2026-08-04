@@ -11,7 +11,16 @@ const array = (value: unknown) => Array.isArray(value) ? value as AnyRecord[] : 
 const status = (good: unknown) => good === true || good === 'ok' || good === 'ready' || good === 'passed'
 
 function Panel({ title, icon, children, className = '' }: { title: string; icon: React.ReactNode; children: React.ReactNode; className?: string }) { return <section className={`panel ${className}`}><h2>{icon}{title}</h2>{children}</section> }
-function App() {
+function ProjectWorkspace({ projectId }: { projectId: string }) {
+  const [project, setProject] = useState<AnyRecord | null>(null); const [error, setError] = useState('')
+  useEffect(() => { developerApi.project(projectId).then((result) => setProject(result.developer as AnyRecord)).catch((reason) => setError(reason instanceof Error ? reason.message : 'Unable to load this project.')) }, [projectId])
+  if (error) return <main><header><div><b>CARTRIDGEFLOW</b><span>Developer Console</span></div></header><p role="alert">{error}</p></main>
+  if (!project) return <main><header><div><b>CARTRIDGEFLOW</b><span>Developer Console</span></div></header><p>Loading project...</p></main>
+  const recipe = project.recipe as AnyRecord; const readiness = project.generation_readiness as AnyRecord; const steps = array(recipe?.steps)
+  return <main><header><div><b>CARTRIDGEFLOW</b><span>Developer Console</span><small>project engineering workspace</small></div></header><section><h1>工程验证</h1><p>项目：{String(project.project_id)}</p><p>配方修订：{String(recipe?.revision ?? 'pending')}</p><p>工程状态：{readiness?.ready ? '可进入工程物化' : '等待创作配方完成'}</p><h2>已确认的配方步骤</h2><ul>{steps.map((step) => <li key={String(step.id)}>{String(step.intent)}</li>)}</ul><a href={String(project.creator_url)}>返回创作配方</a></section></main>
+}
+
+function Console() {
   const [flows, setFlows] = useState<AnyRecord[]>([]); const [id, setId] = useState(''); const [data, setData] = useState<Data>({}); const [loading, setLoading] = useState(false); const [error, setError] = useState(''); const [notice, setNotice] = useState(''); const [view, setView] = useState<'semantic' | 'source'>('semantic'); const [selectedNode, setSelectedNode] = useState(''); const [patchText, setPatchText] = useState('{}'); const [message, setMessage] = useState(''); const [publishing, setPublishing] = useState(false)
   const load = async (flowId = id) => { if (!flowId) return; setLoading(true); setError(''); try {
     const detail = await developerApi.flow(flowId); const editable = Boolean((detail.cartridge as AnyRecord)?.editable); const protocol = ((detail.cartridge as AnyRecord)?.root_flow as AnyRecord | undefined)?.protocol as AnyRecord | undefined; const tuningSupported = String(protocol?.id || '') === 'CF-FARP' && Number(String(protocol?.version || '0')) >= 1.1
@@ -45,5 +54,9 @@ function App() {
       <Panel title="Validation, package preflight & probes" icon={<FileSearch size={17}/>}><div className="checks">{['compatibility', 'certification', 'environment', 'dependencies', 'models', 'resources', 'package_hygiene', 'portability'].map((key) => { const item = data.preflight?.[key] as AnyRecord | undefined; const state = item?.status ?? item?.ok; return <div key={key} className={status(state) ? 'ok' : 'attention'}>{status(state) ? <CheckCircle2 size={15}/> : <CircleAlert size={15}/>}<span>{key.replace('_', ' ')}</span><b>{String(state ?? 'unavailable')}</b></div> })}</div><h3><Activity size={15}/>Development probes</h3><pre>{json({ validation: data.validation, analysis_findings: data.analysis?.findings, conformance: data.conformance?.report })}</pre></Panel>
     </div>}
   </main>
+}
+function App() {
+  const match = window.location.pathname.match(/^\/projects\/([^/]+)\/developer$/)
+  return match?.[1] ? <ProjectWorkspace projectId={decodeURIComponent(match[1])} /> : <Console />
 }
 createRoot(document.getElementById('root')!).render(<App />)

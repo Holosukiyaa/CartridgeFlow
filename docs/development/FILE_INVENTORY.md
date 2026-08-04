@@ -10,7 +10,7 @@ cleanup disposition live in `PROJECT_CLEANUP_AUDIT_2026-07-31.md`.
 | Backend | `src/backend/` | `main.py` |
 | Cartridge runtime | `src/core/cartridge/` | `registry.py`, `runner.py`, `root_flow.py`, `validator.py` |
 | Authoring | `src/core/lab/` | `dev_flow.py`, `flow_analyzer.py`, `node_executor.py` |
-| Protocol | `protocol/`, `src/core/protocol/` | `flow-authoring/1.1/`, `base/0.3/`, `tuning/1.0/`, `release_catalog.py`, `tuning.py`, `compatibility.py` |
+| Protocol | `protocol/`, `src/core/protocol/` | `flow-authoring/1.4/`, `base/0.3/`, `tuning/1.3/`, `creator_templates.py`, `release_catalog.py`, `tuning.py`, `compatibility.py` |
 | Runtime | `src/core/runtime/`, `src/core/orchestration/` | `manager.py`, `execution_plan.py` |
 | Extensions | `src/core/extensions/` | `descriptor.py`, `registry.py`, `worker_client.py` |
 | Creator authoring | `src/core/studio/`, `src/core/llm/` | `authoring_service.py` (project journey graph projection), `creator_discovery.py` (strict default-flow, direction, and source-candidate discovery), `creator_runtime_bridge.py` |

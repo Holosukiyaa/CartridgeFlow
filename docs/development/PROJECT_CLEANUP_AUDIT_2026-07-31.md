@@ -33,6 +33,7 @@ The current release baseline is `CF-FARP@1.0` plus `CF-CRE@1`. Both are active/s
 - Added `cartridgeflow.project_journey_graph.v1` as the common project-chain carrier. Creator sees the intent-to-recipe chain; Developer receives the same confirmed recipe, source, and engineering path without private exploration context.
 - Changed the Creator entry to an empty canvas with one start node. A configured model generates one bounded, untrusted default flow from the creator goal; users must still review and freeze its nodes before it is eligible for later stages.
 - Added a minimal Creator Studio layout stylesheet for readable canvas, status, form, and review boundaries; it does not introduce a product-specific visual system.
+- Added CF-TUNING@1.3 and CF-FARP@1.4 release contracts for developer-owned Creator templates and stable Developer mappings; Base now validates template fields before Creator instances are formed.
 
 ## Intentional Retention
 

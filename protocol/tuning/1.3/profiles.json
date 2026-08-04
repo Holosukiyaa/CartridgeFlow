@@ -1,0 +1,1 @@
+{"schema_version":"1.0","profiles":[{"id":"developer_recipe_templates","description":"Developer-owned templates and stable Developer mappings."},{"id":"constrained_creator_authoring","description":"Creator-safe instances and field-limited reviewed revisions."},{"id":"template_compile_handoff","description":"Deterministic mapped compile candidates without runtime execution."}]}

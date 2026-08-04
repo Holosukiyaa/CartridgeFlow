@@ -1,0 +1,1 @@
+{"schema_version":"1.0","capabilities":[{"id":"developer_recipe_template_v1","profile":"developer_recipe_templates"},{"id":"creator_template_instance_v1","profile":"constrained_creator_authoring"},{"id":"creator_field_limited_changes_v1","profile":"constrained_creator_authoring"},{"id":"mapped_creator_compile_candidate_v1","profile":"template_compile_handoff"}]}

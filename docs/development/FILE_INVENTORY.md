@@ -13,9 +13,9 @@ cleanup disposition live in `PROJECT_CLEANUP_AUDIT_2026-07-31.md`.
 | Protocol | `protocol/`, `src/core/protocol/` | `flow-authoring/1.1/`, `base/0.3/`, `tuning/1.0/`, `release_catalog.py`, `tuning.py`, `compatibility.py` |
 | Runtime | `src/core/runtime/`, `src/core/orchestration/` | `manager.py`, `execution_plan.py` |
 | Extensions | `src/core/extensions/` | `descriptor.py`, `registry.py`, `worker_client.py` |
-| Local resources | `src/core/studio/` | `resource_catalog.py`, `resource_resolver.py`, `tuning_repository.py` |
+| Creator authoring | `src/core/studio/` | `authoring_service.py` (including creator-safe possibility discovery), `creator_runtime_bridge.py` |
 | Frontend | `src/frontend/src/` | `main.tsx`, `App.tsx`, `pages/FlowWorkbench.tsx`, `pages/flow-workbench/NodeExperiencePanel.tsx`, `pages/flow-workbench/nodeExperience.ts` |
-| Tests | `scripts/tests/` | `api/`, `conformance/`, `runtime/`, `studio/`, `lab/`, `orchestration/`, `ui/` |
+| Tests | `scripts/tests/` | `api/`, `browser/`, `conformance/`, `runtime/`, `studio/`, `lab/`, `orchestration/`, `ui/` |
 | Automation | `scripts/` | `bootstrap.ps1`, `launch.py`, `run_conformance.py`, `run_node_coverage.py` |
 | Flow authoring skill | `docs/development/skills/cartridgeflow-flow-author/` | `SKILL.md`, `references/authoring-checklist.md`, `scripts/preflight_flow.py`, `scripts/validate_authored_cartridge.py` |
 | Runtime developer toolkit | `demos/runtime-developer-toolkit/` | `README.md`, `guide/`, `demo/`, `samples/` |

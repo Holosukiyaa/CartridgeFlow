@@ -17,6 +17,7 @@ beforeEach(() => {
   localStorage.clear(); calls = []
   vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => {
     calls.push({ url, init })
+    if (url.endsWith('/possibilities')) return response({ possibilities: [{ id: 'signal-radar', title: '建立主题信号雷达', outcome: '每周获得重点变化。', why_it_fits: '适合先持续观察。', first_week_output: '一份摘要。', needs_confirmation: ['主题边界'], recipe: { intent: '持续跟踪：AI 行业', steps: [{ id: 'discover-sources', intent: '发现并审核相关公开来源', inputs: [], outputs: [] }] } }] })
     if (url.endsWith('/ai-proposals')) return response({ proposal: { proposal_id: 'p1', revision: 1, summary: 'AI proposal', changes: [{ id: 'c1', target_id: 'start', operation: 'set_step_intent' }] } })
     if (url.includes('/preview')) return response({ impact: { plain_summary: 'One selected change.', changed_steps: ['start'], changed_sources: [] } })
     if (url.includes('/accept')) return response({ creator: creator({ revision: 2 }), accepted_change_ids: ['c1'] })
@@ -27,13 +28,15 @@ beforeEach(() => {
 })
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
-it('creates a session through the creator API', async () => {
-  render(<App />)
-  fireEvent.change(screen.getByLabelText('Creative intent'), { target: { value: 'Create a clear story' } })
-  fireEvent.submit(screen.getByLabelText('Creative intent').closest('form')!)
-  await screen.findByText('CartridgeFlow 创作工作室')
-  expect(calls.some((call) => call.url.endsWith('/api/creator/authoring-sessions'))).toBe(true)
-})
+  it('turns an open-ended thought into a selected creator recipe', async () => {
+    render(<App />)
+    fireEvent.change(screen.getByLabelText('Creative intent'), { target: { value: 'AI 行业' } })
+    fireEvent.submit(screen.getByLabelText('Creative intent').closest('form')!)
+    await screen.findByText('建立主题信号雷达')
+    fireEvent.click(screen.getByRole('button', { name: '选择这个方向' }))
+    await waitFor(() => expect(calls.some((call) => call.url.endsWith('/api/creator/authoring-sessions'))).toBe(true))
+    expect(calls.some((call) => call.url.endsWith('/api/creator/authoring-sessions'))).toBe(true)
+  })
 
 it('requests an AI proposal through the review endpoint', async () => {
   localStorage.setItem('creator-session-id', 's1')

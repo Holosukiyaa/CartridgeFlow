@@ -34,6 +34,19 @@ class ApiSurfaceTests(unittest.TestCase):
             response = self.client.get("/api/health", headers={"Origin": origin})
             self.assertEqual(origin, response.headers.get("access-control-allow-origin"))
 
+    def test_creator_discovery_returns_creator_safe_possibilities_without_a_model(self):
+        response = self.client.post("/api/creator/possibilities", json={"context": "我想持续了解 AI 行业的变化"})
+        self.assertEqual(200, response.status_code)
+        payload = response.json()
+        self.assertEqual("cartridgeflow.creator_possibilities.v1", payload["schema"])
+        self.assertEqual(3, len(payload["possibilities"]))
+        first = payload["possibilities"][0]
+        self.assertEqual("建立主题信号雷达", first["title"])
+        self.assertIn("我想持续了解 AI 行业的变化", first["outcome"])
+        self.assertEqual(["discover-sources", "review-signals", "weekly-brief"], [step["id"] for step in first["recipe"]["steps"]])
+        self.assertNotIn("developer", json.dumps(payload).lower())
+        self.assertNotIn("runtime", json.dumps(payload).lower())
+
     def test_creator_ai_proposal_uses_configured_dispatch_and_creator_projection(self):
         source = {"id": "source.brief", "kind": "source", "digest": "a" * 64}
         steps = [{"id": "draft", "intent": "Draft a brief.", "inputs": {}, "outputs": {}}]

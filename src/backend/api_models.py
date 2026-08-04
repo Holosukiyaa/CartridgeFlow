@@ -104,6 +104,10 @@ class AuthoringSessionCreatePayload(BaseModel):
     bindings: dict = Field(default_factory=dict)
 
 
+class CreatorDiscoveryPayload(BaseModel):
+    context: str = Field(min_length=3, max_length=2000)
+
+
 class AuthoringProposalPayload(BaseModel):
     changes: list[dict] = Field(default_factory=list)
     author: str = "creator"

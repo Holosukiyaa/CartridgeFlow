@@ -26,6 +26,7 @@ The current release baseline is `CF-FARP@1.0` plus `CF-CRE@1`. Both are active/s
 - Extracted HTTP request payload models from `backend/main.py` into `backend/api_models.py`; the application entry now contains assembly, helpers, and routes rather than model declarations.
 - Removed 30 frontend API wrappers with no production caller. Their server routes remain public to avoid breaking external clients.
 - Removed the stale planning-task parser, its three permanently failing API routes, its tests, types, and unused styles after the planning files were removed from the repository.
+- Added the Creator Studio discovery-to-recipe browser smoke test; it verifies the first-layer entry stays creator-safe and enters an auditable authoring session.
 
 ## Intentional Retention
 
@@ -223,6 +224,8 @@ scripts/
   tests/
     api/
       test_api_surface.py
+    browser/
+      test_creator_discovery.py
     conformance/
       test_base_manifest.py
       test_compatibility_report.py

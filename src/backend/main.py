@@ -28,6 +28,7 @@ from backend.api_models import (
     AIFlowStewardPayload,
     AuthoringAcceptPayload,
     AuthoringAIProposalPayload,
+    CreatorDiscoveryPayload,
     AuthoringFreezePayload,
     CreatorHandoffPayload,
     AuthoringProposalPayload,
@@ -74,7 +75,7 @@ from backend.api_models import (
 )
 
 from core.cartridge import CartridgeRegistry, CartridgeRunner
-from core.studio.authoring_service import AuthoringServiceError, AuthoringSessionStore
+from core.studio.authoring_service import AuthoringServiceError, AuthoringSessionStore, discover_creator_possibilities
 from core.studio.creator_runtime_bridge import CreatorRuntimeBridge, CreatorRuntimeBridgeError
 from core.cartridge.validator import ManifestValidationError
 from core.data_paths import (
@@ -2120,6 +2121,14 @@ def activate_lab_flow_recipe_release(cartridge_id: str, release_id: str):
 
 def _authoring_error(exc: AuthoringServiceError):
     raise HTTPException(status_code=exc.status, detail=exc.as_dict())
+
+
+@app.post("/api/creator/possibilities")
+def discover_creator_possibilities_endpoint(payload: CreatorDiscoveryPayload):
+    try:
+        return {"schema": "cartridgeflow.creator_possibilities.v1", "context": payload.context.strip(), "possibilities": discover_creator_possibilities(payload.context)}
+    except AuthoringServiceError as exc:
+        _authoring_error(exc)
 
 
 @app.post("/api/creator/authoring-sessions")

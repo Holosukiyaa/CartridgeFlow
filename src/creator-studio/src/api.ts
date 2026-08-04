@@ -15,6 +15,7 @@ export type Handoff = { status: string; release_id: string; filename: string; ur
 export type Impact = { plain_summary?: string; changed_steps?: string[]; changed_sources?: string[] }
 export type FreezeRevision = { source_freeze_ids: string[]; expected_revision: number; reason: string; author: string }
 export type Preview = { accepted_change_ids: string[]; impact: Impact; freeze_revision?: FreezeRevision | null }
+export type Possibility = { id: string; title: string; outcome: string; why_it_fits: string; first_week_output: string; needs_confirmation: string[]; recipe: { intent: string; steps: unknown[] } }
 export class ApiError extends Error { constructor(public code: string, message: string, public status: number) { super(message) } }
 
 const base = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
@@ -26,6 +27,7 @@ async function request<T>(path: string, method = 'GET', body?: unknown): Promise
 }
 const route = (id: string) => `/api/creator/authoring-sessions/${encodeURIComponent(id)}`
 export const creatorApi = {
+  discover: (context: string) => request<{ possibilities: Possibility[] }>('/api/creator/possibilities', 'POST', { context }),
   create: (body: { session_id: string; recipe_id: string; intent: string; steps: unknown[]; source_references: unknown[]; bindings: Record<string, unknown> }) => request<{ creator: Creator }>('/api/creator/authoring-sessions', 'POST', body),
   get: (id: string) => request<{ creator: Creator }>(route(id)),
   ai: (id: string, body: unknown) => request<{ proposal: Proposal }>(`${route(id)}/ai-proposals`, 'POST', body),

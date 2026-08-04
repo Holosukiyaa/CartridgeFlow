@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from 'react'
-import { ApiError, Creator, FreezeRevision, Handoff, Impact, Proposal, Source, creatorApi } from './api'
+import { ApiError, Creator, FreezeRevision, Handoff, Impact, Possibility, Proposal, Source, creatorApi } from './api'
 
 const idFor = (prefix: string) => `${prefix}-${crypto.randomUUID().slice(0, 8)}`
 const sourceUrl = (value: string) => {
@@ -27,6 +27,7 @@ const routeSessionId = () => {
 export default function App() {
   const [creator, setCreator] = useState<Creator | null>(null)
   const [intent, setIntent] = useState('')
+  const [possibilities, setPossibilities] = useState<Possibility[]>([])
   const [sessionId, setSessionId] = useState('')
   const [sourceInput, setSourceInput] = useState('')
   const [prompt, setPrompt] = useState('')
@@ -71,13 +72,19 @@ export default function App() {
     try { const result = await creatorApi.propose(creator.session_id, { changes: [{ id: idFor('change'), ...change }], author: 'creator', summary, expected_revision: creator.revision }); await stage(result.proposal, '变更已进入审阅，尚未写入设计。') }
     catch (error) { setNotice(errorText(error)) } finally { setBusy(false) }
   }
-  const create = async (event: FormEvent) => {
-    event.preventDefault(); setBusy(true)
+  const create = async (possibility?: Possibility) => {
+    setBusy(true)
     try {
       const id = sessionId || idFor('design')
-      const result = await creatorApi.create({ session_id: id, recipe_id: idFor('recipe'), intent, steps: [{ id: 'collect', intent: '收集指定来源', inputs: [], outputs: [] }], source_references: [], bindings: {} })
+      const recipe = possibility?.recipe || { intent, steps: [{ id: 'collect', intent: '收集指定来源', inputs: [], outputs: [] }] }
+      const result = await creatorApi.create({ session_id: id, recipe_id: idFor('recipe'), intent: recipe.intent, steps: recipe.steps, source_references: [], bindings: {} })
       localStorage.setItem('creator-session-id', id); window.history.replaceState({}, '', `/creator/designs/${encodeURIComponent(id)}`); save(result.creator); setNotice('创作会话已创建。')
     } catch (error) { setNotice(errorText(error)) } finally { setBusy(false) }
+  }
+  const discover = async (event: FormEvent) => {
+    event.preventDefault(); setBusy(true); setNotice('')
+    try { const result = await creatorApi.discover(intent); setPossibilities(result.possibilities); setNotice('请选择一个最接近你当前想法的方向。') }
+    catch (error) { setNotice(errorText(error)) } finally { setBusy(false) }
   }
   const addSource = async () => {
     const url = sourceUrl(sourceInput)
@@ -126,7 +133,7 @@ export default function App() {
     catch (error) { setNotice(errorText(error)) } finally { setBusy(false) }
   }
 
-  if (!creator) return <main><header><h1>CartridgeFlow 创作工作室</h1></header><form onSubmit={create}><p><label>创作意图<textarea aria-label="Creative intent" value={intent} onChange={(event) => setIntent(event.target.value)} required /></label></p><p><label>继续现有会话（可选）<input aria-label="Session ID" value={sessionId} onChange={(event) => setSessionId(event.target.value)} /></label></p><button type="submit" disabled={busy}>开始创作</button></form>{notice && <p role="status">{notice}</p>}</main>
+  if (!creator) return <main><header><h1>CartridgeFlow 创作工作室</h1></header><form onSubmit={discover}><p><label>你最近在关注、困惑或想探索什么？<textarea aria-label="Creative intent" value={intent} onChange={(event) => { setIntent(event.target.value); setPossibilities([]) }} required /></label></p><button type="submit" disabled={busy || intent.trim().length < 3}>帮我打开思路</button></form>{possibilities.length > 0 && <section aria-labelledby="possibilities-heading"><h2 id="possibilities-heading">可以从这里开始</h2>{possibilities.map((possibility) => <article key={possibility.id}><h3>{possibility.title}</h3><p>你将得到：{possibility.outcome}</p><p>适合你的原因：{possibility.why_it_fits}</p><p>第一周：{possibility.first_week_output}</p><p>还需要确认：{possibility.needs_confirmation.join('、')}</p><button onClick={() => void create(possibility)} disabled={busy}>选择这个方向</button></article>)}</section>}<p><label>继续现有会话（可选）<input aria-label="Session ID" value={sessionId} onChange={(event) => setSessionId(event.target.value)} /></label></p>{notice && <p role="status">{notice}</p>}</main>
 
   const current = creator.semantic_steps.find((step) => step.id === selectedStep) || creator.semantic_steps[0]
   const base = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')

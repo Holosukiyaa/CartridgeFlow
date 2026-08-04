@@ -76,6 +76,7 @@ The tree below is generated from the current non-generated workspace. It intenti
 .gitignore
 AGENT.md
 PLAN.md
+PRODUCT_EXPERIENCE_ARCHITECTURE.md
 acceptance/
   model-result.txt
 config/

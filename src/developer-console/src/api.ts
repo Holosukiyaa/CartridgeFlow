@@ -24,4 +24,7 @@ export const developerApi = {
   conformance: () => request<AnyRecord>('/api/studio/conformance'),
   analyze: (id: string, files: AnyRecord) => request<AnyRecord>(`/api/lab/flows/${encodeURIComponent(id)}/analyze`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ files, target: 'dev' }) }),
   validate: (id: string, files: AnyRecord) => request<AnyRecord>(`/api/lab/flows/${encodeURIComponent(id)}/validate`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ files }) }),
+  createRevision: (id: string, nodeId: string, body: { patch: AnyRecord; expected_head?: string; author?: string; message?: string }) => request<AnyRecord>(`/api/lab/flows/${encodeURIComponent(id)}/tuning/nodes/${encodeURIComponent(nodeId)}/revisions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+  publishRelease: (id: string, body: { author?: string; message?: string }) => request<AnyRecord>(`/api/lab/flows/${encodeURIComponent(id)}/tuning/releases`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+  activateRelease: (id: string, releaseId: string) => request<AnyRecord>(`/api/lab/flows/${encodeURIComponent(id)}/tuning/releases/${encodeURIComponent(releaseId)}/activate`, { method: 'POST' }),
 }

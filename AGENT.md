@@ -2,11 +2,11 @@
 
 ## Product Boundary
 
-The frozen product and delivery baseline is `PLAN.md` revision
-`creator-ai-authoring-2026-08-r2`. CartridgeFlow owns creator authoring and a
-separate developer console; the runtime product owns production execution and
-receives only signed cartridge packages. Do not add production run, queue,
-history, artifact-delivery, or runtime-interaction UI to Creator Studio.
+The current product and delivery plan is `PLAN.md`. CartridgeFlow owns creator
+authoring and a separate developer console; the runtime product owns production
+execution and receives only signed cartridge packages. Do not add production
+run, queue, history, artifact-delivery, or runtime-interaction UI to Creator
+Studio.
 
 The current v0.7 implementation is still a single local development workbench.
 Its backend entry point is `src/backend/main.py`; `src/frontend/src/App.tsx` is

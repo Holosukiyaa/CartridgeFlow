@@ -26,6 +26,14 @@ class ApiSurfaceTests(unittest.TestCase):
         self.assertEqual(200, self.client.get("/api/health").status_code)
         self.assertEqual(200, self.client.get("/api/base").status_code)
 
+    def test_service_root_and_local_authoring_cors_are_available_without_a_bundled_frontend(self):
+        root = self.client.get("/")
+        self.assertEqual(200, root.status_code)
+        self.assertEqual("CartridgeFlow API", root.json()["service"])
+        for origin in ("http://127.0.0.1:5180", "http://127.0.0.1:5181"):
+            response = self.client.get("/api/health", headers={"Origin": origin})
+            self.assertEqual(origin, response.headers.get("access-control-allow-origin"))
+
     def test_creator_ai_proposal_uses_configured_dispatch_and_creator_projection(self):
         source = {"id": "source.brief", "kind": "source", "digest": "a" * 64}
         steps = [{"id": "draft", "intent": "Draft a brief.", "inputs": {}, "outputs": {}}]
@@ -55,6 +63,21 @@ class ApiSurfaceTests(unittest.TestCase):
                 response = self.client.post("/api/creator/authoring-sessions/api.unbound/ai-proposals", json={"prompt": "Clarify", "expected_revision": 1})
         self.assertEqual(409, response.status_code)
         self.assertEqual("AI_AUTHORING_MODEL_UNBOUND", response.json()["detail"]["code"])
+
+    def test_creator_ai_proposal_timeout_is_a_stable_recoverable_error(self):
+        async def timeout(awaitable, **_kwargs):
+            awaitable.close()
+            raise TimeoutError
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = AuthoringSessionStore(temp_dir)
+            source = {"id": "source.brief", "kind": "source", "digest": "a" * 64}
+            store.create("api.timeout", "recipe.api", "Create brief", [{"id": "draft", "intent": "Draft.", "inputs": {}, "outputs": {}}], [source], {})
+            with patch.object(backend_main, "authoring_sessions", store), patch("core.llm.config_manager.resolve_model", return_value=type("Model", (), {"api_key": "configured"})()), patch("backend.main.asyncio.wait_for", side_effect=timeout):
+                response = self.client.post("/api/creator/authoring-sessions/api.timeout/ai-proposals", json={"prompt": "Clarify", "expected_revision": 1})
+        self.assertEqual(504, response.status_code)
+        self.assertEqual("AI_AUTHORING_MODEL_TIMEOUT", response.json()["detail"]["code"])
+        self.assertEqual("AI_AUTHORING_MODEL_TIMEOUT", response.json()["error_envelope"]["code"])
 
     def test_creator_ai_proposal_rejects_untrusted_capability_resolution_without_writing(self):
         with tempfile.TemporaryDirectory() as temp_dir:

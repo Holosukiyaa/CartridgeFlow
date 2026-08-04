@@ -1,0 +1,106 @@
+"""Launch the local Creator Studio, Developer Console, and API together."""
+
+from __future__ import annotations
+
+import argparse
+import os
+import shutil
+import socket
+import subprocess
+import sys
+import time
+import webbrowser
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+SOURCE_DIR = ROOT / "src"
+CREATOR_DIR = SOURCE_DIR / "creator-studio"
+CONSOLE_DIR = SOURCE_DIR / "developer-console"
+API_PORT = 8000
+CREATOR_PORT = 5180
+CONSOLE_PORT = 5181
+
+
+def _port_is_available(port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.settimeout(0.2)
+        return probe.connect_ex(("127.0.0.1", port)) != 0
+
+
+def _require_available_ports() -> None:
+    unavailable = [str(port) for port in (API_PORT, CREATOR_PORT, CONSOLE_PORT) if not _port_is_available(port)]
+    if unavailable:
+        raise SystemExit(f"Ports already in use: {', '.join(unavailable)}. Stop those services before launching authoring.")
+
+
+def _npm_command() -> str:
+    npm = shutil.which("npm.cmd") or shutil.which("npm")
+    if npm:
+        return npm
+    raise SystemExit("npm was not found. Install Node.js 20.19 or newer.")
+
+
+def _wait_for_api(process: subprocess.Popen[object]) -> None:
+    for _ in range(40):
+        if process.poll() is not None:
+            raise SystemExit("The CartridgeFlow API stopped before it became ready.")
+        if not _port_is_available(API_PORT):
+            return
+        time.sleep(0.25)
+    raise SystemExit("The CartridgeFlow API did not become ready within 10 seconds.")
+
+
+def _vite_environment() -> dict[str, str]:
+    environment = os.environ.copy()
+    environment["VITE_API_BASE_URL"] = f"http://127.0.0.1:{API_PORT}"
+    return environment
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--no-browser", action="store_true", help="Do not open the two frontend URLs automatically.")
+    args = parser.parse_args()
+
+    _require_available_ports()
+    npm = _npm_command()
+    environment = _vite_environment()
+    processes: list[subprocess.Popen[object]] = []
+    try:
+        api = subprocess.Popen(
+            [sys.executable, "-m", "uvicorn", "backend.main:app", "--host", "127.0.0.1", "--port", str(API_PORT)],
+            cwd=SOURCE_DIR,
+            env=environment,
+        )
+        processes.append(api)
+        _wait_for_api(api)
+        for directory, port in ((CREATOR_DIR, CREATOR_PORT), (CONSOLE_DIR, CONSOLE_PORT)):
+            processes.append(
+                subprocess.Popen(
+                    [npm, "run", "dev", "--", "--host", "127.0.0.1", "--port", str(port), "--strictPort"],
+                    cwd=directory,
+                    env=environment,
+                )
+            )
+        creator_url = f"http://127.0.0.1:{CREATOR_PORT}/"
+        console_url = f"http://127.0.0.1:{CONSOLE_PORT}/"
+        print(f"Creator Studio: {creator_url}")
+        print(f"Developer Console: {console_url}")
+        print(f"API documentation: http://127.0.0.1:{API_PORT}/docs")
+        if not args.no_browser:
+            webbrowser.open(creator_url)
+            webbrowser.open(console_url)
+        while True:
+            if any(process.poll() is not None for process in processes):
+                raise SystemExit("An authoring service stopped unexpectedly.")
+            time.sleep(0.5)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        for process in reversed(processes):
+            if process.poll() is None:
+                process.terminate()
+
+
+if __name__ == "__main__":
+    main()

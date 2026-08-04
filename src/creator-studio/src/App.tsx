@@ -1,35 +1,143 @@
 import { FormEvent, useEffect, useState } from 'react'
-import { ApiError, Creator, FreezeRevision, Impact, Proposal, Source, creatorApi } from './api'
+import { ApiError, Creator, FreezeRevision, Handoff, Impact, Proposal, Source, creatorApi } from './api'
 
 const idFor = (prefix: string) => `${prefix}-${crypto.randomUUID().slice(0, 8)}`
-const safeUrl = (value: string) => { try { const url = new URL(value); const bad = /token|secret|password|credential|api[_-]?key|authorization|cookie|sig|signature|key/i; return url.protocol === 'https:' && !url.username && !url.password && [...url.searchParams.keys()].every(key => !bad.test(key)) ? url.toString() : null } catch { return null } }
-const sha256 = async (text: string) => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)))).map(value => value.toString(16).padStart(2, '0')).join('')
-const sourceFor = async (source: Source, url: string): Promise<Source> => {
-  const urlKey = source.rss_url && !source.remote_url ? 'rss_url' : 'remote_url'
-  const reference = { id: source.id, kind: 'source' as const, digest: '', ...(source.role ? { role: source.role } : {}), [urlKey]: url }
-  return { ...reference, digest: await sha256(JSON.stringify(reference)) }
+const sourceUrl = (value: string) => {
+  try {
+    const url = new URL(value)
+    const sensitive = /token|secret|password|credential|api[_-]?key|authorization|cookie|sig|signature|key/i
+    return url.protocol === 'https:' && !url.username && !url.password && [...url.searchParams.keys()].every((key) => !sensitive.test(key)) ? url.toString() : null
+  } catch { return null }
 }
-function freezeRevision(creator: Creator, changes: Proposal['changes']): FreezeRevision | undefined {
-  const sourceOperations = new Set(['add_source', 'update_source', 'remove_source', 'set_source_reference'])
-  const visibleStepTargets = changes.filter(change => !sourceOperations.has(change.operation) && !['connect_steps', 'disconnect_steps'].includes(change.operation)).map(change => change.target_id)
-  const ids = creator.active_freezes.filter(freeze => freeze.steps.some(step => visibleStepTargets.includes(step))).map(freeze => freeze.id)
-  return ids.length ? { source_freeze_ids: ids, expected_revision: creator.revision, reason: 'Creator approved this revision to the selected frozen design step.', author: 'creator' } : undefined
+const digest = async (value: unknown) => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(value))))).map((item) => item.toString(16).padStart(2, '0')).join('')
+const errorText = (error: unknown) => {
+  if (!(error instanceof ApiError)) return '无法连接创作服务。请确认后端正在运行。'
+  if (error.code === 'AI_AUTHORING_MODEL_UNBOUND') return 'AI 创作服务尚未连接。请先在 Developer Console 中配置模型。'
+  if (error.code === 'AI_AUTHORING_MODEL_TIMEOUT') return 'AI 创作服务没有及时响应，当前设计未发生变化。'
+  if (error.code === 'AUTHORING_FROZEN_STEP') return '该步骤已经冻结，请通过冻结修订流程修改。'
+  if (error.code === 'AUTHORING_GENERATION_BLOCKED') return '请先解决设计阻塞项并冻结全部步骤。'
+  return error.message || '本次创作操作未能完成。'
+}
+const changeLabel = (operation: string) => ({ add_source: '添加来源', update_source: '更新来源', remove_source: '移除来源', add_step: '添加步骤', set_step_intent: '调整步骤目标', connect_steps: '连接步骤', disconnect_steps: '断开步骤连接' }[operation] || '调整设计')
+const routeSessionId = () => {
+  const match = window.location.pathname.match(/^\/creator\/designs\/([^/]+)$/)
+  return match?.[1] ? decodeURIComponent(match[1]) : localStorage.getItem('creator-session-id') || ''
 }
 
 export default function App() {
-  const [creator, setCreator] = useState<Creator | null>(null), [sessionId, setSessionId] = useState(''), [intent, setIntent] = useState(''), [sourceUrl, setSourceUrl] = useState(''), [sourceEdits, setSourceEdits] = useState<Record<string, string>>({}), [prompt, setPrompt] = useState(''), [selected, setSelected] = useState<string[]>([]), [notice, setNotice] = useState(''), [busy, setBusy] = useState(false), [stepIntent, setStepIntent] = useState(''), [from, setFrom] = useState(''), [to, setTo] = useState(''), [reviewProposal, setReviewProposal] = useState<Proposal | null>(null), [impact, setImpact] = useState<Impact | null>(null)
-  const showError = (error: unknown) => setNotice(error instanceof ApiError ? `${error.code}: ${error.code === 'AUTHORING_FROZEN_STEP' ? 'This proposal changes a frozen design step and needs a creator-approved revision.' : error.message}` : 'Creator request failed.')
-  const save = (value: Creator) => { setCreator(value); setSessionId(value.session_id); setSelected([]); setReviewProposal(null); setImpact(null) }
-  useEffect(() => { const stored = localStorage.getItem('creator-session-id'); if (stored) { setSessionId(stored); creatorApi.get(stored).then(({ creator }) => { save(creator); setIntent(creator.intent) }).catch(showError) } }, [])
-  const create = async (event: FormEvent) => { event.preventDefault(); setBusy(true); try { const id = sessionId || idFor('session'); const result = await creatorApi.create({ session_id: id, recipe_id: idFor('recipe'), intent: intent || 'A creator-defined workflow', steps: [{ id: 'start', intent: 'Begin the work', inputs: [], outputs: [] }], source_references: [], bindings: {} }); localStorage.setItem('creator-session-id', id); save(result.creator); setNotice('Authoring session created.') } catch (e) { showError(e) } finally { setBusy(false) } }
-  const preview = async (proposal: Proposal, ids: string[]) => { if (!creator) return; const changes = proposal.changes.filter(change => ids.includes(change.id)); const revision = freezeRevision(creator, changes); const body = { selected_change_ids: ids, ...(revision ? { freeze_revision: revision } : {}) }; const result = await creatorApi.preview(creator.session_id, proposal.proposal_id, body); setImpact(result.impact); return body }
-  const stage = async (proposal: Proposal, message: string) => { const ids = proposal.changes.map(item => item.id); setReviewProposal(proposal); setSelected(ids); setImpact(null); await preview(proposal, ids); setNotice(message) }
-  const mutate = async (change: Record<string, unknown>, summary: string) => { if (!creator) return; setBusy(true); try { const { proposal } = await creatorApi.propose(creator.session_id, { changes: [{ id: idFor('change'), ...change }], author: 'creator', summary, expected_revision: creator.revision }); await stage(proposal, 'Direct edit preview is ready for review.') } catch (e) { showError(e) } finally { setBusy(false) } }
-  const addSource = async () => { const url = safeUrl(sourceUrl); if (!url) return setNotice('Sources must use a credential-free HTTPS URL with no sensitive query values or local path.'); const value = await sourceFor({ id: idFor('source'), kind: 'source', digest: '', role: 'Declared source' }, url); void mutate({ target_id: value.id, operation: 'add_source', value }, 'Add a declared source') }
-  const updateSource = async (source: Source) => { const url = safeUrl(sourceEdits[source.id] || ''); if (!url) return setNotice('Sources must use a credential-free HTTPS URL with no sensitive query values or local path.'); void mutate({ target_id: source.id, operation: 'update_source', value: await sourceFor(source, url) }, 'Update a declared source') }
-  const ai = async () => { if (!creator || !prompt.trim()) return; setBusy(true); try { const { proposal } = await creatorApi.ai(creator.session_id, { prompt, author: 'creator', summary: 'AI-assisted design proposal', expected_revision: creator.revision }); await stage(proposal, 'AI preview is ready for review.') } catch (e) { showError(e) } finally { setBusy(false) } }
-  const acceptSelected = async () => { if (!creator) return; const proposal = reviewProposal || creator.pending_proposals[0]; if (!proposal || !impact) return; setBusy(true); try { const body = await preview(proposal, selected); if (!body) return; const result = await creatorApi.accept(creator.session_id, proposal.proposal_id, body); save(result.creator); setNotice(`Accepted ${result.accepted_change_ids.length} selected change(s).`) } catch (e) { showError(e) } finally { setBusy(false) } }
-  if (!creator) return <main className="welcome"><h1>Creator Studio</h1><form onSubmit={create}><label>Session ID<input aria-label="Session ID" value={sessionId} onChange={e => setSessionId(e.target.value)} placeholder="Leave blank to create" /></label><label>Creative intent<textarea aria-label="Creative intent" value={intent} onChange={e => setIntent(e.target.value)} required /></label><button disabled={busy}>Create authoring session</button></form><p role="status">{notice}</p></main>
-  const proposal = reviewProposal || creator.pending_proposals[0]
-  return <main className="studio"><header><div><h1>Creator Studio</h1><span>Session {creator.session_id}, revision {creator.revision}</span></div><button onClick={() => creatorApi.get(creator.session_id).then(x => save(x.creator)).catch(showError)}>Refresh</button></header><p role="status">{notice}</p><section><h2>Intent</h2><p>{creator.intent}</p></section><section><h2>Sources</h2>{creator.sources.map(source => <div className="source" key={source.id}><span>{source.role || source.id}: {source.remote_url || source.rss_url}</span><label>Edit source URL<input aria-label={`Edit source ${source.id}`} value={sourceEdits[source.id] ?? source.remote_url ?? source.rss_url ?? ''} onChange={e => setSourceEdits(items => ({ ...items, [source.id]: e.target.value }))} /></label><button onClick={() => void updateSource(source)}>Update source</button><button onClick={() => void mutate({ target_id: source.id, operation: 'remove_source', value: {} }, 'Remove source')}>Remove</button></div>)}<label>Add source URL<input aria-label="Add source URL" value={sourceUrl} onChange={e => setSourceUrl(e.target.value)} /></label><button onClick={() => void addSource()}>Propose source</button></section><section><h2>Proposal review</h2><textarea aria-label="Ask AI to modify the design" value={prompt} onChange={e => setPrompt(e.target.value)} /><button onClick={ai}>Ask AI</button>{proposal && <><h3>{proposal.summary}</h3>{proposal.changes.map(change => <label className="change" key={change.id}><input type="checkbox" checked={selected.includes(change.id)} onChange={() => { setSelected(items => items.includes(change.id) ? items.filter(id => id !== change.id) : [...items, change.id]); setImpact(null) }} />{change.operation} {change.target_id}</label>)}<button onClick={() => void preview(proposal, selected).catch(showError)}>Preview selected ({selected.length})</button>{impact && <div className="impact" aria-label="Preview impact"><strong>{impact.plain_summary || 'Preview complete.'}</strong><span>Changed steps: {(impact.changed_steps || []).join(', ') || 'none'}</span><span>Changed sources: {(impact.changed_sources || []).join(', ') || 'none'}</span></div>}<button disabled={!impact} onClick={() => void acceptSelected()}>Accept selected ({selected.length})</button><button onClick={() => creatorApi.reject(creator.session_id, proposal.proposal_id, { reason: 'Creator requested a different direction.' }).then(x => save(x.creator)).catch(showError)}>Reject proposal</button></>}</section><section><h2>Manual canvas</h2><label>New step<input aria-label="New step" value={stepIntent} onChange={e => setStepIntent(e.target.value)} /></label><button onClick={() => { const id = idFor('step'); void mutate({ target_id: id, operation: 'add_step', value: { id, intent: stepIntent || 'New creative step', inputs: [], outputs: [] } }, 'Add canvas step') }}>Add step</button><div className="steps">{creator.semantic_steps.map(step => <article key={step.id} className={creator.frozen_steps.includes(step.id) ? 'frozen' : ''}><b>{step.intent}</b><small>{step.id}</small><button onClick={() => creatorApi.freeze(creator.session_id, { step_ids: [step.id], author: 'creator', summary: 'Freeze approved step' }).then(() => creatorApi.get(creator.session_id)).then(x => save(x.creator)).catch(showError)}>Freeze</button><button onClick={() => void mutate({ target_id: step.id, operation: 'set_step_intent', value: `${step.intent} (edited)` }, 'Edit canvas step')}>Edit</button></article>)}</div><label>From<select aria-label="Connect from" value={from} onChange={e => setFrom(e.target.value)}><option value="" />{creator.steps.map(step => <option key={step.id}>{step.id}</option>)}</select></label><label>To<select aria-label="Connect to" value={to} onChange={e => setTo(e.target.value)}><option value="" />{creator.steps.map(step => <option key={step.id}>{step.id}</option>)}</select></label><button onClick={() => { if (from && to && from !== to) { const id = idFor('relation'); void mutate({ target_id: id, operation: 'connect_steps', value: { id, from_step_id: from, to_step_id: to, relation: 'informs' } }, 'Connect canvas steps') } }}>Connect steps</button>{creator.relationships.map(item => <p key={item.id}>{item.from_step_id} informs {item.to_step_id}</p>)}</section><section><h2>History</h2>{creator.history.map(item => <div className="row" key={item.id}>{item.summary}<button onClick={() => creatorApi.reverse(creator.session_id, item.id, { author: 'creator', summary: 'Reverse accepted revision', expected_revision: creator.revision }).then(x => { save(x.creator); setNotice('Accepted revision reversed.') }).catch(showError)}>Reverse</button></div>)}</section><section><h2>Design check</h2><button onClick={() => creatorApi.checks(creator.session_id).then(x => setNotice(x.design_checks.findings.length ? `${x.design_checks.findings.length} blocker(s) remain.` : 'No design blockers.')).catch(showError)}>Run design check</button>{creator.blocked_findings.map(item => <p className="blocked" key={item.code}>{item.message}</p>)}<button onClick={() => creatorApi.readiness(creator.session_id, creator.revision).then(x => setNotice(x.generation_readiness.ready ? 'Ready for a handoff candidate.' : `${x.generation_readiness.blocked_findings.length} blocker(s) remain.`)).catch(showError)}>Check readiness</button><button disabled={!creator.generation_readiness.ready} onClick={() => creatorApi.compile(creator.session_id, creator.revision).then(() => setNotice('Compile candidate created for handoff. It is not signed or executing.')).catch(showError)}>Create handoff candidate</button></section></main>
+  const [creator, setCreator] = useState<Creator | null>(null)
+  const [intent, setIntent] = useState('')
+  const [sessionId, setSessionId] = useState('')
+  const [sourceInput, setSourceInput] = useState('')
+  const [prompt, setPrompt] = useState('')
+  const [newStep, setNewStep] = useState('')
+  const [selectedStep, setSelectedStep] = useState('')
+  const [stepIntent, setStepIntent] = useState('')
+  const [fromStep, setFromStep] = useState('')
+  const [toStep, setToStep] = useState('')
+  const [proposal, setProposal] = useState<Proposal | null>(null)
+  const [selectedChanges, setSelectedChanges] = useState<string[]>([])
+  const [impact, setImpact] = useState<Impact | null>(null)
+  const [notice, setNotice] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [handoff, setHandoff] = useState<Handoff | null>(null)
+
+  const save = (next: Creator) => {
+    setCreator(next); setSessionId(next.session_id)
+    const current = next.semantic_steps.find((step) => step.id === selectedStep) || next.semantic_steps[0]
+    setSelectedStep(current?.id || ''); setStepIntent(current?.intent || '')
+  }
+  useEffect(() => {
+    const stored = routeSessionId()
+    if (!stored) return
+    creatorApi.get(stored).then(({ creator: next }) => { save(next); setIntent(next.intent); setProposal(next.pending_proposals[0] || null) }).catch((error) => { localStorage.removeItem('creator-session-id'); setNotice(errorText(error)) })
+  }, [])
+  const freezeRevision = (changes: Proposal['changes']): FreezeRevision | undefined => {
+    if (!creator) return undefined
+    const ids = creator.active_freezes.filter((freeze) => freeze.steps.some((stepId) => changes.some((change) => change.target_id === stepId))).map((freeze) => freeze.id)
+    return ids.length ? { source_freeze_ids: ids, expected_revision: creator.revision, reason: '创作者确认修改已冻结的设计步骤。', author: 'creator' } : undefined
+  }
+  const preview = async (next: Proposal, ids: string[]) => {
+    if (!creator) return null
+    const revision = freezeRevision(next.changes.filter((change) => ids.includes(change.id)))
+    const body = { selected_change_ids: ids, ...(revision ? { freeze_revision: revision } : {}) }
+    const result = await creatorApi.preview(creator.session_id, next.proposal_id, body); setImpact(result.impact)
+    return body
+  }
+  const stage = async (next: Proposal, message: string) => { const ids = next.changes.map((change) => change.id); setProposal(next); setSelectedChanges(ids); setImpact(null); setNotice(message); await preview(next, ids) }
+  const mutate = async (change: Record<string, unknown>, summary: string) => {
+    if (!creator) return
+    setBusy(true)
+    try { const result = await creatorApi.propose(creator.session_id, { changes: [{ id: idFor('change'), ...change }], author: 'creator', summary, expected_revision: creator.revision }); await stage(result.proposal, '变更已进入审阅，尚未写入设计。') }
+    catch (error) { setNotice(errorText(error)) } finally { setBusy(false) }
+  }
+  const create = async (event: FormEvent) => {
+    event.preventDefault(); setBusy(true)
+    try {
+      const id = sessionId || idFor('design')
+      const result = await creatorApi.create({ session_id: id, recipe_id: idFor('recipe'), intent, steps: [{ id: 'collect', intent: '收集指定来源', inputs: [], outputs: [] }], source_references: [], bindings: {} })
+      localStorage.setItem('creator-session-id', id); window.history.replaceState({}, '', `/creator/designs/${encodeURIComponent(id)}`); save(result.creator); setNotice('创作会话已创建。')
+    } catch (error) { setNotice(errorText(error)) } finally { setBusy(false) }
+  }
+  const addSource = async () => {
+    const url = sourceUrl(sourceInput)
+    if (!url) { setNotice('请输入不包含凭据或敏感查询参数的 HTTPS 来源地址。'); return }
+    const source: Source = { id: idFor('source'), kind: 'source', digest: '', role: '创作者来源', remote_url: url }
+    source.digest = await digest(source); await mutate({ target_id: source.id, operation: 'add_source', value: source }, '添加创作来源'); setSourceInput('')
+  }
+  const askAi = async () => {
+    if (!creator || !prompt.trim()) return
+    setBusy(true)
+    try { const result = await creatorApi.ai(creator.session_id, { prompt, author: 'creator', summary: 'AI 创作建议', expected_revision: creator.revision }); await stage(result.proposal, 'AI 提出了可审阅的设计变更。') }
+    catch (error) { setNotice(errorText(error)) } finally { setBusy(false) }
+  }
+  const accept = async () => {
+    if (!creator || !proposal || !impact) return
+    setBusy(true)
+    try { const body = await preview(proposal, selectedChanges); if (!body) return; const result = await creatorApi.accept(creator.session_id, proposal.proposal_id, body); save(result.creator); setProposal(null); setImpact(null); setNotice(`已接受 ${result.accepted_change_ids.length} 项修改。`) }
+    catch (error) { setNotice(errorText(error)) } finally { setBusy(false) }
+  }
+  const reject = async () => {
+    if (!creator || !proposal) return
+    try { const result = await creatorApi.reject(creator.session_id, proposal.proposal_id, { reason: '创作者选择不采用这组建议。' }); save(result.creator); setProposal(null); setImpact(null); setNotice('已拒绝这组建议。') }
+    catch (error) { setNotice(errorText(error)) }
+  }
+  const freeze = async (stepId: string) => {
+    if (!creator) return
+    setBusy(true)
+    try { await creatorApi.freeze(creator.session_id, { step_ids: [stepId], author: 'creator', summary: '冻结已确认步骤' }); const result = await creatorApi.get(creator.session_id); save(result.creator); setNotice('步骤已冻结。') }
+    catch (error) { setNotice(errorText(error)) } finally { setBusy(false) }
+  }
+  const undo = async () => {
+    const entry = creator?.history.at(-1)
+    if (!creator || !entry) return
+    try { const result = await creatorApi.reverse(creator.session_id, entry.id, { author: 'creator', summary: '撤销最近接受的修改', expected_revision: creator.revision }); save(result.creator); setNotice('已创建撤销修订。') }
+    catch (error) { setNotice(errorText(error)) }
+  }
+  const check = async () => {
+    if (!creator) return
+    try { const result = await creatorApi.checks(creator.session_id); setNotice(result.design_checks.findings.length ? `设计检查发现 ${result.design_checks.findings.length} 项需要处理。` : '设计检查通过。') }
+    catch (error) { setNotice(errorText(error)) }
+  }
+  const handoffDesign = async () => {
+    if (!creator) return
+    setBusy(true)
+    try { const candidate = await creatorApi.compile(creator.session_id, creator.revision); const result = await creatorApi.handoff(creator.session_id, creator.revision, candidate.compile_candidate); setHandoff(result); setNotice('已生成并验证签名交付包。') }
+    catch (error) { setNotice(errorText(error)) } finally { setBusy(false) }
+  }
+
+  if (!creator) return <main><header><h1>CartridgeFlow 创作工作室</h1></header><form onSubmit={create}><p><label>创作意图<textarea aria-label="Creative intent" value={intent} onChange={(event) => setIntent(event.target.value)} required /></label></p><p><label>继续现有会话（可选）<input aria-label="Session ID" value={sessionId} onChange={(event) => setSessionId(event.target.value)} /></label></p><button type="submit" disabled={busy}>开始创作</button></form>{notice && <p role="status">{notice}</p>}</main>
+
+  const current = creator.semantic_steps.find((step) => step.id === selectedStep) || creator.semantic_steps[0]
+  const base = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
+  return <main>
+    <header><h1>CartridgeFlow 创作工作室</h1><p>{creator.intent}</p><p>设计修订：{creator.revision}</p><button onClick={undo} disabled={!creator.history.length || busy}>撤销最近修改</button><button onClick={check} disabled={busy}>检查设计</button><button onClick={handoffDesign} disabled={busy || !creator.generation_readiness.ready} aria-label="Generate handoff">生成交付包</button></header>
+    {notice && <p role="status">{notice}</p>}
+    <section aria-labelledby="sources-heading"><h2 id="sources-heading">来源</h2><ul>{creator.sources.map((source) => <li key={source.id}>{source.role || '创作者来源'}：{source.remote_url || source.rss_url || '需要补充地址'}</li>)}</ul><label>添加来源<input aria-label="Add source URL" value={sourceInput} onChange={(event) => setSourceInput(event.target.value)} /></label><button onClick={() => void addSource()} disabled={busy}>提交来源审阅</button></section>
+    <section aria-labelledby="ai-heading"><h2 id="ai-heading">AI 协作</h2><label>希望如何调整设计？<textarea aria-label="Ask AI to modify the design" value={prompt} onChange={(event) => setPrompt(event.target.value)} /></label><button onClick={() => void askAi()} disabled={busy || !prompt.trim()} aria-label="Request AI proposal">请求 AI 建议</button></section>
+    <section aria-labelledby="flow-heading"><h2 id="flow-heading">设计流程</h2><ul aria-label="Design steps">{creator.semantic_steps.map((step) => <li key={step.id}><button onClick={() => { setSelectedStep(step.id); setStepIntent(step.intent) }} aria-pressed={current?.id === step.id}>{step.intent}</button>{creator.frozen_steps.includes(step.id) ? '（已冻结）' : <button onClick={() => void freeze(step.id)} disabled={busy}>冻结</button>}</li>)}</ul><label>新增步骤<input aria-label="New step" value={newStep} onChange={(event) => setNewStep(event.target.value)} /></label><button onClick={() => { const id = idFor('step'); void mutate({ target_id: id, operation: 'add_step', value: { id, intent: newStep || '新的创作步骤', inputs: [], outputs: [] } }, '新增设计步骤'); setNewStep('') }} disabled={busy}>提交新增步骤</button><form onSubmit={(event) => { event.preventDefault(); if (fromStep && toStep && fromStep !== toStep) void mutate({ target_id: idFor('relation'), operation: 'connect_steps', value: { id: idFor('relation'), from_step_id: fromStep, to_step_id: toStep, relation: '驱动' } }, '连接设计步骤') }}><label>起始步骤<select aria-label="Connect from" value={fromStep} onChange={(event) => setFromStep(event.target.value)}><option value="" />{creator.semantic_steps.map((step) => <option key={step.id} value={step.id}>{step.intent}</option>)}</select></label><label>目标步骤<select aria-label="Connect to" value={toStep} onChange={(event) => setToStep(event.target.value)}><option value="" />{creator.semantic_steps.map((step) => <option key={step.id} value={step.id}>{step.intent}</option>)}</select></label><button type="submit" disabled={busy || !fromStep || !toStep || fromStep === toStep}>提交连接审阅</button></form><ul aria-label="Design relationships">{creator.relationships.map((relationship) => <li key={relationship.id}>{relationship.from_step_id} 到 {relationship.to_step_id}</li>)}</ul></section>
+    <section aria-labelledby="inspector-heading"><h2 id="inspector-heading">步骤详情</h2>{current ? <><p>输入：{current.plain_inputs.join('、') || '尚未定义'}</p><p>输出：{current.plain_outputs.join('、') || '尚未定义'}</p><label>步骤目标<input aria-label="Selected step intent" value={stepIntent} onChange={(event) => setStepIntent(event.target.value)} /></label><button onClick={() => void mutate({ target_id: current.id, operation: 'set_step_intent', value: stepIntent }, '调整步骤目标')} disabled={busy || !stepIntent.trim() || stepIntent === current.intent}>提交步骤调整审阅</button></> : <p>尚未选择步骤。</p>}</section>
+    <section aria-labelledby="review-heading"><h2 id="review-heading">变更审阅</h2>{proposal ? <><p>{proposal.summary}</p><ul>{proposal.changes.map((change) => <li key={change.id}><label><input type="checkbox" checked={selectedChanges.includes(change.id)} onChange={() => { setSelectedChanges((items) => items.includes(change.id) ? items.filter((id) => id !== change.id) : [...items, change.id]); setImpact(null) }} />{changeLabel(change.operation)}</label></li>)}</ul>{impact ? <p>{impact.plain_summary || '已计算变更影响。'}</p> : <button onClick={() => void preview(proposal, selectedChanges).catch((error) => setNotice(errorText(error)))} disabled={!selectedChanges.length}>检查影响</button>}<button onClick={() => void reject()} disabled={busy}>拒绝建议</button><button onClick={() => void accept()} disabled={busy || !impact || !selectedChanges.length}>接受选中的修改</button></> : <p>没有待审阅的变更。</p>}</section>
+    <section aria-labelledby="delivery-heading"><h2 id="delivery-heading">交付</h2>{creator.blocked_findings.length ? <ul>{creator.blocked_findings.map((finding) => <li key={`${finding.code}:${finding.step_id || ''}`}>{finding.message}</li>)}</ul> : <p>当前没有设计阻塞项。</p>}{handoff && <p>交付包：{handoff.release_id}，签名已验证。<a href={`${base}${handoff.url}`}>下载 CF-CRE</a></p>}</section>
+  </main>
 }

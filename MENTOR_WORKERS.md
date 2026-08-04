@@ -3,7 +3,7 @@
 Project: CartridgeFlow AI-Assisted Authoring
 Repository root: `C:\_HOLOLAB\code\CF WS\CartridgeFlow`
 Active delivery: `creator-ai-authoring-2026-08`
-Last updated: 2026-08-04 00:58 +08:00
+Last updated: 2026-08-04 01:18 +08:00
 Mentor: Codex `/root` using `mentor-orchestrator`
 
 ## Active Baseline
@@ -318,3 +318,4 @@ merged. No active Worker may merge or cherry-pick Worker 201.
 | 2026-08-04 00:27 +08:00 | Worker 305 merged non-fast-forward as `df94cac`; post-merge runtime, API handoff, full conformance, independent frontend, and diff evidence passed. |
 | 2026-08-04 00:30 +08:00 | Worker 305 clean worktree and local branch were removed after merge containment verification. |
 | 2026-08-04 00:58 +08:00 | Release-environment verification: Node `v24.19.0` and TruffleHog `3.96.0` were checksum-verified and installed in versioned user directories. Root frontend `npm ci`, production build, and static test passed in an isolated copy because active Vite processes held the main checkout's Rolldown binding. Direct TruffleHog scans of Worker 307 `e98926a` and Worker 305 `b24af65` exited cleanly. Autoreview dry-run succeeded, but its full model stage cannot complete under this executor's foreground timeout/background-child lifecycle; no clean structured-autoreview result is claimed. No remote push was performed. |
+| 2026-08-04 01:18 +08:00 | User replaced the prior plan and directed that all remaining work be implemented directly by the primary agent, without new Workers. The active product target is now `PLAN.md` “真实可用闭环计划”; prior accepted Worker integrations remain implementation history only and are not product-acceptance evidence. |

@@ -11,6 +11,7 @@ export type Source = { id: string; kind: 'source'; digest: string; role?: string
 export type Proposal = { proposal_id: string; revision: number; summary: string; changes: { id: string; target_id: string; operation: string }[] }
 export type Finding = { code: string; severity: string; message: string; step_id?: string }
 export type Readiness = { ready: boolean; blocked_findings: Finding[]; compile_candidate: unknown }
+export type Handoff = { status: string; release_id: string; filename: string; url: string; signature: { verified: boolean; key_id: string }; root_flow: { digest: string; protocol: { id: string; version: string } } }
 export type Impact = { plain_summary?: string; changed_steps?: string[]; changed_sources?: string[] }
 export type FreezeRevision = { source_freeze_ids: string[]; expected_revision: number; reason: string; author: string }
 export type Preview = { accepted_change_ids: string[]; impact: Impact; freeze_revision?: FreezeRevision | null }
@@ -37,4 +38,5 @@ export const creatorApi = {
   checks: (id: string) => request<{ design_checks: { findings: Finding[] } }>(`${route(id)}/design-checks`),
   readiness: (id: string, expected_revision: number) => request<{ generation_readiness: Readiness }>(`${route(id)}/generation-readiness`, 'POST', { expected_revision }),
   compile: (id: string, expected_revision: number) => request<{ compile_candidate: unknown }>(`${route(id)}/compile-candidate`, 'POST', { expected_revision }),
+  handoff: (id: string, expected_revision: number, compile_candidate: unknown) => request<Handoff>(`${route(id)}/runtime-handoff`, 'POST', { expected_revision, compile_candidate }),
 }

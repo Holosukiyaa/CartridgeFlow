@@ -1,3 +1,4 @@
+import asyncio
 import os
 import json
 import math
@@ -151,7 +152,14 @@ class UTF8JSONResponse(JSONResponse):
 app = FastAPI(title="CartridgeFlow", version=PRODUCT_VERSION, default_response_class=UTF8JSONResponse)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"],
+    allow_origins=[
+        "http://127.0.0.1:5173",
+        "http://localhost:5173",
+        "http://127.0.0.1:5180",
+        "http://localhost:5180",
+        "http://127.0.0.1:5181",
+        "http://localhost:5181",
+    ],
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Accept", "Content-Type"],
 )
@@ -253,8 +261,9 @@ async def http_exception_handler(request: Request, exc: HTTPException):
     context = _request_error_context(request)
     compatibility_blocked = isinstance(exc.detail, dict) and exc.detail.get("error") == "compatibility_blocked"
     safe_detail = _redact_diagnostic_value(exc.detail)
+    declared_code = safe_detail.get("code") if isinstance(safe_detail, dict) else None
     envelope = build_runtime_error(
-        "FLOW_CONTRACT_INVALID" if compatibility_blocked else _http_error_code(exc.status_code, request.url.path),
+        str(declared_code) if declared_code else ("FLOW_CONTRACT_INVALID" if compatibility_blocked else _http_error_code(exc.status_code, request.url.path)),
         run_id=context["run_id"],
         source=context["source"],
         cause_chain=[{"type": "HTTPException", "message": str(safe_detail)}],
@@ -2148,7 +2157,13 @@ async def create_ai_authoring_proposal(session_id: str, payload: AuthoringAIProp
         async def model_call(messages):
             response = await chat(model, messages, agent_name="creator_authoring", phase="authoring_proposal")
             return str(response.get("content") or "")
-        proposal = await authoring_sessions.propose_ai(session_id, prompt=payload.prompt, author=payload.author, summary=payload.summary, expected_revision=payload.expected_revision, model_call=model_call)
+        try:
+            proposal = await asyncio.wait_for(
+                authoring_sessions.propose_ai(session_id, prompt=payload.prompt, author=payload.author, summary=payload.summary, expected_revision=payload.expected_revision, model_call=model_call),
+                timeout=30,
+            )
+        except TimeoutError as exc:
+            raise AuthoringServiceError("AI_AUTHORING_MODEL_TIMEOUT", "The AI authoring service did not respond in time.", status=504) from exc
         return {"proposal": proposal}
     except AuthoringServiceError as exc:
         _authoring_error(exc)
@@ -4109,9 +4124,28 @@ if static_dir.exists():
         app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
 
 
+def _frontend_index() -> Path | None:
+    index = static_dir / "index.html"
+    return index if index.is_file() else None
+
+
+@app.get("/")
+def service_root():
+    index = _frontend_index()
+    if index is not None:
+        return FileResponse(index, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+    return {
+        "service": "CartridgeFlow API",
+        "docs": "/docs",
+        "health": "/api/health",
+        "creator_studio": "Run the standalone Creator Studio development server.",
+        "developer_console": "Run the standalone Developer Console development server.",
+    }
+
+
 @app.get("/{full_path:path}")
 def serve_console(full_path: str):
-    return FileResponse(
-        static_dir / "index.html",
-        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
-    )
+    index = _frontend_index()
+    if index is None:
+        raise HTTPException(status_code=404, detail="No bundled frontend is available at this path")
+    return FileResponse(index, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})

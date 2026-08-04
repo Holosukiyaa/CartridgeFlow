@@ -28,16 +28,18 @@ if ($LASTEXITCODE -ne 0) {
     throw "Python dependency installation failed."
 }
 
-Write-Host "Installing frontend dependencies..."
-Push-Location (Join-Path $Root "src\frontend")
-try {
-    & $Npm ci --no-audit --no-fund
-    if ($LASTEXITCODE -ne 0) {
-        throw "Frontend dependency installation failed."
+foreach ($frontend in @("src\creator-studio", "src\developer-console")) {
+    Write-Host "Installing $frontend dependencies..."
+    Push-Location (Join-Path $Root $frontend)
+    try {
+        & $Npm ci --no-audit --no-fund
+        if ($LASTEXITCODE -ne 0) {
+            throw "$frontend dependency installation failed."
+        }
     }
-}
-finally {
-    Pop-Location
+    finally {
+        Pop-Location
+    }
 }
 
 Write-Host "CartridgeFlow dependencies are ready."

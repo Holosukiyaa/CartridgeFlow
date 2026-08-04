@@ -1,4 +1,6 @@
 """Browser smoke test for the Creator Studio discovery-to-recipe loop."""
+import os
+
 from playwright.sync_api import sync_playwright
 
 
@@ -10,7 +12,7 @@ def main() -> None:
         page = browser.new_page()
         page.on("console", lambda message: errors.append(message.text) if message.type == "error" else None)
         page.on("request", lambda request: requests.append(request.url) if "/api/creator/possibilities" in request.url else None)
-        page.goto("http://127.0.0.1:5180/", wait_until="networkidle")
+        page.goto(os.environ.get("CREATOR_STUDIO_URL", "http://127.0.0.1:5180/"), wait_until="networkidle")
         page.get_by_label("Creative intent").fill("我想持续了解 AI 行业的变化")
         page.get_by_role("button", name="帮我打开思路").click()
         try:

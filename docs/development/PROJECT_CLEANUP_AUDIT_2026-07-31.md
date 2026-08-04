@@ -27,6 +27,7 @@ The current release baseline is `CF-FARP@1.0` plus `CF-CRE@1`. Both are active/s
 - Removed 30 frontend API wrappers with no production caller. Their server routes remain public to avoid breaking external clients.
 - Removed the stale planning-task parser, its three permanently failing API routes, its tests, types, and unused styles after the planning files were removed from the repository.
 - Added the Creator Studio discovery-to-recipe browser smoke test; it verifies the first-layer entry stays creator-safe and enters an auditable authoring session.
+- Added same-origin static route delivery for the independently built Creator and Developer applications at `/creator/` and `/developer/`; local Vite ports remain development-only.
 
 ## Intentional Retention
 

@@ -4126,6 +4126,8 @@ def serve_package_file(filename: str):
 
 
 static_dir = ROOT / "src" / "frontend" / "dist"
+creator_static_dir = ROOT / "src" / "creator-studio" / "dist"
+developer_static_dir = ROOT / "src" / "developer-console" / "dist"
 if static_dir.exists():
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
     assets_dir = static_dir / "assets"
@@ -4136,6 +4138,39 @@ if static_dir.exists():
 def _frontend_index() -> Path | None:
     index = static_dir / "index.html"
     return index if index.is_file() else None
+
+
+def _spa_file(static_root: Path, relative_path: str) -> FileResponse | None:
+    """Serve a static asset or the app shell without allowing path traversal."""
+    index = static_root / "index.html"
+    if not index.is_file():
+        return None
+    candidate = (static_root / relative_path).resolve()
+    try:
+        candidate.relative_to(static_root.resolve())
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid frontend asset path")
+    if relative_path and candidate.is_file():
+        return FileResponse(candidate)
+    return FileResponse(index, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+
+
+@app.get("/creator")
+@app.get("/creator/{full_path:path}")
+def serve_creator_studio(full_path: str = ""):
+    response = _spa_file(creator_static_dir, full_path)
+    if response is None:
+        raise HTTPException(status_code=404, detail="Creator Studio has not been built")
+    return response
+
+
+@app.get("/developer")
+@app.get("/developer/{full_path:path}")
+def serve_developer_console(full_path: str = ""):
+    response = _spa_file(developer_static_dir, full_path)
+    if response is None:
+        raise HTTPException(status_code=404, detail="Developer Console has not been built")
+    return response
 
 
 @app.get("/")

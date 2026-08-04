@@ -15,6 +15,9 @@ import { fileURLToPath } from 'node:url'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const flowGraphViewPath = join(root, 'src/pages/flow-workbench/FlowGraphView.tsx')
+const flowWorkbenchPath = join(root, 'src/pages/FlowWorkbench.tsx')
+const creatorWorkspacePath = join(root, 'src/pages/flow-workbench/CreatorWorkspace.tsx')
+const appPath = join(root, 'src/App.tsx')
 const cssGlobPath = join(root, 'src')
 
 const failures = []
@@ -61,7 +64,17 @@ for (const phrase of legacyPhrases) {
   check(!src.includes(phrase), `旧文案「${phrase}」未残留`)
 }
 
-// --- 3. CSS 样式债红线：!important 数量不得超过阈值（基线只降不升） ---
+// --- 3. Creator 与工程语义共用旧画布，且工程语义默认隐藏 ---
+const workbenchSrc = readFileSync(flowWorkbenchPath, 'utf8')
+const creatorSrc = readFileSync(creatorWorkspacePath, 'utf8')
+const appSrc = readFileSync(appPath, 'utf8')
+check(workbenchSrc.includes("localStorage.getItem(ENGINEERING_SEMANTICS_STORAGE_KEY) === 'true'"), '工程语义仅在用户显式开启后显示')
+check(workbenchSrc.includes('showEngineeringSemantics ? <DesignView') && workbenchSrc.includes(': <CreatorWorkspace'), '旧工作台在同一设计区域切换 Creator 与工程投影')
+check(creatorSrc.includes('<FlowGraphView') && creatorSrc.includes('workspaceSemantics="creator"'), 'Creator 两层语义使用旧 React Flow 画布')
+check(src.includes('显示工程语义') && src.includes('onShowEngineeringSemanticsChange'), '画布设置提供工程语义开关')
+check(appSrc.includes("pendingCreatorWorkspace = createDevFlow('creator-workspace'"), '无卡带时单次创建并进入 Creator 空画布载体')
+
+// --- 4. CSS 样式债红线：!important 数量不得超过阈值（基线只降不升） ---
 function collectCss(dir) {
   const out = []
   for (const entry of readdirSync(dir)) {

@@ -110,6 +110,11 @@ export function getFlowNodeDimensions(
   _context: { incoming?: number; outgoing?: number } = {},
 ): FlowNodeDimensions {
   if (viewMode === 'compact') return FLOW_NODE_DIMENSIONS.compact
+  if (viewMode === 'detailed' && node.data?.creator_semantics) {
+    return node.data.creator_semantics.empty
+      ? { width: 360, height: 168 }
+      : { width: 380, height: Math.min(330, 210 + (node.data.creator_semantics.fields?.length || 0) * 24) }
+  }
   if (viewMode === 'engineering' && isEngineeringResource(node)) return resourceDimensions(node)
 
   const inputs = countEntries(node.inputs) + countEntries(node.input_binding) + (node.input_schema ? 1 : 0)

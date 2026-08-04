@@ -2284,10 +2284,12 @@ def get_creator_authoring_session(session_id: str):
 
 
 @app.get("/api/creator/projects/{project_id}")
-def get_creator_project(project_id: str):
+def get_creator_project(project_id: str, optional: bool = False):
     try:
         return {"creator": authoring_sessions.creator_projection(authoring_sessions.get_by_project_id(project_id))}
     except AuthoringServiceError as exc:
+        if optional and exc.code == "AUTHORING_PROJECT_UNKNOWN":
+            return {"creator": None}
         _authoring_error(exc)
 
 

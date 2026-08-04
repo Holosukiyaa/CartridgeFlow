@@ -242,6 +242,9 @@ export function WorkbenchHeader({
   cartridgeControls,
   runStatus,
   runBusy = false,
+  runDisabled = false,
+  runDisabledReason,
+  creatorMode = false,
   historyOpen = false,
   onHistory,
   onRun,
@@ -255,6 +258,9 @@ export function WorkbenchHeader({
   cartridgeControls?: ReactNode
   runStatus?: string
   runBusy?: boolean
+  runDisabled?: boolean
+  runDisabledReason?: string
+  creatorMode?: boolean
   historyOpen?: boolean
   onHistory: () => void
   onRun: () => void
@@ -270,8 +276,8 @@ export function WorkbenchHeader({
     <header className="cf-workbench-header">
       <div className="cf-workbench-brand">
         <BrandMark className="cf-workbench-brand-mark" />
-        <strong>CARTRIDGE WORKSPACE <i>/</i> 卡带工作台</strong>
-        <div className="cf-workbench-protocol-tags" aria-label="协议支持"><span>基座目标 {protocolInfo.targetProtocolLabel}</span><span>当前卡带 {protocolInfo.currentProtocolLabel}</span><span>流程分析器</span><span>资源目录</span></div>
+        <strong>CARTRIDGE WORKSPACE <i>/</i> {creatorMode ? '创作工作台' : '卡带工作台'}</strong>
+        {!creatorMode && <div className="cf-workbench-protocol-tags" aria-label="协议支持"><span>基座目标 {protocolInfo.targetProtocolLabel}</span><span>当前卡带 {protocolInfo.currentProtocolLabel}</span><span>流程分析器</span><span>资源目录</span></div>}
       </div>
       <div className="cf-workbench-header-spacer" />
       <div className="cf-workbench-actions">
@@ -283,7 +289,7 @@ export function WorkbenchHeader({
         <nav className="cf-workbench-mode-switch" aria-label="工作台模式">
           <Button className="active" aria-current="page"><SquarePen aria-hidden="true" />设计</Button>
           <div className="cf-workbench-runtime-controls" aria-label="运行控制">
-            <button type="button" onClick={onRun} disabled={running || paused || runBusy} title="使用真实模型与真实工具测试当前调优草稿">
+            <button type="button" onClick={onRun} disabled={runDisabled || running || paused || runBusy} title={runDisabled ? runDisabledReason : '使用真实模型与真实工具测试当前调优草稿'}>
               <PlayCircle aria-hidden="true" />运行
             </button>
             <button type="button" className={paused ? 'active' : ''} onClick={onPause} disabled={(!running && !paused) || runBusy} title={paused ? '从最近检查点继续运行' : '在当前节点完成后暂停'}>
@@ -308,7 +314,7 @@ export function DesignView({
   onSelectNode, onGuideNodeEditor, onCloseNodeEditor, onToggleNodeEditorPin, onNodeEditorPositionChange, onCloseUnpinnedNodeEditors, onLayoutSave, autoLayoutOnMount, onAutoLayoutComplete, onEdgesSave, onAnnotationsSave, onCreateNode, onDeleteNode, onFilesChange, onSaved,
   engineeringResourceLayout, onEngineeringResourceLayoutSave,
   modelPanel, toolPanel, packagePanel, cartridgePanel, runStatus, nodeRunStates, runEvents, runCompletionVisible, runCompletion, onDismissRunCompletion, onOpenRunLog, onOpenRunResult, onOpenPendingInteraction,
-  protocolInfo,
+  protocolInfo, showEngineeringSemantics, onShowEngineeringSemanticsChange,
 }: {
   graph: FlowGraph
   editable: boolean
@@ -339,6 +345,8 @@ export function DesignView({
   packagePanel?: ReactNode
   cartridgePanel?: ReactNode
   protocolInfo: ProtocolDisplayInfo
+  showEngineeringSemantics: boolean
+  onShowEngineeringSemanticsChange: (visible: boolean) => void
   runStatus?: string
   nodeRunStates?: Map<string, NodeRunState>
   runEvents?: FlowEvent[]
@@ -748,6 +756,9 @@ export function DesignView({
           graph={canvasGraph}
           files={files}
           displayMode={displayMode}
+          workspaceSemantics="engineering"
+          showEngineeringSemantics={showEngineeringSemantics}
+          onShowEngineeringSemanticsChange={onShowEngineeringSemanticsChange}
           engineeringEdgeVisibility={edgeVisibility}
           engineeringDataRelations={engineeringDataRelations}
           engineeringNodeModels={engineeringNodeModels}

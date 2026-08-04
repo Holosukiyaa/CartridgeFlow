@@ -30,6 +30,7 @@ import {
 } from '../api.ts'
 import { showToast } from '../toast.tsx'
 import { DesignView, RunHistoryPanel, RunLogDialog, WorkbenchHeader } from './flow-workbench/views.tsx'
+import { CreatorWorkspace } from './flow-workbench/CreatorWorkspace.tsx'
 import { CATEGORY_BY_ID, buildBalancedLayout, getPreset } from './flow-workbench/nodeModel.ts'
 import type { CreateNodeOptions, GraphResult, NodeCategoryId } from './flow-workbench/types.ts'
 import { buildPresetConfig, buildPresetRuntimeParams, buildProtocolPatch, buildToolSpecs, buildUserFormInputs, firstText } from './flow-workbench/nodeBuilder.ts'
@@ -48,6 +49,7 @@ import './flow-workbench/TestBench.css'
 const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms))
 const pinnedNodeDetailsStorageKey = (flowId: string) => `cartridgeflow.pinned-node-details.v1:${flowId}`
 const engineeringResourceLayoutStorageKey = (flowId: string) => `cartridgeflow.engineering-resource-layout.v1:${flowId}`
+const ENGINEERING_SEMANTICS_STORAGE_KEY = 'cartridgeflow.show-engineering-semantics.v1'
 const RUN_COMPLETION_NOTICE_MS = 8000
 
 type OptimisticRunTransition = {
@@ -103,6 +105,7 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [selectedNode, setSelectedNode] = useState<FlowNode | null>(null)
+  const [showEngineeringSemantics, setShowEngineeringSemantics] = useState(() => localStorage.getItem(ENGINEERING_SEMANTICS_STORAGE_KEY) === 'true')
   const [focusNodeId, setFocusNodeId] = useState<string | null>(null)
   const [openNodeEditors, setOpenNodeEditors] = useState<OpenNodeDetail[]>([])
   const [restoredNodeDetailsFlowId, setRestoredNodeDetailsFlowId] = useState('')
@@ -127,6 +130,13 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
   const [resultModal, setResultModal] = useState<{ runId: string; html: string } | null>(null)
   const [protocolCatalog, setProtocolCatalog] = useState<ProtocolReleaseCatalog | null>(null)
   const latestRun = runs[0]
+  const updateEngineeringSemantics = useCallback((visible: boolean) => {
+    setShowEngineeringSemantics(visible)
+    localStorage.setItem(ENGINEERING_SEMANTICS_STORAGE_KEY, String(visible))
+    setSelectedNode(null)
+    setFocusNodeId(null)
+    setOpenNodeEditors([])
+  }, [])
   const pendingInteraction = latestRun?.status === 'paused_waiting_user' ? latestRun.pending_interaction : null
   const pendingInteractionId = String(pendingInteraction?.interaction_id || '')
   const visiblePendingInteraction = pendingInteraction && pendingInteractionId !== dismissedInteractionId ? pendingInteraction : null
@@ -654,9 +664,12 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
         <WorkbenchHeader
           detail={detail}
           protocolInfo={protocolInfo}
-          cartridgeControls={<CartridgeWorkspaceControl current={detail.cartridge} onSwitchFlow={onSwitchFlow} onUpdated={load} />}
+          cartridgeControls={<CartridgeWorkspaceControl current={detail.cartridge} creatorMode={!showEngineeringSemantics} onSwitchFlow={onSwitchFlow} onUpdated={load} />}
           runStatus={activeRuntimeRun?.status}
           runBusy={runControlBusy}
+          runDisabled={!showEngineeringSemantics}
+          runDisabledReason="Creator 节点完成可信化并确认工程映射后才能仿真"
+          creatorMode={!showEngineeringSemantics}
           historyOpen={historyOpen}
           onHistory={() => {
             setHistoryOpen((current) => !current)
@@ -723,12 +736,14 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
         )}
 
         <div className="cf-workbench-design-shell">
-            <DesignView
+          {showEngineeringSemantics ? <DesignView
             graph={detail.graph}
             protocolInfo={protocolInfo}
             editable={editable}
             files={files}
             flowId={flowId}
+            showEngineeringSemantics={showEngineeringSemantics}
+            onShowEngineeringSemanticsChange={updateEngineeringSemantics}
             selectedNode={selectedNode}
             focusNodeId={focusNodeId}
             openNodeEditors={openNodeEditors}
@@ -801,7 +816,21 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
               }
               showToast({ title: '节点已保存', type: 'success' })
             }}
-          />
+          /> : <CreatorWorkspace
+            flowId={flowId}
+            files={files}
+            showEngineeringSemantics={showEngineeringSemantics}
+            onShowEngineeringSemanticsChange={updateEngineeringSemantics}
+            runStatus={visualRuntimeRun?.status}
+            nodeRunStates={designNodeRunStates}
+            runEvents={designRunEvents}
+            runCompletionVisible={Boolean(runCompletionNotice)}
+            runCompletion={runCompletionNotice ? runs.find((run) => run.run_id === runCompletionNotice.runId) : undefined}
+            onDismissRunCompletion={() => setRunCompletionNotice(null)}
+            onOpenRunLog={openRunLog}
+            onOpenRunResult={(run) => void openRunArtifactsDirectory(run)}
+            onOpenPendingInteraction={() => setDismissedInteractionId('')}
+          />}
           {historyOpen && (
             <RunHistoryPanel
               runs={runs}

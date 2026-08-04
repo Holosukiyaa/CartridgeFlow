@@ -448,10 +448,13 @@ function buildRunEdgeStates(graphEdges: FlowEdge[], runEvents: FlowEvent[] = EMP
   return edgeStates
 }
 
-export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engineeringEdgeVisibility = { control: true, data: true, dependency: true, branch: true, failure: true }, engineeringDataRelations: providedEngineeringDataRelations, engineeringNodeModels: providedEngineeringNodeModels, selectedNode, focusNodeId, onSelectNode, onNodeEditorPositionChange, onLayoutSave, autoLayoutOnMount = false, onAutoLayoutComplete, onEdgesSave, onAnnotationsSave, onCreateNode, onDeleteNode, modelPanel, toolPanel, packagePanel, cartridgePanel, protocolInfo = DEFAULT_PROTOCOL_DISPLAY, nodeEditors = [], activeNodeEditorId, onCloseNodeEditor, onCanvasToolChange, requestedCanvasTool, onStewardSelectionChange, compactStatic = false, readOnlyGraph = false, runStatus, nodeRunStates, runEvents, runCompletionVisible = false, runCompletion, onDismissRunCompletion, onOpenRunLog, onOpenRunResult, onOpenPendingInteraction, testProbeState }: {
+export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', workspaceSemantics = 'engineering', showEngineeringSemantics = true, onShowEngineeringSemanticsChange, engineeringEdgeVisibility = { control: true, data: true, dependency: true, branch: true, failure: true }, engineeringDataRelations: providedEngineeringDataRelations, engineeringNodeModels: providedEngineeringNodeModels, selectedNode, focusNodeId, onSelectNode, onNodeEditorPositionChange, onLayoutSave, autoLayoutOnMount = false, onAutoLayoutComplete, onEdgesSave, onAnnotationsSave, onCreateNode, onDeleteNode, modelPanel, toolPanel, packagePanel, cartridgePanel, protocolInfo = DEFAULT_PROTOCOL_DISPLAY, nodeEditors = [], activeNodeEditorId, onCloseNodeEditor, onCanvasToolChange, requestedCanvasTool, onStewardSelectionChange, compactStatic = false, readOnlyGraph = false, runStatus, nodeRunStates, runEvents, runCompletionVisible = false, runCompletion, onDismissRunCompletion, onOpenRunLog, onOpenRunResult, onOpenPendingInteraction, testProbeState }: {
   graph: FlowGraph
   files?: FlowFiles
   displayMode?: DesignDisplayMode
+  workspaceSemantics?: 'creator' | 'engineering'
+  showEngineeringSemantics?: boolean
+  onShowEngineeringSemanticsChange?: (visible: boolean) => void
   engineeringEdgeVisibility?: EngineeringEdgeVisibility
   engineeringDataRelations?: EngineeringDataRelation[]
   engineeringNodeModels?: Map<string, EngineeringNodeRenderModel>
@@ -490,6 +493,7 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
   onOpenPendingInteraction?: () => void
   testProbeState?: FlowNodeProbeState
 }) {
+  const creatorSemantics = workspaceSemantics === 'creator'
   const [fullscreen, setFullscreen] = useState(false)
   const [activeCanvasTool, setActiveCanvasTool] = useState<CanvasTool>('select')
   const [canvasPanel, setCanvasPanel] = useState<CanvasPanel>(null)
@@ -523,8 +527,8 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
     if (!onCreateNode && canvasPanel === 'nodes') setCanvasPanel(null)
   }, [activeCanvasTool, canvasPanel, onCreateNode, onEdgesSave])
   useEffect(() => {
-    if (readOnlyGraph && canvasPanel && canvasPanel !== 'base-info') setCanvasPanel(null)
-  }, [canvasPanel, readOnlyGraph])
+    if (readOnlyGraph && canvasPanel && canvasPanel !== 'base-info' && !(creatorSemantics && canvasPanel === 'settings')) setCanvasPanel(null)
+  }, [canvasPanel, creatorSemantics, readOnlyGraph])
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance | null>(null)
   const resourcePositionsRef = useRef<Record<string, { x: number; y: number }>>({})
   const [nodeEditorPositions, setNodeEditorPositions] = useState<Record<string, NodeEditorPosition>>({})
@@ -1682,7 +1686,7 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
   return (
     <div
       ref={wrapperRef}
-      className={`cf-flow-graph-shell notranslate display-${displayMode} canvas-tool-${activeCanvasTool} ${fullscreen ? 'fullscreen' : ''} ${runActive ? 'run-active' : ''} ${runInProgress ? 'run-in-progress' : ''} ${runPaused ? 'run-paused' : ''} ${runFinished ? 'run-finished' : ''} ${runOutcomeClass}`}
+      className={`cf-flow-graph-shell notranslate display-${displayMode} semantics-${workspaceSemantics} canvas-tool-${activeCanvasTool} ${fullscreen ? 'fullscreen' : ''} ${runActive ? 'run-active' : ''} ${runInProgress ? 'run-in-progress' : ''} ${runPaused ? 'run-paused' : ''} ${runFinished ? 'run-finished' : ''} ${runOutcomeClass}`}
       translate="no"
       onPointerDownCapture={trackRightPointerDown}
       onPointerMoveCapture={trackRightPointerMove}
@@ -2012,15 +2016,15 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
           <Panel position="top-left" className="cf-canvas-tool-rail">
             <nav aria-label="画布工具">
               <button type="button" className={activeCanvasTool === 'select' && !canvasPanel ? 'active' : ''} onClick={() => { setActiveCanvasTool('select'); setCanvasPanel(null); onCloseNodeEditor?.() }} title={readOnlyGraph ? '选择节点查看详情' : '选择与移动'}><MousePointer2 /><span>选择</span></button>
-              <button type="button" className={activeCanvasTool === 'connect' && !canvasPanel ? 'active' : ''} onClick={activateConnectMode} title={onEdgesSave && !readOnlyGraph ? '连接节点' : '当前流程暂不允许修改连线'} disabled={readOnlyGraph || !onEdgesSave}><GitBranch /><span>连线</span></button>
-              <button type="button" className={canvasPanel === 'nodes' ? 'active' : ''} onClick={() => toggleCanvasPanel('nodes')} title={onCreateNode && !readOnlyGraph ? '节点库' : '当前流程暂不允许增删节点'} disabled={readOnlyGraph || !onCreateNode}><Box /><span>节点</span></button>
-              <button type="button" className={canvasPanel === 'notes' ? 'active' : ''} onClick={() => { onCloseNodeEditor?.(); toggleCanvasPanel('notes') }} title={readOnlyGraph ? '当前流程暂不允许编辑注释' : '画布注释'} disabled={readOnlyGraph}><MessageSquare /><span>注释</span></button>
-              <button type="button" className={canvasPanel === 'models' ? 'active' : ''} onClick={() => { onCloseNodeEditor?.(); toggleCanvasPanel('models') }} title={modelPanel && !readOnlyGraph ? '模型管理' : '当前流程暂不允许修改模型绑定'} disabled={readOnlyGraph || !modelPanel}><BrainCircuit /><span>模型</span></button>
-              <button type="button" className={canvasPanel === 'variables' ? 'active' : ''} onClick={() => { onCloseNodeEditor?.(); toggleCanvasPanel('variables') }} title={readOnlyGraph ? '当前流程暂不允许编辑变量' : '流程变量'} disabled={readOnlyGraph}><Braces /><span>变量</span></button>
-              <button type="button" className={canvasPanel === 'settings' ? 'active' : ''} onClick={() => { onCloseNodeEditor?.(); toggleCanvasPanel('settings') }} title={readOnlyGraph ? '当前流程暂不允许编辑配置' : '画布配置'} disabled={readOnlyGraph}><Settings /><span>配置</span></button>
-              <button type="button" className={canvasPanel === 'tools' ? 'active' : ''} onClick={() => { onCloseNodeEditor?.(); toggleCanvasPanel('tools') }} title={toolPanel && !readOnlyGraph ? 'MCP 工具库' : '当前流程暂不允许修改工具绑定'} disabled={readOnlyGraph || !toolPanel}><Wrench /><span>工具</span></button>
-              <button type="button" className={canvasPanel === 'package' ? 'active' : ''} onClick={() => { onCloseNodeEditor?.(); toggleCanvasPanel('package') }} title={packagePanel && !readOnlyGraph ? '打包当前卡带' : '当前流程暂不允许生成开发包'} disabled={readOnlyGraph || !packagePanel}><PackageCheck /><span>打包</span></button>
-              <button type="button" className={canvasPanel === 'base-info' ? 'active' : ''} onClick={() => { onCloseNodeEditor?.(); toggleCanvasPanel('base-info') }} title="基座信息"><Info /><span>基座</span></button>
+              {!creatorSemantics && <button type="button" className={activeCanvasTool === 'connect' && !canvasPanel ? 'active' : ''} onClick={activateConnectMode} title={onEdgesSave && !readOnlyGraph ? '连接节点' : '当前流程暂不允许修改连线'} disabled={readOnlyGraph || !onEdgesSave}><GitBranch /><span>连线</span></button>}
+              {!creatorSemantics && <button type="button" className={canvasPanel === 'nodes' ? 'active' : ''} onClick={() => toggleCanvasPanel('nodes')} title={onCreateNode && !readOnlyGraph ? '节点库' : '当前流程暂不允许增删节点'} disabled={readOnlyGraph || !onCreateNode}><Box /><span>节点</span></button>}
+              {!creatorSemantics && <button type="button" className={canvasPanel === 'notes' ? 'active' : ''} onClick={() => { onCloseNodeEditor?.(); toggleCanvasPanel('notes') }} title={readOnlyGraph ? '当前流程暂不允许编辑注释' : '画布注释'} disabled={readOnlyGraph}><MessageSquare /><span>注释</span></button>}
+              {!creatorSemantics && <button type="button" className={canvasPanel === 'models' ? 'active' : ''} onClick={() => { onCloseNodeEditor?.(); toggleCanvasPanel('models') }} title={modelPanel && !readOnlyGraph ? '模型管理' : '当前流程暂不允许修改模型绑定'} disabled={readOnlyGraph || !modelPanel}><BrainCircuit /><span>模型</span></button>}
+              {!creatorSemantics && <button type="button" className={canvasPanel === 'variables' ? 'active' : ''} onClick={() => { onCloseNodeEditor?.(); toggleCanvasPanel('variables') }} title={readOnlyGraph ? '当前流程暂不允许编辑变量' : '流程变量'} disabled={readOnlyGraph}><Braces /><span>变量</span></button>}
+              <button type="button" className={canvasPanel === 'settings' ? 'active' : ''} onClick={() => { onCloseNodeEditor?.(); toggleCanvasPanel('settings') }} title="工作台设置" disabled={readOnlyGraph && !creatorSemantics}><Settings /><span>设置</span></button>
+              {!creatorSemantics && <button type="button" className={canvasPanel === 'tools' ? 'active' : ''} onClick={() => { onCloseNodeEditor?.(); toggleCanvasPanel('tools') }} title={toolPanel && !readOnlyGraph ? 'MCP 工具库' : '当前流程暂不允许修改工具绑定'} disabled={readOnlyGraph || !toolPanel}><Wrench /><span>工具</span></button>}
+              {!creatorSemantics && <button type="button" className={canvasPanel === 'package' ? 'active' : ''} onClick={() => { onCloseNodeEditor?.(); toggleCanvasPanel('package') }} title={packagePanel && !readOnlyGraph ? '打包当前卡带' : '当前流程暂不允许生成开发包'} disabled={readOnlyGraph || !packagePanel}><PackageCheck /><span>打包</span></button>}
+              {!creatorSemantics && <button type="button" className={canvasPanel === 'base-info' ? 'active' : ''} onClick={() => { onCloseNodeEditor?.(); toggleCanvasPanel('base-info') }} title="基座信息"><Info /><span>基座</span></button>}
             </nav>
             <div className="cf-canvas-zoom-tools">
               <button type="button" onClick={() => flowInstance?.zoomIn({ duration: 180 })} title="放大"><ZoomIn /></button>
@@ -2077,6 +2081,10 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', engi
             {canvasPanel === 'variables' && <div className="cf-canvas-data-list variables">{canvasVariables.length ? canvasVariables.map((item) => <div key={`${item.kind}-${item.name}`}><b>{item.name}</b><span>{item.kind} · {item.source}</span></div>) : <p>当前流程还没有声明输入或输出变量。</p>}</div>}
             {canvasPanel === 'settings' && (
               <div className="cf-canvas-settings">
+                {onShowEngineeringSemanticsChange && <label className="cf-semantic-visibility-setting">
+                  <span><b>显示工程语义</b><small>模型、工具、协议字段与工程连线默认对 Creator 隐藏</small></span>
+                  <input type="checkbox" role="switch" checked={showEngineeringSemantics} onChange={(event) => onShowEngineeringSemanticsChange(event.target.checked)} />
+                </label>}
                 {cartridgePanel}
                 <section className="cf-canvas-theme-settings" aria-label="工作台主题">
                   <div className="cf-canvas-theme-heading"><span>工作台主题</span><small>仅调整界面强调色</small></div>

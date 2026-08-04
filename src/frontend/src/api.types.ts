@@ -134,6 +134,66 @@ export interface FlowGraph {
   engineering_relations?: FlowEngineeringRelation[]
 }
 
+export interface CreatorFieldContract {
+  id: string
+  label: string
+  value_type: 'string' | 'string_list' | 'boolean' | 'number'
+  required: boolean
+  default: unknown
+}
+
+export interface CreatorTrustedRecipeNode {
+  id: string
+  label: string
+  preset: { id: string; revision: number; digest: string }
+  values: Record<string, unknown>
+  editable_fields: CreatorFieldContract[]
+}
+
+export interface CreatorProposal {
+  proposal_id: string
+  revision: number
+  summary: string
+  changes: Array<{ id: string; target_id: string; operation: string }>
+}
+
+export interface CreatorFinding {
+  code: string
+  severity: string
+  message: string
+  step_id?: string
+}
+
+export interface CreatorProjection {
+  project_id: string
+  session_id: string
+  revision: number
+  intent: string
+  trusted_recipe: {
+    id: string
+    goal: string
+    nodes: CreatorTrustedRecipeNode[]
+    relations: Array<{ id: string; from_node_id: string; to_node_id: string; relation: string }>
+  }
+  frozen_steps: string[]
+  pending_proposals: CreatorProposal[]
+  history: Array<{ id: string; revision: number; summary: string }>
+  blocked_findings: CreatorFinding[]
+  generation_readiness: { ready: boolean; blocked_findings: CreatorFinding[] }
+}
+
+export interface CreatorCapabilityGap {
+  schema: string
+  goal: string
+  needed_capabilities: string[]
+  available_preset_ids: string[]
+}
+
+export interface CreatorProposalPreview {
+  accepted_change_ids: string[]
+  impact: { plain_summary?: string; changed_steps?: string[]; changed_sources?: string[] }
+}
+
 export interface FlowAnalysisFinding {
   id?: string
   severity: 'blocker' | 'warning' | 'info' | string

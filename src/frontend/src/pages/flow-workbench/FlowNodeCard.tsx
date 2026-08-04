@@ -115,6 +115,39 @@ function DetailedNodeContent({ node, order, view, runState }: Pick<FlowNodeCardP
   )
 }
 
+function creatorValue(value: unknown) {
+  if (Array.isArray(value)) return value.length ? value.join('、') : '尚未填写'
+  if (typeof value === 'boolean') return value ? '是' : '否'
+  if (value === undefined || value === null || value === '') return '尚未填写'
+  return String(value)
+}
+
+function CreatorNodeContent({ node, order }: Pick<FlowNodeCardProps, 'node' | 'order'>) {
+  const creator = (node.data?.creator_semantics || {}) as {
+    empty?: boolean
+    trusted?: boolean
+    preset_id?: string
+    preset_revision?: number
+    values?: Record<string, unknown>
+    fields?: Array<{ id: string; label: string }>
+  }
+  const rows = (creator.fields || []).slice(0, 4).map((field) => ({ label: field.label, value: creatorValue(creator.values?.[field.id]) }))
+  return (
+    <div className={`flow-node-creator-content ${creator.empty ? 'empty' : ''}`}>
+      <header>
+        <strong>{String(order).padStart(2, '0')}</strong>
+        <span><b>{node.display_name || node.title}</b><small>{creator.empty ? '从一个想法开始' : `${creator.preset_id || '可信节点'} · r${creator.preset_revision || 1}`}</small></span>
+        <em className={creator.trusted ? 'trusted' : creator.empty ? 'empty' : 'untrusted'}><ShieldCheck aria-hidden="true" />{creator.trusted ? '已可信' : creator.empty ? '空画布' : '待审核'}</em>
+      </header>
+      {creator.empty ? <p>说出你想实现的结果，AI 会先生成一份可审核的整体流程。</p> : <>
+        <p>{node.description || '打开节点，检查 AI 给出的默认字段并继续深入调整。'}</p>
+        <dl>{rows.length ? rows.map((row) => <div key={row.label}><dt>{row.label}</dt><dd title={row.value}>{row.value}</dd></div>) : <div><dt>节点内容</dt><dd>打开后继续完善</dd></div>}</dl>
+        <footer>点击节点审核与深入调整</footer>
+      </>}
+    </div>
+  )
+}
+
 function CompactNodeContent({ node, order, runState }: Pick<FlowNodeCardProps, 'node' | 'order' | 'runState'>) {
   const view = buildFlowNodeCardView(node, runState)
   return (
@@ -182,7 +215,9 @@ export const FlowNodeCard = memo(function FlowNodeCard(props: FlowNodeCardProps)
       <FlowNodePorts node={node} counts={counts} />
       {probeState && <ProbeBadges hasStart={Boolean(hasStartProbe)} hasEnd={Boolean(hasEndProbe)} onDragStart={startProbeDrag} />}
       {viewMode === 'detailed'
-        ? <DetailedNodeContent node={node} order={order} view={view} runState={runState} />
+        ? node.data?.creator_semantics
+          ? <CreatorNodeContent node={node} order={order} />
+          : <DetailedNodeContent node={node} order={order} view={view} runState={runState} />
         : <CompactNodeContent node={node} order={order} runState={runState} />}
     </div>
   )

@@ -33,9 +33,10 @@ const DEFAULT_DEMO_FLOW = {
   description: '用于快速开始设计的 Demo 卡带。',
 }
 
-export default function CartridgeWorkspaceControl({ current, empty = false, onSwitchFlow, onUpdated }: {
+export default function CartridgeWorkspaceControl({ current, empty = false, creatorMode = false, onSwitchFlow, onUpdated }: {
   current?: CartridgeSummary | null
   empty?: boolean
+  creatorMode?: boolean
   onSwitchFlow: (flowId: string) => void
   onUpdated?: () => void | Promise<void>
 }) {
@@ -279,8 +280,8 @@ export default function CartridgeWorkspaceControl({ current, empty = false, onSw
   return (
     <div className="cf-workbench-cartridge-control">
       {hiddenPicker}
-      <button type="button" className="cf-workbench-current-trigger" title={`${current?.name || current?.id || ''} (${current?.id || ''})`} onClick={() => { if (panel === 'current' && modalOpen) setModalOpen(false); else openPanel('current') }}>
-        <span className="cf-workbench-live-dot" /><b>{current?.name || current?.id}</b><span>{current?.id} · v{current?.version}</span><ChevronDown aria-hidden="true" />
+      <button type="button" className="cf-workbench-current-trigger" title={creatorMode ? current?.name : `${current?.name || current?.id || ''} (${current?.id || ''})`} onClick={() => { if (panel === 'current' && modalOpen) setModalOpen(false); else openPanel('current') }}>
+        <span className="cf-workbench-live-dot" /><b>{current?.name || current?.id}</b>{!creatorMode && <span>{current?.id} · v{current?.version}</span>}<ChevronDown aria-hidden="true" />
       </button>
       {floatingPanel}
       {managerPanel}

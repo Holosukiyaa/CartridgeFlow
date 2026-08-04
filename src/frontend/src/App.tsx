@@ -1,10 +1,20 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Box, Button, Spinner, Text } from './ui.tsx'
-import { fetchLabFlows, type FlowLabItem } from './api.ts'
+import { createDevFlow, fetchLabFlows, type FlowLabItem } from './api.ts'
 import FlowWorkbench from './pages/FlowWorkbench.tsx'
-import CartridgeWorkspaceControl from './pages/flow-workbench/CartridgeWorkspaceControl.tsx'
 
 const RECENT_CARTRIDGE_STORAGE_KEY = 'cartridgeflow.recent-cartridge'
+let pendingCreatorWorkspace: ReturnType<typeof createDevFlow> | null = null
+
+async function createCreatorWorkspace() {
+  if (pendingCreatorWorkspace) return pendingCreatorWorkspace
+  pendingCreatorWorkspace = createDevFlow('creator-workspace', 'Creator 工作区', '承载 Creator 语义、工程映射与仿真运行的本地工作区。')
+  try {
+    return await pendingCreatorWorkspace
+  } finally {
+    pendingCreatorWorkspace = null
+  }
+}
 
 function cartridgePath(flowId: string) {
   return `/cartridges/${encodeURIComponent(flowId)}/design`
@@ -47,7 +57,12 @@ function WorkbenchEntryRoute({ navigate }: { navigate: Navigate }) {
     setItems(null)
     setError('')
     fetchLabFlows()
-      .then((data) => setItems(data.items || []))
+      .then(async (data) => {
+        const flows = data.items || []
+        if (flows.length) { setItems(flows); return }
+        const created = await createCreatorWorkspace()
+        navigate(cartridgePath(created.id), { replace: true })
+      })
       .catch((loadError) => setError(loadError.message || '无法读取本机卡带'))
   }
 
@@ -57,10 +72,6 @@ function WorkbenchEntryRoute({ navigate }: { navigate: Navigate }) {
     return <Box className="cf-workbench-entry-state"><Text color="fg.error">{error}</Text><Button className="cf-outline-btn" onClick={load}>重新加载</Button></Box>
   }
   if (items === null) return <Box className="cf-workbench-entry-state"><Spinner /></Box>
-  if (items.length === 0) {
-    return <CartridgeWorkspaceControl empty onSwitchFlow={(flowId) => { if (flowId) navigate(cartridgePath(flowId)) }} />
-  }
-
   const recentId = localStorage.getItem(RECENT_CARTRIDGE_STORAGE_KEY)
   const target = items.find((item) => item.id === recentId) || items.find((item) => item.editable) || items[0]
   return <Redirect to={cartridgePath(target.id)} navigate={navigate} />

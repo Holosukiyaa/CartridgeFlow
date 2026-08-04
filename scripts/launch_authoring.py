@@ -1,4 +1,4 @@
-"""Launch the local Creator Studio, Developer Console, and API together."""
+"""Launch the unified CartridgeFlow workbench and API together."""
 
 from __future__ import annotations
 
@@ -15,16 +15,18 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE_DIR = ROOT / "src"
-CREATOR_DIR = SOURCE_DIR / "creator-studio"
-CONSOLE_DIR = SOURCE_DIR / "developer-console"
+FRONTEND_DIR = SOURCE_DIR / "frontend"
 API_PORT = 8000
-CREATOR_PORT = 5180
-CONSOLE_PORT = 5181
+FRONTEND_PORT = 5173
+RETIRED_CREATOR_PORT = 5180
+RETIRED_CONSOLE_PORT = 5181
 _PORT_PROCESS_MARKERS = {
     API_PORT: ("uvicorn", "backend.main:app"),
-    CREATOR_PORT: ("vite", "creator-studio"),
-    CONSOLE_PORT: ("vite", "developer-console"),
+    FRONTEND_PORT: ("vite", "frontend"),
+    RETIRED_CREATOR_PORT: ("vite", "creator-studio"),
+    RETIRED_CONSOLE_PORT: ("vite", "developer-console"),
 }
+_ACTIVE_PORTS = (API_PORT, FRONTEND_PORT)
 
 
 def _port_is_available(port: int) -> bool:
@@ -34,7 +36,7 @@ def _port_is_available(port: int) -> bool:
 
 
 def _require_available_ports() -> None:
-    unavailable = [str(port) for port in (API_PORT, CREATOR_PORT, CONSOLE_PORT) if not _port_is_available(port)]
+    unavailable = [str(port) for port in _ACTIVE_PORTS if not _port_is_available(port)]
     if unavailable:
         raise SystemExit(f"Ports already in use: {', '.join(unavailable)}. Stop those services before launching authoring.")
 
@@ -83,7 +85,7 @@ def _npm_command() -> str:
     npm = shutil.which("npm.cmd") or shutil.which("npm")
     if npm:
         return npm
-    raise SystemExit("npm was not found. Install Node.js 20.19 or newer.")
+    raise SystemExit("npm was not found. Install Node.js 20 or newer.")
 
 
 def _wait_for_api(process: subprocess.Popen[object]) -> None:
@@ -100,12 +102,13 @@ def _vite_environment() -> dict[str, str]:
     environment = os.environ.copy()
     environment.pop("VITE_API_BASE_URL", None)
     environment["AUTHORING_API_TARGET"] = f"http://127.0.0.1:{API_PORT}"
+    environment["VITE_API_PROXY_TARGET"] = f"http://127.0.0.1:{API_PORT}"
     return environment
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--no-browser", action="store_true", help="Do not open the two frontend URLs automatically.")
+    parser.add_argument("--no-browser", action="store_true", help="Do not open the workbench URL automatically.")
     args = parser.parse_args()
 
     _clear_stale_authoring_processes()
@@ -121,22 +124,18 @@ def main() -> None:
         )
         processes.append(api)
         _wait_for_api(api)
-        for directory, port in ((CREATOR_DIR, CREATOR_PORT), (CONSOLE_DIR, CONSOLE_PORT)):
-            processes.append(
-                subprocess.Popen(
-                    [npm, "run", "dev", "--", "--host", "127.0.0.1", "--port", str(port), "--strictPort"],
-                    cwd=directory,
-                    env=environment,
-                )
+        processes.append(
+            subprocess.Popen(
+                [npm, "run", "dev", "--", "--host", "127.0.0.1", "--port", str(FRONTEND_PORT), "--strictPort"],
+                cwd=FRONTEND_DIR,
+                env=environment,
             )
-        creator_url = f"http://127.0.0.1:{CREATOR_PORT}/"
-        console_url = f"http://127.0.0.1:{CONSOLE_PORT}/"
-        print(f"Creator Studio: {creator_url}")
-        print(f"Developer Console: {console_url}")
+        )
+        workbench_url = f"http://127.0.0.1:{FRONTEND_PORT}/"
+        print(f"CartridgeFlow Workbench: {workbench_url}")
         print(f"API documentation: http://127.0.0.1:{API_PORT}/docs")
         if not args.no_browser:
-            webbrowser.open(creator_url)
-            webbrowser.open(console_url)
+            webbrowser.open(workbench_url)
         while True:
             if any(process.poll() is not None for process in processes):
                 raise SystemExit("An authoring service stopped unexpectedly.")

@@ -10,8 +10,7 @@ where node >nul 2>nul || goto missing_node
 where npm >nul 2>nul || goto missing_node
 
 python -c "import uvicorn" >nul 2>nul || goto bootstrap
-if not exist "%ROOT%src\creator-studio\node_modules\.bin\vite.cmd" goto bootstrap
-if not exist "%ROOT%src\developer-console\node_modules\.bin\vite.cmd" goto bootstrap
+if not exist "%ROOT%src\frontend\node_modules\.bin\vite.cmd" goto bootstrap
 
 :launch
 python "%ROOT%scripts\launch_authoring.py"
@@ -21,7 +20,7 @@ pause
 exit /b %EXIT_CODE%
 
 :bootstrap
-echo Installing Creator Studio and Developer Console dependencies...
+echo Installing CartridgeFlow Workbench dependencies...
 powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%scripts\bootstrap.ps1"
 if errorlevel 1 goto setup_failed
 goto launch

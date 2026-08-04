@@ -42,6 +42,11 @@ class TrustedCreatorApiTests(unittest.TestCase):
         for item in reversed(self.patches): item.stop()
         self.temp.cleanup()
 
+    def test_optional_project_lookup_returns_empty_creator(self):
+        response = self.client.get("/api/creator/projects/project.missing?optional=true")
+        self.assertEqual(200, response.status_code, response.text)
+        self.assertIsNone(response.json()["creator"])
+
     def test_empty_registry_returns_capability_gap_without_calling_model(self):
         with patch("core.llm.chat", new_callable=AsyncMock) as chat:
             result = self.client.post("/api/creator/compose-recipe", json={"session_id": "creator.empty", "project_id": "project.empty", "goal": "制作日报"})

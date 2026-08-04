@@ -1,7 +1,7 @@
 // API 工具：封装所有对后端的 fetch 调用，统一走 /api 前缀
 
 // 基础请求方法：所有 API 调用共用
-import type { RuntimeErrorEnvelope, CartridgeDetail, RunResult, FlowGraph, FlowEdge, FlowAnnotation, FlowLabItem, FlowLabDetail, FlowEvent, TestProbeRange, FlowFiles, CartridgeAsset, InteractionComponent, CartridgeAssetsResponse, McpSourceResponse, McpSourceEditResponse, BaseImplementationResponse, StudioConformanceResponse, McpToolsResponse, ValidationResponse, NodeUpdateResult, NodeCreatePayload, LlmProvider, LlmAssignments, LlmConfigBundle, LlmDetectionResult, LlmTestResult, StudioResources, FlowResourceCatalog, FlowResourceDetail, FlowResourceConnectivityResult, StudioCredential, StudioEnvironmentSnapshot, StudioPackageItem, PortabilityReport, StudioReleasePreflight, AIFlowStewardContext, AIFlowStewardMessage, AIFlowStewardMode, AuthoringReadiness, TuningResponse, TuningRevisionResult, RecipeReleaseResult } from './api.types.ts'
+import type { RuntimeErrorEnvelope, CartridgeDetail, RunResult, FlowGraph, FlowEdge, FlowAnnotation, FlowLabItem, FlowLabDetail, FlowEvent, TestProbeRange, FlowFiles, CartridgeAsset, InteractionComponent, CartridgeAssetsResponse, McpSourceResponse, McpSourceEditResponse, BaseImplementationResponse, StudioConformanceResponse, McpToolsResponse, ValidationResponse, NodeUpdateResult, NodeCreatePayload, LlmProvider, LlmAssignments, LlmConfigBundle, LlmDetectionResult, LlmTestResult, StudioResources, FlowResourceCatalog, FlowResourceDetail, FlowResourceConnectivityResult, StudioCredential, StudioEnvironmentSnapshot, StudioPackageItem, PortabilityReport, StudioReleasePreflight, AIFlowStewardContext, AIFlowStewardMessage, AIFlowStewardMode, AuthoringReadiness, TuningResponse, TuningRevisionResult, RecipeReleaseResult, CreatorCapabilityGap, CreatorProjection, CreatorProposal, CreatorProposalPreview } from './api.types.ts'
 export type * from './api.types.ts'
 
 export class ApiError extends Error {
@@ -66,6 +66,43 @@ export async function api<T = unknown>(path: string, options: ApiRequestInit = {
 export const fetchBaseImplementation = () => api<BaseImplementationResponse>('/api/base')
 
 export const fetchStudioConformance = () => api<StudioConformanceResponse>('/api/studio/conformance')
+
+const creatorSessionRoute = (sessionId: string) => `/api/creator/authoring-sessions/${encodeURIComponent(sessionId)}`
+
+export const fetchCreatorProject = (projectId: string) =>
+  api<{ creator: CreatorProjection | null }>(`/api/creator/projects/${encodeURIComponent(projectId)}?optional=true`)
+
+export const fetchCreatorSession = (sessionId: string) =>
+  api<{ creator: CreatorProjection }>(creatorSessionRoute(sessionId))
+
+export const composeCreatorRecipe = (body: { session_id: string; project_id: string; goal: string }) =>
+  api<{ creator?: CreatorProjection; capability_gap?: CreatorCapabilityGap }>('/api/creator/compose-recipe', {
+    method: 'POST', body: JSON.stringify(body), timeoutMs: 45_000,
+  })
+
+export const proposeCreatorNodeValues = (sessionId: string, body: unknown) =>
+  api<{ proposal: CreatorProposal }>(`${creatorSessionRoute(sessionId)}/proposals`, { method: 'POST', body: JSON.stringify(body) })
+
+export const refineCreatorNodeWithAi = (sessionId: string, nodeId: string, body: unknown) =>
+  api<{ proposal: CreatorProposal }>(`${creatorSessionRoute(sessionId)}/nodes/${encodeURIComponent(nodeId)}/ai-proposals`, {
+    method: 'POST', body: JSON.stringify(body), timeoutMs: 45_000,
+  })
+
+export const previewCreatorProposal = (sessionId: string, proposalId: string) =>
+  api<CreatorProposalPreview>(`${creatorSessionRoute(sessionId)}/proposals/${encodeURIComponent(proposalId)}/preview`, { method: 'POST', body: '{}' })
+
+export const acceptCreatorProposal = (sessionId: string, proposalId: string) =>
+  api<{ creator: CreatorProjection; accepted_change_ids: string[] }>(`${creatorSessionRoute(sessionId)}/proposals/${encodeURIComponent(proposalId)}/accept`, { method: 'POST', body: '{}' })
+
+export const rejectCreatorProposal = (sessionId: string, proposalId: string) =>
+  api<{ creator: CreatorProjection }>(`${creatorSessionRoute(sessionId)}/proposals/${encodeURIComponent(proposalId)}/reject`, {
+    method: 'POST', body: JSON.stringify({ reason: 'Creator rejected the suggestion.' }),
+  })
+
+export const freezeCreatorNode = (sessionId: string, nodeId: string) =>
+  api(`${creatorSessionRoute(sessionId)}/freeze`, {
+    method: 'POST', body: JSON.stringify({ step_ids: [nodeId], author: 'creator-workbench', summary: 'Creator confirmed this trusted node instance.' }),
+  })
 
 export const fetchCartridgeRun = (runId: string) =>
   api<RunResult>(`/api/cartridge-runs/${runId}`)

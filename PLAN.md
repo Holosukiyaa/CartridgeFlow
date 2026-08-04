@@ -1,252 +1,148 @@
-# CartridgeFlow 产品重构计划
+# CartridgeFlow Protocol-First Plan
 
-日期：2026-08-04
+## Product Decision
 
-状态：执行中
+Creator Studio is not a free-form workflow generator and must not invent
+business nodes that have no Developer mapping. It is the creator-facing
+projection of a developer-owned, versioned recipe template.
 
-本文件是当前产品和工程行动计划。产品分层与数据边界的完整说明见
-[`PRODUCT_EXPERIENCE_ARCHITECTURE.md`](PRODUCT_EXPERIENCE_ARCHITECTURE.md)。
-
-## 1. 目标
-
-CartridgeFlow 要让用户从模糊想法开始，发现值得做的方向，形成并审核
-自己认可的配方，再将配方可靠地交付为可验证的执行能力。
-
-它不是要求所有用户直接配置节点、工具、模型、协议和运行参数的工作流
-编辑器。
+The project chain is:
 
 ```text
-第一层：打开思维
-第二层：形成并审核配方
-第三层：实现、验证和交付
+Developer preset template
+  -> constrained Creator template instance
+  -> reviewed and frozen CF-TUNING facts
+  -> Developer mapping and CF-FARP Root Flow
+  -> signed CF-CRE handoff
 ```
 
-## 2. 产品结构
+Creator users see goals, sources, steps, choices, and review status. They never
+see protocol fields, executors, permissions, models, tools, secrets, or Root
+Flow topology. Developer users own those implementation facts.
 
-### 2.1 Creator Studio：第一、二层
+## Non-Negotiable Invariants
 
-Creator Studio 面向创作者，负责：
+1. Every Creator-visible step originates from a developer-authored template
+   step with a stable Developer mapping key.
+2. A whole-flow AI request may select and instantiate a compatible template;
+   it must not invent an unbounded recipe or an unmappable abstract step.
+3. A node-level AI request may change only fields declared editable by that
+   template step. It produces a reviewed, immutable CF-TUNING change set.
+4. A template instance records exact template identity, revision, declared
+   node mappings, source safety facts, semantic facts, and review lineage.
+5. Missing mappings, invalid relations, unreviewed changes, stale revisions,
+   unsafe sources, or unfrozen required steps block compilation.
+6. CF-TUNING owns creator design facts only. CF-FARP owns executable Root Flow
+   topology, execution plans, executors, permissions, and runtime handoff.
+7. Base support is real behavior, not a catalog claim. A release is supported
+   only after validation, compiler/adapter behavior, and tests exist.
+8. CF-CRE remains the only signed artifact handed to Runtime.
 
-- 从兴趣、困扰、场景和已有材料中发现可能的方向。
-- 将方向发展为创作者可理解的配方。
-- 管理可信节点、候选来源、步骤关系、风险和待确认项。
-- 让 AI 的每项设计建议经过提案、预览、部分接受/拒绝、撤销和冻结。
-- 显示可理解的交付状态，但不承担工程验证或生产执行。
+## Target Protocol Shape
 
-Creator Studio 绝不展示或操作 Root Flow、端口、模型绑定、MCP/DLC、凭据、
-协议版本、运行日志、测试输入、检查点、队列或生产运行。
-
-### 2.2 Developer Console：第三层
-
-Developer Console 面向工程用户，负责：
-
-- 将已确认配方物化为工程 Flow。
-- 审阅资源、模型、工具、输入输出契约、失败路径和协议兼容性。
-- 调参与预检，并提供受控的开发验证台。
-- 展示验证证据、签名交付事实和精确工程诊断。
-
-它不读取 Creator 的私有探索内容、未采纳方向、提示词或私有来源上下文。
-任何需要创作者决定的问题必须以自然语言澄清项回流 Creator。
-
-### 2.3 Flow Author、旧 Workbench 与 Runtime
-
-- `cartridgeflow-flow-author` 是“配方到可执行 Flow”的内部编译能力。它的
-  可行性知识可帮助第一层生成非空泛方向，但技术工件不向 Creator 暴露。
-- 旧 `src/frontend` Workbench 是第三层的兼容实现、测试台和迁移参考，不是
-  正常用户路径。
-- 外部 Runtime 负责生产安装、队列、执行、历史、产物和恢复。本仓库只生成
-  已签名、可独立验证的 CF-CRE 包。
-
-## 3. 一个项目，一条旅程
-
-用户始终开发同一个项目，系统维护稳定身份链，用户不复制 session ID、Flow ID
-或本地路径。
+Publish new versioned releases; never rewrite released contracts.
 
 ```text
-项目
-  -> 创作会话 / 配方修订
-  -> 编译候选
-  -> 工程物化 Root Flow
-  -> 验证记录
-  -> 已签名交付包
+CF-TUNING next release
+  developer_recipe_template.v1
+  creator_recipe_instance.v1
+  template_step_mapping.v1
+  authoring_change_set.v1 limited by template field contracts
+  review, preview, acceptance, freeze, readiness, and compile candidate facts
+
+CF-FARP next release
+  exact trusted-subprotocol binding to the new CF-TUNING release
+  template-instance-to-Root-Flow mapping contract
+  no transfer of Creator facts into executable authority without Developer
+  compilation and validation
+
+CARTRIDGEFLOW-BASE
+  template registry validation
+  mapping compiler/adapter
+  release catalog and compatibility evidence
 ```
 
-正常路径只有一个主要切换点：配方审核并冻结后，Creator 将用户带入同一项目
-对应的 Developer Console 工程验证工作区。
+The exact release numbers are chosen during the protocol audit. A semantic
+change requires a new CF-TUNING release and an exact new CF-FARP host release.
 
-```text
-Creator Studio
-  探索 -> 配方 -> 审核 -> 冻结
-  -> 进入工程验证
-Developer Console
-  物化 -> 配置 -> 开发验证 -> 签名交付
-External Runtime
-  安装与生产执行
-```
+## Delivery Sequence
 
-Creator 修改配方后，受影响的编译候选、工程物化和验证结果必须显式过期；不得
-静默沿用旧工程结果。
+### 1. Protocol and Base Audit
 
-## 4. 当前事实
+- Compare CF-TUNING 1.0, 1.1, and 1.2 against the preset-template model.
+- Identify the current Creator store and bridge facts that can be retained.
+- Identify all places where the bridge currently emits generic semantic steps
+  without a developer mapping.
+- Define the minimal Base adapter required before any support declaration.
 
-- Creator Studio 已独立为 `src/creator-studio/`，目前是无视觉皮肤的语义功能
-  骨架；它只声明 React/React DOM 运行依赖。
-- Creator 的会话、提案、预览、接受、拒绝、撤销、冻结、设计检查、候选编译和
-  签名 handoff 后端 API 已存在。
-- Developer Console 已独立为 `src/developer-console/`，但尚未接管旧 Workbench
-  的完整工程验证和 Test Bench 能力。
-- 旧 `src/frontend/` 仍保留完整兼容工作台、运行测试台和历史协议验证能力。
-- Creator 的旧 mock 浏览器脚本已移除；真实后端浏览器验收尚未建立。
-- `run.bat` / `scripts/launch_authoring.py` 是本地 Creator、Developer Console 和
-  API 的统一启动入口。Creator Studio 的开发工具通过 `npm ci` 恢复。
+Acceptance: a written gap map names every contract, adapter, validator, and
+test that must change.
 
-## 5. 执行阶段
+### 2. Versioned Protocol Release
 
-### 阶段 A：稳定本地基础
+- Create the new CF-TUNING release directory with specification, release,
+  profiles, and capabilities.
+- Create the matching CF-FARP host release with exact trusted subprotocol
+  binding and mapping ownership.
+- Update the release manifest, Base declarations, governance record, and
+  protocol conformance evidence.
 
-目标：任何开发者都能从干净环境启动 API、Creator Studio 和 Developer Console，
-且三个地址用途清楚、无 CORS 或静态资源错误。
+Acceptance: protocol governance audit passes; incompatible templates,
+instances, mappings, and change sets fail closed.
 
-行动：
+### 3. Base Implementation
 
-1. 维护 `run.bat`、`scripts/bootstrap.ps1` 和 `scripts/launch_authoring.py` 的一致性。
-2. 为 Creator、Developer 和 API 增加启动冒烟与浏览器控制台检查。
-3. 确保 Creator 开发依赖可通过 `npm ci` 无残留恢复。
+- Implement developer preset-template registration and validation.
+- Implement constrained Creator instance creation and field-level mutation
+  validation.
+- Implement deterministic mapping from frozen template instances to Developer
+  input and then CF-FARP Root Flow.
+- Preserve immutable review, freeze, candidate, and handoff lineage.
 
-验收：从空依赖目录启动后，Creator、Developer 和 `/openapi.json` 均可访问，
-浏览器无未处理错误。
+Acceptance: a supported Base can compile only a fully mapped, frozen instance;
+an unmappable node such as a generic "first-week output" fails before Developer
+handoff.
 
-### 阶段 B：第一层，打开思维
+### 4. Authoring Skills
 
-目标：用户没有明确任务时，能从模糊表达得到可选择、可理解、可继续发展的方向。
+- Create a whole-flow generation skill. It must discover and select a
+  developer preset, instantiate it, and fill only declared Creator fields.
+- Create a node-expansion skill. It must read the selected template step,
+  deepen only permitted fields, and output a previewable CF-TUNING change set.
+- Both skills must refuse requests that require a new preset and report the
+  missing developer capability instead of fabricating a flow.
 
-行动：
+Acceptance: each skill has explicit inputs, outputs, refusal conditions,
+protocol checks, and realistic example prompts.
 
-1. 定义第一层输入：兴趣、困扰、场景、已有材料、偏好和可选约束。
-2. 定义“可能性配方”投影：预期结果、适合原因、第一周输出、所需确认和不确定性。
-3. 使用 Flow Author 的可行性能力作为后台约束，确保建议能进入后续流程，但不生成
-   或展示技术 Flow。
-4. 支持选择、比较、合并、搁置和拒绝方向；这些操作不得产生运行时副作用。
-5. 建立从选中方向到第二层配方修订的明确转换。
+### 5. Creator Studio Projection
 
-验收：用户无需了解 RSS、工具、模型或节点，就能从空白进入并选择一个有明确价值和
-下一步的方向；所有建议均以创作者语言呈现。
+- Replace free-form default recipe generation with preset selection and
+  constrained instance generation.
+- Keep the shared project chain graph, but display only creator-safe labels
+  and template-approved fields.
+- Make overall draft review and single-node expansion two explicit states.
+- Surface readiness and blocked mappings in creator language; do not expose
+  implementation details.
 
-### 阶段 C：第二层，可信节点与配方共创
+Acceptance: an AI daily report request shows only steps from a selected preset;
+each visible node can be traced to a Developer mapping key.
 
-目标：用户知道想得到什么、但不知道从哪里获得或如何实现时，能与 AI 共同形成可审核
-配方。
+### 6. Developer and Runtime Handoff
 
-行动：
+- Show the same frozen instance and mapping lineage in Developer Console.
+- Compile through the new CF-FARP mapping contract.
+- Produce and verify the signed CF-CRE handoff.
 
-1. 建立可信节点目录：节点对 Creator 只描述能力、输入、结果、风险和适用条件。
-2. 支持复用可信节点和提出新增节点需求；新增节点在工程物化前不得被视为可执行。
-3. 建立来源发现与审核：候选来源必须显示身份、提供内容、推荐原因、近期预览、风险和
-   是否采用；不得仅显示 URL 或技术适配器。
-4. 将步骤、来源、关系、风险和待确认项作为语义画布事实；所有服务端改变必须走
-   `proposal -> preview -> partial accept / reject -> freeze`。
-5. 实现 Creator 需要的添加、编辑、移除、连接、断开、选择、检查和冻结；不泄露节点 ID
-   或技术操作名。
+Acceptance: end-to-end test proves template -> Creator instance -> Developer
+mapping -> Root Flow -> signed CF-CRE, with no creator-only fact acquiring
+runtime authority.
 
-验收：以“我想获得某类 RSS 信息但不知道哪些来源合适”为例，系统能提出多个候选来源，
-用户能在画布中审核、部分采用、冻结配方并在刷新后恢复同一事实。
+## Explicitly Out of Scope Until This Plan Is Complete
 
-当前闭环：Creator 可向受控模型提出来源发现请求，获得三个待审核候选的身份、提供内容、推荐原因、风险和审核重点；候选不会直接进入配方，只有经现有变更预览与接受后才会成为持久来源事实。真实 RSS 内容预览与可信节点目录仍待接入。
-
-### 阶段 D：Creator 到工程的受控移交
-
-目标：已冻结配方能生成可追溯的编译候选，并打开同一项目的 Developer Console，且不让
-创作者接触工程实现。
-
-行动：
-
-1. 建立项目、配方修订、编译候选、物化 Flow、验证记录和 handoff 的稳定映射。
-2. Creator 只显示创作者安全的工程状态，例如“需要补充来源”“正在工程验证”“可交付”。
-3. Developer Console 只接收允许的已确认配方投影，不读取 Creator 私有内容。
-4. 配方变化时使旧候选和验证状态明确过期；工程侧可创建自然语言澄清项回流 Creator。
-
-验收：同一项目可从 Creator 一次操作进入正确的 Developer Console 工作区；不需要复制 ID，
-且私有创作内容不出现在工程投影中。
-
-### 阶段 E：Developer Console 与开发验证台
-
-目标：Developer Console 接管第三层的工程审阅、调参与开发验证；旧 Test Bench 只作为
-尚未迁移能力的内部兼容路径。
-
-行动：
-
-1. 提供 Root Flow、资源、模型/工具绑定、协议兼容、调参修订、差异、预检和物化视图。
-2. 提供开发验证台：安全测试输入、mock 或受控真实资源、节点轨迹、暂停交互、失败原因、
-   数据链和签名验证。
-3. 以功能逐项迁移旧 Test Bench，不复制旧 UI；每项迁移后保留回归证据。
-4. 单个可选投影失败必须隔离为可读诊断，不能使整个控制台不可用。
-
-验收：工程用户可以验证同一项目的候选或已签名 handoff，查看可行动的工程结果；界面不
-提供生产安装、队列、历史或运行控制。
-
-### 阶段 F：签名交付与真实端到端验收
-
-目标：把“设计完成”变成可下载、独立验证的签名 CF-CRE 交付，而非前端候选摘要。
-
-行动：
-
-1. 将 Creator 冻结修订接入现有 `Creator revision -> Root Flow -> CF-CRE` 桥接。
-2. Creator 显示包 ID、签名状态、摘要、生成时间和下载地址；不显示私有来源、提示词、
-   凭据或本地路径。
-3. 使用外部 Runtime 工具独立验证签名和 Root Flow，不在本仓库 UI 中执行生产任务。
-4. 建立真实浏览器验收：浏览器不得 mock `fetch` 或拦截 `/api/`；测试使用受控后端 AI
-   适配器覆盖正向与关键失败路径。
-
-验收：浏览器可完成“探索/配方 -> 冻结 -> 工程验证 -> handoff -> 下载 -> 独立验证”；
-过期候选、未冻结步骤、阻塞发现和篡改包均被拒绝。
-
-### 阶段 G：视觉层与发布
-
-目标：在功能、语义结构和真实验收稳定后，才以独立视觉层覆盖 Creator Studio。
-
-行动：
-
-1. 使用 img2 生成或选择视觉参考，再以不改变业务状态、API 或可访问性标签的方式接入。
-2. 视觉实现不得重新引入通用 UI 框架、工程画布依赖或业务/样式耦合。
-3. 运行全量 Python conformance、两个新前端的测试/构建、浏览器验收、签名验证、协议审计
-   和结构化 review。
-
-验收：视觉替换不改变 Creator 行为；所有质量门禁通过，工作树和发布记录准确反映验证环境。
-
-## 6. 不变量
-
-1. Creator 的 AI 不得未经接受修改已确认设计。
-2. 每项接受变更必须可归因、可反转，并基于精确修订。
-3. 冻结步骤不可静默变化；修改必须经过明确冻结修订。
-4. Creator 只显示意图、来源、配方、风险、状态和可理解结果；工程事实只在 Developer Console。
-5. Flow Author 与协议验证拥有可执行拓扑，Creator 不拥有或伪造它。
-6. 已签名 CF-CRE 是本仓库向生产 Runtime 移交的唯一工件。
-7. 不得用 mock 前端、静态截图或本地状态证明真实用户闭环。
-8. 新页面、API 和数据对象必须明确归属第一、二或第三层；跨层只能传递受控投影。
-9. 旧 Workbench 不得成为普通 Creator 路径；其功能仅在 Developer Console 接管后逐项退役。
-10. 在功能稳定前，Creator Studio 不引入最终视觉皮肤、通用 UI 框架或工程画布依赖。
-11. 第一、二、三层共享动态项目链路图；层级差异只能改变节点语义与受控投影，不能割裂为各自独立的用户载体。
-12. Creator 默认进入空画布。AI 生成的默认流程节点一律未信任，只有经节点级提案、审核和冻结后才能成为可信节点并进入仿真资格判断。
-
-## 7. 当前优先级
-
-1. 阶段 A：恢复 Creator 开发依赖并建立干净启动与真实浏览器冒烟。
-2. 阶段 B：定义第一层的可能性配方合同与 API，而不是先绘制最终 UI。
-3. 阶段 C：定义可信节点与来源审核合同，完成 RSS 场景的真实配方闭环。
-4. 阶段 D：建立项目身份链和 Creator/Developer 受控移交。
-5. 阶段 E：将旧 Test Bench 的最小开发验证能力迁入 Developer Console。
-
-## 7.1 最近闭环
-
-- 阶段 B 的入口已接入受控模型：创作者输入模糊主题后，模型仅可返回三个经严格 JSON 契约校验、仅含创作者语言的可能性配方；未配置模型、超时或输出越界时不创建项目也不回退为静态模板。
-- 闭环由 API、Creator Studio 组件测试和真实浏览器冒烟共同验证。它尚不发现真实来源，也尚未进入工程物化；这些分别属于后续阶段 C 和 D。
-- 部署边界确定为一个域名和一个 API：Creator、Developer 与旧 Workbench 分别是同一服务中的 `/creator/`、`/developer/` 与兼容路由域，不得以端口、前端本地状态或手工复制 ID 交接用户流程。
-- 已建立阶段 D 的身份基础：Creator 会话持久化独立 `projectId`，Creator 可通过 `/projects/:projectId/creator` 恢复；Developer 通过 `/projects/:projectId/developer` 只读取工程安全投影。冻结后的候选物化与自动交接仍待接入。
-
-## 8. 执行纪律
-
-- 每项改动先说明它属于哪一层，以及它是否跨越前端或数据边界。
-- 先实现真实后端和浏览器闭环，再补测试；测试不得掩盖产品缺口。
-- 每阶段完成后复查所有上游验收，避免后续变更破坏边界。
-- 不以“范围外”“已有 API”“页面能打开”或“mock 已覆盖”标记阶段完成。
-- 生产 Runtime 职责始终留在外部 Runtime，不通过 Creator 或 Developer Console 偷渡实现。
+- Free-form AI flow invention.
+- Creator-side creation of executable nodes, tools, models, permissions, or
+  Root Flow topology.
+- Runtime execution, queue, artifact history, or production delivery UI in
+  Creator Studio.
+- Cosmetic UI work beyond readability needed to validate the above behavior.

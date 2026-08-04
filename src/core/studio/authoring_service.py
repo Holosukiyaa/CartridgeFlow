@@ -67,13 +67,27 @@ class AuthoringSessionStore:
             self._write(path, state)
             return self.creator_projection(state)
 
-    def create_from_recipe(self, session_id: str, project_id: str, recipe: dict, presets: list[dict], sources: list[dict] | None = None) -> dict:
+    def create_from_recipe(self, session_id: str, project_id: str, recipe: dict, presets: list[dict], sources: list[dict] | None = None, *, mappings: dict[str, dict] | None = None) -> dict:
         """Create one Creator session from a server-resolved dynamic trusted recipe."""
         try:
             normalized_presets = [validate_preset(item) for item in presets]
             recipe = validate_dynamic_recipe(recipe, normalized_presets)
         except TuningProtocolError as exc:
             raise AuthoringServiceError("AUTHORING_TRUSTED_RECIPE_INVALID", str(exc)) from exc
+        from core.studio.trusted_node_presets import validate_trusted_node_mapping
+        preset_by_id = {item["id"]: item for item in normalized_presets}
+        raw_mappings = mappings if isinstance(mappings, dict) else {}
+        if set(raw_mappings) != {item["id"] for item in recipe["nodes"]}:
+            raise AuthoringServiceError(
+                "AUTHORING_TRUSTED_MAPPING_MISSING",
+                "Every trusted recipe node must pin one executable Developer mapping.",
+            )
+        executable_mappings = {}
+        for node in recipe["nodes"]:
+            mapping = validate_trusted_node_mapping(raw_mappings[node["id"]], preset_by_id[node["preset"]["id"]])
+            if mapping["key"] != node["developer_mapping_key"]:
+                raise AuthoringServiceError("AUTHORING_TRUSTED_MAPPING_INVALID", "Recipe and Developer mapping identities differ.")
+            executable_mappings[node["id"]] = mapping
         steps = [{"id": item["id"], "intent": item["creator_label"], "inputs": {}, "outputs": {}} for item in recipe["nodes"]]
         relations = [{"id": item["id"], "from_step_id": item["from_node_id"], "to_step_id": item["to_node_id"], "relation": item["relation"]} for item in recipe["relations"]]
         bindings = {item["id"]: deepcopy(item["values"]) for item in recipe["nodes"]}
@@ -94,7 +108,7 @@ class AuthoringSessionStore:
                 "head": instance, "instances": {instance["id"]: instance}, "history": [], "proposals": {},
                 "rejections": [], "freezes": [], "freeze_replacements": [], "freeze_revisions": [], "reversals": [],
                 "trusted_recipe": deepcopy(recipe), "trusted_presets": deepcopy(normalized_presets),
-                "developer_mappings": {item["id"]: item["developer_mapping_key"] for item in recipe["nodes"]},
+                "developer_mappings": deepcopy(executable_mappings),
                 "developer_confirmation": None,
             }
             self._write(path, state)
@@ -334,6 +348,8 @@ class AuthoringSessionStore:
                     "preset_revision": node["preset"]["revision"],
                     "preset_digest": node["preset"]["digest"],
                     "developer_mapping_key": node["developer_mapping_key"],
+                    "developer_mapping_digest": state["developer_mappings"][node["id"]]["digest"],
+                    "developer_source": deepcopy(state["developer_mappings"][node["id"]]["source"]),
                     "creator_values": deepcopy(head["bindings"].get(node["id"], {})),
                     "mapping_current": preset_by_id[node["preset"]["id"]]["revision"] == node["preset"]["revision"],
                 } for node in state["trusted_recipe"]["nodes"]],
@@ -384,8 +400,11 @@ class AuthoringSessionStore:
         frozen = {step["step_id"] for snapshot in active for step in snapshot["frozen_steps"]}
         findings = []
         mappings = head.get("developer_mappings") or state.get("developer_mappings") or {}
-        if (state.get("template_instance") or state.get("trusted_recipe")) and set(mappings) != {step["id"] for step in head["blueprint"]["steps"]}:
+        mapping_ids = {step["id"] for step in head["blueprint"]["steps"]}
+        if (state.get("template_instance") or state.get("trusted_recipe")) and set(mappings) != mapping_ids:
             findings.append({"code": "DESIGN_MAPPING_MISSING", "severity": "blocked", "message": "A template step has no Developer mapping."})
+        if state.get("trusted_recipe") and any(not isinstance(mappings.get(step_id), dict) for step_id in mapping_ids):
+            findings.append({"code": "DESIGN_EXECUTABLE_MAPPING_MISSING", "severity": "blocked", "message": "A trusted recipe step has no executable Developer snapshot."})
         for step in head["blueprint"]["steps"]:
             if step["id"] not in frozen:
                 findings.append({"code": "DESIGN_STEP_UNFROZEN", "severity": "blocked", "step_id": step["id"], "message": "This design step is not frozen."})

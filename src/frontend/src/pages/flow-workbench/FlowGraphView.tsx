@@ -19,7 +19,7 @@ import {
   type ReactFlowInstance,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { AlertTriangle, AlignHorizontalSpaceAround, Box, Braces, BrainCircuit, CheckCircle2, CirclePause, FileText, FolderOpen, GitBranch, GripVertical, Info, Lock, Maximize, Maximize2, MessageSquare, MessageSquarePlus, MousePointer2, PackageCheck, Plus, Settings, Trash2, Unlock, Wrench, X, ZoomIn, ZoomOut } from 'lucide-react'
+import { AlertTriangle, AlignHorizontalSpaceAround, Box, Braces, BrainCircuit, CheckCircle2, CirclePause, FileText, FolderOpen, GitBranch, GripVertical, Info, Lock, Maximize, Maximize2, MessageSquare, MessageSquarePlus, MousePointer2, PackageCheck, Plus, Settings, ShieldCheck, Trash2, Unlock, Wrench, X, ZoomIn, ZoomOut } from 'lucide-react'
 import type { AIFlowSelection, FlowAnnotation, FlowEdge, FlowEvent, FlowFiles, FlowGraph, FlowNode, RunResult } from '../../api.ts'
 import { DEFAULT_WORKSPACE_THEME, loadWorkspaceTheme, saveWorkspaceTheme, WORKSPACE_THEME_PRESETS, type WorkspaceTheme } from '../../appearance.ts'
 import { showToast } from '../../toast.tsx'
@@ -84,7 +84,7 @@ const DEFAULT_PROTOCOL_DISPLAY: ProtocolDisplayInfo = {
   currentProtocolLabel: 'CF-FARP@unknown',
   currentProtocolStatus: '当前卡带协议未读取',
 }
-type CanvasPanel = 'nodes' | 'notes' | 'models' | 'variables' | 'settings' | 'tools' | 'package' | 'base-info' | null
+type CanvasPanel = 'nodes' | 'notes' | 'models' | 'variables' | 'settings' | 'tools' | 'trusted-nodes' | 'package' | 'base-info' | null
 
 type EngineeringNodeRenderContextValue = {
   models: Map<string, EngineeringNodeRenderModel>
@@ -448,7 +448,7 @@ function buildRunEdgeStates(graphEdges: FlowEdge[], runEvents: FlowEvent[] = EMP
   return edgeStates
 }
 
-export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', workspaceSemantics = 'engineering', showEngineeringSemantics = true, onShowEngineeringSemanticsChange, engineeringEdgeVisibility = { control: true, data: true, dependency: true, branch: true, failure: true }, engineeringDataRelations: providedEngineeringDataRelations, engineeringNodeModels: providedEngineeringNodeModels, selectedNode, focusNodeId, onSelectNode, onNodeEditorPositionChange, onLayoutSave, autoLayoutOnMount = false, onAutoLayoutComplete, onEdgesSave, onAnnotationsSave, onCreateNode, onDeleteNode, modelPanel, toolPanel, packagePanel, cartridgePanel, protocolInfo = DEFAULT_PROTOCOL_DISPLAY, nodeEditors = [], activeNodeEditorId, onCloseNodeEditor, onCanvasToolChange, requestedCanvasTool, onStewardSelectionChange, compactStatic = false, readOnlyGraph = false, runStatus, nodeRunStates, runEvents, runCompletionVisible = false, runCompletion, onDismissRunCompletion, onOpenRunLog, onOpenRunResult, onOpenPendingInteraction, testProbeState }: {
+export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', workspaceSemantics = 'engineering', showEngineeringSemantics = true, onShowEngineeringSemanticsChange, engineeringEdgeVisibility = { control: true, data: true, dependency: true, branch: true, failure: true }, engineeringDataRelations: providedEngineeringDataRelations, engineeringNodeModels: providedEngineeringNodeModels, selectedNode, focusNodeId, onSelectNode, onNodeEditorPositionChange, onLayoutSave, autoLayoutOnMount = false, onAutoLayoutComplete, onEdgesSave, onAnnotationsSave, onCreateNode, onDeleteNode, modelPanel, toolPanel, trustedNodePanel, packagePanel, cartridgePanel, protocolInfo = DEFAULT_PROTOCOL_DISPLAY, nodeEditors = [], activeNodeEditorId, onCloseNodeEditor, onCanvasToolChange, requestedCanvasTool, onStewardSelectionChange, compactStatic = false, readOnlyGraph = false, runStatus, nodeRunStates, runEvents, runCompletionVisible = false, runCompletion, onDismissRunCompletion, onOpenRunLog, onOpenRunResult, onOpenPendingInteraction, testProbeState }: {
   graph: FlowGraph
   files?: FlowFiles
   displayMode?: DesignDisplayMode
@@ -471,6 +471,7 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', work
   onDeleteNode?: (node: FlowNode) => Promise<void>
   modelPanel?: ReactNode
   toolPanel?: ReactNode
+  trustedNodePanel?: ReactNode
   packagePanel?: ReactNode
   cartridgePanel?: ReactNode
   protocolInfo?: ProtocolDisplayInfo
@@ -2023,6 +2024,7 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', work
               {!creatorSemantics && <button type="button" className={canvasPanel === 'variables' ? 'active' : ''} onClick={() => { onCloseNodeEditor?.(); toggleCanvasPanel('variables') }} title={readOnlyGraph ? '当前流程暂不允许编辑变量' : '流程变量'} disabled={readOnlyGraph}><Braces /><span>变量</span></button>}
               <button type="button" className={canvasPanel === 'settings' ? 'active' : ''} onClick={() => { onCloseNodeEditor?.(); toggleCanvasPanel('settings') }} title="工作台设置" disabled={readOnlyGraph && !creatorSemantics}><Settings /><span>设置</span></button>
               {!creatorSemantics && <button type="button" className={canvasPanel === 'tools' ? 'active' : ''} onClick={() => { onCloseNodeEditor?.(); toggleCanvasPanel('tools') }} title={toolPanel && !readOnlyGraph ? 'MCP 工具库' : '当前流程暂不允许修改工具绑定'} disabled={readOnlyGraph || !toolPanel}><Wrench /><span>工具</span></button>}
+              {!creatorSemantics && <button type="button" className={canvasPanel === 'trusted-nodes' ? 'active' : ''} onClick={() => { onCloseNodeEditor?.(); toggleCanvasPanel('trusted-nodes') }} title={trustedNodePanel && !readOnlyGraph ? '发布与管理 Creator 可复用的可信节点' : '当前流程暂不允许发布可信节点'} disabled={readOnlyGraph || !trustedNodePanel}><ShieldCheck /><span>可信</span></button>}
               {!creatorSemantics && <button type="button" className={canvasPanel === 'package' ? 'active' : ''} onClick={() => { onCloseNodeEditor?.(); toggleCanvasPanel('package') }} title={packagePanel && !readOnlyGraph ? '打包当前卡带' : '当前流程暂不允许生成开发包'} disabled={readOnlyGraph || !packagePanel}><PackageCheck /><span>打包</span></button>}
               {!creatorSemantics && <button type="button" className={canvasPanel === 'base-info' ? 'active' : ''} onClick={() => { onCloseNodeEditor?.(); toggleCanvasPanel('base-info') }} title="基座信息"><Info /><span>基座</span></button>}
             </nav>
@@ -2036,8 +2038,8 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', work
           </Panel>
         )}
         {!compactStatic && canvasPanel && (
-          <Panel position="top-left" className={`cf-canvas-tool-panel ${canvasPanel === 'tools' || canvasPanel === 'models' || canvasPanel === 'package' ? 'resource-panel' : ''}`}>
-            <header><strong>{canvasPanel === 'nodes' ? '配方步骤' : canvasPanel === 'notes' ? '画布注释' : canvasPanel === 'models' ? '模型管理' : canvasPanel === 'variables' ? '流程变量' : canvasPanel === 'tools' ? '工具管理' : canvasPanel === 'package' ? '卡带打包' : canvasPanel === 'base-info' ? '基座信息' : '卡带与画布配置'}</strong><button type="button" onClick={() => { setCanvasPanel(null); setSelectedLibraryCategoryId(null) }}>×</button></header>
+          <Panel position="top-left" className={`cf-canvas-tool-panel ${canvasPanel === 'tools' || canvasPanel === 'models' || canvasPanel === 'trusted-nodes' || canvasPanel === 'package' ? 'resource-panel' : ''}`}>
+            <header><strong>{canvasPanel === 'nodes' ? '配方步骤' : canvasPanel === 'notes' ? '画布注释' : canvasPanel === 'models' ? '模型管理' : canvasPanel === 'variables' ? '流程变量' : canvasPanel === 'tools' ? '工具管理' : canvasPanel === 'trusted-nodes' ? '可信节点' : canvasPanel === 'package' ? '卡带打包' : canvasPanel === 'base-info' ? '基座信息' : '卡带与画布配置'}</strong><button type="button" onClick={() => { setCanvasPanel(null); setSelectedLibraryCategoryId(null) }}>×</button></header>
             {canvasPanel === 'nodes' && (
               <div className="cf-canvas-node-library">
                 {recipeTemplates.map(({ category, preset }) => (
@@ -2120,6 +2122,7 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', work
             )}
             {canvasPanel === 'models' && <div className="cf-canvas-resource-content">{modelPanel}</div>}
             {canvasPanel === 'tools' && <div className="cf-canvas-tool-content">{toolPanel}</div>}
+            {canvasPanel === 'trusted-nodes' && trustedNodePanel}
             {canvasPanel === 'package' && <div className="cf-canvas-resource-content">{packagePanel}</div>}
             {canvasPanel === 'base-info' && <div className="cf-base-info-panel"><p>当前基座目标协议：{protocolInfo.baseContractLabel} + {protocolInfo.targetProtocolLabel}</p><div><b>当前卡带</b><span>{protocolInfo.currentProtocolLabel} · {protocolInfo.currentProtocolStatus}</span></div><div><b>流程结构（Flow Graph）</b><span>结构化输入/输出、显式绑定、类型化控制连线</span></div><div><b>流程分析器（Flow Analyzer）</b><span>源码指纹、规范化拓扑与分析结果</span></div><div><b>模型绑定（LLM Binding）</b><span>Flow 资源目录与节点级模型绑定</span></div><div><b>MCP 工具绑定</b><span>Flow 资源目录、来源追踪与运行前检查</span></div><div><b>运行时（Runtime）</b><span>交互暂停、恢复、产物交付与备用路径可见性</span></div></div>}
           </Panel>

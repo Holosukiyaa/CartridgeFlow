@@ -121,6 +121,18 @@ class CreatorComposeRecipePayload(BaseModel):
 
 class TrustedNodePresetPayload(BaseModel):
     preset: dict
+    mapping: dict
+    expected_revision: int | None = None
+
+
+class TrustedNodePublishFromFlowPayload(BaseModel):
+    preset_id: str = Field(min_length=1, max_length=120)
+    creator_label: str = Field(min_length=1, max_length=200)
+    creator_description: str = Field(min_length=1, max_length=1000)
+    match_terms: list[str] = Field(default_factory=list)
+    editable_fields: list[dict] = Field(default_factory=list)
+    creator_bindings: dict[str, str] = Field(default_factory=dict)
+    developer_mapping_key: str | None = Field(default=None, max_length=200)
     expected_revision: int | None = None
 
 

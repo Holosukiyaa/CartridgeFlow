@@ -34,6 +34,7 @@ from backend.api_models import (
     CreatorNodeRefinementPayload,
     DeveloperMaterializationPayload,
     TrustedNodePresetPayload,
+    TrustedNodePublishFromFlowPayload,
     CreatorSourceDiscoveryPayload,
     AuthoringFreezePayload,
     CreatorHandoffPayload,
@@ -83,7 +84,7 @@ from backend.api_models import (
 from core.cartridge import CartridgeRegistry, CartridgeRunner
 from core.studio.authoring_service import AuthoringServiceError, AuthoringSessionStore
 from core.studio.creator_runtime_bridge import CreatorRuntimeBridge, CreatorRuntimeBridgeError
-from core.studio.trusted_node_presets import TrustedNodePresetStore
+from core.studio.trusted_node_presets import TrustedNodePresetStore, build_trusted_node_mapping
 from core.cartridge.validator import ManifestValidationError
 from core.data_paths import (
     CARTRIDGE_DATA_DIR,
@@ -2191,7 +2192,11 @@ def list_creator_trusted_node_presets():
 
 @app.get("/api/developer/trusted-node-presets")
 def list_developer_trusted_node_presets():
-    return {"schema": "cartridgeflow.developer_trusted_node_registry.v1", "presets": trusted_node_presets.list_developer()}
+    return {
+        "schema": "cartridgeflow.developer_trusted_node_registry.v2",
+        "presets": trusted_node_presets.list_developer(),
+        "publications": trusted_node_presets.list_published(),
+    }
 
 
 @app.put("/api/developer/trusted-node-presets/{preset_id}")
@@ -2199,7 +2204,60 @@ def put_developer_trusted_node_preset(preset_id: str, payload: TrustedNodePreset
     try:
         if payload.preset.get("id") != preset_id:
             raise AuthoringServiceError("TRUSTED_NODE_PRESET_ID_MISMATCH", "Route and preset identities differ.")
-        return {"preset": trusted_node_presets.put(payload.preset, expected_revision=payload.expected_revision)}
+        publication = trusted_node_presets.put(payload.preset, payload.mapping, expected_revision=payload.expected_revision)
+        return {"preset": publication["preset"], "publication": publication}
+    except AuthoringServiceError as exc:
+        _authoring_error(exc)
+
+
+@app.post("/api/developer/flows/{flow_id}/nodes/{node_id}/trusted-node-preset")
+def publish_developer_flow_node(flow_id: str, node_id: str, payload: TrustedNodePublishFromFlowPayload):
+    """Publish the selected real canvas node as one immutable trusted capability."""
+    try:
+        cartridge = registry.get_cartridge(flow_id)
+        if not cartridge.get("editable"):
+            raise AuthoringServiceError("TRUSTED_NODE_SOURCE_FLOW_READ_ONLY", "Only editable Developer flows can publish trusted nodes.", status=403)
+        root_flow = cartridge.get("root_flow") if isinstance(cartridge.get("root_flow"), dict) else {}
+        manifest = cartridge.get("manifest") if isinstance(cartridge.get("manifest"), dict) else {}
+        state = (root_flow.get("states") or {}).get(node_id)
+        if not isinstance(state, dict):
+            raise AuthoringServiceError("TRUSTED_NODE_SOURCE_UNKNOWN", "The selected Developer node was not found.", status=404)
+
+        try:
+            current = trusted_node_presets.get(payload.preset_id)
+            current_revision = int(current["revision"])
+        except AuthoringServiceError as exc:
+            if exc.code != "TRUSTED_NODE_PRESET_UNKNOWN":
+                raise
+            current_revision = 0
+        expected_revision = current_revision if payload.expected_revision is None else payload.expected_revision
+        mapping_key = str(payload.developer_mapping_key or f"{flow_id}.{node_id}").strip().lower()
+        mapping_key = re.sub(r"[^a-z0-9_.-]+", ".", mapping_key).strip(".")
+        preset = {
+            "schema": "cartridgeflow.trusted_node_preset.v1",
+            "protocol": {"id": "CF-TUNING", "version": "1.4"},
+            "id": payload.preset_id,
+            "revision": current_revision + 1,
+            "creator_label": payload.creator_label,
+            "creator_description": payload.creator_description,
+            "match_terms": payload.match_terms,
+            "editable_fields": payload.editable_fields,
+            "developer_mapping_key": mapping_key,
+        }
+        mapping = build_trusted_node_mapping(
+            preset,
+            state,
+            source_flow_id=flow_id,
+            source_node_id=node_id,
+            creator_bindings=payload.creator_bindings,
+            source_manifest=manifest,
+        )
+        publication = trusted_node_presets.put(preset, mapping, expected_revision=expected_revision)
+        return {"preset": publication["preset"], "publication": publication}
+    except FileNotFoundError as exc:
+        _authoring_error(AuthoringServiceError("TRUSTED_NODE_SOURCE_UNKNOWN", str(exc), status=404))
+    except (json.JSONDecodeError, ValueError) as exc:
+        _authoring_error(AuthoringServiceError("TRUSTED_NODE_SOURCE_INVALID", str(exc)))
     except AuthoringServiceError as exc:
         _authoring_error(exc)
 
@@ -2228,7 +2286,8 @@ async def compose_creator_recipe(payload: CreatorComposeRecipePayload):
             raise AuthoringServiceError("AI_CREATOR_FLOW_OUTPUT_INVALID", str(exc), status=502) from exc
         if result.get("schema") == "cartridgeflow.creator_capability_gap.v1":
             return {"capability_gap": result}
-        creator = authoring_sessions.create_from_recipe(payload.session_id, payload.project_id, result, presets)
+        mappings = trusted_node_presets.mappings_for_recipe(result)
+        creator = authoring_sessions.create_from_recipe(payload.session_id, payload.project_id, result, presets, mappings=mappings)
         return {"creator": creator}
     except AuthoringServiceError as exc:
         _authoring_error(exc)

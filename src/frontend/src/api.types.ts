@@ -142,6 +142,33 @@ export interface CreatorFieldContract {
   default: unknown
 }
 
+export interface DeveloperTrustedNodeMapping {
+  schema: 'cartridgeflow.trusted_node_mapping.v1'
+  key: string
+  digest: string
+  source: { flow_id: string; node_id: string }
+  state_template: Record<string, unknown>
+  creator_bindings: Record<string, string>
+}
+
+export interface DeveloperTrustedNodePreset {
+  id: string
+  revision: number
+  digest: string
+  creator_label: string
+  creator_description: string
+  match_terms: string[]
+  editable_fields: CreatorFieldContract[]
+  developer_mapping_key: string
+}
+
+export interface DeveloperTrustedNodePublication {
+  schema: 'cartridgeflow.trusted_node_publication.v1'
+  digest: string
+  preset: DeveloperTrustedNodePreset
+  mapping: DeveloperTrustedNodeMapping
+}
+
 export interface CreatorTrustedRecipeNode {
   id: string
   label: string

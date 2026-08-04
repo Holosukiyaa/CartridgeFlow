@@ -19,6 +19,7 @@ import { buildEngineeringNodeModels, buildEngineeringProjection, isEngineeringRe
 import { AIFlowStewardPanel } from './AIFlowStewardPanel.tsx'
 import { McpTransparencyOverlay } from './McpTransparencyOverlay.tsx'
 import { nodeExperienceIssues } from './nodeExperience.ts'
+import { TrustedNodePanel } from './TrustedNodePanel.tsx'
 
 type ExecutionPlanAnalysis = NonNullable<FlowGraph['analysis']> & {
   protocol?: { id?: string; version?: string; runtime_adapter?: string }
@@ -775,6 +776,7 @@ export function DesignView({
           onDeleteNode={canMutateGraph ? onDeleteNode : undefined}
           modelPanel={editable ? modelPanel : undefined}
           toolPanel={editable ? toolPanel : undefined}
+          trustedNodePanel={editable ? <TrustedNodePanel flowId={flowId} selectedNode={selectedNode} /> : undefined}
           packagePanel={editable ? packagePanel : undefined}
           cartridgePanel={editable ? cartridgePanel : undefined}
           protocolInfo={protocolInfo}

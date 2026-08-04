@@ -15,8 +15,8 @@ cleanup disposition live in `PROJECT_CLEANUP_AUDIT_2026-07-31.md`.
 | Extensions | `src/core/extensions/` | `descriptor.py`, `registry.py`, `worker_client.py` |
 | Creator authoring | `src/core/studio/`, `src/core/llm/` | `trusted_node_presets.py`, `authoring_service.py`, `creator_flow_skill.py`, `creator_node_skill.py`, `creator_runtime_bridge.py`, legacy `creator_discovery.py` |
 | Creator Studio | `src/creator-studio/src/` | `main.tsx`, `App.tsx`, `App.css`, `api.ts` |
-| Developer trusted nodes | `src/developer-console/src/` | `TrustedPresetManager.tsx`, `TrustedPresetManager.css`, `TrustedProjectWorkspace.tsx`, `api.ts` |
-| Frontend | `src/frontend/src/` | `main.tsx`, `App.tsx`, `pages/FlowWorkbench.tsx`, `pages/flow-workbench/NodeExperiencePanel.tsx`, `pages/flow-workbench/nodeExperience.ts` |
+| Historical standalone projections | `src/creator-studio/src/`, `src/developer-console/src/` | retained implementation references; not launched by `run.bat` |
+| Unified Creator and Developer frontend | `src/frontend/src/` | `main.tsx`, `App.tsx`, `pages/FlowWorkbench.tsx`, `pages/flow-workbench/CreatorWorkspace.tsx`, `pages/flow-workbench/TrustedNodePanel.tsx`, `pages/flow-workbench/NodeExperiencePanel.tsx` |
 | Tests | `scripts/tests/` | `api/`, `browser/`, `conformance/`, `runtime/`, `studio/`, `lab/`, `orchestration/`, `ui/` |
 | Automation | `scripts/` | `bootstrap.ps1`, `launch.py`, `run_conformance.py`, `run_node_coverage.py` |
 | Flow authoring skill | `docs/development/skills/cartridgeflow-flow-author/` | `SKILL.md`, `references/authoring-checklist.md`, `scripts/preflight_flow.py`, `scripts/validate_authored_cartridge.py` |

@@ -2,14 +2,16 @@
 
 ## Product Decision
 
-Creator Studio is an AI-assisted recipe composer built on developer-owned,
+Creator Studio is an AI-assisted recipe composer built on Developer-owned,
 versioned trusted node presets. A preset describes one reusable capability and
-its stable mapping into Developer. It is not a fixed whole-flow template.
+pins an immutable snapshot of a real executable Developer node. It is not a
+fixed whole-flow template and it is not an abstract semantic placeholder.
 
 The project chain is:
 
 ```text
-Developer trusted node presets
+Developer canvas process nodes
+  -> published trusted presets plus executable mapping snapshots
   -> AI-composed Creator recipe
   -> reviewed and frozen CF-TUNING facts
   -> Developer-confirmed mappings and CF-FARP Root Flow
@@ -25,13 +27,16 @@ it never fabricates an abstract node that cannot be mapped to Developer.
 Creator users see goals, sources, recipe nodes, editable choices, review state,
 and readiness. They never see protocol fields, mapping keys, executors,
 permissions, models, tools, secrets, or executable Root Flow facts. Developer
-users own those implementation facts. Both products are projections of the
-same project and the same dynamic chain graph.
+users own those implementation facts. Both roles use the original React Flow
+workbench and the same dynamic chain graph. Creator semantics are the default;
+Developer enables engineering semantics in canvas settings and publishes a
+selected real node through the canvas's Trusted Nodes panel.
 
 ## Non-Negotiable Invariants
 
 1. Every Creator-visible recipe node is an instance of a developer-authored
-   trusted node preset with an immutable preset revision and mapping key.
+   trusted node preset with an immutable preset revision, mapping key, mapping
+   digest, and executable Developer snapshot.
 2. A whole-flow AI request may dynamically compose topology from compatible
    trusted presets. It must not emit a node type outside the supplied registry.
 3. A node-level AI request may change only the creator-safe fields declared by
@@ -48,12 +53,12 @@ same project and the same dynamic chain graph.
 8. A protocol release is supported only after validator, adapter, evidence, and
    tests exist. CF-CRE remains the only signed artifact handed to Runtime.
 
-## Target Protocol Shape
+## Implemented Protocol Shape
 
 Publish new versioned releases; never rewrite released contracts.
 
 ```text
-CF-TUNING next release
+CF-TUNING@1.4
   trusted_node_preset.v1
   trusted_node_registry.v1
   dynamic_creator_recipe.v1
@@ -62,7 +67,7 @@ CF-TUNING next release
   node-scoped change sets limited by preset field contracts
   review, preview, acceptance, freeze, readiness, and candidate lineage
 
-CF-FARP next release
+CF-FARP@1.5
   exact trusted-subprotocol binding to the new CF-TUNING release
   trusted-recipe-to-Root-Flow mapping contract
   Developer confirmation before executable authority or signed handoff
@@ -75,9 +80,10 @@ CARTRIDGEFLOW-BASE
 ```
 
 The earlier CF-TUNING 1.3 / CF-FARP 1.4 fixed-template contracts remain
-historical releases. The corrected model is published in new versions.
+historical releases. The corrected model is implemented by CF-TUNING@1.4 and
+CF-FARP@1.5.
 
-## Delivery Sequence
+## Completed Delivery Sequence
 
 ### 1. Protocol and Base Audit
 
@@ -107,6 +113,8 @@ and stale revisions fail closed.
 - Implement validated dynamic recipe composition from registered presets.
 - Implement field-level node mutation and immutable review lineage.
 - Implement deterministic projection to Developer and CF-FARP materialization.
+- Require publication from a real Developer `process` node, store an immutable
+  topology-free execution snapshot, and reject mapping-free registrations.
 
 Acceptance: a fully mapped frozen recipe can reach Developer; an unmappable
 node such as a generic "first-week output" is returned as a capability gap.
@@ -129,6 +137,8 @@ checks, and realistic prompts; neither can invent mappings or runtime facts.
 - Keep overall draft review and single-node deepening as explicit modes.
 - Render only creator-safe labels and preset-approved editable fields.
 - Surface readiness and capability gaps in creator language.
+- Use the original workbench as the single frontend surface; keep Creator as
+  the default projection and reveal engineering semantics only through settings.
 
 Acceptance: an AI daily report can combine several suitable trusted source and
 processing nodes dynamically, and every visible node is traceable internally.
@@ -138,6 +148,8 @@ processing nodes dynamically, and every visible node is traceable internally.
 - Show the same recipe and immutable preset/mapping lineage in Developer.
 - Require Developer confirmation before CF-FARP materialization.
 - Produce and verify the signed CF-CRE only after successful materialization.
+- Materialize the pinned Developer `process` state and explicit CF-FARP failure
+  exits instead of emitting non-executable `semantic_step` placeholders.
 
 Acceptance: end-to-end tests prove trusted presets -> dynamic Creator recipe ->
 Developer confirmation -> Root Flow -> signed CF-CRE, without Creator facts

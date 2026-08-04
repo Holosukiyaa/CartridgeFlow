@@ -13,7 +13,9 @@ from fastapi.testclient import TestClient
 from backend import main as backend_main
 from backend.main import app
 from core.studio.authoring_service import AuthoringSessionStore
-from core.studio.trusted_node_presets import TrustedNodePresetStore
+from core.studio.trusted_node_presets import TrustedNodePresetStore, build_trusted_node_mapping
+from core.cartridge import CartridgeRegistry
+from core.lab import DevFlowManager
 
 
 PRESET = {
@@ -23,6 +25,18 @@ PRESET = {
     "editable_fields": [{"id": "topics", "label": "关注主题", "value_type": "string_list", "required": True, "default": ["AI"]}],
     "developer_mapping_key": "source.rss.v1",
 }
+STATE = {
+    "type": "process", "kind": "transfer", "executor": "deterministic", "effect": "writes_store",
+    "action": "pass_result", "inputs": {}, "outputs": {},
+    "params": {"preset_config": {"from": "seed", "to": "result", "topics": ["AI"]}},
+}
+
+
+def mapping(preset=PRESET):
+    return build_trusted_node_mapping(
+        preset, STATE, source_flow_id="dev.sources", source_node_id="rss",
+        creator_bindings={"topics": "params.preset_config.topics"}, source_manifest={"permissions": []},
+    )
 
 
 class TrustedCreatorApiTests(unittest.TestCase):
@@ -32,9 +46,13 @@ class TrustedCreatorApiTests(unittest.TestCase):
         root = Path(self.temp.name)
         self.sessions = AuthoringSessionStore(root / "sessions")
         self.presets = TrustedNodePresetStore(root / "presets")
+        self.registry = CartridgeRegistry(root)
+        self.dev_flows = DevFlowManager(root)
         self.patches = [
             patch.object(backend_main, "authoring_sessions", self.sessions),
             patch.object(backend_main, "trusted_node_presets", self.presets),
+            patch.object(backend_main, "registry", self.registry),
+            patch.object(backend_main, "dev_flow_manager", self.dev_flows),
         ]
         for item in self.patches: item.start()
 
@@ -55,7 +73,7 @@ class TrustedCreatorApiTests(unittest.TestCase):
         chat.assert_not_called()
 
     def test_registry_composition_node_refinement_and_developer_confirmation(self):
-        registered = self.client.put("/api/developer/trusted-node-presets/rss-source", json={"preset": PRESET, "expected_revision": 0})
+        registered = self.client.put("/api/developer/trusted-node-presets/rss-source", json={"preset": PRESET, "mapping": mapping(), "expected_revision": 0})
         self.assertEqual(200, registered.status_code, registered.text)
         creator_registry = self.client.get("/api/creator/trusted-node-presets").json()
         self.assertNotIn("developer_mapping_key", json.dumps(creator_registry))
@@ -79,6 +97,29 @@ class TrustedCreatorApiTests(unittest.TestCase):
         self.assertEqual(200, confirmed.status_code, confirmed.text)
         developer = confirmed.json()["developer"]
         self.assertEqual("source.rss.v1", developer["trusted_recipe"]["nodes"][0]["developer_mapping_key"])
+        self.assertEqual(mapping()["digest"], developer["trusted_recipe"]["nodes"][0]["developer_mapping_digest"])
+
+    def test_developer_publishes_real_canvas_node(self):
+        created = self.client.post("/api/lab/flows", json={"flow_id": "dev.trusted-source", "name": "Trusted source", "description": "test"})
+        self.assertEqual(200, created.status_code, created.text)
+        node = self.client.post("/api/lab/flows/dev.trusted-source/nodes", json={
+            "template_id": "runtime", "node_id": "normalize", "title": "Normalize result",
+            "node": {"params": {"preset_config": {"from": "seed", "to": "result", "topic": "AI"}}},
+        })
+        self.assertEqual(200, node.status_code, node.text)
+        published = self.client.post("/api/developer/flows/dev.trusted-source/nodes/normalize/trusted-node-preset", json={
+            "preset_id": "normalize-result", "creator_label": "Normalize result",
+            "creator_description": "Normalize collected information into a reusable result.",
+            "match_terms": ["normalize", "daily"],
+            "editable_fields": [{"id": "topic", "label": "Topic", "value_type": "string", "required": True, "default": "AI"}],
+            "creator_bindings": {"topic": "params.preset_config.topic"},
+        })
+        self.assertEqual(200, published.status_code, published.text)
+        publication = published.json()["publication"]
+        self.assertEqual("pass_result", publication["mapping"]["state_template"]["action"])
+        self.assertNotIn("next", publication["mapping"]["state_template"])
+        creator = self.client.get("/api/creator/trusted-node-presets").json()
+        self.assertNotIn("state_template", json.dumps(creator))
 
 
 if __name__ == "__main__":

@@ -30,6 +30,10 @@ from backend.api_models import (
     AuthoringAIProposalPayload,
     CreatorDiscoveryPayload,
     CreatorDefaultRecipePayload,
+    CreatorComposeRecipePayload,
+    CreatorNodeRefinementPayload,
+    DeveloperMaterializationPayload,
+    TrustedNodePresetPayload,
     CreatorSourceDiscoveryPayload,
     AuthoringFreezePayload,
     CreatorHandoffPayload,
@@ -79,6 +83,7 @@ from backend.api_models import (
 from core.cartridge import CartridgeRegistry, CartridgeRunner
 from core.studio.authoring_service import AuthoringServiceError, AuthoringSessionStore
 from core.studio.creator_runtime_bridge import CreatorRuntimeBridge, CreatorRuntimeBridgeError
+from core.studio.trusted_node_presets import TrustedNodePresetStore
 from core.cartridge.validator import ManifestValidationError
 from core.data_paths import (
     CARTRIDGE_DATA_DIR,
@@ -325,6 +330,7 @@ async def add_utf8_charset(request, call_next):
 
 registry = CartridgeRegistry(ROOT)
 authoring_sessions = AuthoringSessionStore(ROOT / ".data" / "user" / "authoring_sessions")
+trusted_node_presets = TrustedNodePresetStore(ROOT / ".data" / "user" / "trusted_node_presets")
 runner = CartridgeRunner(ROOT, registry)
 artifact_manager = ArtifactManager(ROOT)
 flow_graph_builder = FlowGraphBuilder()
@@ -2178,6 +2184,60 @@ async def create_creator_default_recipe(payload: CreatorDefaultRecipePayload):
         _authoring_error(AuthoringServiceError("AI_CREATOR_DEFAULT_RECIPE_FAILED", str(exc), status=502))
 
 
+@app.get("/api/creator/trusted-node-presets")
+def list_creator_trusted_node_presets():
+    return {"schema": "cartridgeflow.creator_trusted_node_registry.v1", "presets": trusted_node_presets.list_creator()}
+
+
+@app.get("/api/developer/trusted-node-presets")
+def list_developer_trusted_node_presets():
+    return {"schema": "cartridgeflow.developer_trusted_node_registry.v1", "presets": trusted_node_presets.list_developer()}
+
+
+@app.put("/api/developer/trusted-node-presets/{preset_id}")
+def put_developer_trusted_node_preset(preset_id: str, payload: TrustedNodePresetPayload):
+    try:
+        if payload.preset.get("id") != preset_id:
+            raise AuthoringServiceError("TRUSTED_NODE_PRESET_ID_MISMATCH", "Route and preset identities differ.")
+        return {"preset": trusted_node_presets.put(payload.preset, expected_revision=payload.expected_revision)}
+    except AuthoringServiceError as exc:
+        _authoring_error(exc)
+
+
+@app.post("/api/creator/compose-recipe")
+async def compose_creator_recipe(payload: CreatorComposeRecipePayload):
+    """Run the whole-flow skill and atomically create a mapped Creator session."""
+    from core.llm import chat
+    from core.llm.config_manager import resolve_model
+    from core.llm.creator_flow_skill import CreatorFlowSkillError, build_creator_flow_messages, parse_creator_flow_result
+    from core.protocol.trusted_node_recipes import capability_gap
+    try:
+        presets = trusted_node_presets.list_developer()
+        if not presets:
+            return {"capability_gap": capability_gap(payload.goal, ["需要 Developer 先提供可复用的可信节点"], [])}
+        model = resolve_model("mentor")
+        if not str(model.api_key or "").strip():
+            raise AuthoringServiceError("AI_CREATOR_FLOW_MODEL_UNBOUND", "No configured whole-flow model is available.", status=409)
+        try:
+            response = await asyncio.wait_for(chat(model, build_creator_flow_messages(payload.goal, presets), agent_name="creator_flow_skill", phase="trusted_recipe_composition"), timeout=30)
+        except TimeoutError as exc:
+            raise AuthoringServiceError("AI_CREATOR_FLOW_TIMEOUT", "The whole-flow AI service did not respond in time.", status=504) from exc
+        try:
+            result = parse_creator_flow_result(str(response.get("content") or ""), payload.goal, f"recipe.{payload.session_id}", presets)
+        except CreatorFlowSkillError as exc:
+            raise AuthoringServiceError("AI_CREATOR_FLOW_OUTPUT_INVALID", str(exc), status=502) from exc
+        if result.get("schema") == "cartridgeflow.creator_capability_gap.v1":
+            return {"capability_gap": result}
+        creator = authoring_sessions.create_from_recipe(payload.session_id, payload.project_id, result, presets)
+        return {"creator": creator}
+    except AuthoringServiceError as exc:
+        _authoring_error(exc)
+    except ValueError as exc:
+        _authoring_error(AuthoringServiceError("AI_CREATOR_FLOW_MODEL_UNBOUND", str(exc), status=409))
+    except Exception as exc:
+        _authoring_error(AuthoringServiceError("AI_CREATOR_FLOW_FAILED", str(exc), status=502))
+
+
 @app.post("/api/creator/authoring-sessions/{session_id}/source-candidates")
 async def discover_creator_source_candidates(session_id: str, payload: CreatorSourceDiscoveryPayload):
     from core.llm import chat
@@ -2245,6 +2305,44 @@ def get_developer_project(project_id: str):
         return {"developer": authoring_sessions.developer_projection(authoring_sessions.get_by_project_id(project_id))}
     except AuthoringServiceError as exc:
         _authoring_error(exc)
+
+
+@app.post("/api/creator/authoring-sessions/{session_id}/nodes/{node_id}/ai-proposals")
+async def create_trusted_node_ai_proposal(session_id: str, node_id: str, payload: CreatorNodeRefinementPayload):
+    from core.llm import chat
+    from core.llm.config_manager import resolve_model
+    from core.llm.creator_node_skill import CreatorNodeSkillError, build_creator_node_messages, parse_creator_node_result
+    try:
+        state = authoring_sessions.get(session_id)
+        authoring_sessions._require_revision(state, payload.expected_revision)
+        recipe = state.get("trusted_recipe")
+        if not isinstance(recipe, dict):
+            raise AuthoringServiceError("AI_CREATOR_NODE_TRUSTED_RECIPE_REQUIRED", "Node refinement requires a trusted-node recipe.", status=409)
+        node = next((item for item in recipe["nodes"] if item["id"] == node_id), None)
+        if node is None:
+            raise AuthoringServiceError("AUTHORING_STEP_UNKNOWN", "Trusted recipe node was not found.", status=404)
+        preset = next(item for item in state["trusted_presets"] if item["id"] == node["preset"]["id"] and item["revision"] == node["preset"]["revision"])
+        current_node = {**node, "values": state["head"]["bindings"].get(node_id, {})}
+        model = resolve_model("mentor")
+        if not str(model.api_key or "").strip():
+            raise AuthoringServiceError("AI_CREATOR_NODE_MODEL_UNBOUND", "No configured node-refinement model is available.", status=409)
+        try:
+            response = await asyncio.wait_for(chat(model, build_creator_node_messages(current_node, preset, payload.prompt), agent_name="creator_node_skill", phase="trusted_node_refinement"), timeout=30)
+        except TimeoutError as exc:
+            raise AuthoringServiceError("AI_CREATOR_NODE_TIMEOUT", "The node-refinement AI service did not respond in time.", status=504) from exc
+        try:
+            values = parse_creator_node_result(str(response.get("content") or ""), preset)
+        except CreatorNodeSkillError as exc:
+            raise AuthoringServiceError("AI_CREATOR_NODE_OUTPUT_INVALID", str(exc), status=502) from exc
+        merged = {**state["head"]["bindings"].get(node_id, {}), **values}
+        change = {"id": f"refine.{node_id}.{payload.expected_revision}", "target_id": node_id, "operation": "set_creator_binding", "value": merged}
+        return {"proposal": authoring_sessions.propose(session_id, [change], author=payload.author, summary=payload.summary, expected_revision=payload.expected_revision)}
+    except AuthoringServiceError as exc:
+        _authoring_error(exc)
+    except ValueError as exc:
+        _authoring_error(AuthoringServiceError("AI_CREATOR_NODE_MODEL_UNBOUND", str(exc), status=409))
+    except Exception as exc:
+        _authoring_error(AuthoringServiceError("AI_CREATOR_NODE_FAILED", str(exc), status=502))
 
 
 @app.post("/api/creator/authoring-sessions/{session_id}/ai-proposals")
@@ -2367,6 +2465,55 @@ def create_creator_runtime_handoff(session_id: str, payload: CreatorHandoffPaylo
             expected_revision=payload.expected_revision,
             candidate=payload.compile_candidate,
         )
+        return {**result, "url": f"/packages/{result['filename']}"}
+    except CreatorRuntimeBridgeError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.as_dict()) from exc
+    except AuthoringServiceError as exc:
+        _authoring_error(exc)
+
+
+@app.post("/api/developer/authoring-sessions/{session_id}/confirm-materialization")
+def confirm_developer_materialization(session_id: str, payload: DeveloperMaterializationPayload):
+    try:
+        confirmation = authoring_sessions.confirm_materialization(
+            session_id,
+            expected_revision=payload.expected_revision,
+            author=payload.author,
+            summary=payload.summary,
+        )
+        return {"confirmation": confirmation, "developer": authoring_sessions.developer_projection(authoring_sessions.get(session_id))}
+    except AuthoringServiceError as exc:
+        _authoring_error(exc)
+
+
+@app.post("/api/developer/authoring-sessions/{session_id}/runtime-handoff")
+def create_developer_runtime_handoff(session_id: str, payload: CreatorHandoffPayload):
+    try:
+        bridge = CreatorRuntimeBridge(ROOT, ROOT / PACKAGES_DIR)
+        result = bridge.materialize(authoring_sessions, session_id, expected_revision=payload.expected_revision, candidate=payload.compile_candidate)
+        return {**result, "url": f"/packages/{result['filename']}"}
+    except CreatorRuntimeBridgeError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.as_dict()) from exc
+    except AuthoringServiceError as exc:
+        _authoring_error(exc)
+
+
+@app.post("/api/developer/projects/{project_id}/confirm-materialization")
+def confirm_developer_project_materialization(project_id: str, payload: DeveloperMaterializationPayload):
+    try:
+        state = authoring_sessions.get_by_project_id(project_id)
+        confirmation = authoring_sessions.confirm_materialization(state["id"], expected_revision=payload.expected_revision, author=payload.author, summary=payload.summary)
+        return {"confirmation": confirmation, "developer": authoring_sessions.developer_projection(authoring_sessions.get(state["id"]))}
+    except AuthoringServiceError as exc:
+        _authoring_error(exc)
+
+
+@app.post("/api/developer/projects/{project_id}/runtime-handoff")
+def create_developer_project_runtime_handoff(project_id: str, payload: CreatorHandoffPayload):
+    try:
+        state = authoring_sessions.get_by_project_id(project_id)
+        bridge = CreatorRuntimeBridge(ROOT, ROOT / PACKAGES_DIR)
+        result = bridge.materialize(authoring_sessions, state["id"], expected_revision=payload.expected_revision, candidate=payload.compile_candidate)
         return {**result, "url": f"/packages/{result['filename']}"}
     except CreatorRuntimeBridgeError as exc:
         raise HTTPException(status_code=exc.status, detail=exc.as_dict()) from exc

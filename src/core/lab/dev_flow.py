@@ -405,7 +405,7 @@ class DevFlowManager:
         }
 
     def _root_flow_template(self, flow_id: str, name: str) -> dict:
-        if self.default_runtime_adapter == "cf-farp.execution-plan.v1":
+        if self.default_runtime_adapter in {"cf-farp.execution-plan.v1", "cf-farp.trusted-node-mapping.v1"}:
             return {
                 "schema_version": "1.0",
                 "id": f"{flow_id}.root",

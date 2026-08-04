@@ -2,41 +2,51 @@
 
 ## Product Decision
 
-Creator Studio is not a free-form workflow generator and must not invent
-business nodes that have no Developer mapping. It is the creator-facing
-projection of a developer-owned, versioned recipe template.
+Creator Studio is an AI-assisted recipe composer built on developer-owned,
+versioned trusted node presets. A preset describes one reusable capability and
+its stable mapping into Developer. It is not a fixed whole-flow template.
 
 The project chain is:
 
 ```text
-Developer preset template
-  -> constrained Creator template instance
+Developer trusted node presets
+  -> AI-composed Creator recipe
   -> reviewed and frozen CF-TUNING facts
-  -> Developer mapping and CF-FARP Root Flow
+  -> Developer-confirmed mappings and CF-FARP Root Flow
   -> signed CF-CRE handoff
 ```
 
-Creator users see goals, sources, steps, choices, and review status. They never
-see protocol fields, executors, permissions, models, tools, secrets, or Root
-Flow topology. Developer users own those implementation facts.
+The whole-flow AI may dynamically select, repeat, arrange, and connect trusted
+node presets to answer a user's goal. The node-level AI may deepen one selected
+node only through fields that its preset explicitly exposes. If no trusted
+node can provide a required capability, the system reports a capability gap;
+it never fabricates an abstract node that cannot be mapped to Developer.
+
+Creator users see goals, sources, recipe nodes, editable choices, review state,
+and readiness. They never see protocol fields, mapping keys, executors,
+permissions, models, tools, secrets, or executable Root Flow facts. Developer
+users own those implementation facts. Both products are projections of the
+same project and the same dynamic chain graph.
 
 ## Non-Negotiable Invariants
 
-1. Every Creator-visible step originates from a developer-authored template
-   step with a stable Developer mapping key.
-2. A whole-flow AI request may select and instantiate a compatible template;
-   it must not invent an unbounded recipe or an unmappable abstract step.
-3. A node-level AI request may change only fields declared editable by that
-   template step. It produces a reviewed, immutable CF-TUNING change set.
-4. A template instance records exact template identity, revision, declared
-   node mappings, source safety facts, semantic facts, and review lineage.
-5. Missing mappings, invalid relations, unreviewed changes, stale revisions,
-   unsafe sources, or unfrozen required steps block compilation.
-6. CF-TUNING owns creator design facts only. CF-FARP owns executable Root Flow
-   topology, execution plans, executors, permissions, and runtime handoff.
-7. Base support is real behavior, not a catalog claim. A release is supported
-   only after validation, compiler/adapter behavior, and tests exist.
-8. CF-CRE remains the only signed artifact handed to Runtime.
+1. Every Creator-visible recipe node is an instance of a developer-authored
+   trusted node preset with an immutable preset revision and mapping key.
+2. A whole-flow AI request may dynamically compose topology from compatible
+   trusted presets. It must not emit a node type outside the supplied registry.
+3. A node-level AI request may change only the creator-safe fields declared by
+   that node's preset. It cannot change topology, mappings, or runtime facts.
+4. A recipe records exact preset identities and revisions, node mappings,
+   creator-safe values, source safety facts, relations, and review lineage.
+5. Missing capabilities or mappings, invalid relations, unreviewed changes,
+   stale revisions, unsafe sources, or unfrozen required nodes block handoff.
+6. CF-TUNING owns trusted preset contracts and Creator design facts. CF-FARP
+   owns executable Root Flow topology, execution plans, permissions, and the
+   Developer-confirmed runtime handoff.
+7. Base provides generic registry, validation, projection, and adapter behavior.
+   It never ships business-specific trusted nodes or recipe templates.
+8. A protocol release is supported only after validator, adapter, evidence, and
+   tests exist. CF-CRE remains the only signed artifact handed to Runtime.
 
 ## Target Protocol Shape
 
@@ -44,105 +54,99 @@ Publish new versioned releases; never rewrite released contracts.
 
 ```text
 CF-TUNING next release
-  developer_recipe_template.v1
-  creator_recipe_instance.v1
-  template_step_mapping.v1
-  authoring_change_set.v1 limited by template field contracts
-  review, preview, acceptance, freeze, readiness, and compile candidate facts
+  trusted_node_preset.v1
+  trusted_node_registry.v1
+  dynamic_creator_recipe.v1
+  recipe_node_binding.v1
+  creator_capability_gap.v1
+  node-scoped change sets limited by preset field contracts
+  review, preview, acceptance, freeze, readiness, and candidate lineage
 
 CF-FARP next release
   exact trusted-subprotocol binding to the new CF-TUNING release
-  template-instance-to-Root-Flow mapping contract
-  no transfer of Creator facts into executable authority without Developer
-  compilation and validation
+  trusted-recipe-to-Root-Flow mapping contract
+  Developer confirmation before executable authority or signed handoff
 
 CARTRIDGEFLOW-BASE
-  template registry validation
-  mapping compiler/adapter
+  generic trusted-node registry and revision validation
+  creator-safe projection and constrained AI output validation
+  deterministic Developer projection and mapping adapter
   release catalog and compatibility evidence
 ```
 
-The exact release numbers are chosen during the protocol audit. A semantic
-change requires a new CF-TUNING release and an exact new CF-FARP host release.
+The earlier CF-TUNING 1.3 / CF-FARP 1.4 fixed-template contracts remain
+historical releases. The corrected model is published in new versions.
 
 ## Delivery Sequence
 
 ### 1. Protocol and Base Audit
 
-- Compare CF-TUNING 1.0, 1.1, and 1.2 against the preset-template model.
-- Identify the current Creator store and bridge facts that can be retained.
-- Identify all places where the bridge currently emits generic semantic steps
-  without a developer mapping.
-- Define the minimal Base adapter required before any support declaration.
+- Compare CF-TUNING 1.0 through 1.3 against the trusted-node model.
+- Identify Creator store and bridge facts that can be retained.
+- Identify generic semantic steps and other paths without stable mappings.
+- Record the validators, adapters, APIs, projections, and tests that must change.
 
-Acceptance: a written gap map names every contract, adapter, validator, and
-test that must change.
+Acceptance: a written gap map covers every affected contract and surface.
 
 ### 2. Versioned Protocol Release
 
-- Create the new CF-TUNING release directory with specification, release,
-  profiles, and capabilities.
-- Create the matching CF-FARP host release with exact trusted subprotocol
-  binding and mapping ownership.
-- Update the release manifest, Base declarations, governance record, and
-  protocol conformance evidence.
+- Create the corrected CF-TUNING release with preset, registry, dynamic recipe,
+  capability-gap, and node-scoped mutation contracts.
+- Create the matching CF-FARP host release with exact trusted binding and
+  Developer-owned materialization semantics.
+- Update catalog, Base declarations, governance, and conformance evidence only
+  when the behavior is implemented.
 
-Acceptance: protocol governance audit passes; incompatible templates,
-instances, mappings, and change sets fail closed.
+Acceptance: governance passes and unknown presets, mappings, fields, relations,
+and stale revisions fail closed.
 
 ### 3. Base Implementation
 
-- Implement developer preset-template registration and validation.
-- Implement constrained Creator instance creation and field-level mutation
-  validation.
-- Implement deterministic mapping from frozen template instances to Developer
-  input and then CF-FARP Root Flow.
-- Preserve immutable review, freeze, candidate, and handoff lineage.
+- Implement generic Developer registration of trusted node presets.
+- Implement Creator-safe registry projection with mapping details removed.
+- Implement validated dynamic recipe composition from registered presets.
+- Implement field-level node mutation and immutable review lineage.
+- Implement deterministic projection to Developer and CF-FARP materialization.
 
-Acceptance: a supported Base can compile only a fully mapped, frozen instance;
-an unmappable node such as a generic "first-week output" fails before Developer
-handoff.
+Acceptance: a fully mapped frozen recipe can reach Developer; an unmappable
+node such as a generic "first-week output" is returned as a capability gap.
 
 ### 4. Authoring Skills
 
-- Create a whole-flow generation skill. It must discover and select a
-  developer preset, instantiate it, and fill only declared Creator fields.
-- Create a node-expansion skill. It must read the selected template step,
-  deepen only permitted fields, and output a previewable CF-TUNING change set.
-- Both skills must refuse requests that require a new preset and report the
-  missing developer capability instead of fabricating a flow.
+- Create a whole-flow product skill that receives a goal and creator-safe
+  registry, composes a dynamic recipe, and reports missing capabilities.
+- Create a node-expansion product skill that receives one preset contract and
+  current values, then emits a previewable node-scoped CF-TUNING change set.
+- Provide concise Codex skill packages for maintaining these product paths.
 
-Acceptance: each skill has explicit inputs, outputs, refusal conditions,
-protocol checks, and realistic example prompts.
+Acceptance: both skills define inputs, outputs, refusal conditions, protocol
+checks, and realistic prompts; neither can invent mappings or runtime facts.
 
 ### 5. Creator Studio Projection
 
-- Replace free-form default recipe generation with preset selection and
-  constrained instance generation.
-- Keep the shared project chain graph, but display only creator-safe labels
-  and template-approved fields.
-- Make overall draft review and single-node expansion two explicit states.
-- Surface readiness and blocked mappings in creator language; do not expose
-  implementation details.
+- Replace free-form node invention with trusted-registry composition.
+- Default to one empty start node, then replace it with the composed draft.
+- Keep overall draft review and single-node deepening as explicit modes.
+- Render only creator-safe labels and preset-approved editable fields.
+- Surface readiness and capability gaps in creator language.
 
-Acceptance: an AI daily report request shows only steps from a selected preset;
-each visible node can be traced to a Developer mapping key.
+Acceptance: an AI daily report can combine several suitable trusted source and
+processing nodes dynamically, and every visible node is traceable internally.
 
 ### 6. Developer and Runtime Handoff
 
-- Show the same frozen instance and mapping lineage in Developer Console.
-- Compile through the new CF-FARP mapping contract.
-- Produce and verify the signed CF-CRE handoff.
+- Show the same recipe and immutable preset/mapping lineage in Developer.
+- Require Developer confirmation before CF-FARP materialization.
+- Produce and verify the signed CF-CRE only after successful materialization.
 
-Acceptance: end-to-end test proves template -> Creator instance -> Developer
-mapping -> Root Flow -> signed CF-CRE, with no creator-only fact acquiring
-runtime authority.
+Acceptance: end-to-end tests prove trusted presets -> dynamic Creator recipe ->
+Developer confirmation -> Root Flow -> signed CF-CRE, without Creator facts
+acquiring executable authority.
 
 ## Explicitly Out of Scope Until This Plan Is Complete
 
-- Free-form AI flow invention.
-- Creator-side creation of executable nodes, tools, models, permissions, or
-  Root Flow topology.
-- Runtime execution, queue, artifact history, or production delivery UI in
-  Creator Studio.
-- Cosmetic UI work beyond readability needed to validate the above behavior.
+- AI invention of unmapped node capabilities.
+- Creator-side creation of tools, models, executors, permissions, or secrets.
+- Direct Creator-to-Runtime handoff without Developer materialization.
+- Runtime queue, artifact history, or production delivery UI in Creator Studio.
+- Cosmetic UI work beyond readability needed to validate this behavior.

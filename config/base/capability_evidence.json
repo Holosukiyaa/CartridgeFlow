@@ -371,6 +371,14 @@
       "ui": {"status": "api_only", "entries": ["src/backend/main.py"]},
       "notes": "Creator-service facts are reviewed, revision checked, safe projected, and compile-candidate only; no runtime behavior is created."
     },
+    "trusted_node_creator_contract": {
+      "verification": "verified",
+      "implementation": ["src/core/protocol/trusted_node_recipes.py", "src/core/studio/trusted_node_presets.py", "src/core/llm/creator_flow_skill.py", "src/core/llm/creator_node_skill.py", "src/core/studio/authoring_service.py#AuthoringSessionStore.create_from_recipe", "src/core/studio/creator_runtime_bridge.py#CreatorRuntimeBridge"],
+      "positive_tests": ["test_trusted_node_recipe_contract_v14.TrustedNodeRecipeContractV14Tests.test_dynamic_recipe_resolves_mapping_only_from_registry", "test_trusted_node_authoring.TrustedNodeAuthoringTests.test_developer_confirmation_is_required_before_signed_handoff", "test_trusted_creator_api.TrustedCreatorApiTests.test_registry_composition_node_refinement_and_developer_confirmation"],
+      "failure_tests": ["test_trusted_node_recipe_contract_v14.TrustedNodeRecipeContractV14Tests.test_unknown_preset_field_and_cycle_fail_closed", "test_trusted_node_authoring.TrustedNodeAuthoringTests.test_creator_projection_is_safe_and_topology_mutation_is_blocked", "test_trusted_creator_api.TrustedCreatorApiTests.test_empty_registry_returns_capability_gap_without_calling_model"],
+      "ui": {"status": "visible", "entries": ["src/creator-studio/src/App.tsx", "src/developer-console/src/TrustedProjectWorkspace.tsx"]},
+      "notes": "Base ships no business presets. Whole-flow composition resolves mappings server-side; node refinement is field-scoped; signed handoff requires Developer confirmation."
+    },
     "release_envelope": {
       "verification": "verified",
       "implementation": ["src/core/protocol/release_envelope.py#validate_release_envelope", "src/core/protocol/release_signing.py#verify_signature_metadata", "src/core/protocol/release_builder.py#build_release_archive", "src/core/protocol/release_builder.py#extract_release_payload", "src/backend/main.py#import_cartridge"],
@@ -545,5 +553,13 @@
     ,"creator_reviewed_semantic_changes_v1": "creator_service_contract"
     ,"creator_source_safety_v1": "creator_service_contract"
     ,"creator_generation_readiness_v1": "creator_service_contract"
+    ,"trusted_node_preset_v1": "trusted_node_creator_contract"
+    ,"trusted_node_registry_v1": "trusted_node_creator_contract"
+    ,"dynamic_creator_recipe_v1": "trusted_node_creator_contract"
+    ,"recipe_node_binding_v1": "trusted_node_creator_contract"
+    ,"creator_capability_gap_v1": "trusted_node_creator_contract"
+    ,"creator_node_scoped_changes_v1": "trusted_node_creator_contract"
+    ,"trusted_node_recipe_materialization_v1": "trusted_node_creator_contract"
+    ,"developer_materialization_confirmation_v1": "trusted_node_creator_contract"
   }
 }

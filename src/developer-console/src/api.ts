@@ -16,6 +16,10 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const developerApi = {
   project: (id: string) => request<AnyRecord>(`/api/developer/projects/${encodeURIComponent(id)}`),
+  trustedPresets: () => request<{ presets: AnyRecord[] }>('/api/developer/trusted-node-presets'),
+  putTrustedPreset: (id: string, preset: AnyRecord, expectedRevision: number) => request<AnyRecord>(`/api/developer/trusted-node-presets/${encodeURIComponent(id)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ preset, expected_revision: expectedRevision }) }),
+  confirmProject: (projectId: string, revision: number) => request<AnyRecord>(`/api/developer/projects/${encodeURIComponent(projectId)}/confirm-materialization`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ expected_revision: revision, author: 'developer-console', summary: 'Confirmed trusted preset revisions and Developer mappings.' }) }),
+  handoffProject: (projectId: string, revision: number, compileCandidate: unknown) => request<AnyRecord>(`/api/developer/projects/${encodeURIComponent(projectId)}/runtime-handoff`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ expected_revision: revision, compile_candidate: compileCandidate }) }),
   flows: () => request<{ items: AnyRecord[] }>('/api/lab/flows'),
   flow: (id: string) => request<AnyRecord>(`/api/lab/flows/${encodeURIComponent(id)}`),
   files: (id: string) => request<AnyRecord>(`/api/lab/flows/${encodeURIComponent(id)}/files`),

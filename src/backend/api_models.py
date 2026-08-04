@@ -113,6 +113,30 @@ class CreatorDefaultRecipePayload(BaseModel):
     context: str = Field(min_length=3, max_length=2000)
 
 
+class CreatorComposeRecipePayload(BaseModel):
+    session_id: str
+    project_id: str
+    goal: str = Field(min_length=3, max_length=2000)
+
+
+class TrustedNodePresetPayload(BaseModel):
+    preset: dict
+    expected_revision: int | None = None
+
+
+class CreatorNodeRefinementPayload(BaseModel):
+    prompt: str = Field(min_length=1, max_length=4000)
+    expected_revision: int
+    author: str = "creator"
+    summary: str = "AI-assisted trusted node refinement"
+
+
+class DeveloperMaterializationPayload(BaseModel):
+    expected_revision: int
+    author: str = "developer"
+    summary: str = "Developer confirmed trusted node mappings"
+
+
 class CreatorSourceDiscoveryPayload(BaseModel):
     request: str = Field(min_length=3, max_length=2000)
 

@@ -68,7 +68,7 @@ def analyze_flow(
     protocol = _protocol_identity(root_flow, manifest)
     runtime_adapter = runtime_adapter or _catalog_runtime_adapter(*protocol)
     features = _catalog_features(*protocol)
-    if runtime_adapter == "cf-farp.execution-plan.v1":
+    if runtime_adapter in {"cf-farp.execution-plan.v1", "cf-farp.trusted-node-mapping.v1"}:
         return _analyze_v10_execution_plan(
             root_flow,
             manifest,

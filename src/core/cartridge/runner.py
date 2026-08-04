@@ -753,7 +753,7 @@ class CartridgeRunner:
         protocol = root_flow.get("protocol") if isinstance(root_flow, dict) and isinstance(root_flow.get("protocol"), dict) else {}
         protocol_id = str(protocol.get("id") or "")
         protocol_version = str(protocol.get("version") or "")
-        if self.release_catalog.runtime_adapter(protocol_id, protocol_version) != "cf-farp.execution-plan.v1":
+        if self.release_catalog.runtime_adapter(protocol_id, protocol_version) not in {"cf-farp.execution-plan.v1", "cf-farp.trusted-node-mapping.v1"}:
             return None
         try:
             return compile_execution_plan(

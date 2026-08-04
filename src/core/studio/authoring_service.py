@@ -10,6 +10,7 @@ from typing import Any, Awaitable, Callable
 from core.protocol.authoring_contract import (
     accept_change_set, canonical_digest, create_recipe_blueprint,
     create_recipe_instance, freeze_snapshot, propose_change_set, validate_freeze_snapshot,
+    TRUSTED_NODE_AUTHORING_PROTOCOL,
 )
 from core.protocol.base_manifest import load_base_implementation, supports_subprotocol_release
 from core.protocol.release_catalog import load_protocol_release_catalog
@@ -17,6 +18,12 @@ from core.protocol.capability_registry import ProtocolRegistry
 from core.protocol.authoring_contract import _OPERATIONS, _affected_step_ids, _apply_change
 from core.protocol.tuning import TuningProtocolError
 from core.protocol.creator_templates import create_instance as create_template_instance, creator_blueprint_from_instance
+from core.protocol.trusted_node_recipes import (
+    creator_recipe_projection,
+    validate_dynamic_recipe,
+    validate_node_values,
+    validate_preset,
+)
 from core.llm.authoring import AuthoringProposalError, build_authoring_messages, parse_authoring_proposal
 
 SERVICE_AUTHORING_OPERATIONS = frozenset(_OPERATIONS)
@@ -41,7 +48,7 @@ class AuthoringSessionStore:
         self.root.mkdir(parents=True, exist_ok=True)
         self._lock = RLock()
 
-    def create(self, session_id: str, recipe_id: str, intent: str, steps: list[dict], sources: list[dict], bindings: dict, project_id: str | None = None) -> dict:
+    def create(self, session_id: str, recipe_id: str, intent: str, steps: list[dict], sources: list[dict], bindings: dict, project_id: str | None = None, relations: list[dict] | None = None, protocol: dict | None = None) -> dict:
         with self._lock:
             path = self._path(session_id)
             if path.exists():
@@ -51,12 +58,45 @@ class AuthoringSessionStore:
             if self._state_for_project_id(project_id) is not None:
                 raise AuthoringServiceError("AUTHORING_PROJECT_EXISTS", "A project already owns an authoring session.", status=409)
             try:
-                blueprint = create_recipe_blueprint(recipe_id, intent, steps, sources)
+                blueprint = create_recipe_blueprint(recipe_id, intent, steps, sources, relations, protocol=protocol)
                 instance = create_recipe_instance(blueprint, bindings)
             except TuningProtocolError as exc:
                 raise AuthoringServiceError("AUTHORING_FACT_INVALID", str(exc)) from exc
             state = {"schema": "cartridgeflow.authoring_session.v1", "id": session_id, "project_id": project_id,
                      "head": instance, "instances": {instance["id"]: instance}, "history": [], "proposals": {}, "rejections": [], "freezes": [], "freeze_replacements": [], "freeze_revisions": [], "reversals": []}
+            self._write(path, state)
+            return self.creator_projection(state)
+
+    def create_from_recipe(self, session_id: str, project_id: str, recipe: dict, presets: list[dict], sources: list[dict] | None = None) -> dict:
+        """Create one Creator session from a server-resolved dynamic trusted recipe."""
+        try:
+            normalized_presets = [validate_preset(item) for item in presets]
+            recipe = validate_dynamic_recipe(recipe, normalized_presets)
+        except TuningProtocolError as exc:
+            raise AuthoringServiceError("AUTHORING_TRUSTED_RECIPE_INVALID", str(exc)) from exc
+        steps = [{"id": item["id"], "intent": item["creator_label"], "inputs": {}, "outputs": {}} for item in recipe["nodes"]]
+        relations = [{"id": item["id"], "from_step_id": item["from_node_id"], "to_step_id": item["to_node_id"], "relation": item["relation"]} for item in recipe["relations"]]
+        bindings = {item["id"]: deepcopy(item["values"]) for item in recipe["nodes"]}
+        with self._lock:
+            path = self._path(session_id)
+            if path.exists():
+                raise AuthoringServiceError("AUTHORING_SESSION_EXISTS", "Authoring session already exists.", status=409)
+            self._validate_identifier(project_id, "PROJECT")
+            if self._state_for_project_id(project_id) is not None:
+                raise AuthoringServiceError("AUTHORING_PROJECT_EXISTS", "A project already owns an authoring session.", status=409)
+            try:
+                blueprint = create_recipe_blueprint(recipe["id"], recipe["goal"], steps, list(sources or []), relations, protocol=TRUSTED_NODE_AUTHORING_PROTOCOL)
+                instance = create_recipe_instance(blueprint, bindings)
+            except TuningProtocolError as exc:
+                raise AuthoringServiceError("AUTHORING_FACT_INVALID", str(exc)) from exc
+            state = {
+                "schema": "cartridgeflow.authoring_session.v1", "id": session_id, "project_id": project_id,
+                "head": instance, "instances": {instance["id"]: instance}, "history": [], "proposals": {},
+                "rejections": [], "freezes": [], "freeze_replacements": [], "freeze_revisions": [], "reversals": [],
+                "trusted_recipe": deepcopy(recipe), "trusted_presets": deepcopy(normalized_presets),
+                "developer_mappings": {item["id"]: item["developer_mapping_key"] for item in recipe["nodes"]},
+                "developer_confirmation": None,
+            }
             self._write(path, state)
             return self.creator_projection(state)
 
@@ -91,7 +131,23 @@ class AuthoringSessionStore:
         with self._lock:
             state = self.get(session_id)
             self._require_revision(state, expected_revision)
-            if state.get("template_instance"):
+            if state.get("trusted_recipe"):
+                allowed = {"set_creator_binding", "set_source_reference", "add_source", "update_source", "remove_source"}
+                if any(item.get("operation") not in allowed for item in changes if isinstance(item, dict)):
+                    raise AuthoringServiceError("AUTHORING_TRUSTED_RECIPE_CHANGE_FORBIDDEN", "Node refinement cannot change trusted recipe topology or identity.", status=409)
+                presets = {item["id"]: item for item in state["trusted_presets"]}
+                nodes = {item["id"]: item for item in state["trusted_recipe"]["nodes"]}
+                for change in changes:
+                    if not isinstance(change, dict) or change.get("operation") != "set_creator_binding":
+                        continue
+                    node = nodes.get(change.get("target_id"))
+                    try:
+                        if node is None:
+                            raise TuningProtocolError("node refinement target is unknown")
+                        change["value"] = validate_node_values(presets[node["preset"]["id"]], change.get("value"))
+                    except TuningProtocolError as exc:
+                        raise AuthoringServiceError("AUTHORING_TRUSTED_NODE_FIELD_INVALID", str(exc), status=409) from exc
+            elif state.get("template_instance"):
                 allowed = {"set_creator_binding", "set_binding", "set_step_intent", "set_source_reference", "add_source", "update_source", "remove_source"}
                 if any(item.get("operation") not in allowed for item in changes if isinstance(item, dict)):
                     raise AuthoringServiceError("AUTHORING_TEMPLATE_CHANGE_FORBIDDEN", "Template instances cannot change steps or semantic relationships.", status=409)
@@ -197,12 +253,38 @@ class AuthoringSessionStore:
             state["freezes"].append(snapshot); self._write(self._path(session_id), state)
             return snapshot
 
+    def confirm_materialization(self, session_id: str, *, expected_revision: int, author: str, summary: str) -> dict:
+        """Record Developer approval of one exact frozen trusted-recipe candidate."""
+        with self._lock:
+            state = self.get(session_id)
+            self._require_revision(state, expected_revision)
+            if not state.get("trusted_recipe"):
+                raise AuthoringServiceError("DEVELOPER_MATERIALIZATION_NOT_TRUSTED_RECIPE", "This project does not use the trusted-node recipe contract.", status=409)
+            readiness = self.generation_readiness(state)
+            if not readiness["ready"]:
+                raise AuthoringServiceError("DEVELOPER_MATERIALIZATION_BLOCKED", "The Creator recipe is not frozen and design-ready.", status=409)
+            if not isinstance(author, str) or not author.strip() or not isinstance(summary, str) or not summary.strip():
+                raise AuthoringServiceError("DEVELOPER_MATERIALIZATION_CONFIRMATION_INVALID", "Developer confirmation needs an author and review summary.")
+            candidate = self.compile_candidate(state)
+            body = {
+                "schema": "cartridgeflow.developer_materialization_confirmation.v1",
+                "session_id": session_id,
+                "revision": expected_revision,
+                "candidate": deepcopy(candidate),
+                "author": author.strip()[:200],
+                "summary": summary.strip()[:1000],
+            }
+            body["digest"] = canonical_digest(body)
+            state["developer_confirmation"] = body
+            self._write(self._path(session_id), state)
+            return deepcopy(body)
+
     @staticmethod
     def creator_projection(state: dict) -> dict:
         head = state["head"]
         checks = AuthoringSessionStore.design_checks(state)
         freezes = AuthoringSessionStore._active_freezes(state)
-        return {"project_id": state.get("project_id", state["id"]), "session_id": state["id"], "revision": head["revision"], "intent": head["blueprint"]["intent"],
+        projection = {"project_id": state.get("project_id", state["id"]), "session_id": state["id"], "revision": head["revision"], "intent": head["blueprint"]["intent"],
                 "semantic_steps": [{"id": item["id"], "intent": item["intent"], "plain_inputs": sorted(item["inputs"]), "plain_outputs": sorted(item["outputs"])} for item in head["blueprint"]["steps"]],
                 "steps": [{"id": item["id"], "intent": item["intent"]} for item in head["blueprint"]["steps"]],
                 "relationships": deepcopy(head["blueprint"].get("relations", [])),
@@ -217,12 +299,18 @@ class AuthoringSessionStore:
                 "journey_graph": AuthoringSessionStore.journey_graph(state, audience="creator"),
                 "blocked_findings": [item for item in checks["findings"] if item["severity"] == "blocked"],
                 "design_checks": checks, "generation_readiness": AuthoringSessionStore.generation_readiness(state, checks)}
+        if state.get("trusted_recipe"):
+            trusted = creator_recipe_projection(state["trusted_recipe"], state["trusted_presets"])
+            for node in trusted["nodes"]:
+                node["values"] = deepcopy(head["bindings"].get(node["id"], {}))
+            projection["trusted_recipe"] = trusted
+        return projection
 
     @staticmethod
     def developer_projection(state: dict) -> dict:
         head = state["head"]
         readiness = AuthoringSessionStore.generation_readiness(state)
-        return {
+        projection = {
             "schema": "cartridgeflow.developer_project_projection.v1",
             "project_id": state.get("project_id", state["id"]),
             "recipe": {
@@ -234,6 +322,25 @@ class AuthoringSessionStore:
             "generation_readiness": readiness,
             "creator_url": f"/projects/{state.get('project_id', state['id'])}/creator",
         }
+        if state.get("trusted_recipe"):
+            preset_by_id = {item["id"]: item for item in state["trusted_presets"]}
+            projection["trusted_recipe"] = {
+                "id": state["trusted_recipe"]["id"],
+                "digest": state["trusted_recipe"]["digest"],
+                "nodes": [{
+                    "id": node["id"],
+                    "label": node["creator_label"],
+                    "preset_id": node["preset"]["id"],
+                    "preset_revision": node["preset"]["revision"],
+                    "preset_digest": node["preset"]["digest"],
+                    "developer_mapping_key": node["developer_mapping_key"],
+                    "creator_values": deepcopy(head["bindings"].get(node["id"], {})),
+                    "mapping_current": preset_by_id[node["preset"]["id"]]["revision"] == node["preset"]["revision"],
+                } for node in state["trusted_recipe"]["nodes"]],
+                "relations": deepcopy(state["trusted_recipe"]["relations"]),
+                "developer_confirmation": deepcopy(state.get("developer_confirmation")),
+            }
+        return projection
 
     @staticmethod
     def journey_graph(state: dict, *, audience: str) -> dict:
@@ -277,12 +384,12 @@ class AuthoringSessionStore:
         frozen = {step["step_id"] for snapshot in active for step in snapshot["frozen_steps"]}
         findings = []
         mappings = head.get("developer_mappings") or state.get("developer_mappings") or {}
-        if state.get("template_instance") and set(mappings) != {step["id"] for step in head["blueprint"]["steps"]}:
+        if (state.get("template_instance") or state.get("trusted_recipe")) and set(mappings) != {step["id"] for step in head["blueprint"]["steps"]}:
             findings.append({"code": "DESIGN_MAPPING_MISSING", "severity": "blocked", "message": "A template step has no Developer mapping."})
         for step in head["blueprint"]["steps"]:
             if step["id"] not in frozen:
                 findings.append({"code": "DESIGN_STEP_UNFROZEN", "severity": "blocked", "step_id": step["id"], "message": "This design step is not frozen."})
-        if not head["blueprint"]["source_references"]:
+        if not head["blueprint"]["source_references"] and not state.get("trusted_recipe"):
             findings.append({"code": "DESIGN_SOURCE_MISSING", "severity": "blocked", "message": "At least one declared source or source role is required."})
         return {"schema": "cartridgeflow.creator_design_checks.v1", "revision": head["revision"], "findings": findings}
 
@@ -296,7 +403,11 @@ class AuthoringSessionStore:
     @staticmethod
     def compile_candidate(state: dict) -> dict:
         compiled = compile_instance(state["head"])
-        return {"id": compiled["id"], "kind": "compile", "digest": compiled["digest"], "revision": state["head"]["revision"]}
+        candidate = {"id": compiled["id"], "kind": "compile", "digest": compiled["digest"], "revision": state["head"]["revision"]}
+        if state.get("trusted_recipe"):
+            candidate["trusted_recipe"] = {"id": state["trusted_recipe"]["id"], "digest": state["trusted_recipe"]["digest"]}
+            candidate["mapping_digest"] = canonical_digest(state["developer_mappings"])
+        return candidate
 
     @staticmethod
     def proposal_projection(proposal: dict) -> dict:

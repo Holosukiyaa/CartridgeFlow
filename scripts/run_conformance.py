@@ -21,7 +21,7 @@ from core.data_paths import CONFORMANCE_REPORT
 from audit_protocol_governance import audit as audit_protocol_governance
 
 
-TEST_GROUPS = ("conformance", "runtime", "studio", "llm", "api", "integration", "lab", "orchestration", "hygiene", "history")
+TEST_GROUPS = ("conformance", "runtime", "studio", "llm", "api", "integration", "lab", "orchestration", "hygiene", "history", "browser")
 ROOT_TEST_GROUP = "."
 
 

@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Activity, Boxes, Braces, CheckCircle2, CircleAlert, FileSearch, GitCompareArrows, Network, Play, RefreshCw, Rocket, Send, ShieldCheck, SlidersHorizontal } from 'lucide-react'
 import { developerApi } from './api'
+import { TrustedProjectWorkspace } from './TrustedProjectWorkspace'
+import { TrustedPresetManager } from './TrustedPresetManager'
 import { json, pathDiff, semanticProjection, type AnyRecord } from './model'
 import './styles.css'
 
@@ -53,6 +55,7 @@ function Console() {
     {error && <div className="error"><CircleAlert size={16}/>{error}</div>}{notice && <div className="notice"><CheckCircle2 size={16}/>{notice}</div>}
     <nav><button className={view === 'semantic' ? 'active' : ''} onClick={() => setView('semantic')}><Network size={15}/>Semantic projection</button><button className={view === 'source' ? 'active' : ''} onClick={() => setView('source')}><Braces size={15}/>Raw declarations</button><span>Secrets are redacted at the client boundary.</span></nav>
     <div className="summary"><span><b>{Number(graph.node_count ?? nodes.length)}</b> nodes</span><span><b>{Number(graph.edge_count ?? edges.length)}</b> edges</span><span><b>{array((data.resources?.tools)).length}</b> tools</span><span className={status((data.validation as AnyRecord)?.valid) ? 'good' : 'warn'}>{status((data.validation as AnyRecord)?.valid) ? <CheckCircle2 size={15}/> : <CircleAlert size={15}/>} validation {String((data.validation as AnyRecord)?.valid ?? 'pending')}</span></div>
+    <TrustedPresetManager />
     {view === 'source' ? <Panel title="Raw declaration bundle" icon={<Braces size={17}/>} className="source"><pre>{json(raw)}</pre></Panel> : <div className="grid">
       <Panel title="Root Flow topology" icon={<Network size={17}/>} className="topology"><div className="flowmap">{nodes.map((node, index) => <div className="node" key={String(node.id)}><em>{index + 1}</em><strong>{String(node.title || node.label || node.id)}</strong><small>{String(node.type || node.kind || 'state')}</small></div>)}</div><div className="edges">{edges.map((edge, index) => <code key={index}>{String(edge.from || edge.source)} <span>--{String(edge.kind || edge.scope || 'sequence')}--&gt;</span> {String(edge.to || edge.target)}</code>)}</div></Panel>
       <Panel title="Protocol identity & typed contracts" icon={<ShieldCheck size={17}/>}><dl><dt>Protocol</dt><dd>{value((semantic.identity as AnyRecord)?.protocol)}</dd><dt>Flow</dt><dd>{String((semantic.identity as AnyRecord)?.id || 'unresolved')}</dd><dt>Contracts</dt><dd>{value(semantic.contracts)}</dd></dl></Panel>
@@ -65,6 +68,6 @@ function Console() {
 }
 function App() {
   const match = window.location.pathname.match(/^\/projects\/([^/]+)\/developer$/)
-  return match?.[1] ? <ProjectWorkspace projectId={decodeURIComponent(match[1])} /> : <Console />
+  return match?.[1] ? <TrustedProjectWorkspace projectId={decodeURIComponent(match[1])} /> : <Console />
 }
 createRoot(document.getElementById('root')!).render(<App />)

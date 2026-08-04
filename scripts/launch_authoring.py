@@ -99,7 +99,7 @@ def _wait_for_api(process: subprocess.Popen[object]) -> None:
 def _vite_environment() -> dict[str, str]:
     environment = os.environ.copy()
     environment.pop("VITE_API_BASE_URL", None)
-    environment["CREATOR_API_TARGET"] = f"http://127.0.0.1:{API_PORT}"
+    environment["AUTHORING_API_TARGET"] = f"http://127.0.0.1:{API_PORT}"
     return environment
 
 

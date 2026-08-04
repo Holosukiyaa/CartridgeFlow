@@ -8,7 +8,7 @@ The working product boundary is now CartridgeFlow. The retired restricted-produc
 
 Published protocol releases now declare their runtime adapter and semantic features in `protocol/catalog/release_manifest.json`, mirrored by each release snapshot. Runtime code asks for features such as `typed_control_edges`, `tool_transparency`, `resource_catalog_v2`, and `execution_plan`; it no longer branches on the old release numbers. Adding a future release requires a directory, a catalog entry, a snapshot, and Base adapter support, rather than edits across runner, analyzer, UI, and package code.
 
-The current release baseline is `CF-FARP@1.0` plus `CF-CRE@1`. Both are active/supported only after evidence exists in the reference Base: execution-plan runtime, signed deterministic archive construction, Ed25519 local trust verification, trusted payload installation, activation, frontend preflight, and runtime handoff. Before that evidence gate, either release must remain draft.
+The general Flow release baseline is `CF-FARP@1.1` plus `CF-CRE@1`. Creator-to-Developer materialization uses the independently supported `CF-TUNING@1.4 + CF-FARP@1.5` host path. All are active/supported only after validator, adapter, test, and capability evidence exists in the reference Base.
 
 ## Fixed Findings
 
@@ -34,6 +34,11 @@ The current release baseline is `CF-FARP@1.0` plus `CF-CRE@1`. Both are active/s
 - Changed the Creator entry to an empty canvas with one start node. A configured model generates one bounded, untrusted default flow from the creator goal; users must still review and freeze its nodes before it is eligible for later stages.
 - Added a minimal Creator Studio layout stylesheet for readable canvas, status, form, and review boundaries; it does not introduce a product-specific visual system.
 - Added CF-TUNING@1.3 and CF-FARP@1.4 release contracts for developer-owned Creator templates and stable Developer mappings; Base now validates template fields before Creator instances are formed.
+- Preserved the fixed-template 1.3/1.4 pair as historical contracts and published CF-TUNING@1.4 plus CF-FARP@1.5 for reusable trusted node presets and dynamic recipes.
+- Added an empty-by-default Developer trusted-node registry with immutable revisions, optimistic writes, creator-safe projection, and no bundled business presets.
+- Replaced Creator free node invention with a whole-flow runtime skill that composes registered preset IDs or reports a capability gap; added a separate one-node field-limited refinement skill.
+- Added Developer confirmation before CF-FARP@1.5 materialization and signed CF-CRE handoff, while keeping Creator and Developer as projections of one project.
+- Added Creator draft/node modes, Developer trusted-preset management, exact mapping lineage, and same-project navigation without cross-port coupling.
 
 ## Intentional Retention
 
@@ -63,10 +68,37 @@ React workbench
   -> .data runtime and report artifacts
 ```
 
+## 2026-08-04 Maintained Tree Addendum
+
+The generated tree below predates the trusted-node delivery. Its maintained
+additions are:
+
+```text
+protocol/flow-authoring/1.5/{README.md,release.json,profiles.json,capabilities.json}
+protocol/tuning/1.4/{specification.md,release.json,profiles.json,capabilities.json}
+src/core/protocol/trusted_node_recipes.py
+src/core/studio/trusted_node_presets.py
+src/core/llm/{creator_flow_skill.py,creator_node_skill.py}
+src/developer-console/src/{TrustedPresetManager.tsx,TrustedPresetManager.css,TrustedProjectWorkspace.tsx}
+docs/development/CREATOR_TRUSTED_NODE_GAP_MAP.md
+docs/development/skills/{compose-creator-flow,refine-creator-node}/
+scripts/tests/conformance/test_trusted_node_recipe_contract_v14.py
+scripts/tests/studio/test_trusted_node_authoring.py
+scripts/tests/api/test_trusted_creator_api.py
+```
+
+Generated `dist`, `node_modules`, `.data`, caches, packages, and signing keys
+remain excluded from maintained source ownership.
+
 ## Verification
 
-- `python scripts/run_conformance.py --quiet`: passed, 329 tests; capability evidence reports 128 verified and 17 partial capabilities, with 0 failing capabilities.
+- `python scripts/run_conformance.py --quiet`: passed, 463 tests (1 skipped); capability evidence reports 155 verified and 17 partial capabilities, with 0 failing capabilities.
 - `python scripts/audit_protocol_governance.py`: passed.
+- `npm --prefix src/creator-studio test`: passed, 3 trusted-recipe UI tests.
+- `npm --prefix src/creator-studio run build`: passed.
+- `npm --prefix src/developer-console run build`: passed after adding trusted preset management and project materialization views.
+- Browser acceptance on `http://127.0.0.1:5180/`: the empty canvas rendered, compose returned 200, and an empty registry produced a creator-facing capability gap; console 0 errors/0 warnings.
+- Browser acceptance on `http://127.0.0.1:5181/`: trusted-preset management rendered and same-origin `/api/developer/trusted-node-presets` plus `/api/lab/flows` returned 200; console 0 errors/0 warnings.
 - `npm run build` in `src/frontend`: passed. The host emits only the known Node 20.18/Vite minimum-version and large-entry performance notices.
 - Five static UI assertions passed, including node information architecture.
 - Browser acceptance on `http://127.0.0.1:5173/cartridges/dev.cf-cre-farp-acceptance/design`: CF-FARP@1.0, all six package status lights green, production `.cf-cre.zip` download completed, console 0 errors/0 warnings; screenshot is retained under `.playwright-cli` locally.

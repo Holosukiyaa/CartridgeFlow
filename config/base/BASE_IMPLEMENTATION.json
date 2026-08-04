@@ -59,6 +59,11 @@
       "status": "supported"
     },
     {
+      "id": "CF-FARP",
+      "version": "1.5",
+      "status": "supported"
+    },
+    {
       "id": "CF-CRE",
       "version": "1",
       "status": "supported"
@@ -92,6 +97,13 @@
       "status": "supported",
       "runtime_adapter": "cf-tuning.template-contract.v1",
       "host_protocols": [{"id": "CF-FARP", "version": "1.4"}]
+    },
+    {
+      "id": "CF-TUNING",
+      "version": "1.4",
+      "status": "supported",
+      "runtime_adapter": "cf-tuning.trusted-node-recipes.v1",
+      "host_protocols": [{"id": "CF-FARP", "version": "1.5"}]
     }
   ],
   "supported_protocol_adapters": [
@@ -134,6 +146,14 @@
     {
       "id": "cf-farp.template-mapping.v1",
       "status": "supported"
+    },
+    {
+      "id": "cf-tuning.trusted-node-recipes.v1",
+      "status": "supported"
+    },
+    {
+      "id": "cf-farp.trusted-node-mapping.v1",
+      "status": "supported"
     }
   ],
   "profiles": [
@@ -151,7 +171,12 @@
     "tuning_authoring",
     "recipe_release_runtime"
     ,"ai_recipe_authoring",
-    "authoring_compile_handoff"
+    "authoring_compile_handoff",
+    "trusted_node_registry",
+    "dynamic_creator_recipes",
+    "node_scoped_authoring",
+    "creator_capability_gaps",
+    "trusted_node_recipe_mapping"
   ],
   "capabilities": [
     "manifest_load",
@@ -317,7 +342,15 @@
     ,"creator_safe_projection_v1",
     "creator_reviewed_semantic_changes_v1",
     "creator_source_safety_v1",
-    "creator_generation_readiness_v1"
+    "creator_generation_readiness_v1",
+    "trusted_node_preset_v1",
+    "trusted_node_registry_v1",
+    "dynamic_creator_recipe_v1",
+    "recipe_node_binding_v1",
+    "creator_capability_gap_v1",
+    "creator_node_scoped_changes_v1",
+    "trusted_node_recipe_materialization_v1",
+    "developer_materialization_confirmation_v1"
   ],
   "tool_packs": [
     "builtin.filesystem",

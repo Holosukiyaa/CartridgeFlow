@@ -37,7 +37,8 @@ class CreatorRuntimeBridge:
     """Build deterministic, signed handoff artifacts from one current revision."""
 
     PUBLISHER_ID = "creator"
-    FLOW_PROTOCOL = {"id": "CF-FARP", "version": "1.1"}
+    LEGACY_FLOW_PROTOCOL = {"id": "CF-FARP", "version": "1.1"}
+    TRUSTED_FLOW_PROTOCOL = {"id": "CF-FARP", "version": "1.5"}
     BASE_CONTRACT = {"id": "CARTRIDGEFLOW-BASE", "version": "0.3"}
 
     def __init__(self, root: str | Path, packages_dir: str | Path):
@@ -55,7 +56,7 @@ class CreatorRuntimeBridge:
             store._require_revision(state, expected_revision)
             mappings = state.get("developer_mappings")
             step_ids = {step["id"] for step in state["head"]["blueprint"]["steps"]}
-            if state.get("template_instance") and (not isinstance(mappings, dict) or set(mappings) != step_ids or any(not str(value).strip() for value in mappings.values())):
+            if (state.get("template_instance") or state.get("trusted_recipe")) and (not isinstance(mappings, dict) or set(mappings) != step_ids or any(not str(value).strip() for value in mappings.values())):
                 raise CreatorRuntimeBridgeError("CREATOR_HANDOFF_MAPPING_MISSING", "The Creator design does not have complete Developer mappings.")
             readiness = store.generation_readiness(state)
             if not readiness.get("ready"):
@@ -63,6 +64,10 @@ class CreatorRuntimeBridge:
             actual_candidate = store.compile_candidate(state)
             if not isinstance(candidate, dict) or candidate != actual_candidate:
                 raise CreatorRuntimeBridgeError("CREATOR_HANDOFF_CANDIDATE_MISMATCH", "The compile candidate does not identify the current Creator revision.")
+            if state.get("trusted_recipe"):
+                confirmation = state.get("developer_confirmation")
+                if not isinstance(confirmation, dict) or confirmation.get("candidate") != actual_candidate or confirmation.get("revision") != expected_revision:
+                    raise CreatorRuntimeBridgeError("CREATOR_HANDOFF_DEVELOPER_CONFIRMATION_REQUIRED", "Developer must confirm this exact recipe revision before handoff.")
             freezes = store._active_freezes(state)
         except AuthoringServiceError as exc:
             if exc.code == "AUTHORING_REVISION_CONFLICT":
@@ -72,17 +77,21 @@ class CreatorRuntimeBridge:
             raise CreatorRuntimeBridgeError("CREATOR_HANDOFF_SESSION_INVALID", "The Creator session facts are unavailable.", status=exc.status) from exc
 
         instance = state["head"]
+        flow_protocol = self.TRUSTED_FLOW_PROTOCOL if state.get("trusted_recipe") else self.LEGACY_FLOW_PROTOCOL
         lineage = self._lineage(instance, actual_candidate, freezes)
-        root_flow = self._root_flow(instance, lineage)
+        if state.get("trusted_recipe"):
+            lineage["trusted_recipe"] = {"id": state["trusted_recipe"]["id"], "digest": state["trusted_recipe"]["digest"]}
+            lineage["developer_confirmation"] = {"digest": state["developer_confirmation"]["digest"], "author": state["developer_confirmation"]["author"]}
+        root_flow = self._root_flow(instance, lineage, flow_protocol, mappings or {})
         findings = validate_execution_plan_v1_flow_contract(
             root_flow,
-            protocol_id=self.FLOW_PROTOCOL["id"],
-            protocol_version=self.FLOW_PROTOCOL["version"],
+            protocol_id=flow_protocol["id"],
+            protocol_version=flow_protocol["version"],
         )
         if findings:
             raise CreatorRuntimeBridgeError("CREATOR_HANDOFF_TOPOLOGY_INCOMPATIBLE", "Accepted semantic relationships cannot be represented as a valid CF-FARP Root Flow.")
 
-        manifest = self._manifest(actual_candidate, lineage)
+        manifest = self._manifest(actual_candidate, lineage, flow_protocol)
         release_inputs = release_archive_inputs(manifest)
         artifact_name = f"creator-{actual_candidate['id']}.cf-cre.zip"
         output = self.packages_dir / artifact_name
@@ -124,11 +133,11 @@ class CreatorRuntimeBridge:
             "release_id": built["release_id"],
             "filename": output.name,
             "lineage": deepcopy(lineage),
-            "root_flow": {"entry": "root.flow.json", "protocol": deepcopy(self.FLOW_PROTOCOL), "digest": self._digest_json(root_flow)},
+            "root_flow": {"entry": "root.flow.json", "protocol": deepcopy(flow_protocol), "digest": self._digest_json(root_flow)},
             "signature": {"verified": True, "key_id": identity.key_id},
         }
 
-    def _manifest(self, candidate: dict, lineage: dict) -> dict:
+    def _manifest(self, candidate: dict, lineage: dict, flow_protocol: dict) -> dict:
         return {
             "schema_version": "1.0",
             "id": f"creator-{candidate['digest'][:24]}",
@@ -138,7 +147,7 @@ class CreatorRuntimeBridge:
             "category": "authoring",
             "publisher": {"id": self.PUBLISHER_ID},
             "base_contract": deepcopy(self.BASE_CONTRACT),
-            "runtime_contract": {"protocol": self.FLOW_PROTOCOL["id"], "protocol_version": self.FLOW_PROTOCOL["version"]},
+            "runtime_contract": {"protocol": flow_protocol["id"], "protocol_version": flow_protocol["version"]},
             "runtime": {"type": "handoff_only"},
             "root_flow": {"entry": "root.flow.json", "mode": "lifecycle", "required": True},
             "inputs": [],
@@ -147,7 +156,7 @@ class CreatorRuntimeBridge:
             "creator_lineage": deepcopy(lineage),
         }
 
-    def _root_flow(self, instance: dict, lineage: dict) -> dict:
+    def _root_flow(self, instance: dict, lineage: dict, flow_protocol: dict, mappings: dict) -> dict:
         steps = sorted(instance["blueprint"]["steps"], key=lambda item: item["id"])
         relationships = sorted(instance["blueprint"].get("relations", []), key=lambda item: item["id"])
         order = self._topological_order(steps, relationships)
@@ -163,6 +172,7 @@ class CreatorRuntimeBridge:
                     "semantic_digest": canonical_digest({"step": step, "binding": instance["bindings"].get(step["id"], {})}),
                     "input_ids": sorted(step["inputs"]),
                     "output_ids": sorted(step["outputs"]),
+                    **({"developer_mapping_key": mappings[step["id"]]} if step["id"] in mappings else {}),
                 },
             }
         route = ["start", *[f"step.{step_id}" for step_id in order], "complete"]
@@ -171,7 +181,7 @@ class CreatorRuntimeBridge:
             "schema_version": "1.0",
             "id": f"creator-{lineage['compile_candidate']['digest'][:24]}.root",
             "mode": "lifecycle",
-            "protocol": deepcopy(self.FLOW_PROTOCOL),
+            "protocol": deepcopy(flow_protocol),
             "start": "start",
             "states": states,
             "execution_plan": {"schema": "cartridgeflow.execution_plan.v1", "entry": "start", "edges": edges},

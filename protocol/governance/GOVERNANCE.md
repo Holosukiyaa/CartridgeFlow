@@ -1,10 +1,10 @@
 ﻿# CartridgeFlow Protocol Documents Agent Note
 
-## CF-FARP@1.1 当前边界
+## CF-FARP@1.1 当前边界与 CF-FARP@1.5 Creator 宿主
 
-`CF-FARP@1.1` 是当前完整 Flow 协议。它继续使用显式执行计划，并通过受信任
-`CF-TUNING@1.0` 子协议管理内部调优修订、配方发布和运行来源。参考 Base 已完成
-宿主信任、物化、执行、签名打包和 handoff 证据，当前为 active/supported。
+`CF-FARP@1.1` 仍是通用 Developer Flow 的 current/default 完整协议。
+`CF-FARP@1.5` 是 Creator 配方进入 Developer 的受支持专用宿主：它继续使用显式
+执行计划，并通过受信任 `CF-TUNING@1.4` 管理可信节点预设、动态配方和节点级修订。
 历史版本只能通过其自身契约运行，任何升级都必须显式完成并重新校验，不能由
 保存、打开或运行操作静默触发。
 
@@ -14,22 +14,28 @@
 
 ## 当前基准
 
-新协议设计和新卡带目标默认使用 `CARTRIDGEFLOW-BASE@0.3 + CF-FARP@1.1 + CF-TUNING@1.0`：
+Creator 可信节点配方使用 `CARTRIDGEFLOW-BASE@0.3 + CF-FARP@1.5 + CF-TUNING@1.4`：
 
 ```text
 protocol/base/0.3/specification.md
-protocol/flow-authoring/1.1/README.md
-protocol/tuning/1.0/specification.md
+protocol/flow-authoring/1.5/README.md
+protocol/tuning/1.4/specification.md
 protocol/base/0.3/release.json
-protocol/flow-authoring/1.1/release.json
-protocol/tuning/1.0/release.json
+protocol/flow-authoring/1.5/release.json
+protocol/tuning/1.4/release.json
 ```
 
-Base v0.3、FARP v1.1 与 TUNING v1.0 都是完整独立发布。阅读或实现目标版本不得依赖历史正文。Base Contract 约束宿主边界，CF-FARP 约束 Flow 创作、静态分析和运行语义；CF-TUNING 仅在宿主显式信任时拥有节点局部调优与发布快照，不能修改拓扑、执行器、权限或代码。
+Base v0.3、FARP v1.5 与 TUNING v1.4 都是完整独立发布。通用新建 Flow 默认使用
+FARP v1.1；Creator handoff 显式使用 FARP v1.5。不来自 Creator 的 Developer Flow
+可直接声明完整工程事实，不需要伪造 Creator 配方。CF-TUNING 可拥有 Creator 设计拓扑，但不能直接创建可执行拓扑、
+执行器、权限或代码；这些事实只由 Developer 确认后的 CF-FARP 物化产生。
 
 ## 版本支持策略
 
-`CF-FARP@1.1` 当前为 active/supported，Base 通过 `cf-farp.execution-plan.v1` 运行显式执行计划，通过 `cf-tuning.repository.v1` 承载受信任调优仓库。`CF-FARP@1.0` 为 supported_previous。`CF-CRE@1` 继续负责签名发布包、信任检查与激活 handoff；`CF-FARP@0.1` 至 `0.5` 继续处于 `recognized` 状态。
+`CF-FARP@1.5` 为 active/supported Creator 宿主，Base 通过
+`cf-farp.trusted-node-mapping.v1` 物化已经 Developer 确认的可信节点配方，并复用
+显式执行计划校验。`CF-FARP@1.1` 保持 current/default。
+`CF-CRE@1` 继续负责签名发布包、信任检查与激活 handoff。
 
 版本判断必须经过三层：
 

@@ -17,7 +17,7 @@ class LaunchAuthoringTests(unittest.TestCase):
     def test_vite_environment_targets_the_authoring_api(self) -> None:
         with patch.dict("os.environ", {"PATH": "test", "VITE_API_BASE_URL": "http://wrong.test"}, clear=True):
             environment = LAUNCH._vite_environment()
-        self.assertEqual("http://127.0.0.1:8000", environment["CREATOR_API_TARGET"])
+        self.assertEqual("http://127.0.0.1:8000", environment["AUTHORING_API_TARGET"])
         self.assertNotIn("VITE_API_BASE_URL", environment)
 
     def test_refuses_any_occupied_authoring_port(self) -> None:

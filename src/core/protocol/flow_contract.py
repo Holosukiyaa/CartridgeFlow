@@ -56,6 +56,7 @@ SIDE_EFFECT_EFFECTS = {
 LIFECYCLE_TYPES = {"system", "terminal"}
 READ_ONLY_TOOL_SIDE_EFFECTS = {"", "none", "read_only", "environment_probe"}
 EXECUTION_PLAN_V1_ADAPTER = "cf-farp.execution-plan.v1"
+TRUSTED_NODE_MAPPING_V1_ADAPTER = "cf-farp.trusted-node-mapping.v1"
 STANDARD_FLOW_V06_ADAPTER = "cf-farp.standard-flow.v06"
 STANDARD_FLOW_V07_ADAPTER = "cf-farp.standard-flow.v07"
 TYPED_CONTROL_V08_ADAPTER = "cf-farp.typed-control.v08"
@@ -216,7 +217,7 @@ def build_flow_contract_report_for_adapter(
     }
     if runtime_adapter in legacy_builders:
         return legacy_builders[runtime_adapter]()
-    if runtime_adapter != EXECUTION_PLAN_V1_ADAPTER:
+    if runtime_adapter not in {EXECUTION_PLAN_V1_ADAPTER, TRUSTED_NODE_MAPPING_V1_ADAPTER}:
         return None
     findings = validate_execution_plan_v1_flow_contract(
         root_flow,

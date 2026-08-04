@@ -229,7 +229,7 @@ class AuthoringSessionStore:
         step_level = 2 if audience == "creator" else 1
         for step in head["blueprint"]["steps"]:
             node_id = f"step:{step['id']}"
-            nodes.append({"id": node_id, "kind": "recipe_step", "label": step["intent"], "level": step_level, "status": "frozen" if step["id"] in frozen else "review_needed"})
+            nodes.append({"id": node_id, "kind": "recipe_step", "label": step["intent"], "level": step_level, "status": "trusted" if step["id"] in frozen else "untrusted"})
             if audience == "creator":
                 edges.append({"id": f"intent-{step['id']}", "from": "intent", "to": node_id, "relation": "shapes"})
             else:

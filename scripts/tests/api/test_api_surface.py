@@ -63,6 +63,19 @@ class ApiSurfaceTests(unittest.TestCase):
         self.assertEqual(502, invalid.status_code)
         self.assertEqual("AI_CREATOR_DISCOVERY_OUTPUT_INVALID", invalid.json()["detail"]["code"])
 
+    def test_creator_default_recipe_is_a_single_model_generated_untrusted_draft(self):
+        content = json.dumps({"recipe": {"intent": "制作 AI 日报", "steps": [
+            {"id": "scope", "intent": "确定日报主题和读者", "inputs": [], "outputs": []},
+            {"id": "sources", "intent": "寻找值得审核的信息来源", "inputs": [], "outputs": []},
+            {"id": "brief", "intent": "形成每天可阅读的日报", "inputs": [], "outputs": []},
+        ]}}, ensure_ascii=False)
+        with patch("core.llm.config_manager.resolve_model", return_value=type("Model", (), {"api_key": "configured"})()), patch("core.llm.chat", new_callable=AsyncMock, return_value={"content": content}) as chat:
+            response = self.client.post("/api/creator/default-recipe", json={"context": "制作 AI 日报"})
+        self.assertEqual(200, response.status_code)
+        self.assertEqual("制作 AI 日报", response.json()["recipe"]["intent"])
+        self.assertEqual(3, len(response.json()["recipe"]["steps"]))
+        self.assertEqual("creator_default_recipe", chat.call_args.kwargs["agent_name"])
+
     def test_creator_source_candidates_are_model_driven_and_only_become_sources_after_acceptance(self):
         candidates = {"candidates": [{
             "id": f"source-{index}", "name": f"Public source {index}", "provides": "Public reporting on the requested topic.",

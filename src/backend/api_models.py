@@ -109,6 +109,10 @@ class CreatorDiscoveryPayload(BaseModel):
     context: str = Field(min_length=3, max_length=2000)
 
 
+class CreatorDefaultRecipePayload(BaseModel):
+    context: str = Field(min_length=3, max_length=2000)
+
+
 class CreatorSourceDiscoveryPayload(BaseModel):
     request: str = Field(min_length=3, max_length=2000)
 

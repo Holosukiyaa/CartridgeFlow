@@ -33,6 +33,7 @@ async function request<T>(path: string, method = 'GET', body?: unknown): Promise
 const route = (id: string) => `/api/creator/authoring-sessions/${encodeURIComponent(id)}`
 export const creatorApi = {
   discover: (context: string) => request<{ possibilities: Possibility[] }>('/api/creator/possibilities', 'POST', { context }),
+  defaultRecipe: (context: string) => request<{ recipe: { intent: string; steps: unknown[] } }>('/api/creator/default-recipe', 'POST', { context }),
   create: (body: { session_id: string; project_id: string; recipe_id: string; intent: string; steps: unknown[]; source_references: unknown[]; bindings: Record<string, unknown> }) => request<{ creator: Creator }>('/api/creator/authoring-sessions', 'POST', body),
   get: (id: string) => request<{ creator: Creator }>(route(id)),
   getProject: (id: string) => request<{ creator: Creator }>(`/api/creator/projects/${encodeURIComponent(id)}`),

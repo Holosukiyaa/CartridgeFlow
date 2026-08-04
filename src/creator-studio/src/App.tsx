@@ -12,6 +12,9 @@ const sourceUrl = (value: string) => {
 const digest = async (value: unknown) => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(value))))).map((item) => item.toString(16).padStart(2, '0')).join('')
 const errorText = (error: unknown) => {
   if (!(error instanceof ApiError)) return '无法连接创作服务。请确认后端正在运行。'
+  if (error.code === 'AI_CREATOR_DEFAULT_RECIPE_MODEL_UNBOUND') return 'AI 默认流程尚未连接。请先在 Developer Console 配置模型。'
+  if (error.code === 'AI_CREATOR_DEFAULT_RECIPE_TIMEOUT') return 'AI 默认流程没有及时响应，请稍后再试。'
+  if (error.code === 'AI_CREATOR_DEFAULT_RECIPE_OUTPUT_INVALID') return 'AI 返回的默认流程暂时无法安全采用，请重新尝试。'
   if (error.code === 'AI_CREATOR_DISCOVERY_MODEL_UNBOUND') return 'AI 方向发现尚未连接。请先在 Developer Console 配置模型。'
   if (error.code === 'AI_CREATOR_DISCOVERY_TIMEOUT') return 'AI 方向发现没有及时响应，请稍后再试。'
   if (error.code === 'AI_CREATOR_DISCOVERY_OUTPUT_INVALID') return 'AI 返回的方向暂时无法安全采用，请重新尝试。'
@@ -46,11 +49,11 @@ function JourneyCanvas({ graph, onSelectStep }: { graph: JourneyGraph; onSelectS
 
 const discoveryGraph = (intent: string, possibilities: Possibility[]): JourneyGraph => ({ project_id: 'draft', revision: 0, nodes: [{ id: 'intent', kind: 'intent', label: intent, level: 0, status: 'exploring' }, ...possibilities.map((item) => ({ id: `possibility:${item.id}`, kind: 'possibility', label: item.title, level: 1, status: 'candidate' }))], edges: possibilities.map((item) => ({ id: `intent-${item.id}`, from: 'intent', to: `possibility:${item.id}`, relation: 'opens' })) })
 const graphWithSourceCandidates = (graph: JourneyGraph, candidates: SourceCandidate[]): JourneyGraph => candidates.length ? { ...graph, nodes: [...graph.nodes, ...candidates.map((item) => ({ id: `candidate:${item.id}`, kind: 'source_candidate', label: item.name, level: 2, status: 'review_needed' }))], edges: [...graph.edges, ...candidates.map((item) => ({ id: `candidate-${item.id}`, from: `candidate:${item.id}`, to: 'intent', relation: 'could_inform' }))] } : graph
+const emptyGraph: JourneyGraph = { project_id: 'draft', revision: 0, nodes: [{ id: 'start', kind: 'start', label: '开始创作', level: 0, status: 'empty' }], edges: [] }
 
 export default function App() {
   const [creator, setCreator] = useState<Creator | null>(null)
   const [intent, setIntent] = useState('')
-  const [possibilities, setPossibilities] = useState<Possibility[]>([])
   const [sourceRequest, setSourceRequest] = useState('')
   const [sourceCandidates, setSourceCandidates] = useState<SourceCandidate[]>([])
   const [prompt, setPrompt] = useState('')
@@ -97,19 +100,18 @@ export default function App() {
     try { const result = await creatorApi.propose(creator.session_id, { changes: [{ id: idFor('change'), ...change }], author: 'creator', summary, expected_revision: creator.revision }); await stage(result.proposal, '变更已进入审阅，尚未写入设计。') }
     catch (error) { setNotice(errorText(error)) } finally { setBusy(false) }
   }
-  const create = async (possibility?: Possibility) => {
+  const create = async (recipe: { intent: string; steps: unknown[] }) => {
     setBusy(true)
     try {
       const id = idFor('authoring')
       const projectId = idFor('project')
-      const recipe = possibility?.recipe || { intent, steps: [{ id: 'collect', intent: '收集指定来源', inputs: [], outputs: [] }] }
       const result = await creatorApi.create({ session_id: id, project_id: projectId, recipe_id: idFor('recipe'), intent: recipe.intent, steps: recipe.steps, source_references: [], bindings: {} })
       localStorage.removeItem('creator-session-id'); window.history.replaceState({}, '', `/projects/${encodeURIComponent(projectId)}/creator`); save(result.creator); setNotice('项目创作会话已创建。')
     } catch (error) { setNotice(errorText(error)) } finally { setBusy(false) }
   }
   const discover = async (event: FormEvent) => {
     event.preventDefault(); setBusy(true); setNotice('')
-    try { const result = await creatorApi.discover(intent); setPossibilities(result.possibilities); setNotice('请选择一个最接近你当前想法的方向。') }
+    try { const result = await creatorApi.defaultRecipe(intent); await create(result.recipe) }
     catch (error) { setNotice(errorText(error)) } finally { setBusy(false) }
   }
   const discoverSources = async () => {
@@ -165,7 +167,7 @@ export default function App() {
     catch (error) { setNotice(errorText(error)) } finally { setBusy(false) }
   }
 
-  if (!creator) return <main><header><h1>CartridgeFlow 创作工作室</h1></header><form onSubmit={discover}><p><label>你最近在关注、困惑或想探索什么？<textarea aria-label="Creative intent" value={intent} onChange={(event) => { setIntent(event.target.value); setPossibilities([]) }} required /></label></p><button type="submit" disabled={busy || intent.trim().length < 3}>帮我打开思路</button></form>{possibilities.length > 0 && <><JourneyCanvas graph={discoveryGraph(intent, possibilities)} /><section aria-labelledby="possibilities-heading"><h2 id="possibilities-heading">可以从这里开始</h2>{possibilities.map((possibility) => <article key={possibility.id}><h3>{possibility.title}</h3><p>你将得到：{possibility.outcome}</p><p>适合你的原因：{possibility.why_it_fits}</p><p>第一周：{possibility.first_week_output}</p><p>还需要确认：{possibility.needs_confirmation.join('、')}</p><button onClick={() => void create(possibility)} disabled={busy}>选择这个方向</button></article>)}</section></>}{notice && <p role="status">{notice}</p>}</main>
+  if (!creator) return <main><header><h1>CartridgeFlow 创作工作室</h1></header><JourneyCanvas graph={emptyGraph} /><form onSubmit={discover}><p><label>想在这张画布上完成什么？<textarea aria-label="Creative intent" value={intent} onChange={(event) => setIntent(event.target.value)} required /></label></p><button type="submit" disabled={busy || intent.trim().length < 3}>生成默认流程</button></form>{notice && <p role="status">{notice}</p>}</main>
 
   const current = creator.semantic_steps.find((step) => step.id === selectedStep) || creator.semantic_steps[0]
   const base = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')

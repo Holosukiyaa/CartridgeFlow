@@ -29,6 +29,7 @@ from backend.api_models import (
     AuthoringAcceptPayload,
     AuthoringAIProposalPayload,
     CreatorDiscoveryPayload,
+    CreatorDefaultRecipePayload,
     CreatorSourceDiscoveryPayload,
     AuthoringFreezePayload,
     CreatorHandoffPayload,
@@ -2149,6 +2150,32 @@ async def discover_creator_possibilities_endpoint(payload: CreatorDiscoveryPaylo
         _authoring_error(AuthoringServiceError("AI_CREATOR_DISCOVERY_MODEL_UNBOUND", str(exc), status=409))
     except Exception as exc:
         _authoring_error(AuthoringServiceError("AI_CREATOR_DISCOVERY_FAILED", str(exc), status=502))
+
+
+@app.post("/api/creator/default-recipe")
+async def create_creator_default_recipe(payload: CreatorDefaultRecipePayload):
+    from core.llm import chat
+    from core.llm.config_manager import resolve_model
+    from core.llm.creator_discovery import CreatorDiscoveryError, build_default_recipe_messages, parse_default_recipe
+    try:
+        model = resolve_model("mentor")
+        if not str(model.api_key or "").strip():
+            raise AuthoringServiceError("AI_CREATOR_DEFAULT_RECIPE_MODEL_UNBOUND", "No configured default recipe model is available.", status=409)
+        try:
+            response = await asyncio.wait_for(chat(model, build_default_recipe_messages(payload.context), agent_name="creator_default_recipe", phase="default_recipe"), timeout=30)
+        except TimeoutError as exc:
+            raise AuthoringServiceError("AI_CREATOR_DEFAULT_RECIPE_TIMEOUT", "The AI default recipe service did not respond in time.", status=504) from exc
+        try:
+            recipe = parse_default_recipe(str(response.get("content") or ""))
+        except CreatorDiscoveryError as exc:
+            raise AuthoringServiceError("AI_CREATOR_DEFAULT_RECIPE_OUTPUT_INVALID", str(exc), status=502) from exc
+        return {"schema": "cartridgeflow.creator_default_recipe.v1", "recipe": recipe}
+    except AuthoringServiceError as exc:
+        _authoring_error(exc)
+    except ValueError as exc:
+        _authoring_error(AuthoringServiceError("AI_CREATOR_DEFAULT_RECIPE_MODEL_UNBOUND", str(exc), status=409))
+    except Exception as exc:
+        _authoring_error(AuthoringServiceError("AI_CREATOR_DEFAULT_RECIPE_FAILED", str(exc), status=502))
 
 
 @app.post("/api/creator/authoring-sessions/{session_id}/source-candidates")

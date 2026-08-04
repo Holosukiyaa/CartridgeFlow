@@ -16,6 +16,7 @@ _POSSIBILITY_KEYS = frozenset({"id", "title", "outcome", "why_it_fits", "first_w
 _RECIPE_KEYS = frozenset({"intent", "steps"})
 _STEP_KEYS = frozenset({"id", "intent", "inputs", "outputs"})
 _SOURCE_CANDIDATE_KEYS = frozenset({"id", "name", "provides", "why_recommended", "risk", "review_focus", "remote_url", "rss_url"})
+_DEFAULT_RECIPE_KEYS = frozenset({"recipe"})
 
 
 def build_creator_discovery_messages(context: str) -> list[dict]:
@@ -50,6 +51,28 @@ def parse_creator_discovery(content: str) -> list[dict]:
     if len({item["id"] for item in normalized}) != len(normalized):
         raise CreatorDiscoveryError("AI discovery possibility ids must be unique.")
     return normalized
+
+
+def build_default_recipe_messages(context: str) -> list[dict]:
+    normalized = " ".join(str(context).split())
+    if not normalized:
+        raise CreatorDiscoveryError("A creation goal is required.")
+    contract = {"recipe": {"intent": "creator goal", "steps": [{"id": "lowercase-slug", "intent": "creator-facing default step", "inputs": [], "outputs": []}]}}
+    return [{"role": "system", "content": "Return JSON only. Turn the supplied creator goal into one default, editable flow with three to six steps. This is an untrusted starting draft, not a verified or runnable plan. Use the user's language and creator language. Do not mention implementation, APIs, models, tools, nodes, protocols, credentials, URLs, or technical terms. Every step must be a plain-language outcome the creator can review."}, {"role": "user", "content": json.dumps({"goal": normalized, "response_contract": contract}, ensure_ascii=False)}]
+
+
+def parse_default_recipe(content: str) -> dict:
+    try:
+        payload: Any = json.loads(str(content or ""))
+    except json.JSONDecodeError as exc:
+        raise CreatorDiscoveryError("AI default recipe response must be JSON.") from exc
+    recipe = payload.get("recipe") if isinstance(payload, dict) and set(payload) == _DEFAULT_RECIPE_KEYS else None
+    if not isinstance(recipe, dict) or set(recipe) != _RECIPE_KEYS or not isinstance(recipe.get("steps"), list) or not 3 <= len(recipe["steps"]) <= 6:
+        raise CreatorDiscoveryError("AI default recipe shape is invalid.")
+    steps = [_normalize_step(item) for item in recipe["steps"]]
+    if len({item["id"] for item in steps}) != len(steps):
+        raise CreatorDiscoveryError("AI default recipe step ids must be unique.")
+    return {"intent": _text(recipe["intent"], "recipe intent", 300), "steps": steps}
 
 
 def build_source_discovery_messages(intent: str, steps: list[dict], request: str) -> list[dict]:

@@ -31,6 +31,7 @@ The current release baseline is `CF-FARP@1.0` plus `CF-CRE@1`. Both are active/s
 - Replaced the Creator Studio's static direction templates with a strict model adapter. The model can only return three creator-language possibilities through a validated JSON contract; unbound, timed-out, or invalid responses fail closed.
 - Added a Creator-only source-candidate contract. Candidates remain non-persistent review suggestions until the creator accepts the normal source-change proposal; accepted source projections retain plain-language rationale and risk fields only.
 - Added `cartridgeflow.project_journey_graph.v1` as the common project-chain carrier. Creator sees the intent-to-recipe chain; Developer receives the same confirmed recipe, source, and engineering path without private exploration context.
+- Changed the Creator entry to an empty canvas with one start node. A configured model generates one bounded, untrusted default flow from the creator goal; users must still review and freeze its nodes before it is eligible for later stages.
 
 ## Intentional Retention
 

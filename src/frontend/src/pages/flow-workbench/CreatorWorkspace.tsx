@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import { Bot, CheckCircle2, CircleAlert, Loader2, Save, ShieldCheck, Sparkles, X } from 'lucide-react'
+import { Bot, CheckCircle2, CircleAlert, Loader2, Save, ShieldCheck, Sparkles, Wrench, X } from 'lucide-react'
 import { Box } from '../../ui.tsx'
 import {
   ApiError,
@@ -31,6 +31,7 @@ type CreatorWorkspaceProps = {
   files: FlowFiles
   showEngineeringSemantics: boolean
   onShowEngineeringSemanticsChange: (visible: boolean) => void
+  onManageTrustedNodes: () => void
   runStatus?: string
   nodeRunStates?: Map<string, NodeRunState>
   runEvents?: FlowEvent[]
@@ -307,7 +308,7 @@ export function CreatorWorkspace(props: CreatorWorkspaceProps) {
         {!creator && !loading && <form className="cf-creator-intent-panel" onSubmit={compose}>
           <label><span>想在这张画布上完成什么？</span><textarea ref={intentRef} aria-label="创作目标" value={goal} onChange={(event) => setGoal(event.target.value)} placeholder="例如：每天收集可靠的 AI 资讯，筛选后生成中文日报" /></label>
           <button type="submit" className="cf-creator-primary" disabled={busy || goal.trim().length < 3}>{busy ? <Loader2 className="spinning" /> : <Sparkles />}生成整体草稿</button>
-          {gap && <div className="cf-creator-gap"><CircleAlert /><div><strong>可信能力不足</strong>{gap.needed_capabilities.map((item) => <span key={item}>{item}</span>)}</div></div>}
+          {gap && <div className="cf-creator-gap"><CircleAlert /><div><strong>可信能力不足</strong>{gap.needed_capabilities.map((item) => <span key={item}>{item}</span>)}<button type="button" onClick={props.onManageTrustedNodes}><Wrench aria-hidden="true" />由 Developer 补充可信能力</button></div></div>}
         </form>}
         {loading && <div className="cf-creator-loading"><Loader2 className="spinning" /><span>正在读取 Creator 项目</span></div>}
         {creator?.generation_readiness.ready && <div className="cf-creator-ready-notice"><CheckCircle2 /><span>Creator 设计已就绪</span></div>}

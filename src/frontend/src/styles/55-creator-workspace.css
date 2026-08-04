@@ -70,6 +70,11 @@
   transform: translateX(-50%);
 }
 
+.cf-flow-overview-studio:has(.cf-canvas-tool-panel) > .cf-creator-intent-panel {
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .cf-creator-intent-panel label,
 .cf-creator-ai-request,
 .cf-creator-field-list label {
@@ -144,6 +149,8 @@
 .cf-creator-gap > svg { flex: 0 0 auto; width: 17px; }
 .cf-creator-gap div { display: grid; gap: 3px; }
 .cf-creator-gap span { font-size: 11px; }
+.cf-creator-gap button { min-height: 32px; display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 5px; padding: 6px 9px; border: 1px solid #d58f6e; border-radius: 5px; background: #fff; color: #8a3d1b; font-size: 11px; font-weight: 750; cursor: pointer; }
+.cf-creator-gap button svg { width: 14px; height: 14px; }
 
 .cf-creator-loading,
 .cf-creator-ready-notice {

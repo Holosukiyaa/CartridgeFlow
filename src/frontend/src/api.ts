@@ -1,7 +1,7 @@
 // API 工具：封装所有对后端的 fetch 调用，统一走 /api 前缀
 
 // 基础请求方法：所有 API 调用共用
-import type { RuntimeErrorEnvelope, CartridgeDetail, RunResult, FlowGraph, FlowEdge, FlowAnnotation, FlowLabItem, FlowLabDetail, FlowEvent, TestProbeRange, FlowFiles, CartridgeAsset, InteractionComponent, CartridgeAssetsResponse, McpSourceResponse, McpSourceEditResponse, BaseImplementationResponse, StudioConformanceResponse, McpToolsResponse, ValidationResponse, NodeUpdateResult, NodeCreatePayload, LlmProvider, LlmAssignments, LlmConfigBundle, LlmDetectionResult, LlmTestResult, StudioResources, FlowResourceCatalog, FlowResourceDetail, FlowResourceConnectivityResult, StudioCredential, StudioEnvironmentSnapshot, StudioPackageItem, PortabilityReport, StudioReleasePreflight, AIFlowStewardContext, AIFlowStewardMessage, AIFlowStewardMode, AuthoringReadiness, TuningResponse, TuningRevisionResult, RecipeReleaseResult, CreatorCapabilityGap, CreatorProjection, CreatorProposal, CreatorProposalPreview, DeveloperTrustedNodePublication } from './api.types.ts'
+import type { RuntimeErrorEnvelope, CartridgeDetail, RunResult, FlowGraph, FlowEdge, FlowAnnotation, FlowLabItem, FlowLabDetail, FlowEvent, TestProbeRange, FlowFiles, CartridgeAsset, InteractionComponent, CartridgeAssetsResponse, McpSourceResponse, McpSourceEditResponse, BaseImplementationResponse, StudioConformanceResponse, McpToolsResponse, ValidationResponse, NodeUpdateResult, NodeCreatePayload, LlmProvider, LlmAssignments, LlmConfigBundle, LlmDetectionResult, LlmTestResult, StudioResources, FlowResourceCatalog, FlowResourceDetail, FlowResourceConnectivityResult, StudioCredential, StudioEnvironmentSnapshot, StudioPackageItem, PortabilityReport, StudioReleasePreflight, AIFlowStewardContext, AIFlowStewardMessage, AIFlowStewardMode, AuthoringReadiness, TuningResponse, TuningRevisionResult, RecipeReleaseResult, CreatorCapabilityGap, CreatorProjection, CreatorProposal, CreatorProposalPreview, DeveloperTrustedNodePublication, DeveloperTrustedNodeReadiness } from './api.types.ts'
 export type * from './api.types.ts'
 
 export class ApiError extends Error {
@@ -82,6 +82,9 @@ export const composeCreatorRecipe = (body: { session_id: string; project_id: str
 
 export const fetchDeveloperTrustedNodePublications = () =>
   api<{ publications: DeveloperTrustedNodePublication[] }>('/api/developer/trusted-node-presets')
+
+export const fetchDeveloperFlowNodeTrustedReadiness = (flowId: string, nodeId: string) =>
+  api<DeveloperTrustedNodeReadiness>(`/api/developer/flows/${encodeURIComponent(flowId)}/nodes/${encodeURIComponent(nodeId)}/trusted-node-preset/readiness`)
 
 export const publishDeveloperFlowNode = (flowId: string, nodeId: string, body: unknown) =>
   api<{ publication: DeveloperTrustedNodePublication }>(`/api/developer/flows/${encodeURIComponent(flowId)}/nodes/${encodeURIComponent(nodeId)}/trusted-node-preset`, {

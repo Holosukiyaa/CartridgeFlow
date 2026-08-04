@@ -43,6 +43,8 @@ type FlowGraphEdge = Edge<Record<string, unknown>>
 type DataRelation = { from: string; to: string; key: string; kind?: 'data' | 'dependency'; label?: string; fromField?: string; toField?: string; expression?: string; source?: string }
 type RunEdgeStatus = 'visited' | 'active'
 export type CanvasTool = 'select' | 'connect' | 'steward-pointer' | 'steward-lasso'
+export type CanvasPanelId = 'nodes' | 'notes' | 'models' | 'variables' | 'settings' | 'tools' | 'trusted-nodes' | 'package' | 'base-info'
+export type CanvasPanelRequest = { id: CanvasPanelId; requestId: number }
 export type ProtocolDisplayInfo = {
   baseContractLabel: string
   targetProtocolLabel: string
@@ -84,7 +86,7 @@ const DEFAULT_PROTOCOL_DISPLAY: ProtocolDisplayInfo = {
   currentProtocolLabel: 'CF-FARP@unknown',
   currentProtocolStatus: '当前卡带协议未读取',
 }
-type CanvasPanel = 'nodes' | 'notes' | 'models' | 'variables' | 'settings' | 'tools' | 'trusted-nodes' | 'package' | 'base-info' | null
+type CanvasPanel = CanvasPanelId | null
 
 type EngineeringNodeRenderContextValue = {
   models: Map<string, EngineeringNodeRenderModel>
@@ -448,7 +450,7 @@ function buildRunEdgeStates(graphEdges: FlowEdge[], runEvents: FlowEvent[] = EMP
   return edgeStates
 }
 
-export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', workspaceSemantics = 'engineering', showEngineeringSemantics = true, onShowEngineeringSemanticsChange, engineeringEdgeVisibility = { control: true, data: true, dependency: true, branch: true, failure: true }, engineeringDataRelations: providedEngineeringDataRelations, engineeringNodeModels: providedEngineeringNodeModels, selectedNode, focusNodeId, onSelectNode, onNodeEditorPositionChange, onLayoutSave, autoLayoutOnMount = false, onAutoLayoutComplete, onEdgesSave, onAnnotationsSave, onCreateNode, onDeleteNode, modelPanel, toolPanel, trustedNodePanel, packagePanel, cartridgePanel, protocolInfo = DEFAULT_PROTOCOL_DISPLAY, nodeEditors = [], activeNodeEditorId, onCloseNodeEditor, onCanvasToolChange, requestedCanvasTool, onStewardSelectionChange, compactStatic = false, readOnlyGraph = false, runStatus, nodeRunStates, runEvents, runCompletionVisible = false, runCompletion, onDismissRunCompletion, onOpenRunLog, onOpenRunResult, onOpenPendingInteraction, testProbeState }: {
+export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', workspaceSemantics = 'engineering', showEngineeringSemantics = true, onShowEngineeringSemanticsChange, engineeringEdgeVisibility = { control: true, data: true, dependency: true, branch: true, failure: true }, engineeringDataRelations: providedEngineeringDataRelations, engineeringNodeModels: providedEngineeringNodeModels, selectedNode, focusNodeId, onSelectNode, onNodeEditorPositionChange, onLayoutSave, autoLayoutOnMount = false, onAutoLayoutComplete, onEdgesSave, onAnnotationsSave, onCreateNode, onDeleteNode, modelPanel, toolPanel, trustedNodePanel, packagePanel, cartridgePanel, protocolInfo = DEFAULT_PROTOCOL_DISPLAY, nodeEditors = [], activeNodeEditorId, onCloseNodeEditor, onCanvasToolChange, requestedCanvasTool, requestedCanvasPanel, onStewardSelectionChange, compactStatic = false, readOnlyGraph = false, runStatus, nodeRunStates, runEvents, runCompletionVisible = false, runCompletion, onDismissRunCompletion, onOpenRunLog, onOpenRunResult, onOpenPendingInteraction, testProbeState }: {
   graph: FlowGraph
   files?: FlowFiles
   displayMode?: DesignDisplayMode
@@ -480,6 +482,7 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', work
   onCloseNodeEditor?: () => void
   onCanvasToolChange?: (tool: CanvasTool) => void
   requestedCanvasTool?: CanvasTool
+  requestedCanvasPanel?: CanvasPanelRequest
   onStewardSelectionChange?: (selection: AIFlowSelection) => void
   compactStatic?: boolean
   readOnlyGraph?: boolean
@@ -507,6 +510,7 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', work
   const [annotations, setAnnotations] = useState<FlowAnnotation[]>(() => graph.annotations || [])
   const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(null)
   const requestedCanvasToolRef = useRef<CanvasTool | undefined>(requestedCanvasTool)
+  const requestedCanvasPanelRef = useRef(0)
   const [contextMenu, setContextMenu] = useState<{
     x: number
     y: number
@@ -524,6 +528,13 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', work
     }
   }, [requestedCanvasTool])
   useEffect(() => {
+    if (!requestedCanvasPanel || requestedCanvasPanel.requestId === requestedCanvasPanelRef.current) return
+    requestedCanvasPanelRef.current = requestedCanvasPanel.requestId
+    setActiveCanvasTool('select')
+    setCanvasPanel(requestedCanvasPanel.id)
+    onCloseNodeEditor?.()
+  }, [onCloseNodeEditor, requestedCanvasPanel])
+  useEffect(() => {
     if (!onEdgesSave && activeCanvasTool === 'connect') setActiveCanvasTool('select')
     if (!onCreateNode && canvasPanel === 'nodes') setCanvasPanel(null)
   }, [activeCanvasTool, canvasPanel, onCreateNode, onEdgesSave])
@@ -537,6 +548,7 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', work
   const wrapperRef = useRef<HTMLDivElement | null>(null)
   const deletingNodeRef = useRef(false)
   const lastFittedGraphIdRef = useRef('')
+  const lastFocusedNodeEditorRef = useRef('')
   const autoLayoutGraphIdRef = useRef('')
   const nodeEditorDragRef = useRef<NodeEditorDragState | null>(null)
   const annotationPointerRef = useRef<AnnotationPointerState | null>(null)
@@ -883,9 +895,9 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', work
   const edgeSaveQueueRef = useRef<Promise<void>>(Promise.resolve())
   const pendingCreatedNodeFocusRef = useRef<string | null>(null)
   const focusCanvasNode = useCallback((nodeId: string) => {
-    if (!flowInstance) return
+    if (!flowInstance) return false
     const target = flowInstance.getNode(nodeId)
-    if (!target) return
+    if (!target) return false
     const viewport = flowInstance.getViewport()
     const targetSize = getGraphNodeSize(target as FlowGraphNode)
     flowInstance.setCenter(
@@ -893,6 +905,7 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', work
       target.position.y + targetSize.height / 2,
       { zoom: Math.max(viewport.zoom, 1), duration: 240 },
     )
+    return true
   }, [flowInstance])
   const nodeEditorPlacements = useMemo(() => {
     const occupied: Array<{ x: number; y: number; width: number; height: number }> = []
@@ -963,28 +976,15 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', work
         ...rightSlots,
         ...leftSlots,
       ]
-      const wrapper = wrapperRef.current
-      const viewport = flowInstance?.getViewport()
-      const visiblePadding = 24
-      const visibleLeft = wrapper && viewport ? (visiblePadding - viewport.x) / viewport.zoom : Number.NEGATIVE_INFINITY
-      const visibleTop = wrapper && viewport ? (visiblePadding - viewport.y) / viewport.zoom : Number.NEGATIVE_INFINITY
-      const visibleRight = wrapper && viewport ? (wrapper.clientWidth - visiblePadding - viewport.x) / viewport.zoom : Number.POSITIVE_INFINITY
-      const visibleBottom = wrapper && viewport ? (wrapper.clientHeight - visiblePadding - viewport.y) / viewport.zoom : Number.POSITIVE_INFINITY
-      const keepVisible = (candidate: Omit<NodeEditorPlacement, keyof CanvasNodeEditor>) => ({
-        ...candidate,
-        x: Math.min(Math.max(candidate.x, visibleLeft), Math.max(visibleLeft, visibleRight - editor.width)),
-        y: Math.min(Math.max(candidate.y, visibleTop), Math.max(visibleTop, visibleBottom - editor.height)),
-      })
-      const visibleCandidates = candidates.map(keepVisible)
-      const chosen = visibleCandidates.find((candidate) => {
+      const chosen = candidates.find((candidate) => {
         const bounds = { ...candidate, width: editor.width, height: editor.height }
         return !overlaps(bounds) && !overlapsMainNode(bounds)
-      }) || visibleCandidates.find((candidate) => !overlaps({ ...candidate, width: editor.width, height: editor.height })) || visibleCandidates[0]
+      }) || candidates.find((candidate) => !overlaps({ ...candidate, width: editor.width, height: editor.height })) || candidates[0]
       occupied.push({ ...chosen, width: editor.width, height: editor.height })
       result.push({ ...editor, ...chosen })
       return result
     }, [])
-  }, [flowInstance, nodeEditorPositions, nodeEditors, nodes])
+  }, [nodeEditorPositions, nodeEditors, nodes])
   const hasNodeEditors = nodeEditorPlacements.length > 0
 
   useEffect(() => {
@@ -1140,6 +1140,28 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', work
     const maxY = Math.max(...rectangles.map((rect) => rect.y + rect.height))
     fitBoundsIntoCanvas({ x: minX, y: minY, width: maxX - minX, height: maxY - minY }, duration)
   }, [fitBoundsIntoCanvas, nodeEditorPlacements, nodes])
+
+  useEffect(() => {
+    if (compactStatic) return
+    const editor = nodeEditorPlacements.at(-1)
+    const node = editor ? nodes.find((item) => item.id === editor.nodeId) : undefined
+    if (!node || !editor) {
+      lastFocusedNodeEditorRef.current = ''
+      return
+    }
+    const focusKey = `${editor.nodeId}:${editor.editorId}`
+    if (lastFocusedNodeEditorRef.current === focusKey) return
+    lastFocusedNodeEditorRef.current = focusKey
+    const nodeSize = getGraphNodeSize(node)
+    const minX = Math.min(node.position.x, editor.x)
+    const minY = Math.min(node.position.y, editor.y)
+    const maxX = Math.max(node.position.x + nodeSize.width, editor.x + editor.width)
+    const maxY = Math.max(node.position.y + nodeSize.height, editor.y + editor.height)
+    const frame = window.requestAnimationFrame(() => {
+      fitBoundsIntoCanvas({ x: minX, y: minY, width: maxX - minX, height: maxY - minY }, 260)
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [compactStatic, fitBoundsIntoCanvas, nodeEditorPlacements, nodes])
 
   useEffect(() => {
     const nodeId = pendingCreatedNodeFocusRef.current
@@ -1749,11 +1771,7 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', work
               .filter((edge) => selectedSet.has(edge.from) && selectedSet.has(edge.to))
               .map((edge) => `${edge.from}->${edge.to}`)
             onStewardSelectionChange?.({ node_ids: nodeIds, edge_ids: edgeIds, field_paths: [] })
-            return
           }
-          if (activeCanvasTool !== 'select' || selectedNodes.length !== 1) return
-          const node = selectedNodes[0]?.data as unknown as FlowNode
-          if (node && selectedNode?.id !== node.id) onSelectNode(node)
         }}
         onNodeClick={(event, graphNode) => {
           if (activeCanvasTool !== 'steward-pointer') return
@@ -2038,7 +2056,7 @@ export function FlowGraphView({ graph, files = {}, displayMode = 'outcome', work
           </Panel>
         )}
         {!compactStatic && canvasPanel && (
-          <Panel position="top-left" className={`cf-canvas-tool-panel ${canvasPanel === 'tools' || canvasPanel === 'models' || canvasPanel === 'trusted-nodes' || canvasPanel === 'package' ? 'resource-panel' : ''}`}>
+          <Panel position="top-left" className={`cf-canvas-tool-panel nodrag nopan nowheel ${canvasPanel === 'tools' || canvasPanel === 'models' || canvasPanel === 'trusted-nodes' || canvasPanel === 'package' ? 'resource-panel' : ''}`}>
             <header><strong>{canvasPanel === 'nodes' ? '配方步骤' : canvasPanel === 'notes' ? '画布注释' : canvasPanel === 'models' ? '模型管理' : canvasPanel === 'variables' ? '流程变量' : canvasPanel === 'tools' ? '工具管理' : canvasPanel === 'trusted-nodes' ? '可信节点' : canvasPanel === 'package' ? '卡带打包' : canvasPanel === 'base-info' ? '基座信息' : '卡带与画布配置'}</strong><button type="button" onClick={() => { setCanvasPanel(null); setSelectedLibraryCategoryId(null) }}>×</button></header>
             {canvasPanel === 'nodes' && (
               <div className="cf-canvas-node-library">

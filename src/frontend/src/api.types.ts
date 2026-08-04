@@ -169,6 +169,18 @@ export interface DeveloperTrustedNodePublication {
   mapping: DeveloperTrustedNodeMapping
 }
 
+export interface DeveloperTrustedNodeReadiness {
+  schema: 'cartridgeflow.developer_trusted_node_readiness.v1'
+  flow_id: string
+  node_id: string
+  ready: boolean
+  action?: string
+  executor?: string
+  effect?: string
+  mapping_digest?: string
+  blocker?: { code: string; message: string } | null
+}
+
 export interface CreatorTrustedRecipeNode {
   id: string
   label: string

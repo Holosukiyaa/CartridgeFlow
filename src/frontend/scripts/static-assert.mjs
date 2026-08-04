@@ -18,6 +18,8 @@ const flowGraphViewPath = join(root, 'src/pages/flow-workbench/FlowGraphView.tsx
 const flowWorkbenchPath = join(root, 'src/pages/FlowWorkbench.tsx')
 const creatorWorkspacePath = join(root, 'src/pages/flow-workbench/CreatorWorkspace.tsx')
 const trustedNodePanelPath = join(root, 'src/pages/flow-workbench/TrustedNodePanel.tsx')
+const designViewPath = join(root, 'src/pages/flow-workbench/views.tsx')
+const creatorWorkspaceStylePath = join(root, 'src/styles/55-creator-workspace.css')
 const appPath = join(root, 'src/App.tsx')
 const cssGlobPath = join(root, 'src')
 
@@ -69,6 +71,8 @@ for (const phrase of legacyPhrases) {
 const workbenchSrc = readFileSync(flowWorkbenchPath, 'utf8')
 const creatorSrc = readFileSync(creatorWorkspacePath, 'utf8')
 const trustedNodeSrc = readFileSync(trustedNodePanelPath, 'utf8')
+const designViewSrc = readFileSync(designViewPath, 'utf8')
+const creatorWorkspaceCss = readFileSync(creatorWorkspaceStylePath, 'utf8')
 const appSrc = readFileSync(appPath, 'utf8')
 check(workbenchSrc.includes("localStorage.getItem(ENGINEERING_SEMANTICS_STORAGE_KEY) === 'true'"), '工程语义仅在用户显式开启后显示')
 check(workbenchSrc.includes('showEngineeringSemantics ? <DesignView') && workbenchSrc.includes(': <CreatorWorkspace'), '旧工作台在同一设计区域切换 Creator 与工程投影')
@@ -77,6 +81,12 @@ check(src.includes('显示工程语义') && src.includes('onShowEngineeringSeman
 check(appSrc.includes("pendingCreatorWorkspace = createDevFlow('creator-workspace'"), '无卡带时单次创建并进入 Creator 空画布载体')
 check(src.includes("canvasPanel === 'trusted-nodes'") && src.includes('<ShieldCheck /><span>可信</span>'), 'Developer 画布提供可发现的可信节点入口')
 check(trustedNodeSrc.includes('publishDeveloperFlowNode(flowId, selectedNode.id') && trustedNodeSrc.includes('path: `params.${'), '可信节点从当前 Developer 节点发布并仅开放安全参数')
+check(trustedNodeSrc.includes('onCreateCapability(starter.categoryId, starter.presetId)') && trustedNodeSrc.includes('编辑节点执行配置'), '可信节点面板可直接新建 Developer 执行节点并继续配置')
+check(trustedNodeSrc.includes('fetchDeveloperFlowNodeTrustedReadiness') && trustedNodeSrc.includes('执行映射已就绪'), '可信节点发布前展示真实执行映射就绪状态')
+check(creatorSrc.includes('props.onManageTrustedNodes') && creatorSrc.includes('由 Developer 补充可信能力'), 'Creator 能力缺口可直接进入 Developer 可信能力管理')
+check(src.includes('requestedCanvasPanel.id') && workbenchSrc.includes("id: 'trusted-nodes'"), 'Creator 到 Developer 的跳转自动打开可信节点面板')
+check(designViewSrc.includes('openTrustedCapabilityConfiguration') && designViewSrc.includes('buildNodeAuthoringPath') && designViewSrc.includes('nodeEditors={nodeEditors}'), 'Developer 可信能力配置使用画布节点弹窗并落到未完成步骤')
+check(creatorWorkspaceCss.includes(':has(.cf-canvas-tool-panel)') && creatorWorkspaceCss.includes('pointer-events: none'), 'Creator 工具面板打开时不会被创作输入遮挡')
 
 // --- 4. CSS 样式债红线：!important 数量不得超过阈值（基线只降不升） ---
 function collectCss(dir) {

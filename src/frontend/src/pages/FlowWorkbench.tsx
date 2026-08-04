@@ -31,6 +31,7 @@ import {
 import { showToast } from '../toast.tsx'
 import { DesignView, RunHistoryPanel, RunLogDialog, WorkbenchHeader } from './flow-workbench/views.tsx'
 import { CreatorWorkspace } from './flow-workbench/CreatorWorkspace.tsx'
+import type { CanvasPanelRequest } from './flow-workbench/FlowGraphView.tsx'
 import { CATEGORY_BY_ID, buildBalancedLayout, getPreset } from './flow-workbench/nodeModel.ts'
 import type { CreateNodeOptions, GraphResult, NodeCategoryId } from './flow-workbench/types.ts'
 import { buildPresetConfig, buildPresetRuntimeParams, buildProtocolPatch, buildToolSpecs, buildUserFormInputs, firstText } from './flow-workbench/nodeBuilder.ts'
@@ -106,6 +107,8 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
   const [error, setError] = useState('')
   const [selectedNode, setSelectedNode] = useState<FlowNode | null>(null)
   const [showEngineeringSemantics, setShowEngineeringSemantics] = useState(() => localStorage.getItem(ENGINEERING_SEMANTICS_STORAGE_KEY) === 'true')
+  const [requestedCanvasPanel, setRequestedCanvasPanel] = useState<CanvasPanelRequest>()
+  const canvasPanelRequestId = useRef(0)
   const [focusNodeId, setFocusNodeId] = useState<string | null>(null)
   const [openNodeEditors, setOpenNodeEditors] = useState<OpenNodeDetail[]>([])
   const [restoredNodeDetailsFlowId, setRestoredNodeDetailsFlowId] = useState('')
@@ -137,6 +140,11 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
     setFocusNodeId(null)
     setOpenNodeEditors([])
   }, [])
+  const manageTrustedCapabilities = useCallback(() => {
+    canvasPanelRequestId.current += 1
+    setRequestedCanvasPanel({ id: 'trusted-nodes', requestId: canvasPanelRequestId.current })
+    updateEngineeringSemantics(true)
+  }, [updateEngineeringSemantics])
   const pendingInteraction = latestRun?.status === 'paused_waiting_user' ? latestRun.pending_interaction : null
   const pendingInteractionId = String(pendingInteraction?.interaction_id || '')
   const visiblePendingInteraction = pendingInteraction && pendingInteractionId !== dismissedInteractionId ? pendingInteraction : null
@@ -618,6 +626,7 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
             : {}),
         },
       })
+      const createdNodeId = created.node_id || nodeId
       let finalResult: GraphResult = created
       if (options?.position) {
         const nextLayout = Object.fromEntries(created.graph.nodes.map((item) => {
@@ -627,7 +636,7 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
             y: Math.round(Number(raw.y ?? item.y ?? 0) / 10) * 10,
           }]
         }))
-        nextLayout[created.node_id] = {
+        nextLayout[createdNodeId] = {
           x: Math.round(options.position.x / 10) * 10,
           y: Math.round(options.position.y / 10) * 10,
         }
@@ -637,7 +646,8 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
         finalResult = await saveFlowLayout(flowId, created.files, balancedLayout)
       }
       updateGraphResult(finalResult)
-      const node = finalResult.graph.nodes.find((item) => item.id === created.node_id)
+      const node = finalResult.graph.nodes.find((item) => item.id === createdNodeId)
+        || finalResult.graph.nodes.find((item) => item.id === nodeId)
       if (node) selectNode(node)
       showToast({ title: `${category.shortLabel}节点已新增`, type: 'success' })
       return node
@@ -744,6 +754,7 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
             flowId={flowId}
             showEngineeringSemantics={showEngineeringSemantics}
             onShowEngineeringSemanticsChange={updateEngineeringSemantics}
+            requestedCanvasPanel={requestedCanvasPanel}
             selectedNode={selectedNode}
             focusNodeId={focusNodeId}
             openNodeEditors={openNodeEditors}
@@ -821,6 +832,7 @@ export default function FlowWorkbench({ flowId, onSwitchFlow }: {
             files={files}
             showEngineeringSemantics={showEngineeringSemantics}
             onShowEngineeringSemanticsChange={updateEngineeringSemantics}
+            onManageTrustedNodes={manageTrustedCapabilities}
             runStatus={visualRuntimeRun?.status}
             nodeRunStates={designNodeRunStates}
             runEvents={designRunEvents}

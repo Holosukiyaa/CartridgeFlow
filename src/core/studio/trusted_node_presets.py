@@ -25,6 +25,10 @@ _UNSAFE_CREATOR_PARAMETER = re.compile(
     r"code|script|command|executor|permission|topology|execution[_-]?plan|endpoint|model|tool",
     re.I,
 )
+_INTERNAL_CREATOR_PARAMETER_FIELDS = {
+    "node_category", "preset", "output_name", "from", "to", "source", "path", "key",
+    "server", "service", "resource_role", "model_role",
+}
 
 
 def build_trusted_node_mapping(
@@ -81,7 +85,7 @@ def build_trusted_node_mapping(
     normalized_bindings: dict[str, str] = {}
     for field_id in sorted(field_ids):
         path = str(creator_bindings.get(field_id) or "").strip()
-        if not path.startswith("params.") or not _valid_path(path) or _UNSAFE_CREATOR_PARAMETER.search(path) or not _path_exists(template, path):
+        if not path.startswith("params.") or not _valid_path(path) or not _creator_parameter_path_safe(path) or not _path_exists(template, path):
             raise AuthoringServiceError(
                 "TRUSTED_NODE_MAPPING_BINDING_PATH_INVALID",
                 f"Creator field {field_id} must bind to an existing params.* path.",
@@ -260,6 +264,13 @@ class TrustedNodePresetStore:
 def _valid_path(path: str) -> bool:
     parts = path.split(".")
     return all(part and part.replace("_", "a").replace("-", "a").isalnum() for part in parts)
+
+
+def _creator_parameter_path_safe(path: str) -> bool:
+    parts = [part.lower() for part in path.split(".")[1:]]
+    return not _UNSAFE_CREATOR_PARAMETER.search(path) and not any(
+        part in _INTERNAL_CREATOR_PARAMETER_FIELDS for part in parts
+    )
 
 
 def _contains_key(value: object, target: str) -> bool:

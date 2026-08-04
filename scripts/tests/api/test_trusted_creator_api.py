@@ -121,6 +121,50 @@ class TrustedCreatorApiTests(unittest.TestCase):
         creator = self.client.get("/api/creator/trusted-node-presets").json()
         self.assertNotIn("state_template", json.dumps(creator))
 
+    def test_developer_can_check_trusted_node_readiness_before_publish(self):
+        created = self.client.post("/api/lab/flows", json={
+            "flow_id": "dev.trusted-readiness", "name": "Trusted readiness", "description": "test",
+        })
+        self.assertEqual(200, created.status_code, created.text)
+        process = self.client.post("/api/lab/flows/dev.trusted-readiness/nodes", json={
+            "template_id": "runtime", "node_id": "normalize", "title": "Normalize result",
+        })
+        self.assertEqual(200, process.status_code, process.text)
+        ready = self.client.get(
+            "/api/developer/flows/dev.trusted-readiness/nodes/normalize/trusted-node-preset/readiness"
+        )
+        self.assertEqual(200, ready.status_code, ready.text)
+        self.assertTrue(ready.json()["ready"])
+        self.assertEqual("pass_result", ready.json()["action"])
+
+        interaction = self.client.post("/api/lab/flows/dev.trusted-readiness/nodes", json={
+            "template_id": "interaction", "node_id": "local_ui", "title": "Local UI",
+        })
+        self.assertEqual(200, interaction.status_code, interaction.text)
+        blocked = self.client.get(
+            "/api/developer/flows/dev.trusted-readiness/nodes/local_ui/trusted-node-preset/readiness"
+        )
+        self.assertEqual(200, blocked.status_code, blocked.text)
+        self.assertFalse(blocked.json()["ready"])
+        self.assertEqual("TRUSTED_NODE_MAPPING_RESOURCE_UNSUPPORTED", blocked.json()["blocker"]["code"])
+
+    def test_developer_cannot_expose_internal_runtime_parameters_to_creator(self):
+        internal_preset = {
+            **PRESET,
+            "editable_fields": [{
+                "id": "preset", "label": "Preset", "value_type": "string", "required": True, "default": "pass",
+            }],
+        }
+        with self.assertRaisesRegex(ValueError, "existing params"):
+            build_trusted_node_mapping(
+                internal_preset,
+                {**STATE, "params": {"preset": "pass"}},
+                source_flow_id="dev.sources",
+                source_node_id="runtime",
+                creator_bindings={"preset": "params.preset"},
+                source_manifest={},
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

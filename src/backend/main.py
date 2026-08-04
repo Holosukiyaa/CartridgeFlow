@@ -2262,6 +2262,79 @@ def publish_developer_flow_node(flow_id: str, node_id: str, payload: TrustedNode
         _authoring_error(exc)
 
 
+@app.get("/api/developer/flows/{flow_id}/nodes/{node_id}/trusted-node-preset/readiness")
+def get_developer_flow_node_trusted_readiness(flow_id: str, node_id: str):
+    """Check whether one Developer node can produce a portable trusted snapshot."""
+    try:
+        cartridge = registry.get_cartridge(flow_id)
+        if not cartridge.get("editable"):
+            return {
+                "schema": "cartridgeflow.developer_trusted_node_readiness.v1",
+                "flow_id": flow_id,
+                "node_id": node_id,
+                "ready": False,
+                "blocker": {
+                    "code": "TRUSTED_NODE_SOURCE_FLOW_READ_ONLY",
+                    "message": "Only editable Developer flows can publish trusted nodes.",
+                },
+            }
+        root_flow = cartridge.get("root_flow") if isinstance(cartridge.get("root_flow"), dict) else {}
+        manifest = cartridge.get("manifest") if isinstance(cartridge.get("manifest"), dict) else {}
+        state = (root_flow.get("states") or {}).get(node_id)
+        if not isinstance(state, dict):
+            return {
+                "schema": "cartridgeflow.developer_trusted_node_readiness.v1",
+                "flow_id": flow_id,
+                "node_id": node_id,
+                "ready": False,
+                "blocker": {
+                    "code": "TRUSTED_NODE_SOURCE_UNKNOWN",
+                    "message": "The selected Developer node was not found.",
+                },
+            }
+        title = str(state.get("display_name") or state.get("title") or node_id).strip()
+        preview_preset = {
+            "schema": "cartridgeflow.trusted_node_preset.v1",
+            "protocol": {"id": "CF-TUNING", "version": "1.4"},
+            "id": "trusted-node-readiness",
+            "revision": 1,
+            "creator_label": title,
+            "creator_description": f"Reusable Developer capability: {title}",
+            "match_terms": [title],
+            "editable_fields": [],
+            "developer_mapping_key": "trusted-node-readiness",
+        }
+        mapping = build_trusted_node_mapping(
+            preview_preset,
+            state,
+            source_flow_id=flow_id,
+            source_node_id=node_id,
+            creator_bindings={},
+            source_manifest=manifest,
+        )
+        return {
+            "schema": "cartridgeflow.developer_trusted_node_readiness.v1",
+            "flow_id": flow_id,
+            "node_id": node_id,
+            "ready": True,
+            "action": state.get("action"),
+            "executor": state.get("executor"),
+            "effect": state.get("effect"),
+            "mapping_digest": mapping["digest"],
+            "blocker": None,
+        }
+    except FileNotFoundError as exc:
+        _authoring_error(AuthoringServiceError("TRUSTED_NODE_SOURCE_UNKNOWN", str(exc), status=404))
+    except AuthoringServiceError as exc:
+        return {
+            "schema": "cartridgeflow.developer_trusted_node_readiness.v1",
+            "flow_id": flow_id,
+            "node_id": node_id,
+            "ready": False,
+            "blocker": {"code": exc.code, "message": str(exc)},
+        }
+
+
 @app.post("/api/creator/compose-recipe")
 async def compose_creator_recipe(payload: CreatorComposeRecipePayload):
     """Run the whole-flow skill and atomically create a mapped Creator session."""

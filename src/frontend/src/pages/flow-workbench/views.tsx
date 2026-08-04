@@ -4,7 +4,7 @@ import { activateRecipeRelease, fetchFlowTuning, fetchStudioResources, publishRe
 import { Activity, AlertTriangle, Bot, ChevronDown, ChevronUp, ClipboardCopy, Copy, Download, FileOutput, GitCommit, History, PanelRight, Pause, PlayCircle, RefreshCw, Square, SquarePen, UserRoundCheck, X } from 'lucide-react'
 import { analyzeLabFlow, fetchFlowResourceCatalog, fetchMcpSource, type AIFlowSelection, type AIFlowStewardContext, type FlowAnnotation, type FlowEdge, type FlowEngineeringRelation, type FlowEvent, type FlowFiles, type FlowGraph, type FlowLabDetail, type FlowNode, type McpSourceResponse, type RunResult, type StudioToolResource, type TuningRepository } from '../../api.ts'
 import type { CreateNodeHandler, DesignDisplayMode, GraphResult, NodeDraft } from './types.ts'
-import { FlowGraphView, type CanvasTool, type ProtocolDisplayInfo } from './FlowGraphView.tsx'
+import { FlowGraphView, type CanvasPanelRequest, type CanvasTool, type ProtocolDisplayInfo } from './FlowGraphView.tsx'
 import { NodeDetailCard } from './NodeDetailCard.tsx'
 import { buildOutcomeNodeCardView, getNodePreflightIssues } from './flowNodeView.ts'
 import { BrandMark } from './BrandMark.tsx'
@@ -315,7 +315,7 @@ export function DesignView({
   onSelectNode, onGuideNodeEditor, onCloseNodeEditor, onToggleNodeEditorPin, onNodeEditorPositionChange, onCloseUnpinnedNodeEditors, onLayoutSave, autoLayoutOnMount, onAutoLayoutComplete, onEdgesSave, onAnnotationsSave, onCreateNode, onDeleteNode, onFilesChange, onSaved,
   engineeringResourceLayout, onEngineeringResourceLayoutSave,
   modelPanel, toolPanel, packagePanel, cartridgePanel, runStatus, nodeRunStates, runEvents, runCompletionVisible, runCompletion, onDismissRunCompletion, onOpenRunLog, onOpenRunResult, onOpenPendingInteraction,
-  protocolInfo, showEngineeringSemantics, onShowEngineeringSemanticsChange,
+  protocolInfo, showEngineeringSemantics, onShowEngineeringSemanticsChange, requestedCanvasPanel,
 }: {
   graph: FlowGraph
   editable: boolean
@@ -348,6 +348,7 @@ export function DesignView({
   protocolInfo: ProtocolDisplayInfo
   showEngineeringSemantics: boolean
   onShowEngineeringSemanticsChange: (visible: boolean) => void
+  requestedCanvasPanel?: CanvasPanelRequest
   runStatus?: string
   nodeRunStates?: Map<string, NodeRunState>
   runEvents?: FlowEvent[]
@@ -671,6 +672,25 @@ export function DesignView({
   }, [engineering, flowId, selectedNode?.id, selectedNode?.scope, selectedNode?.params?.resource_id])
   const canMutateGraph = editable
   const canEditSelectedNode = Boolean(editable && selectedNode && !selectedNode.locked && selectedNode.scope !== 'root')
+  const openTrustedCapabilityConfiguration = useCallback((node: FlowNode) => {
+    const graphWithNode = graph.nodes.some((item) => item.id === node.id)
+      ? graph
+      : { ...graph, nodes: [...graph.nodes, node] }
+    const authoringPath = buildNodeAuthoringPath(node, graphWithNode, files)
+    const section = authoringPath?.next?.section || authoringPath?.steps[0]?.section || 'contract'
+    setEngineeringInspectorOpen(false)
+    onGuideNodeEditor(node, section)
+  }, [files, graph, onGuideNodeEditor])
+  const createTrustedCapability = useCallback(async (categoryId: Parameters<CreateNodeHandler>[1], presetId: string) => {
+    const selectedBusinessNode = selectedNode && !isEngineeringResourceNode(selectedNode) ? selectedNode : null
+    const anchor = selectedBusinessNode || graph.nodes.find((node) => node.id === 'start') || null
+    const node = await onCreateNode(anchor, categoryId, 'insert', { presetId })
+    if (node) {
+      onSelectNode(node)
+      openTrustedCapabilityConfiguration(node)
+    }
+    return node
+  }, [graph.nodes, onCreateNode, onSelectNode, openTrustedCapabilityConfiguration, selectedNode])
   const userJourneyReadiness = useMemo(() => {
     const nodes = orderedUserJourneyNodes(engineeringGraph)
     const pending = nodes.filter((node) => nodeExperienceIssues(node).length > 0)
@@ -714,7 +734,6 @@ export function DesignView({
       window.cancelAnimationFrame(frame)
     }
   }, [engineering, engineeringGraph.nodes, onEngineeringResourceLayoutSave])
-  const emptyNodeEditors = useMemo(() => [], [])
   return (
     <div className={`cf-design-studio ${engineering ? 'engineering-mode' : 'outcome-mode'} ${engineeringInspectorOpen && engineering ? 'inspector-open' : ''} ${activeRuntimeNode && activeRuntimeState ? 'runtime-inspector-open' : ''} ${stewardOpen ? 'ai-steward-open' : ''} ${nodeEditors.length ? 'drawer-open' : ''}`}>
       <div className="cf-design-main">
@@ -776,15 +795,21 @@ export function DesignView({
           onDeleteNode={canMutateGraph ? onDeleteNode : undefined}
           modelPanel={editable ? modelPanel : undefined}
           toolPanel={editable ? toolPanel : undefined}
-          trustedNodePanel={editable ? <TrustedNodePanel flowId={flowId} selectedNode={selectedNode} /> : undefined}
+          trustedNodePanel={editable ? <TrustedNodePanel
+            flowId={flowId}
+            selectedNode={selectedNode}
+            onCreateCapability={createTrustedCapability}
+            onConfigureNode={() => { if (selectedNode) openTrustedCapabilityConfiguration(selectedNode) }}
+          /> : undefined}
           packagePanel={editable ? packagePanel : undefined}
           cartridgePanel={editable ? cartridgePanel : undefined}
           protocolInfo={protocolInfo}
-          nodeEditors={engineering ? emptyNodeEditors : nodeEditors}
+          nodeEditors={nodeEditors}
           activeNodeEditorId={selectedNode?.id || null}
           onCloseNodeEditor={onCloseUnpinnedNodeEditors}
           onCanvasToolChange={setCanvasTool}
           requestedCanvasTool={canvasTool}
+          requestedCanvasPanel={requestedCanvasPanel}
           onStewardSelectionChange={updateStewardSelection}
           runStatus={runStatus}
           nodeRunStates={nodeRunStates}

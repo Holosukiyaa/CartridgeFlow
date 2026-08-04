@@ -21,63 +21,6 @@ from core.llm.authoring import AuthoringProposalError, build_authoring_messages,
 SERVICE_AUTHORING_OPERATIONS = frozenset(_OPERATIONS)
 
 
-def discover_creator_possibilities(context: str) -> list[dict]:
-    """Return deterministic, creator-safe starting recipes without invoking a model."""
-    focus = " ".join(str(context).split())
-    if not focus:
-        raise AuthoringServiceError("CREATOR_DISCOVERY_CONTEXT_INVALID", "A discovery context is required.")
-    return [
-        {
-            "id": "signal-radar",
-            "title": "建立主题信号雷达",
-            "outcome": f"每周获得与“{focus}”相关的重点变化和可跟进线索。",
-            "why_it_fits": "适合先持续观察，再决定值得投入的方向。",
-            "first_week_output": "一份经你审核的主题动态摘要和候选来源清单。",
-            "needs_confirmation": ["关注的主题边界", "更新频率", "哪些信号最重要"],
-            "recipe": {
-                "intent": f"持续跟踪：{focus}",
-                "steps": [
-                    {"id": "discover-sources", "intent": "发现并审核相关公开来源", "inputs": [], "outputs": []},
-                    {"id": "review-signals", "intent": "筛选值得关注的变化", "inputs": [], "outputs": []},
-                    {"id": "weekly-brief", "intent": "形成可阅读的每周摘要", "inputs": [], "outputs": []},
-                ],
-            },
-        },
-        {
-            "id": "question-notebook",
-            "title": "围绕一个问题建立观察笔记",
-            "outcome": f"逐步形成关于“{focus}”的证据、分歧与下一步问题。",
-            "why_it_fits": "适合还在判断问题是否值得做、需要什么信息时使用。",
-            "first_week_output": "一页按主题整理的观察笔记，以及需要继续确认的问题。",
-            "needs_confirmation": ["最想回答的问题", "可接受的信息范围", "何时停止观察"],
-            "recipe": {
-                "intent": f"理解并记录：{focus}",
-                "steps": [
-                    {"id": "frame-question", "intent": "明确要持续观察的问题", "inputs": [], "outputs": []},
-                    {"id": "collect-evidence", "intent": "发现并审核可用资料", "inputs": [], "outputs": []},
-                    {"id": "capture-learning", "intent": "记录证据、分歧和下一步问题", "inputs": [], "outputs": []},
-                ],
-            },
-        },
-        {
-            "id": "idea-brief",
-            "title": "把主题变成可执行的创作简报",
-            "outcome": f"从“{focus}”中整理出一个可以继续推进的创作方向。",
-            "why_it_fits": "适合希望先快速验证价值，而不是立刻决定完整方案。",
-            "first_week_output": "一份说明目标对象、价值和待验证假设的创作简报。",
-            "needs_confirmation": ["希望服务的人", "希望带来的变化", "最小验证方式"],
-            "recipe": {
-                "intent": f"探索创作方向：{focus}",
-                "steps": [
-                    {"id": "collect-context", "intent": "收集并审核相关背景材料", "inputs": [], "outputs": []},
-                    {"id": "shape-direction", "intent": "形成可比较的创作方向", "inputs": [], "outputs": []},
-                    {"id": "define-first-output", "intent": "定义第一周可以验证的输出", "inputs": [], "outputs": []},
-                ],
-            },
-        },
-    ]
-
-
 class AuthoringServiceError(ValueError):
     """Stable authoring-service error, suitable for creator and developer APIs."""
 

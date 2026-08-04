@@ -12,6 +12,9 @@ const sourceUrl = (value: string) => {
 const digest = async (value: unknown) => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(value))))).map((item) => item.toString(16).padStart(2, '0')).join('')
 const errorText = (error: unknown) => {
   if (!(error instanceof ApiError)) return '无法连接创作服务。请确认后端正在运行。'
+  if (error.code === 'AI_CREATOR_DISCOVERY_MODEL_UNBOUND') return 'AI 方向发现尚未连接。请先在 Developer Console 配置模型。'
+  if (error.code === 'AI_CREATOR_DISCOVERY_TIMEOUT') return 'AI 方向发现没有及时响应，请稍后再试。'
+  if (error.code === 'AI_CREATOR_DISCOVERY_OUTPUT_INVALID') return 'AI 返回的方向暂时无法安全采用，请重新尝试。'
   if (error.code === 'AI_AUTHORING_MODEL_UNBOUND') return 'AI 创作服务尚未连接。请先在 Developer Console 中配置模型。'
   if (error.code === 'AI_AUTHORING_MODEL_TIMEOUT') return 'AI 创作服务没有及时响应，当前设计未发生变化。'
   if (error.code === 'AUTHORING_FROZEN_STEP') return '该步骤已经冻结，请通过冻结修订流程修改。'

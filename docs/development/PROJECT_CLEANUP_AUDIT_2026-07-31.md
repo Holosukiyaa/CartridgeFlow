@@ -28,6 +28,7 @@ The current release baseline is `CF-FARP@1.0` plus `CF-CRE@1`. Both are active/s
 - Removed the stale planning-task parser, its three permanently failing API routes, its tests, types, and unused styles after the planning files were removed from the repository.
 - Added the Creator Studio discovery-to-recipe browser smoke test; it verifies the first-layer entry stays creator-safe and enters an auditable authoring session.
 - Added same-origin static route delivery for the independently built Creator and Developer applications at `/creator/` and `/developer/`; local Vite ports remain development-only.
+- Replaced the Creator Studio's static direction templates with a strict model adapter. The model can only return three creator-language possibilities through a validated JSON contract; unbound, timed-out, or invalid responses fail closed.
 
 ## Intentional Retention
 
@@ -352,6 +353,7 @@ src/
       base.py
       config.py
       config_manager.py
+      creator_discovery.py
       detection.py
       errors.py
       importers.py

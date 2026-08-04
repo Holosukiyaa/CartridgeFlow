@@ -75,7 +75,7 @@ from backend.api_models import (
 )
 
 from core.cartridge import CartridgeRegistry, CartridgeRunner
-from core.studio.authoring_service import AuthoringServiceError, AuthoringSessionStore, discover_creator_possibilities
+from core.studio.authoring_service import AuthoringServiceError, AuthoringSessionStore
 from core.studio.creator_runtime_bridge import CreatorRuntimeBridge, CreatorRuntimeBridgeError
 from core.cartridge.validator import ManifestValidationError
 from core.data_paths import (
@@ -2124,11 +2124,30 @@ def _authoring_error(exc: AuthoringServiceError):
 
 
 @app.post("/api/creator/possibilities")
-def discover_creator_possibilities_endpoint(payload: CreatorDiscoveryPayload):
+async def discover_creator_possibilities_endpoint(payload: CreatorDiscoveryPayload):
+    from core.llm import chat
+    from core.llm.config_manager import resolve_model
+    from core.llm.creator_discovery import CreatorDiscoveryError, build_creator_discovery_messages, parse_creator_discovery
     try:
-        return {"schema": "cartridgeflow.creator_possibilities.v1", "context": payload.context.strip(), "possibilities": discover_creator_possibilities(payload.context)}
+        model = resolve_model("mentor")
+        if not str(model.api_key or "").strip():
+            raise AuthoringServiceError("AI_CREATOR_DISCOVERY_MODEL_UNBOUND", "No configured discovery model is available.", status=409)
+        messages = build_creator_discovery_messages(payload.context)
+        try:
+            response = await asyncio.wait_for(chat(model, messages, agent_name="creator_discovery", phase="possibility_discovery"), timeout=30)
+        except TimeoutError as exc:
+            raise AuthoringServiceError("AI_CREATOR_DISCOVERY_TIMEOUT", "The AI discovery service did not respond in time.", status=504) from exc
+        try:
+            possibilities = parse_creator_discovery(str(response.get("content") or ""))
+        except CreatorDiscoveryError as exc:
+            raise AuthoringServiceError("AI_CREATOR_DISCOVERY_OUTPUT_INVALID", str(exc), status=502) from exc
+        return {"schema": "cartridgeflow.creator_possibilities.v1", "context": " ".join(payload.context.split()), "possibilities": possibilities}
     except AuthoringServiceError as exc:
         _authoring_error(exc)
+    except ValueError as exc:
+        _authoring_error(AuthoringServiceError("AI_CREATOR_DISCOVERY_MODEL_UNBOUND", str(exc), status=409))
+    except Exception as exc:
+        _authoring_error(AuthoringServiceError("AI_CREATOR_DISCOVERY_FAILED", str(exc), status=502))
 
 
 @app.post("/api/creator/authoring-sessions")

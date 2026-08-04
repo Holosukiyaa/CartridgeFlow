@@ -6,7 +6,7 @@ import tempfile
 import unittest
 import zipfile
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
 
@@ -34,18 +34,34 @@ class ApiSurfaceTests(unittest.TestCase):
             response = self.client.get("/api/health", headers={"Origin": origin})
             self.assertEqual(origin, response.headers.get("access-control-allow-origin"))
 
-    def test_creator_discovery_returns_creator_safe_possibilities_without_a_model(self):
-        response = self.client.post("/api/creator/possibilities", json={"context": "我想持续了解 AI 行业的变化"})
+    def test_creator_discovery_uses_configured_model_and_returns_creator_safe_possibilities(self):
+        content = json.dumps({"possibilities": [
+            {"id": "weekly-radar", "title": "每周行业观察", "outcome": "每周得到值得关注的行业变化。", "why_it_fits": "适合先建立稳定的观察节奏。", "first_week_output": "一份本周观察摘要。", "needs_confirmation": ["最关注的细分方向"], "recipe": {"intent": "持续了解行业变化", "steps": [{"id": "choose-focus", "intent": "确认本周最想关注的主题", "inputs": [], "outputs": []}, {"id": "review-learning", "intent": "整理本周值得继续追问的变化", "inputs": [], "outputs": []}]}},
+            {"id": "question-journal", "title": "问题观察笔记", "outcome": "逐步形成一个问题的观察记录。", "why_it_fits": "适合还在判断什么值得深入。", "first_week_output": "一页带有下一步问题的笔记。", "needs_confirmation": ["最想弄清的问题"], "recipe": {"intent": "理解一个行业问题", "steps": [{"id": "frame-question", "intent": "写下当前最重要的问题", "inputs": [], "outputs": []}, {"id": "capture-insight", "intent": "记录新发现和仍未解决的疑问", "inputs": [], "outputs": []}]}},
+            {"id": "idea-brief", "title": "创作方向简报", "outcome": "形成一个可以继续推进的创作方向。", "why_it_fits": "适合先小范围验证价值。", "first_week_output": "一份明确目标和下一步的简报。", "needs_confirmation": ["希望带来的变化"], "recipe": {"intent": "探索新的创作方向", "steps": [{"id": "collect-context", "intent": "整理已有的背景和想法", "inputs": [], "outputs": []}, {"id": "define-first-output", "intent": "确定第一周要完成的小成果", "inputs": [], "outputs": []}]}},
+        ]}, ensure_ascii=False)
+        with patch("core.llm.config_manager.resolve_model", return_value=type("Model", (), {"api_key": "configured"})()), patch("core.llm.chat", new_callable=AsyncMock, return_value={"content": content}) as chat:
+            response = self.client.post("/api/creator/possibilities", json={"context": "我想持续了解 AI 行业的变化"})
         self.assertEqual(200, response.status_code)
         payload = response.json()
         self.assertEqual("cartridgeflow.creator_possibilities.v1", payload["schema"])
         self.assertEqual(3, len(payload["possibilities"]))
         first = payload["possibilities"][0]
-        self.assertEqual("建立主题信号雷达", first["title"])
-        self.assertIn("我想持续了解 AI 行业的变化", first["outcome"])
-        self.assertEqual(["discover-sources", "review-signals", "weekly-brief"], [step["id"] for step in first["recipe"]["steps"]])
+        self.assertEqual("每周行业观察", first["title"])
+        self.assertEqual(["choose-focus", "review-learning"], [step["id"] for step in first["recipe"]["steps"]])
+        self.assertEqual("creator_discovery", chat.call_args.kwargs["agent_name"])
         self.assertNotIn("developer", json.dumps(payload).lower())
         self.assertNotIn("runtime", json.dumps(payload).lower())
+
+    def test_creator_discovery_rejects_unbound_or_invalid_model_output(self):
+        with patch("core.llm.config_manager.resolve_model", side_effect=ValueError("unbound")):
+            unbound = self.client.post("/api/creator/possibilities", json={"context": "Explore a new direction"})
+        with patch("core.llm.config_manager.resolve_model", return_value=type("Model", (), {"api_key": "configured"})()), patch("core.llm.chat", new_callable=AsyncMock, return_value={"content": '{"possibilities": []}'}):
+            invalid = self.client.post("/api/creator/possibilities", json={"context": "Explore a new direction"})
+        self.assertEqual(409, unbound.status_code)
+        self.assertEqual("AI_CREATOR_DISCOVERY_MODEL_UNBOUND", unbound.json()["detail"]["code"])
+        self.assertEqual(502, invalid.status_code)
+        self.assertEqual("AI_CREATOR_DISCOVERY_OUTPUT_INVALID", invalid.json()["detail"]["code"])
 
     def test_project_identity_restores_creator_and_limits_developer_to_safe_projection(self):
         source = {"id": "source.brief", "kind": "source", "digest": "a" * 64, "role": "public brief"}

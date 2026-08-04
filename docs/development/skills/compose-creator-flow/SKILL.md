@@ -11,7 +11,7 @@ made exclusively from Developer-registered trusted node presets.
 ## Workflow
 
 1. Read `PLAN.md`, `protocol/tuning/1.4/specification.md`, and
-   `protocol/flow-authoring/1.5/README.md`.
+   `protocol/flow-authoring/1.6/README.md`.
 2. Treat `src/core/protocol/trusted_node_recipes.py` as the fail-closed contract
    boundary and `src/core/llm/creator_flow_skill.py` as the model adapter.
 3. Give the model only creator-safe preset projections. Never include mapping
@@ -23,7 +23,9 @@ made exclusively from Developer-registered trusted node presets.
 6. Return `creator_capability_gap.v1` when the registry cannot satisfy a goal.
    Never fabricate a semantic step such as "define first-week output."
 7. Keep business presets out of Base. Register fixtures only inside tests.
-8. Verify protocol conformance, projection redaction, unknown preset refusal,
+8. Treat initial composition and whole-draft recomposition as the same strict
+   contract; recomposition atomically replaces the current draft and clears old reviews.
+9. Verify protocol conformance, projection redaction, unknown preset refusal,
    relation cycle refusal, API behavior, and Creator Studio tests.
 
 ## Inputs And Outputs

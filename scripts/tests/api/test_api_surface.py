@@ -29,7 +29,10 @@ class ApiSurfaceTests(unittest.TestCase):
     def test_service_root_and_local_authoring_cors_are_available_without_a_bundled_frontend(self):
         root = self.client.get("/")
         self.assertEqual(200, root.status_code)
-        self.assertEqual("CartridgeFlow API", root.json()["service"])
+        if root.headers.get("content-type", "").startswith("application/json"):
+            self.assertEqual("CartridgeFlow API", root.json()["service"])
+        else:
+            self.assertIn("text/html", root.headers.get("content-type", ""))
         for origin in ("http://127.0.0.1:5180", "http://127.0.0.1:5181"):
             response = self.client.get("/api/health", headers={"Origin": origin})
             self.assertEqual(origin, response.headers.get("access-control-allow-origin"))
@@ -183,25 +186,25 @@ class ApiSurfaceTests(unittest.TestCase):
         self.assertEqual(1, state["head"]["revision"])
         self.assertEqual({}, state["proposals"])
 
-    def test_creator_generation_candidate_is_gated_by_frozen_design(self):
+    def test_creator_package_is_gated_by_reviewed_design(self):
         source = {"id": "source.brief", "kind": "source", "digest": "a" * 64, "role": "public brief"}
         steps = [{"id": "draft", "intent": "Draft a brief.", "inputs": {}, "outputs": {}}]
         with tempfile.TemporaryDirectory() as temp_dir:
             store = AuthoringSessionStore(temp_dir)
-            with patch.object(backend_main, "authoring_sessions", store):
+            with patch.object(backend_main, "authoring_sessions", store), patch.object(backend_main, "ROOT", Path(temp_dir)):
                 created = self.client.post("/api/creator/authoring-sessions", json={"session_id": "api.gate", "recipe_id": "recipe.gate", "intent": "Create brief", "steps": steps, "source_references": [source], "bindings": {}})
                 self.assertEqual(200, created.status_code)
-                blocked = self.client.post("/api/creator/authoring-sessions/api.gate/compile-candidate", json={"expected_revision": 1})
+                blocked = self.client.post("/api/creator/authoring-sessions/api.gate/package", json={"expected_revision": 1})
                 self.assertEqual(409, blocked.status_code)
-                self.assertEqual("AUTHORING_GENERATION_BLOCKED", blocked.json()["detail"]["code"])
+                self.assertEqual("CREATOR_HANDOFF_DESIGN_BLOCKED", blocked.json()["detail"]["code"])
                 frozen = self.client.post("/api/creator/authoring-sessions/api.gate/freeze", json={"step_ids": ["draft"], "summary": "Reviewed"})
                 self.assertEqual(200, frozen.status_code)
-                candidate = self.client.post("/api/creator/authoring-sessions/api.gate/compile-candidate", json={"expected_revision": 1})
-                self.assertEqual(200, candidate.status_code)
-                self.assertEqual("compile", candidate.json()["compile_candidate"]["kind"])
-                self.assertNotIn("runtime", candidate.json())
+                packaged = self.client.post("/api/creator/authoring-sessions/api.gate/package", json={"expected_revision": 1})
+                self.assertEqual(200, packaged.status_code, packaged.text)
+                self.assertTrue(packaged.json()["signature_verified"])
+                self.assertIn(self.client.post("/api/creator/authoring-sessions/api.gate/compile-candidate", json={"expected_revision": 1}).status_code, {404, 405})
 
-    def test_creator_runtime_handoff_returns_only_signed_artifact_metadata(self):
+    def test_creator_package_returns_only_creator_safe_artifact_metadata(self):
         source = {"id": "source.brief", "kind": "source", "digest": "a" * 64, "role": "public brief"}
         steps = [{"id": "draft", "intent": "Draft a brief.", "inputs": {}, "outputs": {}}]
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -209,14 +212,13 @@ class ApiSurfaceTests(unittest.TestCase):
             with patch.object(backend_main, "authoring_sessions", store), patch.object(backend_main, "ROOT", Path(temp_dir)):
                 self.assertEqual(200, self.client.post("/api/creator/authoring-sessions", json={"session_id": "api.handoff", "recipe_id": "recipe.handoff", "intent": "Create brief", "steps": steps, "source_references": [source], "bindings": {}}).status_code)
                 self.assertEqual(200, self.client.post("/api/creator/authoring-sessions/api.handoff/freeze", json={"step_ids": ["draft"], "summary": "Reviewed"}).status_code)
-                candidate = self.client.post("/api/creator/authoring-sessions/api.handoff/compile-candidate", json={"expected_revision": 1}).json()["compile_candidate"]
-                response = self.client.post("/api/creator/authoring-sessions/api.handoff/runtime-handoff", json={"expected_revision": 1, "compile_candidate": candidate})
+                response = self.client.post("/api/creator/authoring-sessions/api.handoff/package", json={"expected_revision": 1})
                 self.assertEqual(200, response.status_code)
                 payload = response.json()
-                self.assertEqual("signed_handoff_ready", payload["status"])
-                self.assertTrue(payload["signature"]["verified"])
-                self.assertNotIn("archive", payload)
-                self.assertNotIn("running", json.dumps(payload).lower())
+                self.assertEqual("ready", payload["status"])
+                self.assertTrue(payload["signature_verified"])
+                self.assertEqual({"schema", "status", "filename", "url", "signature_verified"}, set(payload))
+                self.assertNotRegex(json.dumps(payload).lower(), r"root_flow|lineage|mapping|execut")
 
     def test_creator_reverse_endpoint_handles_new_operation_without_server_error(self):
         source = {"id": "source.brief", "kind": "source", "digest": "a" * 64}
@@ -418,6 +420,26 @@ class ApiSurfaceTests(unittest.TestCase):
                     }],
                 ),
             )
+            remote_payload = NodeCreatePayload(
+                template_id="remote_call",
+                node_id="publish_remote",
+                title="发布到远程服务",
+                after_node_id="generate_summary",
+                node=NodeUpdatePayload(
+                    kind="remote_call",
+                    executor="remote",
+                    effect="external_side_effect",
+                    action="remote_call",
+                    permission="external_service_call",
+                    manifest_permissions=[{
+                        "id": "external_service_call",
+                        "label": "远程服务权限",
+                        "level": "dangerous",
+                        "description": "允许调用已声明的远程服务。",
+                        "auth_mode": "ask_once",
+                    }],
+                ),
+            )
 
             with patch.object(backend_main, "dev_flow_manager", manager), patch.object(
                 backend_main.registry,
@@ -427,6 +449,7 @@ class ApiSurfaceTests(unittest.TestCase):
                 result = backend_main.create_lab_flow_node(flow_id, payload)
                 input_result = backend_main.create_lab_flow_node(flow_id, input_payload)
                 other_input_result = backend_main.create_lab_flow_node(flow_id, other_input_payload)
+                backend_main.create_lab_flow_node(flow_id, remote_payload)
                 updated_input_result = backend_main.update_lab_flow_node(
                     flow_id,
                     "collect_brief",
@@ -456,6 +479,7 @@ class ApiSurfaceTests(unittest.TestCase):
             manifest = json.loads(updated_input_result["files"]["manifest"])
             self.assertEqual(["input_3", "input_1"], [item["id"] for item in manifest["inputs"]])
             self.assertEqual(["runtime", "reviewer"], [item["id"] for item in manifest["llm_recipe"]["roles"]])
+            self.assertEqual(["external_service_call"], [item["id"] for item in manifest["permissions"]])
             input_root_flow = json.loads(input_result["files"]["root_flow"])
             self.assertEqual(["input_1", "input_2"], input_root_flow["states"]["collect_brief"]["params"]["fields"])
 

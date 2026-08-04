@@ -1,119 +1,20 @@
-import { useCallback, useEffect, useState } from 'react'
-import { Box, Button, Spinner, Text } from './ui.tsx'
-import { createDevFlow, fetchLabFlows, type FlowLabItem } from './api.ts'
-import FlowWorkbench from './pages/FlowWorkbench.tsx'
+import { useMemo } from 'react'
+import { CreatorStudio } from './pages/flow-workbench/CreatorStudio.tsx'
 
-const RECENT_CARTRIDGE_STORAGE_KEY = 'cartridgeflow.recent-cartridge'
-let pendingCreatorWorkspace: ReturnType<typeof createDevFlow> | null = null
+const PROJECT_KEY = 'cartridgeflow.creator-project'
 
-async function createCreatorWorkspace() {
-  if (pendingCreatorWorkspace) return pendingCreatorWorkspace
-  pendingCreatorWorkspace = createDevFlow('creator-workspace', 'Creator 工作区', '承载 Creator 语义、工程映射与仿真运行的本地工作区。')
-  try {
-    return await pendingCreatorWorkspace
-  } finally {
-    pendingCreatorWorkspace = null
-  }
-}
-
-function cartridgePath(flowId: string) {
-  return `/cartridges/${encodeURIComponent(flowId)}/design`
-}
-
-type Navigate = (path: string, options?: { replace?: boolean }) => void
-
-function Redirect({ to, navigate }: { to: string; navigate: Navigate }) {
-  useEffect(() => navigate(to, { replace: true }), [navigate, to])
-  return null
-}
-
-function CartridgeWorkbenchRoute({ flowId, workspaceMode, navigate }: {
-  flowId: string
-  workspaceMode: string
-  navigate: Navigate
-}) {
-
-  useEffect(() => {
-    if (flowId) localStorage.setItem(RECENT_CARTRIDGE_STORAGE_KEY, flowId)
-  }, [flowId])
-
-  if (!flowId) return <Redirect to="/" navigate={navigate} />
-  if (workspaceMode !== 'design') return <Redirect to={cartridgePath(flowId)} navigate={navigate} />
-
-  return (
-    <FlowWorkbench
-      key={flowId}
-      flowId={flowId}
-      onSwitchFlow={(nextFlowId) => navigate(nextFlowId ? cartridgePath(nextFlowId) : '/', { replace: !nextFlowId })}
-    />
-  )
-}
-
-function WorkbenchEntryRoute({ navigate }: { navigate: Navigate }) {
-  const [items, setItems] = useState<FlowLabItem[] | null>(null)
-  const [error, setError] = useState('')
-
-  const load = () => {
-    setItems(null)
-    setError('')
-    fetchLabFlows()
-      .then(async (data) => {
-        const flows = data.items || []
-        if (flows.length) { setItems(flows); return }
-        const created = await createCreatorWorkspace()
-        navigate(cartridgePath(created.id), { replace: true })
-      })
-      .catch((loadError) => setError(loadError.message || '无法读取本机卡带'))
-  }
-
-  useEffect(load, [])
-
-  if (error) {
-    return <Box className="cf-workbench-entry-state"><Text color="fg.error">{error}</Text><Button className="cf-outline-btn" onClick={load}>重新加载</Button></Box>
-  }
-  if (items === null) return <Box className="cf-workbench-entry-state"><Spinner /></Box>
-  const recentId = localStorage.getItem(RECENT_CARTRIDGE_STORAGE_KEY)
-  const target = items.find((item) => item.id === recentId) || items.find((item) => item.editable) || items[0]
-  return <Redirect to={cartridgePath(target.id)} navigate={navigate} />
+function projectIdFromLocation() {
+  const parts = window.location.pathname.split('/').filter(Boolean)
+  if (parts[0] === 'projects' && parts[1]) return decodeURIComponent(parts[1])
+  if (parts[0] === 'cartridges' && parts[1]) return decodeURIComponent(parts[1])
+  const recent = localStorage.getItem(PROJECT_KEY)
+  return recent || `project.${crypto.randomUUID()}`
 }
 
 export default function App() {
-  const [pathname, setPathname] = useState(() => window.location.pathname)
-  const navigate = useCallback<Navigate>((path, options) => {
-    if (options?.replace) window.history.replaceState(null, '', path)
-    else window.history.pushState(null, '', path)
-    setPathname(window.location.pathname)
-  }, [])
-
-  useEffect(() => {
-    const onPopState = () => setPathname(window.location.pathname)
-    window.addEventListener('popstate', onPopState)
-    return () => window.removeEventListener('popstate', onPopState)
-  }, [])
-
-  let segments: string[] = []
-  try {
-    segments = pathname.split('/').filter(Boolean).map((segment) => decodeURIComponent(segment))
-  } catch {
-    segments = []
-  }
-
-  let route: React.ReactNode
-  if (segments.length === 0 || (segments.length === 1 && segments[0] === 'cartridges')) {
-    route = <WorkbenchEntryRoute navigate={navigate} />
-  } else if (segments[0] === 'cartridges' && segments.length >= 2 && segments.length <= 3) {
-    route = <CartridgeWorkbenchRoute flowId={segments[1]} workspaceMode={segments[2] || 'design'} navigate={navigate} />
-  } else if (segments[0] === 'projects' && segments.length >= 2 && segments.length <= 3) {
-    route = <Redirect to={cartridgePath(segments[1])} navigate={navigate} />
-  } else {
-    route = <Redirect to="/" navigate={navigate} />
-  }
-
-  return (
-    <Box minH="100vh" className="cf-workbench-shell">
-      <main className="cf-main cf-workbench-main">
-        {route}
-      </main>
-    </Box>
-  )
+  const projectId = useMemo(projectIdFromLocation, [])
+  localStorage.setItem(PROJECT_KEY, projectId)
+  const canonicalPath = `/projects/${encodeURIComponent(projectId)}/creator`
+  if (window.location.pathname !== canonicalPath) window.history.replaceState(null, '', canonicalPath)
+  return <CreatorStudio projectId={projectId} />
 }

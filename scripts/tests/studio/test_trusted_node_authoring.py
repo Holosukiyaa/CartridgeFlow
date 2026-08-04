@@ -2,6 +2,7 @@ import sys
 import tempfile
 import unittest
 import json
+import subprocess
 import zipfile
 from copy import deepcopy
 from pathlib import Path
@@ -14,6 +15,7 @@ from core.studio.authoring_service import AuthoringServiceError, AuthoringSessio
 from core.studio.creator_runtime_bridge import CreatorRuntimeBridge, CreatorRuntimeBridgeError
 from core.studio.trusted_node_presets import TrustedNodePresetStore, build_trusted_node_mapping
 from core.lab.node_executor import LabNodeExecutor
+from core.protocol.tuning import canonical_digest
 
 
 PRESET = {
@@ -55,6 +57,40 @@ class TrustedNodeAuthoringTests(unittest.TestCase):
         with self.assertRaises(AuthoringServiceError): self.presets.put(next_revision, mapping(next_revision), expected_revision=0)
         self.presets.put(next_revision, mapping(next_revision), expected_revision=1)
         self.assertEqual(2, self.presets.get("rss-source")["revision"])
+
+    def test_registry_activation_moves_pointer_without_rewriting_history(self):
+        second = {**PRESET, "revision": 2, "creator_description": "第二个不可变版本。"}
+        evidence = {
+            "schema": "cartridgeflow.trusted_node_simulation.v1",
+            "flow_id": "dev.sources",
+            "node_id": "rss",
+            "status": "passed",
+            "mapping_digest": mapping(second)["digest"],
+            "mode": "isolated_dry_run",
+            "executed_real_resources": False,
+            "created_at": "2026-08-04T00:00:00+08:00",
+            "checks": [{"id": "portable_snapshot", "status": "passed", "message": "ok"}],
+        }
+        evidence["digest"] = canonical_digest(evidence)
+        self.presets.put(second, mapping(second), expected_revision=1, simulation_evidence=evidence)
+        self.presets.set_activation("rss-source", active=False)
+        self.assertEqual([], self.presets.list_creator())
+        rolled_back = self.presets.set_activation("rss-source", active=True, revision=1)
+        self.assertEqual(1, rolled_back["active_revision"])
+        self.assertEqual(2, rolled_back["latest_revision"])
+        self.assertEqual([1, 2], [item["preset"]["revision"] for item in rolled_back["revisions"]])
+        third = {**PRESET, "revision": 3, "creator_description": "回滚后发布的新版本。"}
+        self.presets.put(third, mapping(third), expected_revision=2)
+        self.assertEqual(3, self.presets.latest_revision("rss-source"))
+
+    def test_registry_reports_creator_project_usage(self):
+        self.sessions.create_from_recipe(
+            "creator.daily", "project.daily", self.recipe, self.presets.list_developer(),
+            mappings=self.presets.mappings_for_recipe(self.recipe),
+        )
+        usage = self.sessions.trusted_preset_usage("rss-source")
+        self.assertEqual("project.daily", usage[0]["project_id"])
+        self.assertEqual({"node_id": "sources", "revision": 1}, usage[0]["nodes"][0])
 
     def test_creator_projection_is_safe_and_topology_mutation_is_blocked(self):
         projection = self.sessions.create_from_recipe("creator.daily", "project.daily", self.recipe, self.presets.list_developer(), mappings=self.presets.mappings_for_recipe(self.recipe))
@@ -100,6 +136,39 @@ class TrustedNodeAuthoringTests(unittest.TestCase):
         result = LabNodeExecutor(ROOT).execute("step.sources", state, runtime_state, {}, Path(self.temp.name))
         self.assertTrue(result["ok"])
         self.assertEqual("ready", runtime_state["context"]["store"]["result"])
+
+    def test_creator_package_boundary_builds_signed_archive_without_project_confirmation(self):
+        self.sessions.create_from_recipe(
+            "creator.package", "project.package", self.recipe, self.presets.list_developer(),
+            mappings=self.presets.mappings_for_recipe(self.recipe),
+        )
+        self.sessions.freeze("creator.package", ["sources"], author="creator", summary="Reviewed")
+        bridge = CreatorRuntimeBridge(Path(self.temp.name), Path(self.temp.name) / "packages-v16")
+        package = bridge.package(self.sessions, "creator.package", expected_revision=1)
+        self.assertEqual({"id": "CF-FARP", "version": "1.6"}, package["root_flow"]["protocol"])
+        self.assertTrue(package["signature"]["verified"])
+        self.assertNotIn("developer_confirmation", package["lineage"])
+        self.assertEqual(
+            self.sessions.compile_candidate(self.sessions.get("creator.package"))["mapping_digest"],
+            package["lineage"]["mapping_snapshot_digest"],
+        )
+        with zipfile.ZipFile(Path(self.temp.name) / "packages-v16" / package["filename"]) as archive:
+            root_flow = json.loads(archive.read("payload/root.flow.json"))
+        self.assertEqual("1.6", root_flow["protocol"]["version"])
+        verified = subprocess.run(
+            [
+                "node",
+                str(ROOT / "demos" / "runtime-developer-toolkit" / "demo" / "run.mjs"),
+                "verify",
+                str(Path(self.temp.name) / "packages-v16" / package["filename"]),
+                "--trust",
+                str(Path(self.temp.name) / ".data" / "user" / "config" / "release_keys" / "trusted_publishers.json"),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(0, verified.returncode, verified.stderr)
 
     def test_registry_rejects_preset_without_executable_mapping(self):
         empty = TrustedNodePresetStore(Path(self.temp.name) / "strict")

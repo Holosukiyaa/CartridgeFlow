@@ -64,6 +64,11 @@
       "status": "supported"
     },
     {
+      "id": "CF-FARP",
+      "version": "1.6",
+      "status": "supported"
+    },
+    {
       "id": "CF-CRE",
       "version": "1",
       "status": "supported"
@@ -176,7 +181,8 @@
     "dynamic_creator_recipes",
     "node_scoped_authoring",
     "creator_capability_gaps",
-    "trusted_node_recipe_mapping"
+    "trusted_node_recipe_mapping",
+    "creator_package_boundary"
   ],
   "capabilities": [
     "manifest_load",
@@ -350,7 +356,8 @@
     "creator_capability_gap_v1",
     "creator_node_scoped_changes_v1",
     "trusted_node_recipe_materialization_v1",
-    "developer_materialization_confirmation_v1"
+    "developer_materialization_confirmation_v1",
+    "creator_atomic_package_boundary_v1"
   ],
   "tool_packs": [
     "builtin.filesystem",

@@ -69,25 +69,7 @@ class AuthoringSessionStore:
 
     def create_from_recipe(self, session_id: str, project_id: str, recipe: dict, presets: list[dict], sources: list[dict] | None = None, *, mappings: dict[str, dict] | None = None) -> dict:
         """Create one Creator session from a server-resolved dynamic trusted recipe."""
-        try:
-            normalized_presets = [validate_preset(item) for item in presets]
-            recipe = validate_dynamic_recipe(recipe, normalized_presets)
-        except TuningProtocolError as exc:
-            raise AuthoringServiceError("AUTHORING_TRUSTED_RECIPE_INVALID", str(exc)) from exc
-        from core.studio.trusted_node_presets import validate_trusted_node_mapping
-        preset_by_id = {item["id"]: item for item in normalized_presets}
-        raw_mappings = mappings if isinstance(mappings, dict) else {}
-        if set(raw_mappings) != {item["id"] for item in recipe["nodes"]}:
-            raise AuthoringServiceError(
-                "AUTHORING_TRUSTED_MAPPING_MISSING",
-                "Every trusted recipe node must pin one executable Developer mapping.",
-            )
-        executable_mappings = {}
-        for node in recipe["nodes"]:
-            mapping = validate_trusted_node_mapping(raw_mappings[node["id"]], preset_by_id[node["preset"]["id"]])
-            if mapping["key"] != node["developer_mapping_key"]:
-                raise AuthoringServiceError("AUTHORING_TRUSTED_MAPPING_INVALID", "Recipe and Developer mapping identities differ.")
-            executable_mappings[node["id"]] = mapping
+        recipe, normalized_presets, executable_mappings = self._prepare_trusted_recipe(recipe, presets, mappings)
         steps = [{"id": item["id"], "intent": item["creator_label"], "inputs": {}, "outputs": {}} for item in recipe["nodes"]]
         relations = [{"id": item["id"], "from_step_id": item["from_node_id"], "to_step_id": item["to_node_id"], "relation": item["relation"]} for item in recipe["relations"]]
         bindings = {item["id"]: deepcopy(item["values"]) for item in recipe["nodes"]}
@@ -113,6 +95,61 @@ class AuthoringSessionStore:
             }
             self._write(path, state)
             return self.creator_projection(state)
+
+    def replace_from_recipe(self, session_id: str, recipe: dict, presets: list[dict], *, mappings: dict[str, dict] | None, expected_revision: int) -> dict:
+        """Atomically replace the current overall draft while preserving project identity."""
+        recipe, normalized_presets, executable_mappings = self._prepare_trusted_recipe(recipe, presets, mappings)
+        steps = [{"id": item["id"], "intent": item["creator_label"], "inputs": {}, "outputs": {}} for item in recipe["nodes"]]
+        relations = [{"id": item["id"], "from_step_id": item["from_node_id"], "to_step_id": item["to_node_id"], "relation": item["relation"]} for item in recipe["relations"]]
+        bindings = {item["id"]: deepcopy(item["values"]) for item in recipe["nodes"]}
+        with self._lock:
+            state = self.get(session_id)
+            self._require_revision(state, expected_revision)
+            try:
+                blueprint = create_recipe_blueprint(recipe["id"], recipe["goal"], steps, [], relations, protocol=TRUSTED_NODE_AUTHORING_PROTOCOL)
+                instance = create_recipe_instance(
+                    blueprint,
+                    bindings,
+                    revision=state["head"]["revision"] + 1,
+                    parent_instance=state["head"],
+                )
+            except TuningProtocolError as exc:
+                raise AuthoringServiceError("AUTHORING_FACT_INVALID", str(exc)) from exc
+            state["head"] = instance
+            state["instances"][instance["id"]] = instance
+            state["trusted_recipe"] = deepcopy(recipe)
+            state["trusted_presets"] = deepcopy(normalized_presets)
+            state["developer_mappings"] = deepcopy(executable_mappings)
+            state["developer_confirmation"] = None
+            state["proposals"] = {}
+            state["freezes"] = []
+            state["freeze_replacements"] = []
+            state["freeze_revisions"] = []
+            self._write(self._path(session_id), state)
+            return self.creator_projection(state)
+
+    @staticmethod
+    def _prepare_trusted_recipe(recipe: dict, presets: list[dict], mappings: dict[str, dict] | None) -> tuple[dict, list[dict], dict[str, dict]]:
+        try:
+            normalized_presets = [validate_preset(item) for item in presets]
+            recipe = validate_dynamic_recipe(recipe, normalized_presets)
+        except TuningProtocolError as exc:
+            raise AuthoringServiceError("AUTHORING_TRUSTED_RECIPE_INVALID", str(exc)) from exc
+        from core.studio.trusted_node_presets import validate_trusted_node_mapping
+        preset_by_id = {item["id"]: item for item in normalized_presets}
+        raw_mappings = mappings if isinstance(mappings, dict) else {}
+        if set(raw_mappings) != {item["id"] for item in recipe["nodes"]}:
+            raise AuthoringServiceError(
+                "AUTHORING_TRUSTED_MAPPING_MISSING",
+                "Every trusted recipe node must pin one executable Developer mapping.",
+            )
+        executable_mappings = {}
+        for node in recipe["nodes"]:
+            mapping = validate_trusted_node_mapping(raw_mappings[node["id"]], preset_by_id[node["preset"]["id"]])
+            if mapping["key"] != node["developer_mapping_key"]:
+                raise AuthoringServiceError("AUTHORING_TRUSTED_MAPPING_INVALID", "Recipe and Developer mapping identities differ.")
+            executable_mappings[node["id"]] = mapping
+        return recipe, normalized_presets, executable_mappings
 
     def create_from_template(self, session_id: str, project_id: str, template: dict, values: dict, sources: list[dict]) -> dict:
         """Create a session only from a developer-authored CF-TUNING@1.3 template."""
@@ -140,6 +177,28 @@ class AuthoringSessionStore:
             if state is None:
                 raise AuthoringServiceError("AUTHORING_PROJECT_UNKNOWN", "Project was not found.", status=404)
             return state
+
+    def trusted_preset_usage(self, preset_id: str) -> list[dict]:
+        """Return Developer-visible references without exposing Creator-safe projections."""
+        with self._lock:
+            usage = []
+            for path in sorted(self.root.glob("*.json")):
+                state = self._read(path)
+                recipe = state.get("trusted_recipe")
+                if not isinstance(recipe, dict):
+                    continue
+                nodes = [
+                    {"node_id": node["id"], "revision": node["preset"]["revision"]}
+                    for node in recipe.get("nodes") or []
+                    if isinstance(node, dict) and (node.get("preset") or {}).get("id") == preset_id
+                ]
+                if nodes:
+                    usage.append({
+                        "project_id": state.get("project_id", state["id"]),
+                        "session_id": state["id"],
+                        "nodes": nodes,
+                    })
+            return usage
 
     def propose(self, session_id: str, changes: list[dict], *, author: str, summary: str, expected_revision: int) -> dict:
         with self._lock:
@@ -383,10 +442,11 @@ class AuthoringSessionStore:
             edges.append({"id": f"source-{source['id']}", "from": source_id, "to": "intent" if audience == "creator" else "project", "relation": "informs"})
         for relation in head["blueprint"].get("relations", []):
             edges.append({"id": f"relation:{relation['id']}", "from": f"step:{relation['from_step_id']}", "to": f"step:{relation['to_step_id']}", "relation": relation["relation"]})
-        readiness = AuthoringSessionStore.generation_readiness(state)
-        nodes.append({"id": "engineering", "kind": "engineering", "label": "工程验证", "level": step_level + 1, "status": "ready" if readiness["ready"] else "waiting"})
-        for step in head["blueprint"]["steps"]:
-            edges.append({"id": f"engineering-{step['id']}", "from": f"step:{step['id']}", "to": "engineering", "relation": "hands_off_to"})
+        if audience == "developer":
+            readiness = AuthoringSessionStore.generation_readiness(state)
+            nodes.append({"id": "engineering", "kind": "engineering", "label": "工程验证", "level": step_level + 1, "status": "ready" if readiness["ready"] else "waiting"})
+            for step in head["blueprint"]["steps"]:
+                edges.append({"id": f"engineering-{step['id']}", "from": f"step:{step['id']}", "to": "engineering", "relation": "hands_off_to"})
         return {"schema": "cartridgeflow.project_journey_graph.v1", "project_id": project_id, "revision": head["revision"], "nodes": nodes, "edges": edges}
 
     @staticmethod

@@ -2,7 +2,8 @@
 
 This is a dependency-free reference for a runtime team that does not use Python.
 It consumes a signed `CF-CRE@1` archive whose payload declares a matching,
-supported `CF-FARP@1.0` or `CF-FARP@1.1` Root Flow.
+supported `CF-FARP@1.0`, `CF-FARP@1.1`, or Creator package-boundary
+`CF-FARP@1.6` Root Flow.
 
 Use Node 20 or later.
 

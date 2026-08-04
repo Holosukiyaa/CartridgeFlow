@@ -27,7 +27,7 @@ runtime-developer-toolkit/
 
 ## 交接顺序
 
-1. 阅读 `guide/RUNTIME_TEAM_CF_CRE_FARP_DEVELOPMENT_GUIDE.md`，先理解 CF-CRE@1 与 CF-FARP@1.0 的边界。
+1. 阅读 `guide/RUNTIME_TEAM_CF_CRE_FARP_DEVELOPMENT_GUIDE.md`，先理解 CF-CRE@1 与 CF-FARP 执行计划的边界；Creator 打包产物使用兼容执行计划的 CF-FARP@1.6。
 2. 运行 `npm --prefix demo run check`，确认 Node.js 环境满足要求。
 3. 使用 `samples/trusted_publishers.json` 验证样例包（`verify` 全部 5 个包）。
 4. 使用 `--mock` 跑通确定性执行链（`run` 支持 sequence / fork-join / loop / 人工审核 / 产物交付）。

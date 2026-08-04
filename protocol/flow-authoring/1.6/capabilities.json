@@ -1,0 +1,1 @@
+{"schema_version":"1.0","capabilities":[{"id":"creator_atomic_package_boundary_v1","profile":"creator_package_boundary"},{"id":"trusted_node_recipe_materialization_v1","profile":"trusted_mapping_snapshot"},{"id":"release_envelope_builder_v1","profile":"creator_package_boundary"},{"id":"release_envelope_signature_verify_v1","profile":"creator_package_boundary"}]}

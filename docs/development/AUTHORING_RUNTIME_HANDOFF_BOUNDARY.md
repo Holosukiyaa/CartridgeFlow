@@ -1,18 +1,18 @@
 # Authoring To Runtime Handoff Boundary
 
-Creator Studio owns intent, source references, prompts, AI proposals, selected
-acceptance records, freeze lineage, and creator-local UI state. These are
-private authoring facts and do not form runtime input.
+Creator owns intent, safe field values, AI proposals, reviewed acceptance
+records, and review lineage. These are private authoring facts and never become
+runtime authority directly.
 
-Developer Console owns read-only development diagnostics over declared Flow
-files, analysis, resources, tuning materialization, and preflight results. It
-does not run cartridges, receive creator chat/session data, or own a runtime
-installation.
+Developer authority enters earlier, through immutable trusted-node publications
+and their executable mapping snapshots. A Creator project does not open a
+Developer workspace or require a second project-specific confirmation.
 
-The handoff endpoint accepts only the current, design-ready Creator revision
-and its matching compile candidate. It materializes a signed CF-CRE archive
-with a CF-FARP Root Flow, then returns signed-handoff metadata and a package
-URL. It does not install, execute, or report a running cartridge.
+The sole Creator package endpoint accepts only the expected current revision.
+It derives the compile candidate internally, validates every reviewed node and
+mapping snapshot, materializes a CF-FARP@1.6 Root Flow, builds and verifies a
+signed CF-CRE archive, then returns only filename, URL, status, and signature
+verification. It does not expose the candidate, Root Flow, or mapping lineage.
 
 The runtime receives only the downloaded signed CF-CRE archive, a runtime-owned
 trust store, and runtime configuration. The reference toolkit verifies archive

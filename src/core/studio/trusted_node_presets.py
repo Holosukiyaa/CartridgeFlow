@@ -166,7 +166,14 @@ class TrustedNodePresetStore:
         self.root.mkdir(parents=True, exist_ok=True)
         self._lock = RLock()
 
-    def put(self, preset: dict, mapping: dict, *, expected_revision: int | None = None) -> dict:
+    def put(
+        self,
+        preset: dict,
+        mapping: dict,
+        *,
+        expected_revision: int | None = None,
+        simulation_evidence: dict | None = None,
+    ) -> dict:
         try:
             item = validate_preset(preset)
         except TuningProtocolError as exc:
@@ -175,10 +182,10 @@ class TrustedNodePresetStore:
         with self._lock:
             path = self._path(item["id"])
             state = self._read(path) if path.exists() else None
-            current = state["current"]["preset"]["revision"] if state else 0
-            if expected_revision is not None and expected_revision != current:
+            latest = max((item["preset"]["revision"] for item in state["revisions"]), default=0) if state else 0
+            if expected_revision is not None and expected_revision != latest:
                 raise AuthoringServiceError("TRUSTED_NODE_PRESET_REVISION_CONFLICT", "Trusted node preset revision is stale.", status=409)
-            if item["revision"] != current + 1:
+            if item["revision"] != latest + 1:
                 raise AuthoringServiceError("TRUSTED_NODE_PRESET_REVISION_INVALID", "Trusted node preset revision must advance by one.", status=409)
             published_preset = {**deepcopy(item), "digest": preset_digest(item)}
             publication = {
@@ -188,11 +195,20 @@ class TrustedNodePresetStore:
             }
             publication["digest"] = canonical_digest(publication)
             revisions = [*(state["revisions"] if state else []), publication]
+            evidence = deepcopy((state or {}).get("simulation_evidence") or {})
+            if simulation_evidence is not None:
+                evidence[str(item["revision"])] = self._validate_simulation_evidence(
+                    simulation_evidence,
+                    mapping_digest=executable_mapping["digest"],
+                )
             body = {
-                "schema": "cartridgeflow.trusted_node_registry_entry.v2",
+                "schema": "cartridgeflow.trusted_node_registry_entry.v3",
                 "id": item["id"],
+                "status": "active",
+                "active_revision": item["revision"],
                 "current": publication,
                 "revisions": revisions,
+                "simulation_evidence": evidence,
             }
             body["digest"] = canonical_digest(body)
             self._write(path, body)
@@ -201,11 +217,33 @@ class TrustedNodePresetStore:
     def list_developer(self) -> list[dict]:
         """Return protocol presets only, for AI composition and mapping-free callers."""
         with self._lock:
-            return [deepcopy(self._read(path)["current"]["preset"]) for path in sorted(self.root.glob("*.json"))]
+            return [
+                deepcopy(state["current"]["preset"])
+                for path in sorted(self.root.glob("*.json"))
+                if (state := self._read(path)).get("status") == "active"
+            ]
 
     def list_published(self) -> list[dict]:
         with self._lock:
             return [deepcopy(self._read(path)["current"]) for path in sorted(self.root.glob("*.json"))]
+
+    def list_entries(self) -> list[dict]:
+        """Return Developer control-plane state without changing immutable publications."""
+        with self._lock:
+            entries = []
+            for path in sorted(self.root.glob("*.json")):
+                state = self._read(path)
+                latest_revision = max(item["preset"]["revision"] for item in state["revisions"])
+                entries.append({
+                    "id": state["id"],
+                    "status": state["status"],
+                    "active_revision": state["active_revision"],
+                    "latest_revision": latest_revision,
+                    "current": deepcopy(state["current"]),
+                    "revisions": deepcopy(state["revisions"]),
+                    "simulation_evidence": deepcopy(state.get("simulation_evidence") or {}),
+                })
+            return entries
 
     def list_creator(self) -> list[dict]:
         return [creator_preset_projection(item) for item in self.list_developer()]
@@ -225,6 +263,35 @@ class TrustedNodePresetStore:
             if item is None:
                 raise AuthoringServiceError("TRUSTED_NODE_PRESET_REVISION_UNKNOWN", "Trusted node preset revision was not found.", status=404)
             return deepcopy(item)
+
+    def latest_revision(self, preset_id: str) -> int:
+        with self._lock:
+            path = self._path(preset_id)
+            if not path.exists():
+                return 0
+            return max(item["preset"]["revision"] for item in self._read(path)["revisions"])
+
+    def set_activation(self, preset_id: str, *, active: bool, revision: int | None = None) -> dict:
+        """Move the active pointer or stop new use; revision publications remain immutable."""
+        with self._lock:
+            path = self._path(preset_id)
+            if not path.exists():
+                raise AuthoringServiceError("TRUSTED_NODE_PRESET_UNKNOWN", "Trusted node preset was not found.", status=404)
+            state = self._read(path)
+            if active:
+                target_revision = revision or max(item["preset"]["revision"] for item in state["revisions"])
+                target = next((item for item in state["revisions"] if item["preset"]["revision"] == target_revision), None)
+                if target is None:
+                    raise AuthoringServiceError("TRUSTED_NODE_PRESET_REVISION_UNKNOWN", "Trusted node preset revision was not found.", status=404)
+                state["current"] = deepcopy(target)
+                state["active_revision"] = target_revision
+                state["status"] = "active"
+            else:
+                state["status"] = "inactive"
+            state["schema"] = "cartridgeflow.trusted_node_registry_entry.v3"
+            state["digest"] = canonical_digest({key: state[key] for key in state if key != "digest"})
+            self._write(path, state)
+            return next(item for item in self.list_entries() if item["id"] == preset_id)
 
     def mappings_for_recipe(self, recipe: dict) -> dict[str, dict]:
         mappings: dict[str, dict] = {}
@@ -250,9 +317,31 @@ class TrustedNodePresetStore:
         except (OSError, json.JSONDecodeError) as exc:
             raise AuthoringServiceError("TRUSTED_NODE_PRESET_STORE_INVALID", "Trusted node preset storage is invalid.", status=500) from exc
         body = {key: value[key] for key in value if key != "digest"}
-        if value.get("digest") != canonical_digest(body) or value.get("schema") != "cartridgeflow.trusted_node_registry_entry.v2":
+        if value.get("digest") != canonical_digest(body) or value.get("schema") not in {
+            "cartridgeflow.trusted_node_registry_entry.v2",
+            "cartridgeflow.trusted_node_registry_entry.v3",
+        }:
             raise AuthoringServiceError("TRUSTED_NODE_PRESET_STORE_INVALID", "Trusted node preset storage integrity check failed.", status=500)
+        if value.get("schema") == "cartridgeflow.trusted_node_registry_entry.v2":
+            value = {
+                **value,
+                "status": "active",
+                "active_revision": value["current"]["preset"]["revision"],
+                "simulation_evidence": {},
+            }
         return value
+
+    @staticmethod
+    def _validate_simulation_evidence(value: dict, *, mapping_digest: str) -> dict:
+        if not isinstance(value, dict) or value.get("schema") != "cartridgeflow.trusted_node_simulation.v1":
+            raise AuthoringServiceError("TRUSTED_NODE_SIMULATION_INVALID", "Trusted node simulation evidence is invalid.")
+        if value.get("status") != "passed" or value.get("mapping_digest") != mapping_digest:
+            raise AuthoringServiceError("TRUSTED_NODE_SIMULATION_BLOCKED", "Trusted node simulation did not pass for this exact mapping.", status=409)
+        digest = value.get("digest")
+        body = {key: deepcopy(item) for key, item in value.items() if key != "digest"}
+        if digest != canonical_digest(body):
+            raise AuthoringServiceError("TRUSTED_NODE_SIMULATION_INVALID", "Trusted node simulation evidence integrity check failed.")
+        return deepcopy(value)
 
     @staticmethod
     def _write(path: Path, value: dict) -> None:

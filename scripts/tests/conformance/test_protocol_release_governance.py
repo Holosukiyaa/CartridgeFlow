@@ -19,6 +19,7 @@ class ProtocolReleaseGovernanceTests(unittest.TestCase):
         self.assertEqual({"id": "CF-FARP", "version": "1.1"}, catalog.data["default_for_new_flows"])
         self.assertEqual("current", catalog.get("CF-FARP", "1.1")["lifecycle"])
         self.assertEqual("supported_previous", catalog.get("CF-FARP", "1.5")["lifecycle"])
+        self.assertEqual("supported_previous", catalog.get("CF-FARP", "1.6")["lifecycle"])
         self.assertEqual("supported_previous", catalog.get("CF-FARP", "1.0")["lifecycle"])
         self.assertEqual("supported_previous", catalog.get("CF-FARP", "0.9")["lifecycle"])
         self.assertEqual("supported_previous", catalog.get("CF-FARP", "0.8")["lifecycle"])

@@ -1,164 +1,98 @@
-# CartridgeFlow Protocol-First Plan
+# CartridgeFlow Creator-Only Plan
 
-## Product Decision
+## 产品定位
 
-Creator Studio is an AI-assisted recipe composer built on Developer-owned,
-versioned trusted node presets. A preset describes one reusable capability and
-pins an immutable snapshot of a real executable Developer node. It is not a
-fixed whole-flow template and it is not an abstract semantic placeholder.
-
-The project chain is:
+当前前端只服务 Creator 的第一层和第二层语义。动态链路图是两层共同的唯一载体，第三层工程语义不得以页面、模式、设置开关、工具栏或调试入口的形式出现。
 
 ```text
-Developer canvas process nodes
-  -> published trusted presets plus executable mapping snapshots
-  -> AI-composed Creator recipe
-  -> reviewed and frozen CF-TUNING facts
-  -> Developer-confirmed mappings and CF-FARP Root Flow
-  -> signed CF-CRE handoff
+第一层：没有明确方案
+  AI 帮用户发现目标、补充思路
+          ↓
+第二层：已有目标或整体草稿
+  AI 编排动态链路，用户审核整体并深入单个节点
+          ↓
+打包：唯一映射边界
+  后台严格校验并映射为第三层可执行事实
+          ↓
+demos：独立运行测试台
 ```
 
-The whole-flow AI may dynamically select, repeat, arrange, and connect trusted
-node presets to answer a user's goal. The node-level AI may deepen one selected
-node only through fields that its preset explicitly exposes. If no trusted
-node can provide a required capability, the system reports a capability gap;
-it never fabricates an abstract node that cannot be mapped to Developer.
+`demos/` 负责包的运行和测试。Creator 前端不提供运行、暂停、停止、历史、调试、仿真或生产交互功能。
 
-Creator users see goals, sources, recipe nodes, editable choices, review state,
-and readiness. They never see protocol fields, mapping keys, executors,
-permissions, models, tools, secrets, or executable Root Flow facts. Developer
-users own those implementation facts. Both roles use the original React Flow
-workbench and the same dynamic chain graph. Creator semantics are the default;
-Developer enables engineering semantics in canvas settings and publishes a
-selected real node through the canvas's Trusted Nodes panel.
+## 用户契约
 
-## Non-Negotiable Invariants
+1. 用户默认进入空画布，只看到一个空节点和 AI 创作入口。
+2. 用户可以直接描述目标，也可以让 AI 帮助发现想法。
+3. AI 根据可信能力约束生成动态链路图；用户不从固定节点库手工放置节点。
+4. 用户可以通过整体对话调整草稿，也可以点击一个节点进入第二层深化。
+5. 节点界面只显示名称、说明、来源、可审核内容和明确开放的字段，不显示执行器、权限、模型、工具、端点、映射键、协议字段或工程拓扑。
+6. 前端只维护一个当前草稿并自动保存，不出现调优、发布版本、版本切换、回滚或修订历史概念。
+7. 打包是唯一能触发第三层映射的操作。第三层结果不回流成工程页面，只返回 Creator 可理解的成功或阻断信息。
 
-1. Every Creator-visible recipe node is an instance of a developer-authored
-   trusted node preset with an immutable preset revision, mapping key, mapping
-   digest, and executable Developer snapshot.
-2. A whole-flow AI request may dynamically compose topology from compatible
-   trusted presets. It must not emit a node type outside the supplied registry.
-3. A node-level AI request may change only the creator-safe fields declared by
-   that node's preset. It cannot change topology, mappings, or runtime facts.
-4. A recipe records exact preset identities and revisions, node mappings,
-   creator-safe values, source safety facts, relations, and review lineage.
-5. Missing capabilities or mappings, invalid relations, unreviewed changes,
-   stale revisions, unsafe sources, or unfrozen required nodes block handoff.
-6. CF-TUNING owns trusted preset contracts and Creator design facts. CF-FARP
-   owns executable Root Flow topology, execution plans, permissions, and the
-   Developer-confirmed runtime handoff.
-7. Base provides generic registry, validation, projection, and adapter behavior.
-   It never ships business-specific trusted nodes or recipe templates.
-8. A protocol release is supported only after validator, adapter, evidence, and
-   tests exist. CF-CRE remains the only signed artifact handed to Runtime.
+## 第一阶段：清理非第一、二层内容
 
-## Implemented Protocol Shape
+从 Creator 组件树、导航、状态和用户路径中删除以下内容，不以 CSS 隐藏代替删除：
 
-Publish new versioned releases; never rewrite released contracts.
+- 设计/运行模式切换以及运行、暂停、停止、历史按钮；
+- 运行测试台、调试面板、运行事件和运行记录；
+- 调优草稿、配方发布版本、激活、回滚和版本选择；
+- 工程关系筛选、ExecutionPlan 状态和工程分析摘要；
+- 左侧固定节点库、节点模板、手工新增节点和工程连线工具；
+- 模型、工具、变量、基座、工程设置和 Developer 可信节点管理入口；
+- 工程语义开关以及任何第三层画布投影；
+- Developer 节点发布、执行映射、仿真证据、可信修订和使用情况界面；
+- 只为上述界面存在的前端请求、状态、组件、样式和静态断言。
 
-```text
-CF-TUNING@1.4
-  trusted_node_preset.v1
-  trusted_node_registry.v1
-  dynamic_creator_recipe.v1
-  recipe_node_binding.v1
-  creator_capability_gap.v1
-  node-scoped change sets limited by preset field contracts
-  review, preview, acceptance, freeze, readiness, and candidate lineage
+第三层共享实现如果仍被打包使用，不删除底层能力，而是移出 Creator 交互路径并收敛到打包服务内部。
 
-CF-FARP@1.5
-  exact trusted-subprotocol binding to the new CF-TUNING release
-  trusted-recipe-to-Root-Flow mapping contract
-  Developer confirmation before executable authority or signed handoff
+验收：Creator DOM、可访问性树和网络请求中均不存在第三层入口、运行入口和调优入口。
 
-CARTRIDGEFLOW-BASE
-  generic trusted-node registry and revision validation
-  creator-safe projection and constrained AI output validation
-  deterministic Developer projection and mapping adapter
-  release catalog and compatibility evidence
-```
+## 第二阶段：收敛 Creator 画布
 
-The earlier CF-TUNING 1.3 / CF-FARP 1.4 fixed-template contracts remain
-historical releases. The corrected model is implemented by CF-TUNING@1.4 and
-CF-FARP@1.5.
+Creator 画布只保留：
 
-## Completed Delivery Sequence
+- 项目身份和当前自动保存状态；
+- 空节点、动态链路图、选择、拖动画布、缩放和适应画布；
+- 第一层 AI 想法入口和第二层整体调整入口；
+- 点击动态节点后出现的 Creator 安全深化弹窗；
+- 数据源、节点内容、可信/审核状态和能力缺口的用户语言投影；
+- 打包入口。
 
-### 1. Protocol and Base Audit
+整体共创和单节点深化是互斥的上下文状态，不同时堆叠多套面板。能力缺口只说明用户缺少什么，不打开 Developer 页面。
 
-- Compare CF-TUNING 1.0 through 1.3 against the trusted-node model.
-- Identify Creator store and bridge facts that can be retained.
-- Identify generic semantic steps and other paths without stable mappings.
-- Record the validators, adapters, APIs, projections, and tests that must change.
+验收：从空画布到整体草稿，再到单节点深化，用户始终停留在同一张链路图上。
 
-Acceptance: a written gap map covers every affected contract and surface.
+## 第三阶段：建立唯一且严格的打包边界
 
-### 2. Versioned Protocol Release
+打包必须在后台完成并严格失败关闭：
 
-- Create the corrected CF-TUNING release with preset, registry, dynamic recipe,
-  capability-gap, and node-scoped mutation contracts.
-- Create the matching CF-FARP host release with exact trusted binding and
-  Developer-owned materialization semantics.
-- Update catalog, Base declarations, governance, and conformance evidence only
-  when the behavior is implemented.
+1. 校验当前草稿结构和所有关系；
+2. 校验每个动态节点均来自已允许的可信能力，并具有完整映射；
+3. 校验用户审核、来源安全和必填字段；
+4. 校验不存在 Creator 越权修改的执行器、权限、模型、工具、端点或工程拓扑；
+5. 确定性映射为第三层 CF-FARP/Root Flow 事实；
+6. 构建并验证可交给 `demos/` 的签名包；
+7. 任何失败只返回 Creator 可理解的节点或能力问题，不暴露内部工程字段。
 
-Acceptance: governance passes and unknown presets, mappings, fields, relations,
-and stale revisions fail closed.
+打包不得跳转到 Developer、不得打开运行测试台，也不得在前端展示映射后的第三层画布。
 
-### 3. Base Implementation
+验收：只有打包会触发第三层映射；未通过严格校验的草稿无法产生包；有效包可由 `demos/` 独立加载测试。
 
-- Implement generic Developer registration of trusted node presets.
-- Implement Creator-safe registry projection with mapping details removed.
-- Implement validated dynamic recipe composition from registered presets.
-- Implement field-level node mutation and immutable review lineage.
-- Implement deterministic projection to Developer and CF-FARP materialization.
-- Require publication from a real Developer `process` node, store an immutable
-  topology-free execution snapshot, and reject mapping-free registrations.
+## 第四阶段：清理与防回归
 
-Acceptance: a fully mapped frozen recipe can reach Developer; an unmappable
-node such as a generic "first-week output" is returned as a capability gap.
+- 删除失去引用的前端组件、类型、请求封装和 CSS；
+- 更新文件清单和静态断言；
+- 构建所有前端并运行完整协议一致性测试；
+- 使用真实浏览器验证桌面和移动端；
+- 对 Creator DOM 建立禁止项断言：Developer、运行、调试、调优、版本、模型、工具、权限、执行映射均不得成为可操作入口；
+- 验证项目开发端口可由 `run.bat` 干净启动和停止。
 
-### 4. Authoring Skills
+## 完成标准
 
-- Create a whole-flow product skill that receives a goal and creator-safe
-  registry, composes a dynamic recipe, and reports missing capabilities.
-- Create a node-expansion product skill that receives one preset contract and
-  current values, then emits a previewable node-scoped CF-TUNING change set.
-- Provide concise Codex skill packages for maintaining these product paths.
-
-Acceptance: both skills define inputs, outputs, refusal conditions, protocol
-checks, and realistic prompts; neither can invent mappings or runtime facts.
-
-### 5. Creator Studio Projection
-
-- Replace free-form node invention with trusted-registry composition.
-- Default to one empty start node, then replace it with the composed draft.
-- Keep overall draft review and single-node deepening as explicit modes.
-- Render only creator-safe labels and preset-approved editable fields.
-- Surface readiness and capability gaps in creator language.
-- Use the original workbench as the single frontend surface; keep Creator as
-  the default projection and reveal engineering semantics only through settings.
-
-Acceptance: an AI daily report can combine several suitable trusted source and
-processing nodes dynamically, and every visible node is traceable internally.
-
-### 6. Developer and Runtime Handoff
-
-- Show the same recipe and immutable preset/mapping lineage in Developer.
-- Require Developer confirmation before CF-FARP materialization.
-- Produce and verify the signed CF-CRE only after successful materialization.
-- Materialize the pinned Developer `process` state and explicit CF-FARP failure
-  exits instead of emitting non-executable `semantic_step` placeholders.
-
-Acceptance: end-to-end tests prove trusted presets -> dynamic Creator recipe ->
-Developer confirmation -> Root Flow -> signed CF-CRE, without Creator facts
-acquiring executable authority.
-
-## Explicitly Out of Scope Until This Plan Is Complete
-
-- AI invention of unmapped node capabilities.
-- Creator-side creation of tools, models, executors, permissions, or secrets.
-- Direct Creator-to-Runtime handoff without Developer materialization.
-- Runtime queue, artifact history, or production delivery UI in Creator Studio.
-- Cosmetic UI work beyond readability needed to validate this behavior.
+- Creator 首屏只有第一、二层语义；
+- 用户不能手工放置固定工程节点；
+- 用户不能进入第三层、运行测试台或调优版本界面；
+- 整体 AI 编排和单节点深化可以完成最小闭环；
+- 打包是唯一第三层映射入口，并严格失败关闭；
+- `demos/` 是唯一运行测试台；
+- 全量测试、构建、安全检查和浏览器验收通过。

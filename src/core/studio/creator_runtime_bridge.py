@@ -40,6 +40,7 @@ class CreatorRuntimeBridge:
     PUBLISHER_ID = "creator"
     LEGACY_FLOW_PROTOCOL = {"id": "CF-FARP", "version": "1.1"}
     TRUSTED_FLOW_PROTOCOL = {"id": "CF-FARP", "version": "1.5"}
+    CREATOR_PACKAGE_PROTOCOL = {"id": "CF-FARP", "version": "1.6"}
     BASE_CONTRACT = {"id": "CARTRIDGEFLOW-BASE", "version": "0.3"}
 
     def __init__(self, root: str | Path, packages_dir: str | Path):
@@ -47,11 +48,31 @@ class CreatorRuntimeBridge:
         self.packages_dir = Path(packages_dir).resolve()
 
     def materialize(self, store: AuthoringSessionStore, session_id: str, *, expected_revision: int, candidate: dict) -> dict:
-        # Acceptance and handoff share the Creator store's atomic revision boundary.
+        """Compatibility handoff governed by CF-FARP@1.5 confirmation semantics."""
         with store._lock:
-            return self._materialize(store, session_id, expected_revision=expected_revision, candidate=candidate)
+            return self._materialize(
+                store,
+                session_id,
+                expected_revision=expected_revision,
+                candidate=candidate,
+                package_boundary=False,
+            )
 
-    def _materialize(self, store: AuthoringSessionStore, session_id: str, *, expected_revision: int, candidate: dict) -> dict:
+    def package(self, store: AuthoringSessionStore, session_id: str, *, expected_revision: int) -> dict:
+        """Validate, map, sign, and publish one Creator package atomically."""
+        with store._lock:
+            state = store.get(session_id)
+            store._require_revision(state, expected_revision)
+            candidate = store.compile_candidate(state)
+            return self._materialize(
+                store,
+                session_id,
+                expected_revision=expected_revision,
+                candidate=candidate,
+                package_boundary=True,
+            )
+
+    def _materialize(self, store: AuthoringSessionStore, session_id: str, *, expected_revision: int, candidate: dict, package_boundary: bool) -> dict:
         try:
             state = store.get(session_id)
             store._require_revision(state, expected_revision)
@@ -69,7 +90,7 @@ class CreatorRuntimeBridge:
             actual_candidate = store.compile_candidate(state)
             if not isinstance(candidate, dict) or candidate != actual_candidate:
                 raise CreatorRuntimeBridgeError("CREATOR_HANDOFF_CANDIDATE_MISMATCH", "The compile candidate does not identify the current Creator revision.")
-            if state.get("trusted_recipe"):
+            if state.get("trusted_recipe") and not package_boundary:
                 confirmation = state.get("developer_confirmation")
                 if not isinstance(confirmation, dict) or confirmation.get("candidate") != actual_candidate or confirmation.get("revision") != expected_revision:
                     raise CreatorRuntimeBridgeError("CREATOR_HANDOFF_DEVELOPER_CONFIRMATION_REQUIRED", "Developer must confirm this exact recipe revision before handoff.")
@@ -82,11 +103,19 @@ class CreatorRuntimeBridge:
             raise CreatorRuntimeBridgeError("CREATOR_HANDOFF_SESSION_INVALID", "The Creator session facts are unavailable.", status=exc.status) from exc
 
         instance = state["head"]
-        flow_protocol = self.TRUSTED_FLOW_PROTOCOL if state.get("trusted_recipe") else self.LEGACY_FLOW_PROTOCOL
+        flow_protocol = (
+            self.CREATOR_PACKAGE_PROTOCOL
+            if state.get("trusted_recipe") and package_boundary
+            else self.TRUSTED_FLOW_PROTOCOL
+            if state.get("trusted_recipe")
+            else self.LEGACY_FLOW_PROTOCOL
+        )
         lineage = self._lineage(instance, actual_candidate, freezes)
         if state.get("trusted_recipe"):
             lineage["trusted_recipe"] = {"id": state["trusted_recipe"]["id"], "digest": state["trusted_recipe"]["digest"]}
-            lineage["developer_confirmation"] = {"digest": state["developer_confirmation"]["digest"], "author": state["developer_confirmation"]["author"]}
+            lineage["mapping_snapshot_digest"] = actual_candidate["mapping_digest"]
+            if not package_boundary:
+                lineage["developer_confirmation"] = {"digest": state["developer_confirmation"]["digest"], "author": state["developer_confirmation"]["author"]}
         root_flow = self._root_flow(
             instance,
             lineage,

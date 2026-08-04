@@ -1,11 +1,10 @@
 # CartridgeFlow
 
-CartridgeFlow is a local authoring product for designing, validating, and
-packaging portable cartridge flows. The current v0.7 implementation ships one
-FastAPI application and one React workbench. The frozen delivery baseline in
-`PLAN.md` evolves that workbench into a creator-facing AI authoring studio and
-adds a separate developer console. Production execution belongs to the runtime
-product and receives only signed cartridge packages.
+CartridgeFlow is a local Creator product for turning an open-ended idea into a
+reviewed dynamic recipe and a signed portable package. It ships one FastAPI
+application and one Creator-only React canvas. Engineering materialization is
+hidden behind the strict package boundary; package execution and testing belong
+to `demos/`.
 
 ## Start
 
@@ -16,8 +15,8 @@ powershell -ExecutionPolicy Bypass -File scripts/bootstrap.ps1
 python scripts/launch.py
 ```
 
-The workbench opens at `http://127.0.0.1:5173`. User configuration, runs,
-artifacts, and temporary files live under `.data/` by default. Set
+Creator opens at `http://127.0.0.1:5173`. User drafts, generated packages,
+and temporary files live under `.data/` by default. Set
 `CARTRIDGEFLOW_DATA_ROOT` before process startup to relocate that data root.
 Relative values are resolved from the repository root; use an absolute path to
 place runtime data elsewhere on the machine.
@@ -39,7 +38,7 @@ npm --prefix src/frontend run build
 
 - `src/backend/`: HTTP application and API routes.
 - `src/core/`: cartridge, runtime, protocol, lab, extension, and resource logic.
-- `src/frontend/`: React workbench.
+- `src/frontend/`: Creator-only React canvas.
 - `protocol/`: versioned Base, Flow Authoring, and Release Envelope releases.
 - `config/`: committed Base declarations, defaults, and safe templates.
 - `scripts/`: bootstrap, launch, verification, and test tools.

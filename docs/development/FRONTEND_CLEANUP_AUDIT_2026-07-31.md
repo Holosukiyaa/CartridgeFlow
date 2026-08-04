@@ -2,6 +2,15 @@
 
 Date: 2026-07-31
 
+> 2026-08-04 supersession: the debt described below was physically removed.
+> `src/frontend` is now the Creator-only product surface. The old workbench,
+> run/test bench, engineering graph, fixed node authoring, resource panels,
+> tuning views, configuration UI, sandbox components, and split style system
+> were deleted. Maintained source is `App.tsx`, `api.ts`, `api.types.ts`,
+> `main.tsx`, `toast.tsx`, `CreatorStudio.tsx`, `CreatorCanvas.tsx`, and one
+> local layout stylesheet. The historical audit remains below as deletion
+> rationale, not as a description of current source.
+
 ## Scope
 
 本次审查只覆盖 `src/frontend`。我检查了文件树、文件体量与样式使用情况，用 Playwright 走查了主浏览器链路，并执行了生产构建。

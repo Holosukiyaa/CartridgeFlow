@@ -1,4 +1,8 @@
-# 运行台团队 CF-CRE@1 与 CF-FARP@1.0 开发指南
+# 运行台团队 CF-CRE@1 与 CF-FARP 执行计划开发指南
+
+> Creator Studio 的严格打包边界输出 CF-FARP@1.6。它与本指南的
+> `execution_plan.v1` 执行载荷兼容；1.6 的新增语义发生在打包校验阶段，
+> 不向运行台增加 Creator 会话或工程配置输入。
 
 文档状态：运行台交接基线
 

@@ -211,6 +211,7 @@ def creator_recipe_projection(recipe: dict, presets: list[dict]) -> dict:
         "nodes": [{
             "id": node["id"],
             "label": node["creator_label"],
+            "description": contracts[node["preset"]["id"]]["description"],
             "preset": {key: node["preset"][key] for key in ("id", "revision", "digest")},
             "values": deepcopy(node["values"]),
             "editable_fields": deepcopy(contracts[node["preset"]["id"]]["editable_fields"]),

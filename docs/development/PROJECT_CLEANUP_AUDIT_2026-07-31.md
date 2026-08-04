@@ -8,7 +8,22 @@ The working product boundary is now CartridgeFlow. The retired restricted-produc
 
 Published protocol releases now declare their runtime adapter and semantic features in `protocol/catalog/release_manifest.json`, mirrored by each release snapshot. Runtime code asks for features such as `typed_control_edges`, `tool_transparency`, `resource_catalog_v2`, and `execution_plan`; it no longer branches on the old release numbers. Adding a future release requires a directory, a catalog entry, a snapshot, and Base adapter support, rather than edits across runner, analyzer, UI, and package code.
 
-The general Flow release baseline is `CF-FARP@1.1` plus `CF-CRE@1`. Creator-to-Developer materialization uses the independently supported `CF-TUNING@1.4 + CF-FARP@1.5` host path. All are active/supported only after validator, adapter, test, and capability evidence exists in the reference Base.
+The general Flow release baseline is `CF-FARP@1.1` plus `CF-CRE@1`. Creator packaging uses the independently supported `CF-FARP@1.6` atomic boundary over Developer-published trusted mapping snapshots. All are active/supported only after validator, adapter, test, and capability evidence exists in the reference Base.
+
+## 2026-08-04 Creator-Only Supersession
+
+- `src/frontend` now serves only first-layer discovery, second-layer whole-draft
+  composition and node deepening, plus the single package action.
+- Deleted the old workbench, engineering graph, run/test bench, tuning/version
+  UI, fixed-node authoring, resource configuration, Developer trusted-node UI,
+  sandbox components, their API wrappers, and their CSS.
+- Production `/creator` and `/projects/:id/creator` routes now serve the same
+  `src/frontend` build as local development; the historical standalone build is
+  no longer a production route.
+- Added CF-FARP@1.6 without rewriting CF-FARP@1.5. The old handoff API retains
+  1.5 confirmation semantics for Developer compatibility; Creator exposes only
+  `/package`, which derives its candidate internally and returns a safe result.
+- `demos/` remains the independent package verification and runtime test bench.
 
 ## Fixed Findings
 

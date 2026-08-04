@@ -20,11 +20,11 @@ PRIVATE_PROMPT = "creator-private-prompt"
 PRIVATE_LOCAL_PATH = "C:/creator/private/workspace"
 
 
-class CreatorRuntimeHandoffApiAcceptanceTests(unittest.TestCase):
+class CreatorPackageApiAcceptanceTests(unittest.TestCase):
     def setUp(self):
         self.client = TestClient(app)
 
-    def test_public_api_handoff_downloads_to_a_trusted_private_free_farp_archive(self):
+    def test_public_package_downloads_to_a_trusted_private_free_farp_archive(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             store = AuthoringSessionStore(root / "creator-sessions")
@@ -62,18 +62,12 @@ class CreatorRuntimeHandoffApiAcceptanceTests(unittest.TestCase):
                     "step_ids": ["research", "draft"], "summary": "Freeze accepted semantic steps.",
                 })
                 self.assertEqual(200, frozen.status_code, frozen.text)
-                candidate_response = self.client.post("/api/creator/authoring-sessions/creator.private-session/compile-candidate", json={"expected_revision": 2})
-                self.assertEqual(200, candidate_response.status_code, candidate_response.text)
-                candidate = candidate_response.json()["compile_candidate"]
-                handoff = self.client.post("/api/creator/authoring-sessions/creator.private-session/runtime-handoff", json={
-                    "expected_revision": 2, "compile_candidate": candidate,
-                })
-                self.assertEqual(200, handoff.status_code, handoff.text)
-                response = handoff.json()
-                self.assertEqual("signed_handoff_ready", response["status"])
-                self.assertEqual("CF-CRE@1", response["protocol"])
-                self.assertTrue(response["signature"]["verified"])
-                self.assertEqual({"schema", "status", "protocol", "release_id", "filename", "lineage", "root_flow", "signature", "url"}, set(response))
+                packaged = self.client.post("/api/creator/authoring-sessions/creator.private-session/package", json={"expected_revision": 2})
+                self.assertEqual(200, packaged.status_code, packaged.text)
+                response = packaged.json()
+                self.assertEqual("ready", response["status"])
+                self.assertTrue(response["signature_verified"])
+                self.assertEqual({"schema", "status", "filename", "url", "signature_verified"}, set(response))
                 self.assertNotRegex(json.dumps(response).lower(), r"install|execut|running|cartridge run")
 
                 downloaded = self.client.get(response["url"])
@@ -89,7 +83,7 @@ class CreatorRuntimeHandoffApiAcceptanceTests(unittest.TestCase):
                     capture_output=True, text=True, check=False,
                 )
                 self.assertEqual(0, verified.returncode, verified.stderr)
-                self.assertEqual(response["release_id"], json.loads(verified.stdout)["release_id"])
+                self.assertTrue(json.loads(verified.stdout)["release_id"])
 
                 with zipfile.ZipFile(archive) as bundle:
                     files = {name: bundle.read(name) for name in bundle.namelist()}

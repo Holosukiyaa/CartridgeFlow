@@ -136,7 +136,7 @@ function verifyArchive(archivePath, trustPath) {
   if (!trusted || !Buffer.from(trusted, 'base64').equals(publicKey)) fail(`publisher key is not trusted: ${descriptor.key_id}`)
   const manifest = parseJson(files.get('payload/manifest.json'), 'payload/manifest.json')
   const flow = parseJson(files.get('payload/root.flow.json'), 'payload/root.flow.json')
-  const supportedFlowVersions = new Set(['1.0', '1.1'])
+  const supportedFlowVersions = new Set(['1.0', '1.1', '1.6'])
   const flowVersion = flow.protocol?.version
   if (release.runtime?.flow_contract?.id !== 'CF-FARP' || !supportedFlowVersions.has(release.runtime?.flow_contract?.version) || flow.protocol?.id !== 'CF-FARP' || !supportedFlowVersions.has(flowVersion) || release.runtime.flow_contract.version !== flowVersion) fail('payload does not declare one supported, matching CF-FARP runtime contract')
   if (flow.execution_plan?.schema !== 'cartridgeflow.execution_plan.v1' || !flow.states || !Array.isArray(flow.execution_plan.edges)) fail(`payload has no executable FARP@${flowVersion} execution plan`)

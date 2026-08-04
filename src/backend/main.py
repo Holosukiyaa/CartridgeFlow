@@ -31,9 +31,12 @@ from backend.api_models import (
     CreatorDiscoveryPayload,
     CreatorDefaultRecipePayload,
     CreatorComposeRecipePayload,
+    CreatorRecomposeRecipePayload,
+    CreatorPackagePayload,
     CreatorNodeRefinementPayload,
     DeveloperMaterializationPayload,
     TrustedNodePresetPayload,
+    TrustedNodeActivationPayload,
     TrustedNodePublishFromFlowPayload,
     CreatorSourceDiscoveryPayload,
     AuthoringFreezePayload,
@@ -85,6 +88,7 @@ from core.cartridge import CartridgeRegistry, CartridgeRunner
 from core.studio.authoring_service import AuthoringServiceError, AuthoringSessionStore
 from core.studio.creator_runtime_bridge import CreatorRuntimeBridge, CreatorRuntimeBridgeError
 from core.studio.trusted_node_presets import TrustedNodePresetStore, build_trusted_node_mapping
+from core.protocol.tuning import canonical_digest
 from core.cartridge.validator import ManifestValidationError
 from core.data_paths import (
     CARTRIDGE_DATA_DIR,
@@ -330,8 +334,8 @@ async def add_utf8_charset(request, call_next):
     return response
 
 registry = CartridgeRegistry(ROOT)
-authoring_sessions = AuthoringSessionStore(ROOT / ".data" / "user" / "authoring_sessions")
-trusted_node_presets = TrustedNodePresetStore(ROOT / ".data" / "user" / "trusted_node_presets")
+authoring_sessions = AuthoringSessionStore(ROOT / DATA_ROOT / "user" / "authoring_sessions")
+trusted_node_presets = TrustedNodePresetStore(ROOT / DATA_ROOT / "user" / "trusted_node_presets")
 runner = CartridgeRunner(ROOT, registry)
 artifact_manager = ArtifactManager(ROOT)
 flow_graph_builder = FlowGraphBuilder()
@@ -2192,11 +2196,25 @@ def list_creator_trusted_node_presets():
 
 @app.get("/api/developer/trusted-node-presets")
 def list_developer_trusted_node_presets():
+    entries = trusted_node_presets.list_entries()
+    for entry in entries:
+        entry["usage"] = authoring_sessions.trusted_preset_usage(entry["id"])
     return {
-        "schema": "cartridgeflow.developer_trusted_node_registry.v2",
+        "schema": "cartridgeflow.developer_trusted_node_registry.v3",
         "presets": trusted_node_presets.list_developer(),
         "publications": trusted_node_presets.list_published(),
+        "entries": entries,
     }
+
+
+@app.patch("/api/developer/trusted-node-presets/{preset_id}/activation")
+def set_developer_trusted_node_activation(preset_id: str, payload: TrustedNodeActivationPayload):
+    try:
+        entry = trusted_node_presets.set_activation(preset_id, active=payload.active, revision=payload.revision)
+        entry["usage"] = authoring_sessions.trusted_preset_usage(preset_id)
+        return {"entry": entry}
+    except AuthoringServiceError as exc:
+        _authoring_error(exc)
 
 
 @app.put("/api/developer/trusted-node-presets/{preset_id}")
@@ -2223,13 +2241,7 @@ def publish_developer_flow_node(flow_id: str, node_id: str, payload: TrustedNode
         if not isinstance(state, dict):
             raise AuthoringServiceError("TRUSTED_NODE_SOURCE_UNKNOWN", "The selected Developer node was not found.", status=404)
 
-        try:
-            current = trusted_node_presets.get(payload.preset_id)
-            current_revision = int(current["revision"])
-        except AuthoringServiceError as exc:
-            if exc.code != "TRUSTED_NODE_PRESET_UNKNOWN":
-                raise
-            current_revision = 0
+        current_revision = trusted_node_presets.latest_revision(payload.preset_id)
         expected_revision = current_revision if payload.expected_revision is None else payload.expected_revision
         mapping_key = str(payload.developer_mapping_key or f"{flow_id}.{node_id}").strip().lower()
         mapping_key = re.sub(r"[^a-z0-9_.-]+", ".", mapping_key).strip(".")
@@ -2252,7 +2264,20 @@ def publish_developer_flow_node(flow_id: str, node_id: str, payload: TrustedNode
             creator_bindings=payload.creator_bindings,
             source_manifest=manifest,
         )
-        publication = trusted_node_presets.put(preset, mapping, expected_revision=expected_revision)
+        simulation = _simulate_trusted_node_candidate(flow_id, node_id, cartridge, state, mapping)
+        if simulation["status"] != "passed":
+            blocker = next((item for item in simulation["checks"] if item["status"] == "blocked"), None) or {}
+            raise AuthoringServiceError(
+                str(blocker.get("code") or "TRUSTED_NODE_SIMULATION_BLOCKED"),
+                str(blocker.get("message") or "Trusted node simulation is blocked."),
+                status=409,
+            )
+        publication = trusted_node_presets.put(
+            preset,
+            mapping,
+            expected_revision=expected_revision,
+            simulation_evidence=simulation,
+        )
         return {"preset": publication["preset"], "publication": publication}
     except FileNotFoundError as exc:
         _authoring_error(AuthoringServiceError("TRUSTED_NODE_SOURCE_UNKNOWN", str(exc), status=404))
@@ -2260,6 +2285,142 @@ def publish_developer_flow_node(flow_id: str, node_id: str, payload: TrustedNode
         _authoring_error(AuthoringServiceError("TRUSTED_NODE_SOURCE_INVALID", str(exc)))
     except AuthoringServiceError as exc:
         _authoring_error(exc)
+
+
+@app.post("/api/developer/flows/{flow_id}/nodes/{node_id}/trusted-node-preset/simulate")
+def simulate_developer_flow_node(flow_id: str, node_id: str, payload: TrustedNodePublishFromFlowPayload):
+    """Validate one exact publish candidate without invoking real external resources."""
+    try:
+        cartridge = registry.get_cartridge(flow_id)
+        if not cartridge.get("editable"):
+            raise AuthoringServiceError("TRUSTED_NODE_SOURCE_FLOW_READ_ONLY", "Only editable Developer flows can simulate trusted nodes.", status=403)
+        root_flow = cartridge.get("root_flow") if isinstance(cartridge.get("root_flow"), dict) else {}
+        manifest = cartridge.get("manifest") if isinstance(cartridge.get("manifest"), dict) else {}
+        state = (root_flow.get("states") or {}).get(node_id)
+        if not isinstance(state, dict):
+            raise AuthoringServiceError("TRUSTED_NODE_SOURCE_UNKNOWN", "The selected Developer node was not found.", status=404)
+        revision = trusted_node_presets.latest_revision(payload.preset_id) + 1
+        mapping_key = str(payload.developer_mapping_key or f"{flow_id}.{node_id}").strip().lower()
+        mapping_key = re.sub(r"[^a-z0-9_.-]+", ".", mapping_key).strip(".")
+        preset = {
+            "schema": "cartridgeflow.trusted_node_preset.v1",
+            "protocol": {"id": "CF-TUNING", "version": "1.4"},
+            "id": payload.preset_id,
+            "revision": revision,
+            "creator_label": payload.creator_label,
+            "creator_description": payload.creator_description,
+            "match_terms": payload.match_terms,
+            "editable_fields": payload.editable_fields,
+            "developer_mapping_key": mapping_key,
+        }
+        mapping = build_trusted_node_mapping(
+            preset,
+            state,
+            source_flow_id=flow_id,
+            source_node_id=node_id,
+            creator_bindings=payload.creator_bindings,
+            source_manifest=manifest,
+        )
+        return _simulate_trusted_node_candidate(flow_id, node_id, cartridge, state, mapping)
+    except FileNotFoundError as exc:
+        _authoring_error(AuthoringServiceError("TRUSTED_NODE_SOURCE_UNKNOWN", str(exc), status=404))
+    except AuthoringServiceError as exc:
+        _authoring_error(exc)
+
+
+def _simulate_trusted_node_candidate(flow_id: str, node_id: str, cartridge: dict, state: dict, mapping: dict) -> dict:
+    """Produce integrity-bound dry-run evidence for mapping and local resource readiness."""
+    from core.llm.config_manager import build_model_binding_report
+    from core.studio.resource_catalog import build_flow_resource_catalog
+
+    manifest = cartridge.get("manifest") if isinstance(cartridge.get("manifest"), dict) else {}
+    root_flow = cartridge.get("root_flow") if isinstance(cartridge.get("root_flow"), dict) else {}
+    checks = [
+        {
+            "id": "portable_snapshot",
+            "status": "passed",
+            "message": "节点已形成不含外部拓扑的可移植执行快照。",
+        },
+        {
+            "id": "base_runtime_action",
+            "status": "passed",
+            "message": f"Base 已声明支持动作 {state.get('action')}。",
+        },
+    ]
+
+    action = str(state.get("action") or "")
+    requirements = mapping.get("requirements") if isinstance(mapping.get("requirements"), dict) else {}
+    if action == "llm_prompt":
+        report = build_model_binding_report(manifest, root_flow)
+        relevant = [item for item in report.get("items") or [] if item.get("node_id") == node_id]
+        blocked = next((item for item in relevant if item.get("status") != "ok"), None)
+        checks.append({
+            "id": "model_binding",
+            "status": "blocked" if blocked or not relevant else "passed",
+            "code": "TRUSTED_NODE_MODEL_BINDING_REQUIRED" if blocked or not relevant else "",
+            "message": str((blocked or {}).get("message") or ("模型连接已绑定。" if relevant else "AI 节点尚未绑定可用的运行模型。")),
+            "action": {"panel": "models"} if blocked or not relevant else None,
+        })
+
+    if action in {"tool_call", "remote_call"}:
+        catalog = build_flow_resource_catalog(
+            ROOT,
+            manifest,
+            root_flow,
+            package_path=cartridge.get("package_path"),
+        )
+        required_tool_ids = {
+            str(item.get("id") or "")
+            for item in requirements.get("mcp_tools") or []
+            if isinstance(item, dict) and item.get("id")
+        }
+        template_tools = list(state.get("tools") or [])
+        params = state.get("params") if isinstance(state.get("params"), dict) else {}
+        template_tools.extend(params.get("tools") or [])
+        required_pairs = {
+            (str(item.get("server") or ""), str(item.get("tool") or ""))
+            for item in template_tools
+            if isinstance(item, dict) and item.get("server") and item.get("tool")
+        }
+        relevant_tools = [
+            item for item in catalog.get("tools") or []
+            if node_id in (item.get("node_references") or [])
+            or str(item.get("id") or "") in required_tool_ids
+            or (str(item.get("server") or ""), str(item.get("tool") or "")) in required_pairs
+        ]
+        blocked_tool = next((item for item in relevant_tools if item.get("status") != "ready"), None)
+        no_portable_tool = action == "remote_call" and not (requirements.get("mcp_tools") or [])
+        checks.append({
+            "id": "tool_binding",
+            "status": "blocked" if blocked_tool or not relevant_tools or no_portable_tool else "passed",
+            "code": "TRUSTED_NODE_TOOL_BINDING_REQUIRED" if blocked_tool or not relevant_tools or no_portable_tool else "",
+            "message": str(
+                (blocked_tool or {}).get("message")
+                or ("工具已声明并完成本机绑定。" if relevant_tools and not no_portable_tool else "节点尚未绑定可移植的工具资源。")
+            ),
+            "action": {"panel": "tools"} if blocked_tool or not relevant_tools or no_portable_tool else None,
+        })
+
+    checks.append({
+        "id": "external_execution_boundary",
+        "status": "passed",
+        "message": "隔离仿真未调用真实模型、远端服务，也未执行外部副作用；真实运行结果需在流程测试台确认。",
+        "executed_real_resources": False,
+    })
+    status = "blocked" if any(item["status"] == "blocked" for item in checks) else "passed"
+    evidence = {
+        "schema": "cartridgeflow.trusted_node_simulation.v1",
+        "flow_id": flow_id,
+        "node_id": node_id,
+        "status": status,
+        "mapping_digest": mapping["digest"],
+        "mode": "isolated_dry_run",
+        "executed_real_resources": False,
+        "created_at": datetime.now().astimezone().isoformat(),
+        "checks": checks,
+    }
+    evidence["digest"] = canonical_digest(evidence)
+    return evidence
 
 
 @app.get("/api/developer/flows/{flow_id}/nodes/{node_id}/trusted-node-preset/readiness")
@@ -2335,32 +2496,67 @@ def get_developer_flow_node_trusted_readiness(flow_id: str, node_id: str):
         }
 
 
-@app.post("/api/creator/compose-recipe")
-async def compose_creator_recipe(payload: CreatorComposeRecipePayload):
-    """Run the whole-flow skill and atomically create a mapped Creator session."""
+async def _compose_trusted_creator_recipe(goal: str, recipe_id: str) -> tuple[dict, list[dict], dict[str, dict] | None]:
+    """Return a Creator-safe recipe or gap plus server-owned mapping facts."""
     from core.llm import chat
     from core.llm.config_manager import resolve_model
     from core.llm.creator_flow_skill import CreatorFlowSkillError, build_creator_flow_messages, parse_creator_flow_result
     from core.protocol.trusted_node_recipes import capability_gap
+    presets = trusted_node_presets.list_developer()
+    if not presets:
+        return capability_gap(goal, ["还缺少可复用的可信能力"], []), [], None
+    model = resolve_model("mentor")
+    if not str(model.api_key or "").strip():
+        raise AuthoringServiceError("AI_CREATOR_FLOW_MODEL_UNBOUND", "No configured whole-flow model is available.", status=409)
     try:
-        presets = trusted_node_presets.list_developer()
-        if not presets:
-            return {"capability_gap": capability_gap(payload.goal, ["需要 Developer 先提供可复用的可信节点"], [])}
-        model = resolve_model("mentor")
-        if not str(model.api_key or "").strip():
-            raise AuthoringServiceError("AI_CREATOR_FLOW_MODEL_UNBOUND", "No configured whole-flow model is available.", status=409)
-        try:
-            response = await asyncio.wait_for(chat(model, build_creator_flow_messages(payload.goal, presets), agent_name="creator_flow_skill", phase="trusted_recipe_composition"), timeout=30)
-        except TimeoutError as exc:
-            raise AuthoringServiceError("AI_CREATOR_FLOW_TIMEOUT", "The whole-flow AI service did not respond in time.", status=504) from exc
-        try:
-            result = parse_creator_flow_result(str(response.get("content") or ""), payload.goal, f"recipe.{payload.session_id}", presets)
-        except CreatorFlowSkillError as exc:
-            raise AuthoringServiceError("AI_CREATOR_FLOW_OUTPUT_INVALID", str(exc), status=502) from exc
-        if result.get("schema") == "cartridgeflow.creator_capability_gap.v1":
+        response = await asyncio.wait_for(chat(model, build_creator_flow_messages(goal, presets), agent_name="creator_flow_skill", phase="trusted_recipe_composition"), timeout=30)
+    except TimeoutError as exc:
+        raise AuthoringServiceError("AI_CREATOR_FLOW_TIMEOUT", "The whole-flow AI service did not respond in time.", status=504) from exc
+    try:
+        result = parse_creator_flow_result(str(response.get("content") or ""), goal, recipe_id, presets)
+    except CreatorFlowSkillError as exc:
+        raise AuthoringServiceError("AI_CREATOR_FLOW_OUTPUT_INVALID", str(exc), status=502) from exc
+    if result.get("schema") == "cartridgeflow.creator_capability_gap.v1":
+        return result, presets, None
+    return result, presets, trusted_node_presets.mappings_for_recipe(result)
+
+
+@app.post("/api/creator/compose-recipe")
+async def compose_creator_recipe(payload: CreatorComposeRecipePayload):
+    """Run the whole-flow skill and atomically create a mapped Creator session."""
+    try:
+        result, presets, mappings = await _compose_trusted_creator_recipe(payload.goal, f"recipe.{payload.session_id}")
+        if mappings is None:
             return {"capability_gap": result}
-        mappings = trusted_node_presets.mappings_for_recipe(result)
         creator = authoring_sessions.create_from_recipe(payload.session_id, payload.project_id, result, presets, mappings=mappings)
+        return {"creator": creator}
+    except AuthoringServiceError as exc:
+        _authoring_error(exc)
+    except ValueError as exc:
+        _authoring_error(AuthoringServiceError("AI_CREATOR_FLOW_MODEL_UNBOUND", str(exc), status=409))
+    except Exception as exc:
+        _authoring_error(AuthoringServiceError("AI_CREATOR_FLOW_FAILED", str(exc), status=502))
+
+
+@app.post("/api/creator/authoring-sessions/{session_id}/recompose")
+async def recompose_creator_recipe(session_id: str, payload: CreatorRecomposeRecipePayload):
+    """Replace the whole current draft; no engineering topology is accepted from the caller."""
+    try:
+        current = authoring_sessions.get(session_id)
+        authoring_sessions._require_revision(current, payload.expected_revision)
+        result, presets, mappings = await _compose_trusted_creator_recipe(
+            payload.goal,
+            f"recipe.{session_id}.{payload.expected_revision + 1}",
+        )
+        if mappings is None:
+            return {"capability_gap": result}
+        creator = authoring_sessions.replace_from_recipe(
+            session_id,
+            result,
+            presets,
+            mappings=mappings,
+            expected_revision=payload.expected_revision,
+        )
         return {"creator": creator}
     except AuthoringServiceError as exc:
         _authoring_error(exc)
@@ -2575,31 +2771,19 @@ def get_creator_generation_readiness(session_id: str, payload: AuthoringReadines
         _authoring_error(exc)
 
 
-@app.post("/api/creator/authoring-sessions/{session_id}/compile-candidate")
-def get_creator_compile_candidate(session_id: str, payload: AuthoringReadinessPayload):
-    try:
-        state = authoring_sessions.get(session_id)
-        authoring_sessions._require_revision(state, payload.expected_revision)
-        readiness = authoring_sessions.generation_readiness(state)
-        if not readiness["ready"]:
-            raise AuthoringServiceError("AUTHORING_GENERATION_BLOCKED", "Design findings must be resolved and all steps frozen before generation.", status=409)
-        return {"compile_candidate": authoring_sessions.compile_candidate(state)}
-    except AuthoringServiceError as exc:
-        _authoring_error(exc)
-
-
-@app.post("/api/creator/authoring-sessions/{session_id}/runtime-handoff")
-def create_creator_runtime_handoff(session_id: str, payload: CreatorHandoffPayload):
-    """Materialize a signed CF-CRE handoff; this endpoint never installs or executes it."""
+@app.post("/api/creator/authoring-sessions/{session_id}/package")
+def package_creator_project(session_id: str, payload: CreatorPackagePayload):
+    """The sole Creator boundary that maps reviewed design facts into a signed package."""
     try:
         bridge = CreatorRuntimeBridge(ROOT, ROOT / PACKAGES_DIR)
-        result = bridge.materialize(
-            authoring_sessions,
-            session_id,
-            expected_revision=payload.expected_revision,
-            candidate=payload.compile_candidate,
-        )
-        return {**result, "url": f"/packages/{result['filename']}"}
+        result = bridge.package(authoring_sessions, session_id, expected_revision=payload.expected_revision)
+        return {
+            "schema": "cartridgeflow.creator_package.v1",
+            "status": "ready",
+            "filename": result["filename"],
+            "url": f"/packages/{result['filename']}",
+            "signature_verified": bool((result.get("signature") or {}).get("verified")),
+        }
     except CreatorRuntimeBridgeError as exc:
         raise HTTPException(status_code=exc.status, detail=exc.as_dict()) from exc
     except AuthoringServiceError as exc:
@@ -3344,7 +3528,8 @@ def _apply_manifest_contracts(
         return False
     updates_inputs = "manifest_inputs" in payload.model_fields_set
     updates_roles = "manifest_model_roles" in payload.model_fields_set
-    if not updates_inputs and not updates_roles:
+    updates_permissions = "manifest_permissions" in payload.model_fields_set
+    if not updates_inputs and not updates_roles and not updates_permissions:
         return False
     import json as _json
     manifest = _json.loads(files.get("manifest") or "{}")
@@ -3377,6 +3562,19 @@ def _apply_manifest_contracts(
             "schema": "cartridgeflow.llm_recipe.v1",
             "roles": [*preserved_roles, *incoming_roles],
         }
+    if updates_permissions:
+        incoming_permissions = [item for item in payload.manifest_permissions or [] if isinstance(item, dict)]
+        incoming_permission_ids = {str(item.get("id") or "").strip() for item in incoming_permissions}
+        previous_permission_id = str(
+            previous_state.get("permission") or ""
+        ).strip() if isinstance(previous_state, dict) else ""
+        preserved_permissions = [
+            item for item in manifest.get("permissions") or []
+            if isinstance(item, dict)
+            and str(item.get("id") or "").strip() != previous_permission_id
+            and str(item.get("id") or "").strip() not in incoming_permission_ids
+        ]
+        manifest["permissions"] = [*preserved_permissions, *incoming_permissions]
     files["manifest"] = _json.dumps(manifest, ensure_ascii=False, indent=2)
     return True
 
@@ -4499,7 +4697,6 @@ def serve_package_file(filename: str):
 
 
 static_dir = ROOT / "src" / "frontend" / "dist"
-creator_static_dir = ROOT / "src" / "creator-studio" / "dist"
 developer_static_dir = ROOT / "src" / "developer-console" / "dist"
 if static_dir.exists():
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
@@ -4531,7 +4728,7 @@ def _spa_file(static_root: Path, relative_path: str) -> FileResponse | None:
 @app.get("/creator")
 @app.get("/creator/{full_path:path}")
 def serve_creator_studio(full_path: str = ""):
-    response = _spa_file(creator_static_dir, full_path)
+    response = _spa_file(static_dir, full_path)
     if response is None:
         raise HTTPException(status_code=404, detail="Creator Studio has not been built")
     return response
@@ -4565,8 +4762,7 @@ def service_root():
         "service": "CartridgeFlow API",
         "docs": "/docs",
         "health": "/api/health",
-        "creator_studio": "Run the standalone Creator Studio development server.",
-        "developer_console": "Run the standalone Developer Console development server.",
+        "creator_studio": "Build src/frontend or run the Creator development server.",
     }
 
 

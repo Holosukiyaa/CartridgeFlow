@@ -119,6 +119,11 @@ class CreatorComposeRecipePayload(BaseModel):
     goal: str = Field(min_length=3, max_length=2000)
 
 
+class CreatorRecomposeRecipePayload(BaseModel):
+    goal: str = Field(min_length=3, max_length=2000)
+    expected_revision: int = Field(ge=1)
+
+
 class TrustedNodePresetPayload(BaseModel):
     preset: dict
     mapping: dict
@@ -134,6 +139,11 @@ class TrustedNodePublishFromFlowPayload(BaseModel):
     creator_bindings: dict[str, str] = Field(default_factory=dict)
     developer_mapping_key: str | None = Field(default=None, max_length=200)
     expected_revision: int | None = None
+
+
+class TrustedNodeActivationPayload(BaseModel):
+    active: bool
+    revision: int | None = Field(default=None, ge=1)
 
 
 class CreatorNodeRefinementPayload(BaseModel):
@@ -191,6 +201,10 @@ class AuthoringAIProposalPayload(BaseModel):
 
 class AuthoringReadinessPayload(BaseModel):
     expected_revision: int
+
+
+class CreatorPackagePayload(AuthoringReadinessPayload):
+    pass
 
 
 class CreatorHandoffPayload(AuthoringReadinessPayload):
@@ -323,6 +337,7 @@ class NodeUpdatePayload(BaseModel):
     outputs: dict | None = None
     manifest_inputs: list[dict] | None = None
     manifest_model_roles: list[dict] | None = None
+    manifest_permissions: list[dict] | None = None
 
 
 class NodeCreatePayload(BaseModel):

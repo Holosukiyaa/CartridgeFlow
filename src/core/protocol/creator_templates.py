@@ -55,3 +55,22 @@ def create_instance(template: dict, instance_id: str, values: dict[str, dict[str
         steps.append({"id": step["id"], "creator_label": step["creator_label"], "values": deepcopy(fields), "developer_mapping_key": step["developer_mapping_key"], "required": step["required"]})
     body = {"schema": "cartridgeflow.creator_recipe_instance.v1", "protocol": deepcopy(TEMPLATE_PROTOCOL), "id": instance_id, "template": {"id": template["id"], "revision": template["revision"], "digest": canonical_digest(template)}, "steps": steps}
     return {**body, "digest": canonical_digest(body)}
+
+
+def creator_blueprint_from_instance(instance: dict) -> tuple[list[dict], dict]:
+    """Project a pinned template instance into legacy immutable authoring facts.
+
+    The mapping remains alongside the projection and is never creator-visible.
+    """
+    if not isinstance(instance, dict) or instance.get("schema") != "cartridgeflow.creator_recipe_instance.v1":
+        raise TuningProtocolError("creator recipe instance is invalid")
+    steps = []
+    mappings = {}
+    for item in instance.get("steps", []):
+        step_id = _id(item.get("id"), "instance step id")
+        mapping = _id(item.get("developer_mapping_key"), "instance mapping key")
+        steps.append({"id": step_id, "intent": str(item.get("creator_label") or "").strip(), "inputs": {}, "outputs": {}})
+        mappings[step_id] = mapping
+    if not steps:
+        raise TuningProtocolError("creator recipe instance has no steps")
+    return steps, mappings

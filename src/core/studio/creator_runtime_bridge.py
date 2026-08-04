@@ -53,6 +53,10 @@ class CreatorRuntimeBridge:
         try:
             state = store.get(session_id)
             store._require_revision(state, expected_revision)
+            mappings = state.get("developer_mappings")
+            step_ids = {step["id"] for step in state["head"]["blueprint"]["steps"]}
+            if state.get("template_instance") and (not isinstance(mappings, dict) or set(mappings) != step_ids or any(not str(value).strip() for value in mappings.values())):
+                raise CreatorRuntimeBridgeError("CREATOR_HANDOFF_MAPPING_MISSING", "The Creator design does not have complete Developer mappings.")
             readiness = store.generation_readiness(state)
             if not readiness.get("ready"):
                 raise CreatorRuntimeBridgeError("CREATOR_HANDOFF_DESIGN_BLOCKED", "The Creator revision is not design-ready and unblocked.")

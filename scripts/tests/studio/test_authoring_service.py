@@ -19,6 +19,19 @@ STEPS = [
 
 
 class AuthoringServiceTests(unittest.TestCase):
+
+    def test_creates_a_session_from_a_mapped_template(self):
+        template = {"schema": "cartridgeflow.developer_recipe_template.v1", "protocol": {"id": "CF-TUNING", "version": "1.3"}, "id": "daily-brief", "revision": 1, "steps": [{"id": "sources", "creator_label": "确认信息来源", "editable_fields": ["topics"], "developer_mapping_key": "daily.sources.v1", "required": True}]}
+        projection = self.store.create_from_template("template.session", "template.project", template, {"sources": {"topics": ["AI"]}}, [{"id": "source.role", "kind": "source", "digest": "a" * 64, "role": "reference"}])
+        self.assertEqual("确认信息来源", projection["semantic_steps"][0]["intent"])
+        self.assertEqual("daily.sources.v1", self.store.get("template.session")["developer_mappings"]["sources"])
+
+    def test_template_session_rejects_free_topology_changes(self):
+        template = {"schema": "cartridgeflow.developer_recipe_template.v1", "protocol": {"id": "CF-TUNING", "version": "1.3"}, "id": "daily-brief", "revision": 1, "steps": [{"id": "sources", "creator_label": "确认信息来源", "editable_fields": [], "developer_mapping_key": "daily.sources.v1", "required": True}]}
+        self.store.create_from_template("locked.session", "locked.project", template, {}, [{"id": "source.role", "kind": "source", "digest": "a" * 64, "role": "reference"}])
+        with self.assertRaises(AuthoringServiceError) as error:
+            self.store.propose("locked.session", [{"id": "add", "target_id": "new", "operation": "add_step", "value": {"id": "new", "intent": "new", "inputs": {}, "outputs": {}}}], author="creator", summary="add", expected_revision=1)
+        self.assertEqual("AUTHORING_TEMPLATE_CHANGE_FORBIDDEN", error.exception.code)
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.store = AuthoringSessionStore(self.temp.name)

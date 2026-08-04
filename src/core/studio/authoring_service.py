@@ -16,6 +16,7 @@ from core.protocol.release_catalog import load_protocol_release_catalog
 from core.protocol.capability_registry import ProtocolRegistry
 from core.protocol.authoring_contract import _OPERATIONS, _affected_step_ids, _apply_change
 from core.protocol.tuning import TuningProtocolError
+from core.protocol.creator_templates import create_instance as create_template_instance, creator_blueprint_from_instance
 from core.llm.authoring import AuthoringProposalError, build_authoring_messages, parse_authoring_proposal
 
 SERVICE_AUTHORING_OPERATIONS = frozenset(_OPERATIONS)
@@ -59,6 +60,21 @@ class AuthoringSessionStore:
             self._write(path, state)
             return self.creator_projection(state)
 
+    def create_from_template(self, session_id: str, project_id: str, template: dict, values: dict, sources: list[dict]) -> dict:
+        """Create a session only from a developer-authored CF-TUNING@1.3 template."""
+        try:
+            template_instance = create_template_instance(template, f"instance.{session_id}", values)
+            steps, mappings = creator_blueprint_from_instance(template_instance)
+        except TuningProtocolError as exc:
+            raise AuthoringServiceError("AUTHORING_TEMPLATE_INVALID", str(exc)) from exc
+        projection = self.create(session_id, f"template.{template_instance['template']['id']}", template_instance["template"]["id"], steps, sources, {}, project_id)
+        with self._lock:
+            state = self.get(session_id)
+            state["template_instance"] = template_instance
+            state["developer_mappings"] = mappings
+            self._write(self._path(session_id), state)
+            return self.creator_projection(state)
+
     def get(self, session_id: str) -> dict:
         with self._lock:
             return self._read(self._path(session_id))
@@ -75,6 +91,10 @@ class AuthoringSessionStore:
         with self._lock:
             state = self.get(session_id)
             self._require_revision(state, expected_revision)
+            if state.get("template_instance"):
+                allowed = {"set_creator_binding", "set_binding", "set_step_intent", "set_source_reference", "add_source", "update_source", "remove_source"}
+                if any(item.get("operation") not in allowed for item in changes if isinstance(item, dict)):
+                    raise AuthoringServiceError("AUTHORING_TEMPLATE_CHANGE_FORBIDDEN", "Template instances cannot change steps or semantic relationships.", status=409)
             try:
                 proposal = propose_change_set(state["head"], changes, author, summary)
             except TuningProtocolError as exc:
@@ -256,6 +276,9 @@ class AuthoringSessionStore:
         active = AuthoringSessionStore._active_freezes(state)
         frozen = {step["step_id"] for snapshot in active for step in snapshot["frozen_steps"]}
         findings = []
+        mappings = head.get("developer_mappings") or state.get("developer_mappings") or {}
+        if state.get("template_instance") and set(mappings) != {step["id"] for step in head["blueprint"]["steps"]}:
+            findings.append({"code": "DESIGN_MAPPING_MISSING", "severity": "blocked", "message": "A template step has no Developer mapping."})
         for step in head["blueprint"]["steps"]:
             if step["id"] not in frozen:
                 findings.append({"code": "DESIGN_STEP_UNFROZEN", "severity": "blocked", "step_id": step["id"], "message": "This design step is not frozen."})

@@ -29,6 +29,7 @@ from backend.api_models import (
     AuthoringAcceptPayload,
     AuthoringAIProposalPayload,
     CreatorDiscoveryPayload,
+    CreatorSourceDiscoveryPayload,
     AuthoringFreezePayload,
     CreatorHandoffPayload,
     AuthoringProposalPayload,
@@ -2148,6 +2149,35 @@ async def discover_creator_possibilities_endpoint(payload: CreatorDiscoveryPaylo
         _authoring_error(AuthoringServiceError("AI_CREATOR_DISCOVERY_MODEL_UNBOUND", str(exc), status=409))
     except Exception as exc:
         _authoring_error(AuthoringServiceError("AI_CREATOR_DISCOVERY_FAILED", str(exc), status=502))
+
+
+@app.post("/api/creator/authoring-sessions/{session_id}/source-candidates")
+async def discover_creator_source_candidates(session_id: str, payload: CreatorSourceDiscoveryPayload):
+    from core.llm import chat
+    from core.llm.config_manager import resolve_model
+    from core.llm.creator_discovery import CreatorDiscoveryError, build_source_discovery_messages, parse_source_discovery
+    try:
+        state = authoring_sessions.get(session_id)
+        model = resolve_model("mentor")
+        if not str(model.api_key or "").strip():
+            raise AuthoringServiceError("AI_CREATOR_SOURCE_DISCOVERY_MODEL_UNBOUND", "No configured source discovery model is available.", status=409)
+        blueprint = state["head"]["blueprint"]
+        messages = build_source_discovery_messages(blueprint["intent"], blueprint["steps"], payload.request)
+        try:
+            response = await asyncio.wait_for(chat(model, messages, agent_name="creator_source_discovery", phase="source_discovery"), timeout=30)
+        except TimeoutError as exc:
+            raise AuthoringServiceError("AI_CREATOR_SOURCE_DISCOVERY_TIMEOUT", "The AI source discovery service did not respond in time.", status=504) from exc
+        try:
+            candidates = parse_source_discovery(str(response.get("content") or ""))
+        except CreatorDiscoveryError as exc:
+            raise AuthoringServiceError("AI_CREATOR_SOURCE_DISCOVERY_OUTPUT_INVALID", str(exc), status=502) from exc
+        return {"schema": "cartridgeflow.creator_source_candidates.v1", "request": " ".join(payload.request.split()), "candidates": candidates}
+    except AuthoringServiceError as exc:
+        _authoring_error(exc)
+    except ValueError as exc:
+        _authoring_error(AuthoringServiceError("AI_CREATOR_SOURCE_DISCOVERY_MODEL_UNBOUND", str(exc), status=409))
+    except Exception as exc:
+        _authoring_error(AuthoringServiceError("AI_CREATOR_SOURCE_DISCOVERY_FAILED", str(exc), status=502))
 
 
 @app.post("/api/creator/authoring-sessions")

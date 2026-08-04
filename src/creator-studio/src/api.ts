@@ -7,7 +7,7 @@ export type Creator = {
   frozen_steps: string[]; history: { id: string; revision: number; summary: string }[]
   blocked_findings: Finding[]; design_checks: { findings: Finding[] }; generation_readiness: Readiness
 }
-export type Source = { id: string; kind: 'source'; digest: string; role?: string; remote_url?: string; rss_url?: string }
+export type Source = { id: string; kind: 'source'; digest: string; role?: string; name?: string; provides?: string; why_recommended?: string; risk?: string; review_focus?: string; remote_url?: string; rss_url?: string }
 export type Proposal = { proposal_id: string; revision: number; summary: string; changes: { id: string; target_id: string; operation: string }[] }
 export type Finding = { code: string; severity: string; message: string; step_id?: string }
 export type Readiness = { ready: boolean; blocked_findings: Finding[]; compile_candidate: unknown }
@@ -16,6 +16,7 @@ export type Impact = { plain_summary?: string; changed_steps?: string[]; changed
 export type FreezeRevision = { source_freeze_ids: string[]; expected_revision: number; reason: string; author: string }
 export type Preview = { accepted_change_ids: string[]; impact: Impact; freeze_revision?: FreezeRevision | null }
 export type Possibility = { id: string; title: string; outcome: string; why_it_fits: string; first_week_output: string; needs_confirmation: string[]; recipe: { intent: string; steps: unknown[] } }
+export type SourceCandidate = { id: string; name: string; provides: string; why_recommended: string; risk: string; review_focus: string; remote_url: string; rss_url: string }
 export class ApiError extends Error { constructor(public code: string, message: string, public status: number) { super(message) } }
 
 const base = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
@@ -31,6 +32,7 @@ export const creatorApi = {
   create: (body: { session_id: string; project_id: string; recipe_id: string; intent: string; steps: unknown[]; source_references: unknown[]; bindings: Record<string, unknown> }) => request<{ creator: Creator }>('/api/creator/authoring-sessions', 'POST', body),
   get: (id: string) => request<{ creator: Creator }>(route(id)),
   getProject: (id: string) => request<{ creator: Creator }>(`/api/creator/projects/${encodeURIComponent(id)}`),
+  sourceCandidates: (id: string, requestText: string) => request<{ candidates: SourceCandidate[] }>(`${route(id)}/source-candidates`, 'POST', { request: requestText }),
   ai: (id: string, body: unknown) => request<{ proposal: Proposal }>(`${route(id)}/ai-proposals`, 'POST', body),
   propose: (id: string, body: unknown) => request<{ proposal: Proposal }>(`${route(id)}/proposals`, 'POST', body),
   preview: (id: string, proposal: string, body: unknown) => request<Preview>(`${route(id)}/proposals/${proposal}/preview`, 'POST', body),

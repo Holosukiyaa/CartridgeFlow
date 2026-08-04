@@ -215,7 +215,7 @@ class AuthoringSessionStore:
 
     @staticmethod
     def _safe_source(source: dict) -> dict:
-        return {key: source[key] for key in ("id", "kind", "digest", "role", "remote_url", "rss_url") if key in source}
+        return {key: source[key] for key in ("id", "kind", "digest", "role", "name", "provides", "why_recommended", "risk", "review_focus", "remote_url", "rss_url") if key in source}
 
     @staticmethod
     def design_checks(state: dict) -> dict:

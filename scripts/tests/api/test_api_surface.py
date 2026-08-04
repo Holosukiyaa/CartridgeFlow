@@ -63,6 +63,31 @@ class ApiSurfaceTests(unittest.TestCase):
         self.assertEqual(502, invalid.status_code)
         self.assertEqual("AI_CREATOR_DISCOVERY_OUTPUT_INVALID", invalid.json()["detail"]["code"])
 
+    def test_creator_source_candidates_are_model_driven_and_only_become_sources_after_acceptance(self):
+        candidates = {"candidates": [{
+            "id": f"source-{index}", "name": f"Public source {index}", "provides": "Public reporting on the requested topic.",
+            "why_recommended": "It may help the creator compare viewpoints.", "risk": "Its coverage may be selective.",
+            "review_focus": "Check that recent items match the intended topic.", "remote_url": f"https://source-{index}.example.test/", "rss_url": "",
+        } for index in range(1, 4)]}
+        steps = [{"id": "review", "intent": "Review a source.", "inputs": {}, "outputs": {}}]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = AuthoringSessionStore(temp_dir)
+            store.create("source.session", "source.recipe", "Follow a topic", steps, [], {})
+            with patch.object(backend_main, "authoring_sessions", store), patch("core.llm.config_manager.resolve_model", return_value=type("Model", (), {"api_key": "configured"})()), patch("core.llm.chat", new_callable=AsyncMock, return_value={"content": json.dumps(candidates)}) as chat:
+                response = self.client.post("/api/creator/authoring-sessions/source.session/source-candidates", json={"request": "Find sources worth reviewing"})
+                self.assertEqual(200, response.status_code)
+                candidate = response.json()["candidates"][0]
+                self.assertEqual("creator_source_discovery", chat.call_args.kwargs["agent_name"])
+                self.assertEqual("Public source 1", candidate["name"])
+                source = {"id": "source.one", "kind": "source", "digest": "b" * 64, "role": "Reviewed candidate", **{key: candidate[key] for key in ("name", "provides", "why_recommended", "risk", "review_focus", "remote_url")}}
+                proposal = self.client.post("/api/creator/authoring-sessions/source.session/proposals", json={"expected_revision": 1, "summary": "Review candidate", "changes": [{"id": "candidate.add", "target_id": "source.one", "operation": "add_source", "value": source}]}).json()["proposal"]
+                self.assertEqual([], store.creator_projection(store.get("source.session"))["sources"])
+                accepted = self.client.post(f"/api/creator/authoring-sessions/source.session/proposals/{proposal['proposal_id']}/accept", json={})
+        self.assertEqual(200, accepted.status_code)
+        adopted = accepted.json()["creator"]["sources"][0]
+        self.assertEqual("Public source 1", adopted["name"])
+        self.assertEqual("Its coverage may be selective.", adopted["risk"])
+
     def test_project_identity_restores_creator_and_limits_developer_to_safe_projection(self):
         source = {"id": "source.brief", "kind": "source", "digest": "a" * 64, "role": "public brief"}
         steps = [{"id": "draft", "intent": "Draft a brief.", "inputs": {}, "outputs": {}}]

@@ -61,10 +61,10 @@ def _reference(value: object, label: str, *, kind: str | None = None) -> dict:
         raise TuningProtocolError(f"{label}.kind is invalid")
     if not isinstance(value["digest"], str) or not _SHA256.fullmatch(value["digest"]):
         raise TuningProtocolError(f"{label}.digest must be sha256")
-    allowed = {"id", "digest", "kind", "role", "remote_url", "rss_url"}
+    allowed = {"id", "digest", "kind", "role", "name", "provides", "why_recommended", "risk", "review_focus", "remote_url", "rss_url"}
     if set(value) - allowed:
         raise TuningProtocolError(f"{label} contains unsupported public fields")
-    for key in ("role",):
+    for key in ("role", "name", "provides", "why_recommended", "risk", "review_focus"):
         if key in value and (not isinstance(value[key], str) or not value[key].strip() or len(value[key]) > 160):
             raise TuningProtocolError(f"{label}.{key} is invalid")
     for key in ("remote_url", "rss_url"):

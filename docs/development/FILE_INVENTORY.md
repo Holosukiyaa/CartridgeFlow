@@ -14,6 +14,7 @@ cleanup disposition live in `PROJECT_CLEANUP_AUDIT_2026-07-31.md`.
 | Runtime | `src/core/runtime/`, `src/core/orchestration/` | `manager.py`, `execution_plan.py` |
 | Extensions | `src/core/extensions/` | `descriptor.py`, `registry.py`, `worker_client.py` |
 | Creator authoring | `src/core/studio/`, `src/core/llm/` | `authoring_service.py` (project journey graph projection), `creator_discovery.py` (strict default-flow, direction, and source-candidate discovery), `creator_runtime_bridge.py` |
+| Creator Studio | `src/creator-studio/src/` | `main.tsx`, `App.tsx`, `App.css`, `api.ts` |
 | Frontend | `src/frontend/src/` | `main.tsx`, `App.tsx`, `pages/FlowWorkbench.tsx`, `pages/flow-workbench/NodeExperiencePanel.tsx`, `pages/flow-workbench/nodeExperience.ts` |
 | Tests | `scripts/tests/` | `api/`, `browser/`, `conformance/`, `runtime/`, `studio/`, `lab/`, `orchestration/`, `ui/` |
 | Automation | `scripts/` | `bootstrap.ps1`, `launch.py`, `run_conformance.py`, `run_node_coverage.py` |

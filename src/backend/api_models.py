@@ -146,6 +146,20 @@ class TrustedNodeActivationPayload(BaseModel):
     revision: int | None = Field(default=None, ge=1)
 
 
+class CapabilityCartridgePublishPayload(BaseModel):
+    capability_id: str = Field(min_length=1, max_length=120)
+    label: str = Field(min_length=1, max_length=200)
+    description: str = Field(min_length=1, max_length=1000)
+    match_terms: list[str] = Field(default_factory=list)
+    editable_fields: list[dict] = Field(default_factory=list)
+    creator_bindings: dict[str, str] = Field(default_factory=dict)
+    public_inputs: list[dict] = Field(default_factory=list)
+    public_outputs: list[dict] = Field(default_factory=list)
+    dependencies: list[dict] = Field(default_factory=list)
+    trust_scope: str = "workspace"
+    expected_revision: int | None = None
+
+
 class CreatorNodeRefinementPayload(BaseModel):
     prompt: str = Field(min_length=1, max_length=4000)
     expected_revision: int

@@ -1,10 +1,10 @@
 ﻿# CartridgeFlow Protocol Documents Agent Note
 
-## CF-FARP@1.1 当前边界与 CF-FARP@1.6 Creator 打包边界
+## CF-FARP@1.1 默认边界与 CF-FARP@1.7 Creator 递归打包边界
 
 `CF-FARP@1.1` 仍是通用 Developer Flow 的 current/default 完整协议。
-`CF-FARP@1.6` 是 Creator 配方进入签名包的受支持专用边界：它继续使用显式
-执行计划，并在单一原子操作中校验可信节点预设、映射快照、动态配方和签名包。
+`CF-FARP@1.7` 是 Creator 语义配方进入签名包的受支持专用边界：它继续使用显式
+执行计划，并在单一原子操作中校验能力发布物、递归依赖、动态配方和签名包。
 历史版本只能通过其自身契约运行，任何升级都必须显式完成并重新校验，不能由
 保存、打开或运行操作静默触发。
 
@@ -14,27 +14,27 @@
 
 ## 当前基准
 
-Creator 打包使用 `CARTRIDGEFLOW-BASE@0.3 + CF-FARP@1.6 + CF-CRE@1`，输入仍由
-`CF-TUNING@1.4` 可信节点事实约束：
+Creator 打包使用 `CARTRIDGEFLOW-BASE@0.3 + CF-FARP@1.7 + CF-CRE@1`，输入由
+`CF-TUNING@1.5` 语义配方与能力发布事实约束：
 
 ```text
 protocol/base/0.3/specification.md
-protocol/flow-authoring/1.6/README.md
-protocol/tuning/1.4/specification.md
+protocol/flow-authoring/1.7/README.md
+protocol/tuning/1.5/specification.md
 protocol/base/0.3/release.json
-protocol/flow-authoring/1.6/release.json
-protocol/tuning/1.4/release.json
+protocol/flow-authoring/1.7/release.json
+protocol/tuning/1.5/release.json
 ```
 
-Base v0.3、FARP v1.6 与 TUNING v1.4 都是完整独立发布。通用新建 Flow 默认使用
-FARP v1.1；Creator package 显式使用 FARP v1.6。不来自 Creator 的 Developer Flow
+Base v0.3、FARP v1.7 与 TUNING v1.5 都是完整独立发布。通用新建 Flow 默认使用
+FARP v1.1；Creator package 显式使用 FARP v1.7。不来自 Creator 的 Developer Flow
 可直接声明完整工程事实，不需要伪造 Creator 配方。CF-TUNING 可拥有 Creator 设计拓扑，但不能直接创建可执行拓扑、
 执行器、权限或代码；这些事实只由严格打包边界从 Developer 已发布映射中物化产生。
 
 ## 版本支持策略
 
-`CF-FARP@1.6` 为 active/supported Creator 打包边界，Base 复用
-`cf-farp.execution-plan.v1` 校验物化结果。Developer 在可信节点发布时提供执行授权，
+`CF-FARP@1.7` 为 active/supported Creator 递归打包边界，Base 复用
+`cf-farp.execution-plan.v1` 校验物化结果。能力工坊在能力发布时提供完整 Flow、公开契约与执行授权，
 Creator 项目不再要求第二次工程确认。`CF-FARP@1.1` 保持 current/default。
 `CF-CRE@1` 继续负责签名发布包、信任检查与激活 handoff。
 

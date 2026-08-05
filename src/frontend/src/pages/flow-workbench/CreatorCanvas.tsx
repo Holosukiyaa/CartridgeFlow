@@ -9,13 +9,13 @@ import {
   type Node,
   type NodeProps,
 } from '@xyflow/react'
-import { Check, CircleDashed, Sparkles } from 'lucide-react'
+import { Check, CircleDashed, Sparkles, Wrench } from 'lucide-react'
 import type { CreatorProjection } from '../../api.types.ts'
 
 type CanvasNodeData = {
   label: string
   description: string
-  state: 'empty' | 'review' | 'confirmed'
+  state: 'empty' | 'review' | 'confirmed' | 'unresolved'
 }
 
 type CanvasNode = Node<CanvasNodeData, 'creator'>
@@ -23,12 +23,12 @@ type CanvasNode = Node<CanvasNodeData, 'creator'>
 function CreatorNode({ data, selected }: NodeProps<CanvasNode>) {
   return <div className={`creator-node creator-node-${data.state} ${selected ? 'is-selected' : ''}`}>
     <span className="creator-node-state" aria-hidden="true">
-      {data.state === 'confirmed' ? <Check /> : data.state === 'empty' ? <Sparkles /> : <CircleDashed />}
+      {data.state === 'confirmed' ? <Check /> : data.state === 'empty' ? <Sparkles /> : data.state === 'unresolved' ? <Wrench /> : <CircleDashed />}
     </span>
     <div>
       <strong>{data.label}</strong>
       <p>{data.description}</p>
-      <small>{data.state === 'confirmed' ? '已确认' : data.state === 'review' ? '待审核' : '从这里开始'}</small>
+      <small>{data.state === 'confirmed' ? '已确认' : data.state === 'review' ? '待审核' : data.state === 'unresolved' ? '待补齐能力' : '从这里开始'}</small>
     </div>
   </div>
 }
@@ -72,7 +72,7 @@ export function CreatorCanvas({ creator, selectedId, onSelect }: {
       data: {
         label: node.label,
         description: node.description,
-        state: confirmed.has(node.id) ? 'confirmed' : 'review',
+        state: node.resolution?.status === 'unresolved' ? 'unresolved' : confirmed.has(node.id) ? 'confirmed' : 'review',
       },
     }))
     const edges: Edge[] = creator.trusted_recipe.relations.map((relation) => ({

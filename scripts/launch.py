@@ -15,7 +15,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE_DIR = ROOT / "src"
-FRONTEND_DIR = SOURCE_DIR / "frontend"
+FRONTEND_DIRS = {
+    "Creator": SOURCE_DIR / "frontend",
+    "capability workshop": SOURCE_DIR / "developer-console",
+}
 PORT = 8765
 URL = f"http://127.0.0.1:{PORT}/"
 
@@ -107,11 +110,13 @@ def ensure_frontend_bundle() -> None:
     npm = shutil.which("npm.cmd") or shutil.which("npm")
     if not npm:
         raise SystemExit("npm was not found. Install Node.js 20 or newer.")
-    if not (FRONTEND_DIR / "node_modules" / ".bin" / "vite.cmd").exists():
-        print("Installing Creator dependencies...")
-        subprocess.run([npm, "ci", "--no-audit", "--no-fund"], cwd=FRONTEND_DIR, check=True)
-    print("Building Creator...")
-    subprocess.run([npm, "run", "build"], cwd=FRONTEND_DIR, check=True)
+    for label, frontend_dir in FRONTEND_DIRS.items():
+        vite = frontend_dir / "node_modules" / ".bin" / ("vite.cmd" if os.name == "nt" else "vite")
+        if not vite.exists():
+            print(f"Installing {label} dependencies...")
+            subprocess.run([npm, "ci", "--no-audit", "--no-fund"], cwd=frontend_dir, check=True)
+        print(f"Building {label}...")
+        subprocess.run([npm, "run", "build"], cwd=frontend_dir, check=True)
 
 
 def wait_until_ready(process: subprocess.Popen[object]) -> None:
@@ -153,7 +158,8 @@ def main() -> None:
     )
     try:
         wait_until_ready(process)
-        print(f"CartridgeFlow Creator: {URL}")
+        print(f"CartridgeFlow Creator: {URL}creator")
+        print(f"Capability workshop: {URL}developer")
         if not args.no_browser:
             webbrowser.open(URL)
         process.wait()

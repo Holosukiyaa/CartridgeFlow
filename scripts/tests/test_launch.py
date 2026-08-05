@@ -3,7 +3,7 @@ from __future__ import annotations
 import importlib.util
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "launch.py"
@@ -37,7 +37,13 @@ class LaunchTests(unittest.TestCase):
         ), patch.object(LAUNCH.subprocess, "run") as run:
             LAUNCH.ensure_frontend_bundle()
 
-        run.assert_called_once_with(["npm.cmd", "run", "build"], cwd=LAUNCH.FRONTEND_DIR, check=True)
+        self.assertEqual(
+            [
+                call(["npm.cmd", "run", "build"], cwd=LAUNCH.FRONTEND_DIRS["Creator"], check=True),
+                call(["npm.cmd", "run", "build"], cwd=LAUNCH.FRONTEND_DIRS["capability workshop"], check=True),
+            ],
+            run.call_args_list,
+        )
 
     def test_early_exit(self) -> None:
         process = MagicMock()

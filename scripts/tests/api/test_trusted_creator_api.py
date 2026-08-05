@@ -14,6 +14,7 @@ from backend import main as backend_main
 from backend.main import app
 from core.studio.authoring_service import AuthoringSessionStore
 from core.studio.trusted_node_presets import TrustedNodePresetStore, build_trusted_node_mapping
+from core.studio.capability_cartridges import CapabilityCartridgeStore
 from core.cartridge import CartridgeRegistry
 from core.lab import DevFlowManager
 
@@ -47,11 +48,13 @@ class TrustedCreatorApiTests(unittest.TestCase):
         self.root = root
         self.sessions = AuthoringSessionStore(root / "sessions")
         self.presets = TrustedNodePresetStore(root / "presets")
+        self.capabilities = CapabilityCartridgeStore(root / "capabilities")
         self.registry = CartridgeRegistry(root)
         self.dev_flows = DevFlowManager(root)
         self.patches = [
             patch.object(backend_main, "authoring_sessions", self.sessions),
             patch.object(backend_main, "trusted_node_presets", self.presets),
+            patch.object(backend_main, "capability_cartridges", self.capabilities),
             patch.object(backend_main, "registry", self.registry),
             patch.object(backend_main, "dev_flow_manager", self.dev_flows),
         ]
@@ -66,44 +69,23 @@ class TrustedCreatorApiTests(unittest.TestCase):
         self.assertEqual(200, response.status_code, response.text)
         self.assertIsNone(response.json()["creator"])
 
-    def test_empty_registry_returns_capability_gap_without_calling_model(self):
-        with patch("core.llm.chat", new_callable=AsyncMock) as chat:
+    def test_empty_registry_keeps_unresolved_semantic_nodes(self):
+        model = type("Model", (), {"api_key": "test-key"})()
+        output = json.dumps({
+            "nodes": [{
+                "id": "collect", "label": "收集公开信息", "description": "获取可审核的最新信息。",
+                "needed_capability": "从公开信息源获取最新内容", "capability_id": None, "values": {},
+            }],
+            "relations": [],
+        }, ensure_ascii=False)
+        with patch("core.llm.config_manager.resolve_model", return_value=model), patch("core.llm.chat", new_callable=AsyncMock, return_value={"content": output}) as chat:
             result = self.client.post("/api/creator/compose-recipe", json={"session_id": "creator.empty", "project_id": "project.empty", "goal": "制作日报"})
         self.assertEqual(200, result.status_code)
-        self.assertEqual("cartridgeflow.creator_capability_gap.v1", result.json()["capability_gap"]["schema"])
-        chat.assert_not_called()
-
-    def test_canvas_setup_publishes_one_simulated_base_owned_starter_capability(self):
-        model = type("Model", (), {
-            "api_key": "test-key",
-            "provider_id": "creator-test-provider",
-            "model": "creator-test-model",
-        })()
-        report = {"status": "ok", "items": [
-            {"node_id": "ai-transform", "status": "ok"},
-        ]}
-        assignments = {"version": 1, "defaults": {}, "cartridges": {}, "nodes": {}}
-        with (
-            patch("core.llm.config_manager.resolve_model", return_value=model),
-            patch("core.llm.config_manager.get_provider", return_value={"id": model.provider_id}),
-            patch("core.llm.config_manager.get_assignments", return_value=assignments),
-            patch("core.llm.config_manager.save_assignments") as save_assignments,
-            patch("core.llm.config_manager.build_model_binding_report", return_value=report),
-        ):
-            created = self.client.post("/api/creator/starter-capabilities")
-            repeated = self.client.post("/api/creator/starter-capabilities")
-        self.assertEqual(200, created.status_code, created.text)
-        self.assertEqual(200, repeated.status_code, repeated.text)
-        self.assertTrue(created.json()["ready"])
-        self.assertEqual("starter-ai-transform", created.json()["capability"]["id"])
-        self.assertEqual(1, self.presets.latest_revision("starter-ai-transform"))
-        publication = self.presets.get_publication("starter-ai-transform")
-        self.assertEqual("llm_prompt", publication["mapping"]["state_template"]["action"])
-        entry = self.presets.list_entries()[0]
-        self.assertEqual("passed", entry["simulation_evidence"]["1"]["status"])
-        creator_registry = self.client.get("/api/creator/trusted-node-presets").json()
-        self.assertNotIn("state_template", json.dumps(creator_registry))
-        save_assignments.assert_called_once()
+        creator = result.json()["creator"]
+        self.assertEqual("unresolved", creator["trusted_recipe"]["nodes"][0]["resolution"]["status"])
+        self.assertEqual(1, creator["capability_resolution"]["unresolved"])
+        self.assertFalse(creator["generation_readiness"]["ready"])
+        chat.assert_awaited_once()
 
     def test_registry_composition_node_refinement_and_developer_confirmation(self):
         registered = self.client.put("/api/developer/trusted-node-presets/rss-source", json={"preset": PRESET, "mapping": mapping(), "expected_revision": 0})
@@ -189,6 +171,32 @@ class TrustedCreatorApiTests(unittest.TestCase):
         self.assertNotIn("next", publication["mapping"]["state_template"])
         creator = self.client.get("/api/creator/trusted-node-presets").json()
         self.assertNotIn("state_template", json.dumps(creator))
+
+    def test_developer_publishes_complete_flow_as_creator_safe_capability(self):
+        created = self.client.post("/api/lab/flows", json={
+            "flow_id": "dev.complete-capability", "name": "Complete capability", "description": "Reusable internal Flow",
+        })
+        self.assertEqual(200, created.status_code, created.text)
+        node = self.client.post("/api/lab/flows/dev.complete-capability/nodes", json={
+            "template_id": "runtime", "node_id": "normalize", "title": "Normalize content",
+        })
+        self.assertEqual(200, node.status_code, node.text)
+        published = self.client.post("/api/developer/flows/dev.complete-capability/capability-cartridges", json={
+            "capability_id": "workspace.normalize-content",
+            "label": "整理内容", "description": "把输入内容整理为可复用结果。",
+            "match_terms": ["整理", "标准化"], "editable_fields": [], "creator_bindings": {},
+            "public_inputs": [], "public_outputs": [], "dependencies": [], "trust_scope": "workspace",
+        })
+        self.assertEqual(200, published.status_code, published.text)
+        release = published.json()["release"]
+        self.assertEqual("flow", release["implementation"]["kind"])
+        self.assertEqual("workspace", release["trust_scope"])
+        creator = self.client.get("/api/creator/capability-cartridges")
+        self.assertEqual(200, creator.status_code, creator.text)
+        serialized = json.dumps(creator.json())
+        self.assertIn("workspace.normalize-content", serialized)
+        self.assertNotIn("root_flow", serialized)
+        self.assertNotIn("implementation", serialized)
 
     def test_developer_can_check_trusted_node_readiness_before_publish(self):
         created = self.client.post("/api/lab/flows", json={

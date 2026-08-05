@@ -1,31 +1,29 @@
 # CartridgeFlow File Inventory
 
-This is a maintained ownership index, not a generated claim that a manually
-curated list is the complete repository tree. The authoritative full tree and
-cleanup disposition live in `PROJECT_CLEANUP_AUDIT_2026-07-31.md`.
+This is the maintained ownership index for current source. Generated output,
+dependencies, caches and `.data/` are deliberately excluded.
 
 | Area | Owner | Entry points |
 |---|---|---|
-| Product | Repository root | `README.md`, `AGENT.md`, `PLAN.md`, `PRODUCT_EXPERIENCE_ARCHITECTURE.md`, `VERSION`, `run.bat` |
-| Backend | `src/backend/` | `main.py` |
+| Product decisions | Repository root | `README.md`, `AGENT.md`, `PLAN.md`, `PRODUCT_EXPERIENCE_ARCHITECTURE.md`, `run.bat` |
+| Shared backend | `src/backend/` | `main.py`, `api_models.py` |
 | Cartridge runtime | `src/core/cartridge/` | `registry.py`, `runner.py`, `root_flow.py`, `validator.py` |
-| Authoring | `src/core/lab/` | `dev_flow.py`, `flow_analyzer.py`, `node_executor.py` |
-| Protocol | `protocol/`, `src/core/protocol/` | `flow-authoring/1.6/`, package-input `tuning/1.4/`, historical `flow-authoring/1.5/`, `trusted_node_recipes.py`, `release_catalog.py`, `compatibility.py` |
+| Technical Flow authoring | `src/core/lab/` | `dev_flow.py`, `flow_analyzer.py`, `node_executor.py` |
+| Protocol | `protocol/`, `src/core/protocol/` | `flow-authoring/1.7/`, `tuning/1.5/`, `capability_cartridges.py`, `release_catalog.py`, `compatibility.py` |
 | Runtime | `src/core/runtime/`, `src/core/orchestration/` | `manager.py`, `execution_plan.py` |
 | Extensions | `src/core/extensions/` | `descriptor.py`, `registry.py`, `worker_client.py` |
-| Creator authoring | `src/core/studio/`, `src/core/llm/` | `trusted_node_presets.py`, `authoring_service.py`, `creator_flow_skill.py`, `creator_node_skill.py`, `creator_runtime_bridge.py`, legacy `creator_discovery.py` |
-| Historical standalone projections | `src/creator-studio/src/`, `src/developer-console/src/` | retained implementation references; not launched by `run.bat` |
-| Creator frontend | `src/frontend/src/` | `main.tsx`, `App.tsx`, `api.ts`, `pages/flow-workbench/CreatorStudio.tsx`, `pages/flow-workbench/CreatorCanvas.tsx`, `styles/creator.css` |
-| Tests | `scripts/tests/` | `api/`, `browser/`, `conformance/`, `runtime/`, `studio/`, `lab/`, `orchestration/`, `ui/` |
-| Automation | `scripts/` | `bootstrap.ps1`, `launch.py`, `run_conformance.py`, `run_node_coverage.py` |
-| Flow authoring skill | `docs/development/skills/cartridgeflow-flow-author/` | `SKILL.md`, `references/authoring-checklist.md`, `scripts/preflight_flow.py`, `scripts/validate_authored_cartridge.py` |
-| Creator composition skills | `docs/development/skills/` | `compose-creator-flow/SKILL.md`, `refine-creator-node/SKILL.md`, each skill's `agents/openai.yaml` |
+| Creator and capability services | `src/core/studio/`, `src/core/llm/` | `authoring_service.py`, `capability_cartridges.py`, `creator_runtime_bridge.py`, `creator_flow_skill.py`, `creator_node_skill.py` |
+| Creator frontend | `src/frontend/src/` | `main.tsx`, `App.tsx`, `api.ts`, `pages/flow-workbench/CreatorStudio.tsx`, `CreatorCanvas.tsx`, `styles/creator.css` |
+| Capability workshop | `src/developer-console/src/` | `main.tsx`, `api.ts`, `styles.css` |
+| Capability examples | `demos/capabilities/` | `rss-reader/manifest.json`, `rss-reader/root.flow.json`, package-owned DLC |
 | Independent package test bench | `demos/runtime-developer-toolkit/` | `README.md`, `guide/`, `demo/`, `samples/` |
-| Authoring/runtime handoff boundary | `docs/development/` | `AUTHORING_RUNTIME_HANDOFF_BOUNDARY.md` |
-| Trusted-node audit | `docs/development/` | `CREATOR_TRUSTED_NODE_GAP_MAP.md` |
+| Tests | `scripts/tests/` | `api/`, `conformance/`, `integration/`, `studio/`, `runtime/`, `ui/` |
+| Automation | `scripts/` | `bootstrap.ps1`, `launch.py`, `run_conformance.py`, `audit_protocol_governance.py` |
+| Secret-scan policy | `config/` | `trufflehog-filesystem-exclude.txt` |
+| Flow authoring skill | `docs/development/skills/cartridgeflow-flow-author/` | `SKILL.md`, references and validators |
+| Creator composition skills | `docs/development/skills/` | `compose-creator-flow/`, `refine-creator-node/` |
 
-Generated output, dependencies, caches, user data, and temporary files are not
-enumerated. They must remain outside source ownership and outside Git.
+The retired standalone `src/creator-studio/` projection is not maintained. The
+Creator product is `src/frontend/`; the workshop is `src/developer-console/`.
 
-When a durable source file moves, update this index if its ownership or entry
-point changes, then refresh the cleanup audit file tree.
+When a durable source file moves, update this index in the same change.

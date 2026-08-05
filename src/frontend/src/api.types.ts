@@ -10,9 +10,21 @@ export interface CreatorRecipeNode {
   id: string
   label: string
   description: string
-  preset: { id: string; revision: number; digest: string }
+  preset?: { id: string; revision: number; digest: string }
   values: Record<string, unknown>
   editable_fields: CreatorFieldContract[]
+  resolution?: {
+    status: 'resolved' | 'unresolved'
+    needed_capability: string
+    capability?: {
+      id: string
+      revision: number
+      digest: string
+      trust_scope: 'system' | 'organization' | 'workspace'
+      label: string
+      description: string
+    }
+  }
 }
 
 export interface CreatorProposal {
@@ -41,12 +53,7 @@ export interface CreatorProjection {
   }>
   pending_proposals: CreatorProposal[]
   generation_readiness: { ready: boolean }
-}
-
-export interface CreatorCapabilityGap {
-  schema: string
-  goal: string
-  needed_capabilities: string[]
+  capability_resolution?: { resolved: number; unresolved: number; revision: number }
 }
 
 export interface CreatorPossibility {

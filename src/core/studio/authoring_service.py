@@ -10,7 +10,7 @@ from typing import Any, Awaitable, Callable
 from core.protocol.authoring_contract import (
     accept_change_set, canonical_digest, create_recipe_blueprint,
     create_recipe_instance, freeze_snapshot, propose_change_set, validate_freeze_snapshot,
-    TRUSTED_NODE_AUTHORING_PROTOCOL,
+    TRUSTED_NODE_AUTHORING_PROTOCOL, CAPABILITY_AUTHORING_PROTOCOL,
 )
 from core.protocol.base_manifest import load_base_implementation, supports_subprotocol_release
 from core.protocol.release_catalog import load_protocol_release_catalog
@@ -23,6 +23,14 @@ from core.protocol.trusted_node_recipes import (
     validate_dynamic_recipe,
     validate_node_values,
     validate_preset,
+)
+from core.protocol.capability_cartridges import (
+    CapabilityCartridgeError,
+    SEMANTIC_RECIPE_SCHEMA,
+    resolve_semantic_recipe,
+    semantic_recipe_projection,
+    validate_capability_release,
+    validate_values_for_node,
 )
 from core.llm.authoring import AuthoringProposalError, build_authoring_messages, parse_authoring_proposal
 
@@ -95,6 +103,123 @@ class AuthoringSessionStore:
             }
             self._write(path, state)
             return self.creator_projection(state)
+
+    def create_from_semantic_recipe(self, session_id: str, project_id: str, recipe: dict, publications: dict[str, dict]) -> dict:
+        """Create a Creator session even when some semantic nodes are unresolved."""
+        recipe, publications = self._prepare_semantic_recipe(recipe, publications)
+        steps = [{"id": item["id"], "intent": item["creator_label"], "inputs": {}, "outputs": {}} for item in recipe["nodes"]]
+        relations = [{"id": item["id"], "from_step_id": item["from_node_id"], "to_step_id": item["to_node_id"], "relation": item["relation"]} for item in recipe["relations"]]
+        bindings = {item["id"]: deepcopy(item["values"]) for item in recipe["nodes"]}
+        with self._lock:
+            path = self._path(session_id)
+            if path.exists():
+                raise AuthoringServiceError("AUTHORING_SESSION_EXISTS", "Authoring session already exists.", status=409)
+            self._validate_identifier(project_id, "PROJECT")
+            if self._state_for_project_id(project_id) is not None:
+                raise AuthoringServiceError("AUTHORING_PROJECT_EXISTS", "A project already owns an authoring session.", status=409)
+            try:
+                blueprint = create_recipe_blueprint(recipe["id"], recipe["goal"], steps, [], relations, protocol=CAPABILITY_AUTHORING_PROTOCOL)
+                instance = create_recipe_instance(blueprint, bindings)
+            except TuningProtocolError as exc:
+                raise AuthoringServiceError("AUTHORING_FACT_INVALID", str(exc)) from exc
+            state = {
+                "schema": "cartridgeflow.authoring_session.v1", "id": session_id, "project_id": project_id,
+                "head": instance, "instances": {instance["id"]: instance}, "history": [], "proposals": {},
+                "rejections": [], "freezes": [], "freeze_replacements": [], "freeze_revisions": [], "reversals": [],
+                "semantic_recipe": deepcopy(recipe), "capability_publications": deepcopy(publications),
+                "capability_reviews": {}, "resolution_revision": 1,
+            }
+            self._write(path, state)
+            return self.creator_projection(state)
+
+    def replace_from_semantic_recipe(self, session_id: str, recipe: dict, publications: dict[str, dict], *, expected_revision: int) -> dict:
+        recipe, publications = self._prepare_semantic_recipe(recipe, publications)
+        steps = [{"id": item["id"], "intent": item["creator_label"], "inputs": {}, "outputs": {}} for item in recipe["nodes"]]
+        relations = [{"id": item["id"], "from_step_id": item["from_node_id"], "to_step_id": item["to_node_id"], "relation": item["relation"]} for item in recipe["relations"]]
+        bindings = {item["id"]: deepcopy(item["values"]) for item in recipe["nodes"]}
+        with self._lock:
+            state = self.get(session_id)
+            self._require_revision(state, expected_revision)
+            try:
+                blueprint = create_recipe_blueprint(recipe["id"], recipe["goal"], steps, [], relations, protocol=CAPABILITY_AUTHORING_PROTOCOL)
+                instance = create_recipe_instance(blueprint, bindings, revision=state["head"]["revision"] + 1, parent_instance=state["head"])
+            except TuningProtocolError as exc:
+                raise AuthoringServiceError("AUTHORING_FACT_INVALID", str(exc)) from exc
+            state["head"] = instance
+            state["instances"][instance["id"]] = instance
+            state["semantic_recipe"] = deepcopy(recipe)
+            state["capability_publications"] = deepcopy(publications)
+            state["capability_reviews"] = {}
+            state["resolution_revision"] = int(state.get("resolution_revision") or 0) + 1
+            state["proposals"] = {}
+            state["freezes"] = []
+            state["freeze_replacements"] = []
+            state["freeze_revisions"] = []
+            self._write(self._path(session_id), state)
+            return self.creator_projection(state)
+
+    @staticmethod
+    def _prepare_semantic_recipe(recipe: dict, publications: dict[str, dict]) -> tuple[dict, dict[str, dict]]:
+        if not isinstance(recipe, dict) or recipe.get("schema") != SEMANTIC_RECIPE_SCHEMA:
+            raise AuthoringServiceError("AUTHORING_SEMANTIC_RECIPE_INVALID", "Semantic recipe schema is invalid.")
+        digest = recipe.get("digest")
+        if digest != canonical_digest({key: value for key, value in recipe.items() if key != "digest"}):
+            raise AuthoringServiceError("AUTHORING_SEMANTIC_RECIPE_INVALID", "Semantic recipe integrity check failed.")
+        normalized: dict[str, dict] = {}
+        raw_publications = publications if isinstance(publications, dict) else {}
+        try:
+            for node in recipe.get("nodes") or []:
+                ref = node.get("capability")
+                publication = raw_publications.get(node.get("id"))
+                if ref is None:
+                    if publication is not None:
+                        raise AuthoringServiceError("AUTHORING_CAPABILITY_BINDING_INVALID", "Unresolved semantic node cannot carry an implementation publication.")
+                    continue
+                item = validate_capability_release(publication)
+                actual_ref = {key: item[key] for key in ("id", "revision", "digest", "trust_scope")}
+                if actual_ref != ref:
+                    raise AuthoringServiceError("AUTHORING_CAPABILITY_BINDING_INVALID", "Semantic node capability reference does not match its publication.")
+                normalized[node["id"]] = item
+        except CapabilityCartridgeError as exc:
+            raise AuthoringServiceError("AUTHORING_CAPABILITY_BINDING_INVALID", str(exc)) from exc
+        return deepcopy(recipe), normalized
+
+    def resolve_capabilities(self, session_id: str, capabilities: list[dict], *, expected_revision: int) -> tuple[dict, list[str]]:
+        """Re-resolve the same semantic nodes against current trusted releases."""
+        with self._lock:
+            state = self.get(session_id)
+            self._require_revision(state, expected_revision)
+            recipe = state.get("semantic_recipe")
+            if not isinstance(recipe, dict):
+                raise AuthoringServiceError("AUTHORING_SEMANTIC_RECIPE_REQUIRED", "This project does not use semantic capability resolution.", status=409)
+            try:
+                next_recipe, publications, resolved = resolve_semantic_recipe(recipe, capabilities)
+            except CapabilityCartridgeError as exc:
+                raise AuthoringServiceError("AUTHORING_CAPABILITY_RESOLUTION_INVALID", str(exc)) from exc
+            if not resolved:
+                return self.creator_projection(state), []
+            nodes = {item["id"]: item for item in next_recipe["nodes"]}
+            bindings = deepcopy(state["head"]["bindings"])
+            for node_id in resolved:
+                try:
+                    bindings[node_id] = validate_values_for_node(nodes[node_id], publications[node_id], bindings.get(node_id, {}))
+                except CapabilityCartridgeError as exc:
+                    raise AuthoringServiceError("AUTHORING_CAPABILITY_RESOLUTION_INVALID", str(exc)) from exc
+            try:
+                instance = create_recipe_instance(
+                    state["head"]["blueprint"], bindings,
+                    revision=state["head"]["revision"] + 1, parent_instance=state["head"],
+                )
+            except TuningProtocolError as exc:
+                raise AuthoringServiceError("AUTHORING_FACT_INVALID", str(exc)) from exc
+            state["head"] = instance
+            state["instances"][instance["id"]] = instance
+            state["semantic_recipe"] = next_recipe
+            state["capability_publications"] = publications
+            state["resolution_revision"] = int(state.get("resolution_revision") or 0) + 1
+            state["proposals"] = {}
+            self._write(self._path(session_id), state)
+            return self.creator_projection(state), resolved
 
     def replace_from_recipe(self, session_id: str, recipe: dict, presets: list[dict], *, mappings: dict[str, dict] | None, expected_revision: int) -> dict:
         """Atomically replace the current overall draft while preserving project identity."""
@@ -204,7 +329,23 @@ class AuthoringSessionStore:
         with self._lock:
             state = self.get(session_id)
             self._require_revision(state, expected_revision)
-            if state.get("trusted_recipe"):
+            if state.get("semantic_recipe"):
+                allowed = {"set_creator_binding", "set_source_reference", "add_source", "update_source", "remove_source"}
+                if any(item.get("operation") not in allowed for item in changes if isinstance(item, dict)):
+                    raise AuthoringServiceError("AUTHORING_SEMANTIC_RECIPE_CHANGE_FORBIDDEN", "Node refinement cannot change overall recipe topology.", status=409)
+                nodes = {item["id"]: item for item in state["semantic_recipe"]["nodes"]}
+                publications = state.get("capability_publications") or {}
+                for change in changes:
+                    if not isinstance(change, dict) or change.get("operation") != "set_creator_binding":
+                        continue
+                    node = nodes.get(change.get("target_id"))
+                    if node is None:
+                        raise AuthoringServiceError("AUTHORING_STEP_UNKNOWN", "Semantic recipe node was not found.", status=404)
+                    try:
+                        change["value"] = validate_values_for_node(node, publications.get(node["id"]), change.get("value"))
+                    except CapabilityCartridgeError as exc:
+                        raise AuthoringServiceError("AUTHORING_SEMANTIC_NODE_FIELD_INVALID", str(exc), status=409) from exc
+            elif state.get("trusted_recipe"):
                 allowed = {"set_creator_binding", "set_source_reference", "add_source", "update_source", "remove_source"}
                 if any(item.get("operation") not in allowed for item in changes if isinstance(item, dict)):
                     raise AuthoringServiceError("AUTHORING_TRUSTED_RECIPE_CHANGE_FORBIDDEN", "Node refinement cannot change trusted recipe topology or identity.", status=409)
@@ -323,7 +464,15 @@ class AuthoringSessionStore:
                 snapshot = freeze_snapshot(state["head"], steps, reference, author, summary)
             except TuningProtocolError as exc:
                 raise AuthoringServiceError("AUTHORING_FREEZE_INVALID", str(exc)) from exc
-            state["freezes"].append(snapshot); self._write(self._path(session_id), state)
+            state["freezes"].append(snapshot)
+            if state.get("semantic_recipe"):
+                reviews = state.setdefault("capability_reviews", {})
+                publications = state.get("capability_publications") or {}
+                for step_id in step_ids:
+                    publication = publications.get(step_id)
+                    if isinstance(publication, dict):
+                        reviews[step_id] = publication.get("digest")
+            self._write(self._path(session_id), state)
             return snapshot
 
     def confirm_materialization(self, session_id: str, *, expected_revision: int, author: str, summary: str) -> dict:
@@ -372,7 +521,16 @@ class AuthoringSessionStore:
                 "journey_graph": AuthoringSessionStore.journey_graph(state, audience="creator"),
                 "blocked_findings": [item for item in checks["findings"] if item["severity"] == "blocked"],
                 "design_checks": checks, "generation_readiness": AuthoringSessionStore.generation_readiness(state, checks)}
-        if state.get("trusted_recipe"):
+        if state.get("semantic_recipe"):
+            semantic = semantic_recipe_projection(state["semantic_recipe"], state.get("capability_publications") or {}, head["bindings"])
+            projection["semantic_recipe"] = semantic
+            projection["trusted_recipe"] = semantic
+            projection["capability_resolution"] = {
+                "resolved": sum(1 for node in semantic["nodes"] if node["resolution"]["status"] == "resolved"),
+                "unresolved": sum(1 for node in semantic["nodes"] if node["resolution"]["status"] == "unresolved"),
+                "revision": int(state.get("resolution_revision") or 1),
+            }
+        elif state.get("trusted_recipe"):
             trusted = creator_recipe_projection(state["trusted_recipe"], state["trusted_presets"])
             for node in trusted["nodes"]:
                 node["values"] = deepcopy(head["bindings"].get(node["id"], {}))
@@ -395,7 +553,27 @@ class AuthoringSessionStore:
             "generation_readiness": readiness,
             "creator_url": f"/projects/{state.get('project_id', state['id'])}/creator",
         }
-        if state.get("trusted_recipe"):
+        if state.get("semantic_recipe"):
+            publications = state.get("capability_publications") or {}
+            projection["semantic_recipe"] = {
+                "id": state["semantic_recipe"]["id"],
+                "digest": state["semantic_recipe"]["digest"],
+                "nodes": [{
+                    "id": node["id"],
+                    "label": node["creator_label"],
+                    "needed_capability": node["needed_capability"],
+                    "capability": ({
+                        "id": publications[node["id"]]["id"],
+                        "revision": publications[node["id"]]["revision"],
+                        "digest": publications[node["id"]]["digest"],
+                        "trust_scope": publications[node["id"]]["trust_scope"],
+                        "source": deepcopy(publications[node["id"]]["implementation"].get("source")),
+                    } if node["id"] in publications else None),
+                    "creator_values": deepcopy(head["bindings"].get(node["id"], {})),
+                } for node in state["semantic_recipe"]["nodes"]],
+                "relations": deepcopy(state["semantic_recipe"]["relations"]),
+            }
+        elif state.get("trusted_recipe"):
             preset_by_id = {item["id"]: item for item in state["trusted_presets"]}
             projection["trusted_recipe"] = {
                 "id": state["trusted_recipe"]["id"],
@@ -429,9 +607,14 @@ class AuthoringSessionStore:
             nodes.append({"id": "intent", "kind": "intent", "label": head["blueprint"]["intent"], "level": 1, "status": "active"})
             edges.append({"id": "project-intent", "from": "project", "to": "intent", "relation": "starts_with"})
         step_level = 2 if audience == "creator" else 1
+        capability_publications = state.get("capability_publications") or {}
         for step in head["blueprint"]["steps"]:
             node_id = f"step:{step['id']}"
-            nodes.append({"id": node_id, "kind": "recipe_step", "label": step["intent"], "level": step_level, "status": "trusted" if step["id"] in frozen else "untrusted"})
+            if state.get("semantic_recipe") and step["id"] not in capability_publications:
+                status = "unresolved"
+            else:
+                status = "trusted" if step["id"] in frozen else "untrusted"
+            nodes.append({"id": node_id, "kind": "recipe_step", "label": step["intent"], "level": step_level, "status": status})
             if audience == "creator":
                 edges.append({"id": f"intent-{step['id']}", "from": "intent", "to": node_id, "relation": "shapes"})
             else:
@@ -465,10 +648,19 @@ class AuthoringSessionStore:
             findings.append({"code": "DESIGN_MAPPING_MISSING", "severity": "blocked", "message": "A template step has no Developer mapping."})
         if state.get("trusted_recipe") and any(not isinstance(mappings.get(step_id), dict) for step_id in mapping_ids):
             findings.append({"code": "DESIGN_EXECUTABLE_MAPPING_MISSING", "severity": "blocked", "message": "A trusted recipe step has no executable Developer snapshot."})
+        if state.get("semantic_recipe"):
+            publications = state.get("capability_publications") or {}
+            reviews = state.get("capability_reviews") or {}
+            for step in head["blueprint"]["steps"]:
+                publication = publications.get(step["id"])
+                if not isinstance(publication, dict):
+                    findings.append({"code": "DESIGN_CAPABILITY_UNRESOLVED", "severity": "blocked", "step_id": step["id"], "message": "This semantic node still needs a trusted capability cartridge."})
+                elif reviews.get(step["id"]) != publication.get("digest"):
+                    findings.append({"code": "DESIGN_CAPABILITY_REVIEW_REQUIRED", "severity": "blocked", "step_id": step["id"], "message": "The resolved capability source has not been reviewed for this node."})
         for step in head["blueprint"]["steps"]:
             if step["id"] not in frozen:
                 findings.append({"code": "DESIGN_STEP_UNFROZEN", "severity": "blocked", "step_id": step["id"], "message": "This design step is not frozen."})
-        if not head["blueprint"]["source_references"] and not state.get("trusted_recipe"):
+        if not head["blueprint"]["source_references"] and not state.get("trusted_recipe") and not state.get("semantic_recipe"):
             findings.append({"code": "DESIGN_SOURCE_MISSING", "severity": "blocked", "message": "At least one declared source or source role is required."})
         return {"schema": "cartridgeflow.creator_design_checks.v1", "revision": head["revision"], "findings": findings}
 
@@ -486,6 +678,12 @@ class AuthoringSessionStore:
         if state.get("trusted_recipe"):
             candidate["trusted_recipe"] = {"id": state["trusted_recipe"]["id"], "digest": state["trusted_recipe"]["digest"]}
             candidate["mapping_digest"] = canonical_digest(state["developer_mappings"])
+        if state.get("semantic_recipe"):
+            candidate["semantic_recipe"] = {"id": state["semantic_recipe"]["id"], "digest": state["semantic_recipe"]["digest"]}
+            candidate["capability_binding_digest"] = canonical_digest({
+                node_id: {key: publication[key] for key in ("id", "revision", "digest", "trust_scope")}
+                for node_id, publication in sorted((state.get("capability_publications") or {}).items())
+            })
         return candidate
 
     @staticmethod

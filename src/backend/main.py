@@ -37,6 +37,7 @@ from backend.api_models import (
     DeveloperMaterializationPayload,
     TrustedNodePresetPayload,
     TrustedNodeActivationPayload,
+    CapabilityCartridgePublishPayload,
     TrustedNodePublishFromFlowPayload,
     CreatorSourceDiscoveryPayload,
     AuthoringFreezePayload,
@@ -88,6 +89,15 @@ from core.cartridge import CartridgeRegistry, CartridgeRunner
 from core.studio.authoring_service import AuthoringServiceError, AuthoringSessionStore
 from core.studio.creator_runtime_bridge import CreatorRuntimeBridge, CreatorRuntimeBridgeError
 from core.studio.trusted_node_presets import TrustedNodePresetStore, build_trusted_node_mapping
+from core.studio.capability_cartridges import CapabilityCartridgeStore
+from core.protocol.capability_cartridges import (
+    CapabilityCartridgeError,
+    MAX_SOURCE_FILE_BYTES,
+    build_flow_capability_release,
+    creator_capability_projection,
+    validate_flow_capability_boundary,
+    legacy_node_capability,
+)
 from core.protocol.tuning import canonical_digest
 from core.cartridge.validator import ManifestValidationError
 from core.data_paths import (
@@ -336,6 +346,7 @@ async def add_utf8_charset(request, call_next):
 registry = CartridgeRegistry(ROOT)
 authoring_sessions = AuthoringSessionStore(ROOT / DATA_ROOT / "user" / "authoring_sessions")
 trusted_node_presets = TrustedNodePresetStore(ROOT / DATA_ROOT / "user" / "trusted_node_presets")
+capability_cartridges = CapabilityCartridgeStore(ROOT / DATA_ROOT / "user" / "capability_cartridges")
 runner = CartridgeRunner(ROOT, registry)
 artifact_manager = ArtifactManager(ROOT)
 flow_graph_builder = FlowGraphBuilder()
@@ -2189,6 +2200,143 @@ async def create_creator_default_recipe(payload: CreatorDefaultRecipePayload):
         _authoring_error(AuthoringServiceError("AI_CREATOR_DEFAULT_RECIPE_FAILED", str(exc), status=502))
 
 
+def _all_capability_releases() -> list[dict]:
+    """Combine recursive Flow releases with compatible single-node publications."""
+    releases: dict[str, dict] = {}
+    for entry in trusted_node_presets.list_entries():
+        if entry.get("status") != "active":
+            continue
+        try:
+            release = legacy_node_capability(entry["current"])
+        except (CapabilityCartridgeError, KeyError) as exc:
+            raise AuthoringServiceError("CAPABILITY_REGISTRY_INVALID", str(exc), status=500) from exc
+        releases[release["id"]] = release
+    for release in capability_cartridges.list_active():
+        releases[release["id"]] = release
+    return [releases[key] for key in sorted(releases)]
+
+
+@app.get("/api/creator/capability-cartridges")
+def list_creator_capability_cartridges():
+    return {
+        "schema": "cartridgeflow.creator_capability_registry.v1",
+        "capabilities": [creator_capability_projection(item) for item in _all_capability_releases()],
+    }
+
+
+@app.get("/api/developer/capability-cartridges")
+def list_developer_capability_cartridges():
+    return {
+        "schema": "cartridgeflow.developer_capability_registry.v1",
+        "capabilities": capability_cartridges.list_active(),
+        "entries": capability_cartridges.list_entries(),
+    }
+
+
+@app.get("/api/developer/flows/{flow_id}/capability-readiness")
+def get_developer_flow_capability_readiness(flow_id: str):
+    try:
+        cartridge = registry.get_cartridge(flow_id)
+        if not cartridge.get("editable"):
+            raise AuthoringServiceError("CAPABILITY_SOURCE_FLOW_READ_ONLY", "Only editable Developer flows can publish capabilities.", status=403)
+        validation = dev_flow_manager.validate_files(flow_id)
+        findings = [
+            {"code": "CAPABILITY_SOURCE_VALIDATION_BLOCKED", "message": message}
+            for message in validation.get("errors") or []
+        ]
+        try:
+            validate_flow_capability_boundary(cartridge.get("root_flow") or {})
+        except CapabilityCartridgeError as exc:
+            findings.append({"code": exc.code, "message": str(exc)})
+        return {
+            "schema": "cartridgeflow.capability_publish_readiness.v1",
+            "valid": not findings,
+            "findings": findings,
+        }
+    except FileNotFoundError as exc:
+        _authoring_error(AuthoringServiceError("CAPABILITY_SOURCE_FLOW_UNKNOWN", str(exc), status=404))
+    except AuthoringServiceError as exc:
+        _authoring_error(exc)
+
+
+@app.post("/api/developer/flows/{flow_id}/capability-cartridges")
+def publish_developer_flow_capability(flow_id: str, payload: CapabilityCartridgePublishPayload):
+    """Publish one complete editable Root Flow as an immutable workspace capability."""
+    try:
+        if payload.trust_scope != "workspace":
+            raise AuthoringServiceError(
+                "CAPABILITY_RELEASE_TRUST_SCOPE_FORBIDDEN",
+                "This local Developer workspace may publish only workspace-trusted capabilities.",
+                status=403,
+            )
+        cartridge = registry.get_cartridge(flow_id)
+        if not cartridge.get("editable"):
+            raise AuthoringServiceError("CAPABILITY_SOURCE_FLOW_READ_ONLY", "Only editable Developer flows can publish capabilities.", status=403)
+        manifest = cartridge.get("manifest") if isinstance(cartridge.get("manifest"), dict) else {}
+        root_flow = cartridge.get("root_flow") if isinstance(cartridge.get("root_flow"), dict) else {}
+        validate_flow_capability_boundary(root_flow)
+        validation = dev_flow_manager.validate_files(flow_id)
+        if not validation.get("valid"):
+            raise AuthoringServiceError("CAPABILITY_SOURCE_VALIDATION_BLOCKED", "; ".join(validation.get("errors") or ["Developer Flow validation failed."]), status=409)
+        source_path = dev_flow_manager._flow_path(flow_id)
+        source_files: dict[str, str] = {}
+        for path in sorted(source_path.rglob("*")):
+            if not path.is_file() or path.name in {"manifest.json", "root.flow.json"} or ".tuning" in path.parts:
+                continue
+            relative = path.relative_to(source_path).as_posix()
+            if path.is_symlink():
+                raise AuthoringServiceError("CAPABILITY_SOURCE_FILE_UNSUPPORTED", f"Capability file must not be a symbolic link: {relative}", status=409)
+            if path.stat().st_size > MAX_SOURCE_FILE_BYTES:
+                raise AuthoringServiceError("CAPABILITY_SOURCE_FILE_UNSUPPORTED", f"Capability file exceeds the 4 MiB limit: {relative}", status=409)
+            try:
+                source_files[relative] = path.read_text(encoding="utf-8")
+            except UnicodeDecodeError as exc:
+                raise AuthoringServiceError("CAPABILITY_SOURCE_FILE_UNSUPPORTED", f"Capability file must be UTF-8 text: {relative}", status=409) from exc
+        latest = capability_cartridges.latest_revision(payload.capability_id)
+        expected = latest if payload.expected_revision is None else payload.expected_revision
+        release = build_flow_capability_release(
+            capability_id=payload.capability_id,
+            revision=latest + 1,
+            trust_scope=payload.trust_scope,
+            label=payload.label,
+            description=payload.description,
+            match_terms=payload.match_terms,
+            editable_fields=payload.editable_fields,
+            creator_bindings=payload.creator_bindings,
+            public_inputs=payload.public_inputs,
+            public_outputs=payload.public_outputs,
+            dependencies=payload.dependencies,
+            source_flow_id=flow_id,
+            manifest=manifest,
+            root_flow=root_flow,
+            source_files=source_files,
+            evidence={
+                "status": "passed",
+                "checks": [
+                    {"id": "developer_flow_validation", "status": "passed"},
+                    {"id": "immutable_source_snapshot", "status": "passed"},
+                    {"id": "workspace_trust_boundary", "status": "passed"},
+                ],
+            },
+        )
+        publication = capability_cartridges.put(release, expected_revision=expected)
+        return {"release": publication, "creator": creator_capability_projection(publication)}
+    except FileNotFoundError as exc:
+        _authoring_error(AuthoringServiceError("CAPABILITY_SOURCE_FLOW_UNKNOWN", str(exc), status=404))
+    except CapabilityCartridgeError as exc:
+        _authoring_error(AuthoringServiceError("CAPABILITY_RELEASE_INVALID", str(exc)))
+    except AuthoringServiceError as exc:
+        _authoring_error(exc)
+
+
+@app.patch("/api/developer/capability-cartridges/{capability_id}/activation")
+def set_capability_cartridge_activation(capability_id: str, payload: TrustedNodeActivationPayload):
+    try:
+        return {"entry": capability_cartridges.set_activation(capability_id, active=payload.active, revision=payload.revision)}
+    except AuthoringServiceError as exc:
+        _authoring_error(exc)
+
+
 @app.get("/api/creator/trusted-node-presets")
 def list_creator_trusted_node_presets():
     return {"schema": "cartridgeflow.creator_trusted_node_registry.v1", "presets": trusted_node_presets.list_creator()}
@@ -2423,139 +2571,6 @@ def _simulate_trusted_node_candidate(flow_id: str, node_id: str, cartridge: dict
     return evidence
 
 
-_CREATOR_STARTER_FLOW_ID = "builtin.creator-starter"
-_CREATOR_STARTER_NODE_ID = "ai-transform"
-_CREATOR_STARTER_PRESET_ID = "starter-ai-transform"
-
-
-def _ensure_creator_starter_capability() -> dict:
-    """Publish the Base-owned starter capability through the normal Developer trust gate."""
-    if trusted_node_presets.latest_revision(_CREATOR_STARTER_PRESET_ID):
-        entries = {item["id"]: item for item in trusted_node_presets.list_entries()}
-        if entries[_CREATOR_STARTER_PRESET_ID]["status"] != "active":
-            trusted_node_presets.set_activation(_CREATOR_STARTER_PRESET_ID, active=True)
-        return trusted_node_presets.get_publication(_CREATOR_STARTER_PRESET_ID)
-
-    from core.llm.config_manager import get_assignments, get_provider, resolve_model, save_assignments
-
-    model = resolve_model("mentor")
-    if not str(model.api_key or "").strip():
-        raise AuthoringServiceError(
-            "AI_CREATOR_FLOW_MODEL_UNBOUND",
-            "No configured whole-flow model is available.",
-            status=409,
-        )
-    provider = get_provider(model.provider_id)
-    if not provider:
-        raise AuthoringServiceError(
-            "AI_CREATOR_FLOW_MODEL_UNBOUND",
-            "The configured whole-flow model connection is unavailable.",
-            status=409,
-        )
-
-    binding = {"provider_id": model.provider_id, "model": model.model}
-    assignments = get_assignments()
-    assignments.setdefault("cartridges", {}).setdefault(_CREATOR_STARTER_FLOW_ID, {})["runtime"] = binding
-    assignments.setdefault("nodes", {}).setdefault(
-        f"{_CREATOR_STARTER_FLOW_ID}/{_CREATOR_STARTER_NODE_ID}", {},
-    )["runtime"] = binding
-    save_assignments(assignments)
-
-    default_instruction = "根据用户提供的内容和目标，整理出清晰、可检查的结果。"
-    preset = {
-        "schema": "cartridgeflow.trusted_node_preset.v1",
-        "protocol": {"id": "CF-TUNING", "version": "1.4"},
-        "id": _CREATOR_STARTER_PRESET_ID,
-        "revision": 1,
-        "creator_label": "AI 内容处理",
-        "creator_description": "根据你的要求整理、提炼、改写或创作内容，不读取外部实时信息。",
-        "match_terms": ["内容整理", "总结", "提炼", "改写", "创作", "AI"],
-        "editable_fields": [{
-            "id": "instruction",
-            "label": "处理要求",
-            "value_type": "string",
-            "required": True,
-            "default": default_instruction,
-        }],
-        "developer_mapping_key": "builtin.creator.ai-transform.v1",
-    }
-    state = {
-        "type": "process",
-        "kind": "decision",
-        "executor": "llm",
-        "effect": "none",
-        "action": "llm_prompt",
-        "model_role": "runtime",
-        "title": "AI content transform",
-        "inputs": {},
-        "outputs": {},
-        "params": {
-            "model_role": "runtime",
-            "prompt": default_instruction,
-            "output": "result",
-        },
-    }
-    manifest = {
-        "id": _CREATOR_STARTER_FLOW_ID,
-        "llm_recipe": {
-            "schema": "cartridgeflow.llm_recipe.v1",
-            "roles": [{
-                "id": "runtime",
-                "label": "Runtime",
-                "capability": "text_reasoning",
-                "api_type": "openai",
-                "wire_api": "chat_completions",
-                "model": "configured-locally",
-                "required": True,
-            }],
-        },
-    }
-    mapping = build_trusted_node_mapping(
-        preset,
-        state,
-        source_flow_id=_CREATOR_STARTER_FLOW_ID,
-        source_node_id=_CREATOR_STARTER_NODE_ID,
-        creator_bindings={"instruction": "params.prompt"},
-        source_manifest=manifest,
-    )
-    evidence = _simulate_trusted_node_candidate(
-        _CREATOR_STARTER_FLOW_ID,
-        _CREATOR_STARTER_NODE_ID,
-        {"manifest": manifest, "root_flow": {"states": {_CREATOR_STARTER_NODE_ID: state}}},
-        state,
-        mapping,
-    )
-    if evidence["status"] != "passed":
-        blocker = next((item for item in evidence["checks"] if item["status"] == "blocked"), {})
-        raise AuthoringServiceError(
-            str(blocker.get("code") or "CREATOR_STARTER_CAPABILITY_BLOCKED"),
-            str(blocker.get("message") or "The starter capability did not pass isolated simulation."),
-            status=409,
-        )
-    return trusted_node_presets.put(
-        preset,
-        mapping,
-        expected_revision=0,
-        simulation_evidence=evidence,
-    )
-
-
-@app.post("/api/creator/starter-capabilities")
-def ensure_creator_starter_capabilities():
-    try:
-        publication = _ensure_creator_starter_capability()
-        return {
-            "schema": "cartridgeflow.creator_starter_capabilities.v1",
-            "ready": True,
-            "capability": {
-                "id": publication["preset"]["id"],
-                "label": publication["preset"]["creator_label"],
-            },
-        }
-    except AuthoringServiceError as exc:
-        _authoring_error(exc)
-
-
 @app.get("/api/developer/flows/{flow_id}/nodes/{node_id}/trusted-node-preset/readiness")
 def get_developer_flow_node_trusted_readiness(flow_id: str, node_id: str):
     """Check whether one Developer node can produce a portable trusted snapshot."""
@@ -2629,39 +2644,40 @@ def get_developer_flow_node_trusted_readiness(flow_id: str, node_id: str):
         }
 
 
-async def _compose_trusted_creator_recipe(goal: str, recipe_id: str) -> tuple[dict, list[dict], dict[str, dict] | None]:
-    """Return a Creator-safe recipe or gap plus server-owned mapping facts."""
+async def _compose_trusted_creator_recipe(goal: str, recipe_id: str) -> tuple[dict, dict[str, dict]]:
+    """Return a complete semantic recipe plus any resolved capability releases."""
     from core.llm import chat
     from core.llm.config_manager import resolve_model
     from core.llm.creator_flow_skill import CreatorFlowSkillError, build_creator_flow_messages, parse_creator_flow_result
-    from core.protocol.trusted_node_recipes import capability_gap
-    presets = trusted_node_presets.list_developer()
-    if not presets:
-        return capability_gap(goal, ["还缺少可复用的可信能力"], []), [], None
+    capabilities = _all_capability_releases()
     model = resolve_model("mentor")
     if not str(model.api_key or "").strip():
         raise AuthoringServiceError("AI_CREATOR_FLOW_MODEL_UNBOUND", "No configured whole-flow model is available.", status=409)
     try:
-        response = await asyncio.wait_for(chat(model, build_creator_flow_messages(goal, presets), agent_name="creator_flow_skill", phase="trusted_recipe_composition"), timeout=30)
+        response = await asyncio.wait_for(chat(model, build_creator_flow_messages(goal, capabilities), agent_name="creator_flow_skill", phase="semantic_recipe_composition"), timeout=30)
     except TimeoutError as exc:
         raise AuthoringServiceError("AI_CREATOR_FLOW_TIMEOUT", "The whole-flow AI service did not respond in time.", status=504) from exc
     try:
-        result = parse_creator_flow_result(str(response.get("content") or ""), goal, recipe_id, presets)
+        recipe, publications = parse_creator_flow_result(str(response.get("content") or ""), goal, recipe_id, capabilities)
     except CreatorFlowSkillError as exc:
         raise AuthoringServiceError("AI_CREATOR_FLOW_OUTPUT_INVALID", str(exc), status=502) from exc
-    if result.get("schema") == "cartridgeflow.creator_capability_gap.v1":
-        return result, presets, None
-    return result, presets, trusted_node_presets.mappings_for_recipe(result)
+    return recipe, publications
 
 
 @app.post("/api/creator/compose-recipe")
 async def compose_creator_recipe(payload: CreatorComposeRecipePayload):
     """Run the whole-flow skill and atomically create a mapped Creator session."""
     try:
-        result, presets, mappings = await _compose_trusted_creator_recipe(payload.goal, f"recipe.{payload.session_id}")
-        if mappings is None:
-            return {"capability_gap": result}
-        creator = authoring_sessions.create_from_recipe(payload.session_id, payload.project_id, result, presets, mappings=mappings)
+        result, publications = await _compose_trusted_creator_recipe(payload.goal, f"recipe.{payload.session_id}")
+        if result.get("schema") == "cartridgeflow.dynamic_creator_recipe.v1":
+            presets = [item["implementation"]["preset"] for item in publications.values()]
+            mappings = {
+                node["id"]: publications[node["preset"]["id"]]["implementation"]["mapping"]
+                for node in result["nodes"]
+            }
+            creator = authoring_sessions.create_from_recipe(payload.session_id, payload.project_id, result, presets, mappings=mappings)
+        else:
+            creator = authoring_sessions.create_from_semantic_recipe(payload.session_id, payload.project_id, result, publications)
         return {"creator": creator}
     except AuthoringServiceError as exc:
         _authoring_error(exc)
@@ -2677,19 +2693,19 @@ async def recompose_creator_recipe(session_id: str, payload: CreatorRecomposeRec
     try:
         current = authoring_sessions.get(session_id)
         authoring_sessions._require_revision(current, payload.expected_revision)
-        result, presets, mappings = await _compose_trusted_creator_recipe(
+        result, publications = await _compose_trusted_creator_recipe(
             payload.goal,
             f"recipe.{session_id}.{payload.expected_revision + 1}",
         )
-        if mappings is None:
-            return {"capability_gap": result}
-        creator = authoring_sessions.replace_from_recipe(
-            session_id,
-            result,
-            presets,
-            mappings=mappings,
-            expected_revision=payload.expected_revision,
-        )
+        if result.get("schema") == "cartridgeflow.dynamic_creator_recipe.v1":
+            presets = [item["implementation"]["preset"] for item in publications.values()]
+            mappings = {
+                node["id"]: publications[node["preset"]["id"]]["implementation"]["mapping"]
+                for node in result["nodes"]
+            }
+            creator = authoring_sessions.replace_from_recipe(session_id, result, presets, mappings=mappings, expected_revision=payload.expected_revision)
+        else:
+            creator = authoring_sessions.replace_from_semantic_recipe(session_id, result, publications, expected_revision=payload.expected_revision)
         return {"creator": creator}
     except AuthoringServiceError as exc:
         _authoring_error(exc)
@@ -2697,6 +2713,19 @@ async def recompose_creator_recipe(session_id: str, payload: CreatorRecomposeRec
         _authoring_error(AuthoringServiceError("AI_CREATOR_FLOW_MODEL_UNBOUND", str(exc), status=409))
     except Exception as exc:
         _authoring_error(AuthoringServiceError("AI_CREATOR_FLOW_FAILED", str(exc), status=502))
+
+
+@app.post("/api/creator/authoring-sessions/{session_id}/resolve-capabilities")
+def resolve_creator_capabilities(session_id: str, payload: AuthoringReadinessPayload):
+    try:
+        creator, resolved = authoring_sessions.resolve_capabilities(
+            session_id,
+            _all_capability_releases(),
+            expected_revision=payload.expected_revision,
+        )
+        return {"creator": creator, "resolved_node_ids": resolved}
+    except AuthoringServiceError as exc:
+        _authoring_error(exc)
 
 
 @app.post("/api/creator/authoring-sessions/{session_id}/source-candidates")
@@ -2778,14 +2807,33 @@ async def create_trusted_node_ai_proposal(session_id: str, node_id: str, payload
     try:
         state = authoring_sessions.get(session_id)
         authoring_sessions._require_revision(state, payload.expected_revision)
-        recipe = state.get("trusted_recipe")
-        if not isinstance(recipe, dict):
-            raise AuthoringServiceError("AI_CREATOR_NODE_TRUSTED_RECIPE_REQUIRED", "Node refinement requires a trusted-node recipe.", status=409)
-        node = next((item for item in recipe["nodes"] if item["id"] == node_id), None)
-        if node is None:
-            raise AuthoringServiceError("AUTHORING_STEP_UNKNOWN", "Trusted recipe node was not found.", status=404)
-        preset = next(item for item in state["trusted_presets"] if item["id"] == node["preset"]["id"] and item["revision"] == node["preset"]["revision"])
-        current_node = {**node, "values": state["head"]["bindings"].get(node_id, {})}
+        semantic_recipe = state.get("semantic_recipe")
+        if isinstance(semantic_recipe, dict):
+            node = next((item for item in semantic_recipe["nodes"] if item["id"] == node_id), None)
+            if node is None:
+                raise AuthoringServiceError("AUTHORING_STEP_UNKNOWN", "Semantic recipe node was not found.", status=404)
+            projected = next(item for item in authoring_sessions.creator_projection(state)["trusted_recipe"]["nodes"] if item["id"] == node_id)
+            preset = {
+                "schema": "cartridgeflow.trusted_node_preset.v1",
+                "protocol": {"id": "CF-TUNING", "version": "1.4"},
+                "id": "semantic-node",
+                "revision": 1,
+                "creator_label": node["creator_label"],
+                "creator_description": node["creator_description"],
+                "match_terms": [node["needed_capability"]],
+                "editable_fields": projected["editable_fields"],
+                "developer_mapping_key": "semantic.node.refinement",
+            }
+            current_node = {**node, "values": state["head"]["bindings"].get(node_id, {})}
+        else:
+            recipe = state.get("trusted_recipe")
+            if not isinstance(recipe, dict):
+                raise AuthoringServiceError("AI_CREATOR_NODE_RECIPE_REQUIRED", "Node refinement requires a semantic recipe.", status=409)
+            node = next((item for item in recipe["nodes"] if item["id"] == node_id), None)
+            if node is None:
+                raise AuthoringServiceError("AUTHORING_STEP_UNKNOWN", "Trusted recipe node was not found.", status=404)
+            preset = next(item for item in state["trusted_presets"] if item["id"] == node["preset"]["id"] and item["revision"] == node["preset"]["revision"])
+            current_node = {**node, "values": state["head"]["bindings"].get(node_id, {})}
         model = resolve_model("mentor")
         if not str(model.api_key or "").strip():
             raise AuthoringServiceError("AI_CREATOR_NODE_MODEL_UNBOUND", "No configured node-refinement model is available.", status=409)
@@ -2908,7 +2956,7 @@ def get_creator_generation_readiness(session_id: str, payload: AuthoringReadines
 def package_creator_project(session_id: str, payload: CreatorPackagePayload):
     """The sole Creator boundary that maps reviewed design facts into a signed package."""
     try:
-        bridge = CreatorRuntimeBridge(ROOT, ROOT / PACKAGES_DIR)
+        bridge = CreatorRuntimeBridge(ROOT, ROOT / PACKAGES_DIR, capability_cartridges)
         result = bridge.package(authoring_sessions, session_id, expected_revision=payload.expected_revision)
         return {
             "schema": "cartridgeflow.creator_package.v1",
@@ -2940,7 +2988,7 @@ def confirm_developer_materialization(session_id: str, payload: DeveloperMateria
 @app.post("/api/developer/authoring-sessions/{session_id}/runtime-handoff")
 def create_developer_runtime_handoff(session_id: str, payload: CreatorHandoffPayload):
     try:
-        bridge = CreatorRuntimeBridge(ROOT, ROOT / PACKAGES_DIR)
+        bridge = CreatorRuntimeBridge(ROOT, ROOT / PACKAGES_DIR, capability_cartridges)
         result = bridge.materialize(authoring_sessions, session_id, expected_revision=payload.expected_revision, candidate=payload.compile_candidate)
         return {**result, "url": f"/packages/{result['filename']}"}
     except CreatorRuntimeBridgeError as exc:
@@ -2963,7 +3011,7 @@ def confirm_developer_project_materialization(project_id: str, payload: Develope
 def create_developer_project_runtime_handoff(project_id: str, payload: CreatorHandoffPayload):
     try:
         state = authoring_sessions.get_by_project_id(project_id)
-        bridge = CreatorRuntimeBridge(ROOT, ROOT / PACKAGES_DIR)
+        bridge = CreatorRuntimeBridge(ROOT, ROOT / PACKAGES_DIR, capability_cartridges)
         result = bridge.materialize(authoring_sessions, state["id"], expected_revision=payload.expected_revision, candidate=payload.compile_candidate)
         return {**result, "url": f"/packages/{result['filename']}"}
     except CreatorRuntimeBridgeError as exc:

@@ -1,5 +1,4 @@
 import type {
-  CreatorCapabilityGap,
   CreatorPackage,
   CreatorPossibility,
   CreatorProjection,
@@ -91,14 +90,8 @@ export async function connectCreatorAi(body: { base_url: string; api_key: string
     body: JSON.stringify({ provider_id: saved.provider.id, model: selectedModel, prompt: 'Reply with OK.', vision: false }),
     timeoutMs: 45_000,
   })
-  return api<{ ready: true; capability: { id: string; label: string } }>('/api/creator/starter-capabilities', {
-    method: 'POST',
-    timeoutMs: 45_000,
-  })
+  return { ready: true as const }
 }
-
-export const ensureCreatorStarterCapabilities = () =>
-  api<{ ready: true }>('/api/creator/starter-capabilities', { method: 'POST', timeoutMs: 45_000 })
 
 export const discoverCreatorPossibilities = (context: string) =>
   api<{ possibilities: CreatorPossibility[] }>('/api/creator/possibilities', {
@@ -106,12 +99,12 @@ export const discoverCreatorPossibilities = (context: string) =>
   })
 
 export const composeCreatorRecipe = (body: { session_id: string; project_id: string; goal: string }) =>
-  api<{ creator?: CreatorProjection; capability_gap?: CreatorCapabilityGap }>('/api/creator/compose-recipe', {
+  api<{ creator: CreatorProjection }>('/api/creator/compose-recipe', {
     method: 'POST', body: JSON.stringify(body), timeoutMs: 45_000,
   })
 
 export const recomposeCreatorRecipe = (sessionId: string, body: { goal: string; expected_revision: number }) =>
-  api<{ creator?: CreatorProjection; capability_gap?: CreatorCapabilityGap }>(`${sessionRoute(sessionId)}/recompose`, {
+  api<{ creator: CreatorProjection }>(`${sessionRoute(sessionId)}/recompose`, {
     method: 'POST', body: JSON.stringify(body), timeoutMs: 45_000,
   })
 
@@ -144,6 +137,11 @@ export const confirmCreatorNode = (sessionId: string, nodeId: string) =>
   api(`${sessionRoute(sessionId)}/freeze`, {
     method: 'POST',
     body: JSON.stringify({ step_ids: [nodeId], author: 'creator', summary: 'Creator reviewed this node.' }),
+  })
+
+export const resolveCreatorCapabilities = (sessionId: string, expectedRevision: number) =>
+  api<{ creator: CreatorProjection; resolved_node_ids: string[] }>(`${sessionRoute(sessionId)}/resolve-capabilities`, {
+    method: 'POST', body: JSON.stringify({ expected_revision: expectedRevision }),
   })
 
 export const packageCreatorProject = (sessionId: string, expectedRevision: number) =>

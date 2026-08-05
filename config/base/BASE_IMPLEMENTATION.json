@@ -69,6 +69,11 @@
       "status": "supported"
     },
     {
+      "id": "CF-FARP",
+      "version": "1.7",
+      "status": "supported"
+    },
+    {
       "id": "CF-CRE",
       "version": "1",
       "status": "supported"
@@ -109,6 +114,13 @@
       "status": "supported",
       "runtime_adapter": "cf-tuning.trusted-node-recipes.v1",
       "host_protocols": [{"id": "CF-FARP", "version": "1.5"}]
+    },
+    {
+      "id": "CF-TUNING",
+      "version": "1.5",
+      "status": "supported",
+      "runtime_adapter": "cf-tuning.capability-cartridges.v1",
+      "host_protocols": [{"id": "CF-FARP", "version": "1.7"}]
     }
   ],
   "supported_protocol_adapters": [
@@ -158,6 +170,10 @@
     },
     {
       "id": "cf-farp.trusted-node-mapping.v1",
+      "status": "supported"
+    },
+    {
+      "id": "cf-tuning.capability-cartridges.v1",
       "status": "supported"
     }
   ],
@@ -360,8 +376,7 @@
     "creator_atomic_package_boundary_v1"
   ],
   "tool_packs": [
-    "builtin.filesystem",
-    "remote.rss"
+    "builtin.filesystem"
   ],
   "conformance": {
     "status": "partial",

@@ -6,9 +6,11 @@ import {
   Lightbulb,
   Loader2,
   PackageCheck,
+  RefreshCw,
   Send,
   ShieldCheck,
   Sparkles,
+  Wrench,
   X,
 } from 'lucide-react'
 import {
@@ -18,7 +20,6 @@ import {
   connectCreatorAi,
   confirmCreatorNode,
   discoverCreatorPossibilities,
-  ensureCreatorStarterCapabilities,
   fetchCreatorAiStatus,
   fetchCreatorProject,
   fetchCreatorSession,
@@ -28,7 +29,7 @@ import {
   recomposeCreatorRecipe,
   refineCreatorNodeWithAi,
   rejectCreatorProposal,
-  type CreatorCapabilityGap,
+  resolveCreatorCapabilities,
   type CreatorPackage,
   type CreatorPossibility,
   type CreatorProjection,
@@ -89,6 +90,8 @@ function NodeEditor({ creator, node, busy, onCreatorChange, onClose, onModelRequ
   const [impact, setImpact] = useState('')
   const [working, setWorking] = useState(false)
   const trusted = creator.frozen_steps.includes(node.id)
+  const unresolved = node.resolution?.status === 'unresolved'
+  const capabilityConfirmed = trusted && !unresolved
   const changed = JSON.stringify(values) !== JSON.stringify(node.values)
   const freezeRevision = creator.active_freezes.find((freeze) => freeze.steps.includes(node.id))?.freeze_revision
   const isBusy = busy || working
@@ -177,10 +180,12 @@ function NodeEditor({ creator, node, busy, onCreatorChange, onClose, onModelRequ
 
   return <aside className="creator-node-editor" aria-label={`调整 ${node.label}`}>
     <header>
-      <div><span className={`creator-status-label ${trusted ? 'is-confirmed' : ''}`}>{trusted ? <CheckCircle2 /> : <ShieldCheck />}{trusted ? '已确认' : '待审核'}</span><h2>{node.label}</h2><p>{node.description}</p></div>
+      <div><span className={`creator-status-label ${trusted && !unresolved ? 'is-confirmed' : ''}`}>{unresolved ? <Wrench /> : trusted ? <CheckCircle2 /> : <ShieldCheck />}{unresolved ? '待补齐能力' : trusted ? '已确认' : '待审核'}</span><h2>{node.label}</h2><p>{node.description}</p></div>
       <button className="icon-button" type="button" onClick={onClose} title="关闭节点"><X /></button>
     </header>
     <div className="creator-node-editor-body">
+      {unresolved && <section className="creator-capability-gap"><div><strong>这个想法已经保留</strong><p>{node.resolution?.needed_capability}</p></div><a href={`/developer?goal=${encodeURIComponent(node.resolution?.needed_capability || node.description)}&projectId=${encodeURIComponent(creator.project_id)}&nodeId=${encodeURIComponent(node.id)}`}><Wrench />进入能力卡带工坊</a><small>发布可信能力后，回到这里会在原节点上重新匹配。</small></section>}
+      {!unresolved && node.resolution?.capability && <section className="creator-capability-source"><ShieldCheck /><div><strong>{node.resolution.capability.label}</strong><span>{node.resolution.capability.trust_scope === 'workspace' ? '当前工作区可信' : node.resolution.capability.trust_scope === 'organization' ? '组织可信' : '系统可信'} · v{node.resolution.capability.revision}</span></div></section>}
       {!proposal && <>
         <FieldEditor node={node} values={values} onChange={setValues} disabled={isBusy} />
         <button className="secondary-button" type="button" disabled={isBusy || !changed} onClick={() => void stage()}><Check />保存字段修改</button>
@@ -188,7 +193,7 @@ function NodeEditor({ creator, node, busy, onCreatorChange, onClose, onModelRequ
           <label><span>继续和 AI 对齐这个节点</span><textarea value={prompt} disabled={isBusy || changed} onChange={(event) => setPrompt(event.currentTarget.value)} placeholder="例如：只保留中文来源，并按重要性排序" /></label>
           <button type="button" disabled={isBusy || changed || !prompt.trim()} onClick={() => void ask()}><Sparkles />生成调整建议</button>
         </div>
-        <button className="confirm-button" type="button" disabled={isBusy || trusted || changed} onClick={() => void confirm()}><ShieldCheck />{trusted ? '节点已确认' : '确认这个节点'}</button>
+        <button className="confirm-button" type="button" disabled={isBusy || trusted || changed} onClick={() => void confirm()}><ShieldCheck />{unresolved ? trusted ? '需求已确认' : '确认这项需求' : capabilityConfirmed ? '节点已确认' : '确认这个节点'}</button>
       </>}
       {proposal && <section className="creator-review">
         <span>修改确认</span>
@@ -249,7 +254,6 @@ export function CreatorStudio({ projectId }: { projectId: string }) {
   const [goal, setGoal] = useState('')
   const [selectedId, setSelectedId] = useState('')
   const [possibilities, setPossibilities] = useState<CreatorPossibility[]>([])
-  const [gap, setGap] = useState<CreatorCapabilityGap | null>(null)
   const [packageResult, setPackageResult] = useState<CreatorPackage | null>(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -257,6 +261,7 @@ export function CreatorStudio({ projectId }: { projectId: string }) {
   const [pendingAiAction, setPendingAiAction] = useState<'discover' | 'compose' | 'node' | null>(null)
   const composerRef = useRef<HTMLTextAreaElement | null>(null)
   const aiConnectedRef = useRef<boolean | null>(null)
+  const resolutionCheckRef = useRef('')
 
   useEffect(() => {
     let active = true
@@ -275,13 +280,26 @@ export function CreatorStudio({ projectId }: { projectId: string }) {
     fetchCreatorAiStatus()
       .then((status) => {
         aiConnectedRef.current = status.has_key
-        return status.has_key ? ensureCreatorStarterCapabilities() : null
       })
       .catch(() => null)
   }, [])
 
+  useEffect(() => {
+    if (!creator || !creator.capability_resolution?.unresolved) return
+    const key = `${creator.session_id}:${creator.capability_resolution.revision}`
+    if (resolutionCheckRef.current === key) return
+    resolutionCheckRef.current = key
+    resolveCreatorCapabilities(creator.session_id, creator.revision)
+      .then((result) => {
+        if (!result.resolved_node_ids.length) return
+        saveCreator(result.creator)
+        showToast({ title: '新的可信能力已匹配', description: '原草稿节点已保留，请打开节点审核来源和默认字段。', type: 'success' })
+      })
+      .catch(() => null)
+  }, [creator?.session_id, creator?.revision, creator?.capability_resolution?.revision, creator?.capability_resolution?.unresolved])
+
   const selectedNode = useMemo(() => creator?.trusted_recipe.nodes.find((node) => node.id === selectedId) || null, [creator, selectedId])
-  const confirmedCount = creator?.frozen_steps.length || 0
+  const confirmedCount = creator?.trusted_recipe.nodes.filter((node) => node.resolution?.status !== 'unresolved' && creator.frozen_steps.includes(node.id)).length || 0
   const totalCount = creator?.trusted_recipe.nodes.length || 0
 
   const saveCreator = (next: CreatorProjection) => {
@@ -304,7 +322,6 @@ export function CreatorStudio({ projectId }: { projectId: string }) {
       return
     }
     setBusy(true)
-    setGap(null)
     try {
       const result = await discoverCreatorPossibilities(goal.trim())
       setPossibilities(result.possibilities)
@@ -321,16 +338,11 @@ export function CreatorStudio({ projectId }: { projectId: string }) {
       return
     }
     setBusy(true)
-    setGap(null)
     setPossibilities([])
     try {
       const result = creator
         ? await recomposeCreatorRecipe(creator.session_id, { goal: nextGoal, expected_revision: creator.revision })
         : await composeCreatorRecipe({ session_id: creatorId(), project_id: projectId, goal: nextGoal })
-      if (result.capability_gap) {
-        setGap(result.capability_gap)
-        return
-      }
       if (!result.creator) throw new Error('missing creator')
       saveCreator(result.creator)
       setGoal(result.creator.intent)
@@ -356,6 +368,21 @@ export function CreatorStudio({ projectId }: { projectId: string }) {
       showToast({ title: '暂时不能打包', description: friendlyError(error, 'package'), type: 'error' })
     } finally { setBusy(false) }
   }
+  const refreshCapabilities = async () => {
+    if (!creator) return
+    setBusy(true)
+    try {
+      const result = await resolveCreatorCapabilities(creator.session_id, creator.revision)
+      saveCreator(result.creator)
+      showToast({
+        title: result.resolved_node_ids.length ? '已补齐可用能力' : '能力状态已是最新',
+        description: result.resolved_node_ids.length ? `已在原草稿中匹配 ${result.resolved_node_ids.length} 个节点，请审核来源和字段。` : undefined,
+        type: 'success',
+      })
+    } catch (error) {
+      showToast({ title: '能力检查未完成', description: friendlyError(error, 'compose'), type: 'error' })
+    } finally { setBusy(false) }
+  }
   const connectModel = async (connection: { base_url: string; api_key: string; model: string }) => {
     await connectCreatorAi(connection)
     aiConnectedRef.current = true
@@ -375,7 +402,7 @@ export function CreatorStudio({ projectId }: { projectId: string }) {
     <header className="creator-topbar">
       <div><strong>CartridgeFlow</strong><span>Creator Studio</span></div>
       <div className="creator-project-state">
-        {creator ? <><span><Check />已自动保存</span><span>{confirmedCount}/{totalCount} 个节点已确认</span></> : <span>新项目</span>}
+        {creator ? <><span><Check />已自动保存</span><span>{confirmedCount}/{totalCount} 个节点已确认</span>{Boolean(creator.capability_resolution?.unresolved) && <button type="button" disabled={busy} onClick={() => void refreshCapabilities()} title="重新检查可信能力"><RefreshCw />{creator.capability_resolution?.unresolved} 个待补齐</button>}</> : <span>新项目</span>}
       </div>
       <div className="creator-package-action">
         {packageResult ? <a href={packageResult.url} download><Download />下载包</a> : <button type="button" disabled={busy || !creator?.generation_readiness.ready} onClick={() => void buildPackage()} title={creator?.generation_readiness.ready ? '打包当前项目' : '确认全部节点后可打包'}>{busy && creator?.generation_readiness.ready ? <Loader2 className="spinning" /> : <PackageCheck />}打包</button>}
@@ -405,7 +432,6 @@ export function CreatorStudio({ projectId }: { projectId: string }) {
         {!creator && <button className="secondary-button" type="button" disabled={busy || goal.trim().length < 3} onClick={() => void discover()}>{busy ? <Loader2 className="spinning" /> : <Lightbulb />}帮我打开思路</button>}
         <button type="submit" disabled={busy || goal.trim().length < 3}>{busy ? <Loader2 className="spinning" /> : <Sparkles />}{creator ? '重新编排整体草稿' : '生成整体草稿'}</button>
       </div>
-      {gap && <div className="creator-gap" role="status"><ShieldCheck /><div><strong>当前可信能力还不够</strong>{gap.needed_capabilities.map((item) => <span key={item}>{item}</span>)}<small>能力补齐后，可在这里直接重新生成。</small></div></div>}
     </form>}
 
     {creator && selectedNode && <NodeEditor key={`${selectedNode.id}:${creator.revision}`} creator={creator} node={selectedNode} busy={busy} onCreatorChange={saveCreator} onClose={() => setSelectedId('')} onModelRequired={() => requestModelConnection('node')} />}

@@ -1,0 +1,37 @@
+{
+  "schema": "cartridgeflow.portable_dlc.v3",
+  "id": "dlc.demo-rss-reader",
+  "version": "0.1.0",
+  "owner_cartridge": "dev.demo-rss-reader",
+  "scope": "cartridge",
+  "backend": {"transport": "json_stdio_worker", "entry": "dlc/backend/entry.py"},
+  "tools": [{
+    "node_id": "rss_reader",
+    "server": "rss_reader",
+    "tool": "fetch",
+    "handler": "run",
+    "effect": "read_only",
+    "timeout_ms": 45000,
+    "description": "Fetch and normalize reviewed public RSS or Atom feeds.",
+    "implementation": {
+      "language": "python",
+      "format": "cartridgeflow.mcp_python.v1",
+      "entry": "dlc/mcp_nodes/rss_reader.py"
+    },
+    "transparency": "declared_graph",
+    "source_digest": "sha256:ee134a5aec7c504e9ddda687c97e22362e18bd53b7bd5ef6416611608a6203e7"
+  }],
+  "protocols": [],
+  "resources": [{"path": "dlc", "ownership": "package"}],
+  "files": [{
+    "path": "dlc/backend/entry.py",
+    "sha256": "d0daadacc212b7c966c1f1b31c52705b7c0dc83d7944c13f32f205cbb3ee5384",
+    "media_type": "text/x-python",
+    "role": "backend_entry"
+  }, {
+    "path": "dlc/mcp_nodes/rss_reader.py",
+    "sha256": "ee134a5aec7c504e9ddda687c97e22362e18bd53b7bd5ef6416611608a6203e7",
+    "media_type": "text/x-python",
+    "role": "mcp_node_source"
+  }]
+}

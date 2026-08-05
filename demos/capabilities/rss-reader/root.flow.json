@@ -1,0 +1,47 @@
+{
+  "schema_version": "1.0",
+  "id": "dev.demo-rss-reader.root",
+  "mode": "lifecycle",
+  "protocol": {"id": "CF-FARP", "version": "1.1"},
+  "start": "start",
+  "states": {
+    "start": {"type": "control", "title": "Start", "locked": true},
+    "fetch": {
+      "type": "process",
+      "kind": "mcp_read",
+      "executor": "mcp",
+      "effect": "read_only",
+      "action": "tool_call",
+      "title": "Fetch reviewed RSS sources",
+      "permission": "access_network",
+      "allowed_tools": ["rss_fetch"],
+      "mcp_binding": {"mode": "read_only", "allowed_tools": ["rss_fetch"]},
+      "inputs": {},
+      "outputs": {"items": {"schema": {"type": "array"}, "target": {"type": "store", "key": "items"}}},
+      "params": {
+        "output": "items",
+        "tools": [{
+          "type": "cartridge_dlc",
+          "server": "rss_reader",
+          "tool": "fetch",
+          "mcp_tool_id": "rss_fetch",
+          "params": {"urls": ["https://example.com/feed.xml"], "max_items": 20},
+          "output": "items",
+          "enabled": true,
+          "strict": true
+        }]
+      }
+    },
+    "complete": {"type": "terminal", "title": "Complete", "locked": true},
+    "failed": {"type": "terminal", "title": "Failed", "locked": true}
+  },
+  "execution_plan": {
+    "schema": "cartridgeflow.execution_plan.v1",
+    "entry": "start",
+    "edges": [
+      {"id": "start_fetch", "kind": "sequence", "from": "start", "to": "fetch"},
+      {"id": "fetch_complete", "kind": "sequence", "from": "fetch", "to": "complete"},
+      {"id": "fetch_failed", "kind": "failure", "from": "fetch", "to": "failed", "failure": {"id": "rss_fetch_failure", "causes": ["cancelled", "exception", "resource", "retry_exhausted", "timeout", "validation"]}}
+    ]
+  }
+}

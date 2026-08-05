@@ -13,7 +13,7 @@ python -c "import uvicorn" >nul 2>nul || goto bootstrap
 if not exist "%ROOT%src\frontend\node_modules\.bin\vite.cmd" goto bootstrap
 
 :launch
-python "%ROOT%scripts\launch_authoring.py"
+python "%ROOT%scripts\launch.py"
 set "EXIT_CODE=%ERRORLEVEL%"
 if not "%EXIT_CODE%"=="0" echo CartridgeFlow exited with code %EXIT_CODE%.
 pause

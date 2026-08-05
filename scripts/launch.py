@@ -1,46 +1,53 @@
+"""Build and launch the Creator product on one local port."""
+
+from __future__ import annotations
+
+import argparse
 import os
-import sys
-import subprocess
-import webbrowser
-import time
 import shutil
 import socket
-
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(SCRIPT_DIR)
-SOURCE_DIR = os.path.join(ROOT, "src")
-sys.path.insert(0, SOURCE_DIR)
-FRONTEND_DIR = os.path.join(SOURCE_DIR, "frontend")
-npm = shutil.which("npm.cmd") or shutil.which("npm") or "npm"
+import subprocess
+import sys
+import time
+import webbrowser
+from pathlib import Path
 
 
-def load_env():
-    env_path = os.path.join(ROOT, ".env")
-    if os.path.exists(env_path):
-        try:
-            with open(env_path, encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if line and not line.startswith("#") and "=" in line:
-                        k, v = line.split("=", 1)
-                        os.environ.setdefault(k.strip(), v.strip())
-        except PermissionError:
-            print("  [警告] .env 文件被占用，跳过加载。")
+ROOT = Path(__file__).resolve().parents[1]
+SOURCE_DIR = ROOT / "src"
+FRONTEND_DIR = SOURCE_DIR / "frontend"
+PORT = 8765
+URL = f"http://127.0.0.1:{PORT}/"
 
 
-def require_port_available(port: int):
+def load_env() -> None:
+    env_path = ROOT / ".env"
+    if not env_path.exists():
+        return
     try:
-        active = socket.create_connection(("127.0.0.1", port), timeout=0.2)
+        for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                key, value = line.split("=", 1)
+                os.environ.setdefault(key.strip(), value.strip())
+    except PermissionError:
+        print("Warning: .env is locked; continuing without it.")
+
+
+def require_port_available(port: int) -> None:
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=0.2):
+            raise SystemExit(f"Port {port} is already in use.")
+    except ConnectionRefusedError:
+        pass
     except OSError:
-        active = None
-    if active is not None:
-        active.close()
-        raise SystemExit(f"Port {port} is already in use. Stop that service or choose another port.")
+        pass
+
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
             probe.bind(("127.0.0.1", port))
     except OSError as exc:
-        raise SystemExit(f"Port {port} is already in use. Stop that service or choose another port.") from exc
+        raise SystemExit(f"Port {port} is already in use.") from exc
 
 
 def listener_pids(port: int) -> list[int]:
@@ -58,8 +65,7 @@ def listener_pids(port: int) -> list[int]:
         parts = line.split()
         if len(parts) < 5 or parts[3].upper() != "LISTENING":
             continue
-        local_address = parts[1]
-        if local_address.endswith(f":{port}") and parts[-1].isdigit():
+        if parts[1].endswith(f":{port}") and parts[-1].isdigit():
             pids.add(int(parts[-1]))
     return sorted(pids)
 
@@ -78,17 +84,17 @@ def process_command_line(pid: int) -> str:
 
 
 def restart_managed_listener(port: int, marker: str) -> None:
-    """Stop an existing CartridgeFlow listener, never an unidentified process."""
+    """Replace only a listener positively identified as this application."""
     pids = listener_pids(port)
     if not pids:
         return
     commands = {pid: process_command_line(pid) for pid in pids}
-    foreign = {pid: command for pid, command in commands.items() if marker.lower() not in command.lower()}
+    foreign = {pid: command for pid, command in commands.items() if marker.casefold() not in command.casefold()}
     if foreign:
         details = "; ".join(f"PID {pid}: {command or 'unknown command'}" for pid, command in foreign.items())
-        raise SystemExit(f"Port {port} is in use by another application ({details}). It was not stopped.")
+        raise SystemExit(f"Port {port} is used by another application ({details}); it was not stopped.")
     for pid in pids:
-        print(f"[restart] Stopping previous CartridgeFlow listener on port {port} (PID {pid})...")
+        print(f"Stopping previous CartridgeFlow listener on port {port} (PID {pid}).")
         subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], check=False, capture_output=True)
     for _ in range(30):
         if not listener_pids(port):
@@ -97,22 +103,40 @@ def restart_managed_listener(port: int, marker: str) -> None:
     raise SystemExit(f"CartridgeFlow listener on port {port} did not stop in time.")
 
 
+def ensure_frontend_bundle() -> None:
+    npm = shutil.which("npm.cmd") or shutil.which("npm")
+    if not npm:
+        raise SystemExit("npm was not found. Install Node.js 20 or newer.")
+    if not (FRONTEND_DIR / "node_modules" / ".bin" / "vite.cmd").exists():
+        print("Installing Creator dependencies...")
+        subprocess.run([npm, "ci", "--no-audit", "--no-fund"], cwd=FRONTEND_DIR, check=True)
+    print("Building Creator...")
+    subprocess.run([npm, "run", "build"], cwd=FRONTEND_DIR, check=True)
+
+
+def wait_until_ready(process: subprocess.Popen[object]) -> None:
+    for _ in range(40):
+        if process.poll() is not None:
+            raise SystemExit("CartridgeFlow stopped before it became ready.")
+        try:
+            with socket.create_connection(("127.0.0.1", PORT), timeout=0.25):
+                return
+        except OSError:
+            time.sleep(0.25)
+    raise SystemExit("CartridgeFlow did not become ready within 10 seconds.")
+
+
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--no-browser", action="store_true", help="Do not open Creator automatically.")
+    args = parser.parse_args()
+
     load_env()
+    ensure_frontend_bundle()
+    restart_managed_listener(PORT, "backend.main:app")
+    require_port_available(PORT)
 
-    # A repeat launch replaces only a process we can positively identify as
-    # this workbench. A foreign listener remains an actionable error.
-    restart_managed_listener(8765, "backend.main:app")
-    restart_managed_listener(5173, os.path.normcase(os.path.abspath(FRONTEND_DIR)))
-    require_port_available(8765)
-    require_port_available(5173)
-
-    if not os.path.exists(os.path.join(FRONTEND_DIR, "node_modules")):
-        print("[0/2] 安装前端依赖...")
-        subprocess.run([npm, "ci"], cwd=FRONTEND_DIR, check=True)
-
-    print("[1/2] 启动后端 (port 8765)...")
-    backend = subprocess.Popen(
+    process = subprocess.Popen(
         [
             sys.executable,
             "-m",
@@ -121,37 +145,23 @@ def main() -> None:
             "--host",
             "127.0.0.1",
             "--port",
-            "8765",
+            str(PORT),
             "--log-level",
             "warning",
         ],
         cwd=SOURCE_DIR,
     )
-
-    print("[2/2] 启动前端开发服务器 (port 5173)...")
-    frontend = subprocess.Popen(
-        [npm, "run", "dev", "--", "--host", "127.0.0.1", "--port", "5173", "--strictPort"],
-        cwd=FRONTEND_DIR,
-    )
-
-    for _ in range(20):
-        time.sleep(0.5)
-        try:
-            with socket.create_connection(("127.0.0.1", 8765), timeout=1):
-                break
-        except OSError:
-            continue
-
-    webbrowser.open("http://127.0.0.1:5173")
-    print("已打开 http://127.0.0.1:5173  (Ctrl+C 停止)")
-
     try:
-        backend.wait()
+        wait_until_ready(process)
+        print(f"CartridgeFlow Creator: {URL}")
+        if not args.no_browser:
+            webbrowser.open(URL)
+        process.wait()
     except KeyboardInterrupt:
         pass
     finally:
-        backend.terminate()
-        frontend.terminate()
+        if process.poll() is None:
+            process.terminate()
 
 
 if __name__ == "__main__":

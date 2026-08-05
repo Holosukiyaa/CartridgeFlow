@@ -12,10 +12,12 @@ Requires Python 3, Node.js 20.19 or later, and npm on `PATH`.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/bootstrap.ps1
-python scripts/launch.py
+run.bat
 ```
 
-Creator opens at `http://127.0.0.1:5173`. User drafts, generated packages,
+Creator opens at `http://127.0.0.1:8765`. The launcher builds the current
+Creator bundle and replaces only an existing CartridgeFlow listener on that
+port; it does not bind or stop any other frontend port. User drafts, generated packages,
 and temporary files live under `.data/` by default. Set
 `CARTRIDGEFLOW_DATA_ROOT` before process startup to relocate that data root.
 Relative values are resolved from the repository root; use an absolute path to

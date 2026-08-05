@@ -3,7 +3,7 @@ from __future__ import annotations
 import importlib.util
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "launch.py"
@@ -30,3 +30,17 @@ class LaunchTests(unittest.TestCase):
                 LAUNCH.restart_managed_listener(8765, "backend.main:app")
 
         run.assert_not_called()
+
+    def test_build(self) -> None:
+        with patch.object(LAUNCH.shutil, "which", return_value="npm.cmd"), patch.object(
+            LAUNCH.Path, "exists", return_value=True
+        ), patch.object(LAUNCH.subprocess, "run") as run:
+            LAUNCH.ensure_frontend_bundle()
+
+        run.assert_called_once_with(["npm.cmd", "run", "build"], cwd=LAUNCH.FRONTEND_DIR, check=True)
+
+    def test_early_exit(self) -> None:
+        process = MagicMock()
+        process.poll.return_value = 1
+        with self.assertRaisesRegex(SystemExit, "stopped before"):
+            LAUNCH.wait_until_ready(process)

@@ -136,7 +136,7 @@ function verifyArchive(archivePath, trustPath) {
   if (!trusted || !Buffer.from(trusted, 'base64').equals(publicKey)) fail(`publisher key is not trusted: ${descriptor.key_id}`)
   const manifest = parseJson(files.get('payload/manifest.json'), 'payload/manifest.json')
   const flow = parseJson(files.get('payload/root.flow.json'), 'payload/root.flow.json')
-  const supportedFlowVersions = new Set(['1.0', '1.1', '1.6'])
+  const supportedFlowVersions = new Set(['1.0', '1.1', '1.6', '1.7'])
   const flowVersion = flow.protocol?.version
   if (release.runtime?.flow_contract?.id !== 'CF-FARP' || !supportedFlowVersions.has(release.runtime?.flow_contract?.version) || flow.protocol?.id !== 'CF-FARP' || !supportedFlowVersions.has(flowVersion) || release.runtime.flow_contract.version !== flowVersion) fail('payload does not declare one supported, matching CF-FARP runtime contract')
   if (flow.execution_plan?.schema !== 'cartridgeflow.execution_plan.v1' || !flow.states || !Array.isArray(flow.execution_plan.edges)) fail(`payload has no executable FARP@${flowVersion} execution plan`)
@@ -231,7 +231,11 @@ async function executeNode(state, nodeId, store, mock, runDirectory, tools) {
     const interaction = state.params?.interaction || {}
     const key = interaction.store_key || state.params?.output || 'approval'
     if (mock) {
-      store[key] = { approval: 'approved', feedback: '' }
+      const answer = interaction.offline_answer || { approval: 'approved', feedback: '' }
+      store[key] = answer
+      for (const output of Object.values(state.outputs || {})) {
+        if (output?.target?.type === 'store' && output.target.key) store[output.target.key] = answer
+      }
       console.log(`[review] ${state.title || nodeId}: auto-approved (mock)`)
     } else {
       fail(`review node ${state.title || nodeId} requires interactive approval, which the minimal demo does not implement; run with --mock to auto-approve`)
@@ -270,15 +274,24 @@ async function executeNode(state, nodeId, store, mock, runDirectory, tools) {
       .filter((key) => typeof key === 'string')
     const fromKey = state.params?.input || state.params?.from || preset.from || preset.source || preset.items
       || (inputBindings.length === 1 ? inputBindings[0] : undefined)
-    if (!fromKey && !Object.keys(state.outputs || {}).some((name) => (state.outputs[name]?.target || {}).type === 'artifact')) {
+    const targets = Object.values(state.outputs || {})
+    const storeTargets = targets.map((target) => target?.target).filter((target) => target?.type === 'store' && target.key)
+    const artifactTarget = targets.map((target) => target?.target).find((target) => target?.type === 'artifact')
+    if (!fromKey && storeTargets.length === 0 && !artifactTarget) {
       return
     }
     if (!fromKey) fail(`pass_result has no resolvable input source (params.input/preset/items or single inputs binding)`)
-    const value = typeof fromKey === 'string' && fromKey.includes(',')
-      ? Object.fromEntries(fromKey.split(',').map((key) => [key.trim(), store[key.trim()]]).filter(([, v]) => v !== undefined))
+    const sourceKeys = typeof fromKey === 'string'
+      ? fromKey.split(',').map((key) => key.trim()).filter(Boolean)
+      : []
+    const missingKeys = sourceKeys.filter((key) => store[key] === undefined)
+    if ((storeTargets.length > 0 || artifactTarget) && missingKeys.length > 0) {
+      fail(`pass_result is missing required store value: ${missingKeys.join(', ')}`)
+    }
+    const value = sourceKeys.length > 1
+      ? Object.fromEntries(sourceKeys.map((key) => [key, store[key]]))
       : store[fromKey]
-    const targets = Object.values(state.outputs || {})
-    const artifactTarget = targets.map((target) => target?.target).find((target) => target?.type === 'artifact')
+    if (value === undefined && (storeTargets.length > 0 || artifactTarget)) fail(`pass_result is missing required store value: ${fromKey}`)
     if (artifactTarget) {
       const fileName = String(artifactTarget.name || 'result.txt').replace(/\\/g, '/')
       if (!safePath(fileName)) fail(`artifact output path is unsafe: ${fileName}`)
@@ -290,6 +303,7 @@ async function executeNode(state, nodeId, store, mock, runDirectory, tools) {
       writeFileSync(output, content, 'utf8')
       store[artifactTarget.artifact_id || state.output || 'artifact'] = { path: `artifacts/${fileName}`, bytes: Buffer.byteLength(content) }
     }
+    for (const target of storeTargets) store[target.key] = value
     return
   }
 }
@@ -313,6 +327,8 @@ async function executeFlow(manifest, flow, runDirectory, mock) {
   const forkEdges = new Map()
   const joinEdges = new Map()
   const joinEdgesByFrom = new Map()
+  const failureEdges = new Map()
+  const failureTargets = new Set()
   const executedBranches = new Map()
   for (const edge of flow.execution_plan.edges) {
     if (edge?.kind === 'sequence') {
@@ -334,14 +350,17 @@ async function executeFlow(manifest, flow, runDirectory, mock) {
       const byFrom = joinEdgesByFrom.get(edge.from) || []
       byFrom.push(edge)
       joinEdgesByFrom.set(edge.from, byFrom)
+    } else if (edge?.kind === 'failure') {
+      if (!edge.from || !edge.to || failureEdges.has(edge.from)) fail('failure edge is missing from/to or is ambiguous')
+      failureEdges.set(edge.from, edge)
+      failureTargets.add(edge.to)
     }
-    // failure edges are intentionally not executed by this minimal reference
-    // runtime; the production runtime implements fail-closed routing.
   }
   const tools = new Map((manifest.mcp_tools || []).filter((tool) => tool?.id).map((tool) => [tool.id, tool]))
   const store = Object.create(null)
   const nodeLogs = []
   let current = flow.execution_plan.entry
+  let routedFailure = ''
   const trace = []
   const recordLog = (entry) => {
     nodeLogs.push({ ts: new Date().toISOString(), ...entry })
@@ -352,13 +371,26 @@ async function executeFlow(manifest, flow, runDirectory, mock) {
     if (!state) fail(`execution plan references unknown state: ${current}`)
     trace.push(current)
     if (state.type === 'terminal') {
+      const failed = failureTargets.has(current)
       recordLog({ event: 'node_started', node: current, action: 'terminal', status: 'running' })
-      recordLog({ event: 'node_completed', node: current, action: 'terminal', status: 'completed' })
-      recordLog({ event: 'run_completed', status: 'completed' })
-      return { status: 'completed', trace, store, nodeLogs }
+      recordLog({ event: 'node_completed', node: current, action: 'terminal', status: failed ? 'failed' : 'completed' })
+      recordLog({ event: failed ? 'run_failed' : 'run_completed', status: failed ? 'failed' : 'completed', ...(routedFailure ? { reason: routedFailure } : {}) })
+      return { status: failed ? 'failed' : 'completed', trace, store, nodeLogs, ...(routedFailure ? { error: routedFailure } : {}) }
     }
     recordLog({ event: 'node_started', node: current, action: state.action || state.kind || state.type, status: 'running' })
-    await executeNode(state, current, store, mock, runDirectory, tools)
+    try {
+      await executeNode(state, current, store, mock, runDirectory, tools)
+    } catch (error) {
+      const failure = failureEdges.get(current)
+      recordLog({ event: 'node_failed', node: current, action: state.action || state.kind || state.type, status: 'failed', reason: error.message })
+      if (!failure) {
+        recordLog({ event: 'run_failed', status: 'failed', reason: error.message })
+        throw error
+      }
+      routedFailure = error.message
+      current = failure.to
+      continue
+    }
     recordLog({ event: 'node_completed', node: current, action: state.action || state.kind || state.type, status: 'completed', output: state.output || state.params?.output || '' })
     if (state.type !== 'system' && state.type !== 'control' && state.type !== 'process') {
       fail(`minimal runtime does not support node type ${state.type}`)
@@ -472,7 +504,7 @@ async function main(args) {
     logs: execution.nodeLogs || [],
   }
   writeFileSync(join(runRoot, 'run-log.jsonl'), `${execution.nodeLogs.map((entry) => JSON.stringify(entry)).join('\n')}\n`, 'utf8')
-  writeFileSync(join(runRoot, 'run-result.json'), `${JSON.stringify({ release_id: result.release.release_id, installed: basename(installed), status: execution.status, trace: execution.trace, store: execution.store, artifacts }, null, 2)}\n`, 'utf8')
+  writeFileSync(join(runRoot, 'run-result.json'), `${JSON.stringify({ release_id: result.release.release_id, installed: basename(installed), status: execution.status, trace: execution.trace, store: execution.store, artifacts, ...(execution.error ? { error: execution.error } : {}) }, null, 2)}\n`, 'utf8')
   // cmd-list style runtime panel output
   console.log('=== CartridgeFlow Runtime (demo) ===')
   console.log(`release : ${runLog.release_id}`)
@@ -496,19 +528,22 @@ async function main(args) {
   if (artifacts.length === 0) console.log('  (none)')
   for (const artifact of artifacts) console.log(`  ${artifact.name} (${artifact.bytes} bytes)`)
   console.log(`log     : run-log.jsonl (${execution.nodeLogs.length} entries)`)
+  if (execution.status !== 'completed') process.exitCode = 1
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   main(process.argv.slice(2)).catch((error) => {
     try {
       const positional = process.argv.slice(2).filter((value) => !value.startsWith('--'))
-      const runRoot = resolve(positional[2] || '.')
-      mkdirSync(runRoot, { recursive: true })
-      writeFileSync(join(runRoot, 'run-log.jsonl'), `${JSON.stringify({ ts: new Date().toISOString(), event: 'run_failed', status: 'failed', reason: error.message })}\n`, 'utf8')
+      if (positional[0] === 'run' && positional[2]) {
+        const runRoot = resolve(positional[2])
+        mkdirSync(runRoot, { recursive: true })
+        writeFileSync(join(runRoot, 'run-log.jsonl'), `${JSON.stringify({ ts: new Date().toISOString(), event: 'run_failed', status: 'failed', reason: error.message })}\n`, 'utf8')
+      }
     } catch { /* log write is best-effort */ }
     console.error(JSON.stringify({ ok: false, error: error.message }, null, 2))
     process.exitCode = 1
   })
 }
 
-export { assertPublicRuntimeHandoff, verifyArchive }
+export { assertPublicRuntimeHandoff, executeFlow, verifyArchive }

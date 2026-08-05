@@ -27,7 +27,7 @@ runtime-developer-toolkit/
 
 ## 交接顺序
 
-1. 阅读 `guide/RUNTIME_TEAM_CF_CRE_FARP_DEVELOPMENT_GUIDE.md`，先理解 CF-CRE@1 与 CF-FARP 执行计划的边界；Creator 打包产物使用兼容执行计划的 CF-FARP@1.6。
+1. 阅读 `guide/RUNTIME_TEAM_CF_CRE_FARP_DEVELOPMENT_GUIDE.md`，先理解 CF-CRE@1 与 CF-FARP 执行计划的边界；Creator 递归能力打包产物使用 CF-FARP@1.7。
 2. 运行 `npm --prefix demo run check`，确认 Node.js 环境满足要求。
 3. 使用 `samples/trusted_publishers.json` 验证样例包（`verify` 全部 5 个包）。
 4. 使用 `--mock` 跑通确定性执行链（`run` 支持 sequence / fork-join / loop / 人工审核 / 产物交付）。
@@ -100,7 +100,7 @@ node runtime-developer-toolkit/demo/run.mjs run `
 - 完整 CF-CRE@1 校验链（哈希、摘要、Ed25519 签名、信任库）。
 - `execution_plan` 边：`sequence`、`loop`（`continue_when` 求值 + `exit_to`）、`fork`/`join`（顺序模拟并行分支 + join 等齐校验）。
 - 节点执行：`llm_prompt`（mock / OpenAI-compatible HTTP）、`confirm_checkpoint`（mock 自动批准；真实模式中止——交互审核需生产实现）、`pass_result`（artifact 落盘）、`filesystem_write` MCP。
-- `failure` 边与交互式人工审核 UI **不在**最小 demo 范围内——生产运行台必须实现 fail-closed 路由与真实审核交互。
+- `failure` 边支持主执行链上的最小 fail-closed 路由；交互式人工审核 UI **不在**最小 demo 范围内，生产运行台必须实现完整分支失败路由与真实审核交互。
 
 ## 重要限制
 

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import {
   ArrowLeft, Boxes, Check, CircleAlert, FilePlus2, Network, PackageCheck,
-  Plus, RefreshCw, Save, ShieldCheck, Trash2, Wrench,
+  Plus, RefreshCw, Save, ShieldCheck, Trash2, UserCheck, Wrench,
 } from 'lucide-react'
 import {
   Background, BackgroundVariant, Controls, MarkerType, MiniMap, Position, ReactFlow,
@@ -113,20 +113,12 @@ function Graph({ flowId, graph, selected, onSelect, onReload }: {
 
 function NodeEditor({ flowId, node, onSaved }: { flowId: string; node: AnyRecord; onSaved: () => Promise<void> }) {
   const [title, setTitle] = useState(String(node.title || node.label || node.id || ''))
-  const [kind, setKind] = useState(String(node.kind || 'transfer'))
-  const [executor, setExecutor] = useState(String(node.executor || 'deterministic'))
-  const [effect, setEffect] = useState(String(node.effect || 'writes_store'))
-  const [action, setAction] = useState(String(node.action || 'pass_result'))
   const [params, setParams] = useState(pretty(object(node.params)))
   const [working, setWorking] = useState(false)
   const [error, setError] = useState('')
 
   useEffect(() => {
     setTitle(String(node.title || node.label || node.id || ''))
-    setKind(String(node.kind || 'transfer'))
-    setExecutor(String(node.executor || 'deterministic'))
-    setEffect(String(node.effect || 'writes_store'))
-    setAction(String(node.action || 'pass_result'))
     setParams(pretty(object(node.params)))
   }, [node])
 
@@ -135,7 +127,7 @@ function NodeEditor({ flowId, node, onSaved }: { flowId: string; node: AnyRecord
     try { parsed = JSON.parse(params) as AnyRecord } catch { setError('节点参数不是合法 JSON。'); return }
     setWorking(true); setError('')
     try {
-      await developerApi.updateNode(flowId, String(node.id), { title, display_name: title, kind, executor, effect, action, params: parsed })
+      await developerApi.updateNode(flowId, String(node.id), { title, display_name: title, params: parsed })
       await onSaved()
     } catch (reason) { setError(reason instanceof Error ? reason.message : '节点保存失败。') } finally { setWorking(false) }
   }
@@ -151,12 +143,12 @@ function NodeEditor({ flowId, node, onSaved }: { flowId: string; node: AnyRecord
   return <aside className="node-editor">
     <header><span>节点实现</span><strong>{title}</strong></header>
     <label><span>名称</span><input value={title} onChange={(event) => setTitle(event.currentTarget.value)} /></label>
-    <div className="field-grid">
-      <label><span>类型</span><select value={kind} onChange={(event) => setKind(event.currentTarget.value)}><option value="transfer">数据转换</option><option value="decision">AI 决策</option><option value="mcp_read">工具读取</option><option value="mcp_execute">工具执行</option><option value="interaction">人工确认</option></select></label>
-      <label><span>执行器</span><select value={executor} onChange={(event) => setExecutor(event.currentTarget.value)}><option value="deterministic">确定性处理</option><option value="llm">模型</option><option value="mcp">MCP / DLC</option><option value="remote">远程接口</option><option value="interaction">人工交互</option></select></label>
-      <label><span>动作</span><select value={action} onChange={(event) => setAction(event.currentTarget.value)}><option value="pass_result">传递结果</option><option value="prompt">模型提示</option><option value="tool_call">调用工具</option><option value="remote_call">远程调用</option><option value="request_input">请求输入</option></select></label>
-      <label><span>副作用</span><select value={effect} onChange={(event) => setEffect(event.currentTarget.value)}><option value="pure">无副作用</option><option value="read_only">只读</option><option value="writes_store">写入流程数据</option><option value="external_write">写入外部系统</option></select></label>
+    <div className="execution-contract" aria-label="节点执行契约">
+      <span><small>类型</small><strong>{String(node.kind || node.type || 'process')}</strong></span>
+      <span><small>执行器</small><strong>{String(node.executor || 'lifecycle')}</strong></span>
+      <span><small>动作</small><strong>{String(node.action || 'none')}</strong></span>
     </div>
+    <p className="contract-note">执行契约由创建节点时的类型成组确定。需要其他实现方式时，请新建对应类型的节点。</p>
     <details className="advanced"><summary>高级执行参数</summary><label><span>参数 JSON</span><textarea value={params} onChange={(event) => setParams(event.currentTarget.value)} spellCheck={false} /></label></details>
     {error && <p className="error"><CircleAlert />{error}</p>}
     <div className="editor-actions"><button type="button" onClick={() => void save()} disabled={working}><Save />保存节点</button><button className="danger" type="button" onClick={() => void remove()} disabled={working}><Trash2 />删除</button></div>
@@ -324,7 +316,8 @@ function Workshop() {
     if (!flowId) return
     const nodeId = `${templateId}-${Date.now().toString(36)}`
     try {
-      await developerApi.createNode(flowId, { template_id: templateId, node_id: nodeId, title: templateId === 'prompt' ? 'AI 处理' : templateId === 'remote_call' ? '外部能力' : '数据处理', after_node_id: selected || undefined })
+      const title = templateId === 'prompt' ? 'AI 处理' : templateId === 'remote_call' ? '外部能力' : templateId === 'checkpoint' ? '人工审核' : '数据处理'
+      await developerApi.createNode(flowId, { template_id: templateId, node_id: nodeId, title, after_node_id: selected || undefined })
       await load(flowId); setSelected(nodeId)
     } catch (reason) { setError(reason instanceof Error ? reason.message : '节点创建失败。') }
   }
@@ -345,7 +338,7 @@ function Workshop() {
     </header>
     {error && <p className="page-error"><CircleAlert />{error}</p>}
     {!flowId ? <section className="empty-workshop"><Wrench /><h1>新建能力卡带</h1><input value={newName} onChange={(event) => setNewName(event.currentTarget.value)} /><button type="button" onClick={() => void createFlow()} disabled={!newName.trim()}><FilePlus2 />创建内部 Flow</button></section> : <>
-      <div className="workshop-toolbar"><strong>{String(cartridge.name || flowId)}</strong><div><button type="button" onClick={() => void addNode('runtime')}><Plus />处理节点</button><button type="button" onClick={() => void addNode('prompt')}><Plus />AI 节点</button><button type="button" onClick={() => void addNode('remote_call')}><Plus />外部能力节点</button></div></div>
+      <div className="workshop-toolbar"><strong>{String(cartridge.name || flowId)}</strong><div><button type="button" onClick={() => void addNode('runtime')}><Plus />处理节点</button><button type="button" onClick={() => void addNode('prompt')}><Plus />AI 节点</button><button type="button" onClick={() => void addNode('checkpoint')}><UserCheck />人工审核节点</button><button type="button" onClick={() => void addNode('remote_call')}><Plus />外部能力节点</button></div></div>
       <div className="workshop-body">
         <Graph flowId={flowId} graph={graph} selected={selected} onSelect={setSelected} onReload={() => load(flowId)} />
         {selectedNode && <NodeEditor key={`${flowId}:${selected}`} flowId={flowId} node={selectedNode} onSaved={() => load(flowId)} />}

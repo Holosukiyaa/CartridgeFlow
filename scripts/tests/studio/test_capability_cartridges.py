@@ -324,6 +324,54 @@ class CapabilityCartridgeTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "incompatible"):
                 CreatorRuntimeBridge(ROOT, temp / "packages", registry).package(sessions, "creator.schema", expected_revision=1)
 
+    def test_uses_relation_runs_provider_before_consumer_and_binds_its_output(self):
+        with tempfile.TemporaryDirectory() as directory:
+            temp = Path(directory)
+            registry = CapabilityCartridgeStore(temp / "registry")
+            item_schema = {"type": "array"}
+            source = registry.put(release(), expected_revision=0)
+            sink = registry.put(
+                release(
+                    capability_id="workspace.item-sink",
+                    public_inputs=[{
+                        "id": "items", "label": "Items", "required": True,
+                        "schema": item_schema, "store_key": "items",
+                    }],
+                    public_outputs=[{
+                        "id": "items", "label": "Items", "required": True,
+                        "schema": item_schema, "store_key": "items",
+                    }],
+                ),
+                expected_revision=0,
+            )
+            recipe, publications = create_semantic_recipe(
+                "recipe.uses", "Consume source items",
+                {
+                    "nodes": [
+                        {"id": "source", "label": "Source", "description": "Provide items", "needed_capability": "source", "capability_id": source["id"], "values": {"topics": ["AI"]}},
+                        {"id": "sink", "label": "Sink", "description": "Use items", "needed_capability": "sink", "capability_id": sink["id"], "values": {"topics": ["AI"]}},
+                    ],
+                    "relations": [{"id": "sink_uses_source", "from_node_id": "sink", "to_node_id": "source", "relation": "uses"}],
+                },
+                registry.list_active(),
+            )
+            sessions = AuthoringSessionStore(temp / "sessions")
+            sessions.create_from_semantic_recipe("creator.uses", "project.uses", recipe, publications)
+            sessions.freeze("creator.uses", ["source", "sink"], author="creator", summary="Reviewed")
+
+            bridge = CreatorRuntimeBridge(ROOT, temp / "packages", registry)
+            packaged = bridge.package(sessions, "creator.uses", expected_revision=1)
+            with zipfile.ZipFile(temp / "packages" / packaged["filename"]) as bundle:
+                root_name = next(name for name in bundle.namelist() if name.endswith("root.flow.json"))
+                materialized = json.loads(bundle.read(root_name))
+
+            self.assertEqual("cap.source.items", materialized["states"]["cap.sink.fetch"]["outputs"]["items"]["target"]["key"])
+            self.assertEqual("sink", materialized["capability_materialization"]["application_outputs"][0]["node_id"])
+            self.assertEqual(
+                {"id": "sink_uses_source", "from_step_id": "sink", "to_step_id": "source", "relation": "uses"},
+                materialized["semantic_relationships"][0],
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -369,11 +369,12 @@ class CreatorRuntimeBridge:
     def _recursive_root_flow(self, instance: dict, lineage: dict, flow_protocol: dict, semantic_recipe: dict, publications: dict[str, dict]) -> dict:
         steps = sorted(instance["blueprint"]["steps"], key=lambda item: item["id"])
         relationships = sorted(instance["blueprint"].get("relations", []), key=lambda item: item["id"])
-        order = self._topological_order(steps, relationships)
+        order = self._topological_order(steps, relationships, semantic=True)
         recipe_nodes = {item["id"]: item for item in semantic_recipe["nodes"]}
         predecessors: dict[str, list[str]] = {step_id: [] for step_id in order}
         for relation in relationships:
-            predecessors[relation["to_step_id"]].append(relation["from_step_id"])
+            source, target = self._execution_relationship_endpoints(relation)
+            predecessors[target].append(source)
 
         states: dict[str, dict] = {
             "start": {"type": "control", "title": "Creator application start", "locked": True},
@@ -421,6 +422,21 @@ class CreatorRuntimeBridge:
                     state["display_name"] = recipe_nodes[step_id]["creator_label"]
                     state["capability_release"] = {key: release[key] for key in ("id", "revision", "digest", "trust_scope")}
                     states[node_id] = state
+                    states.setdefault("application_failed", {
+                        "type": "terminal",
+                        "title": "Package application failed",
+                        "locked": True,
+                    })
+                    edges.append({
+                        "id": f"compose.{suffix}.node-failed",
+                        "kind": "failure",
+                        "from": node_id,
+                        "to": "application_failed",
+                        "failure": {
+                            "id": f"cap.{suffix}.failure",
+                            "causes": ["cancelled", "exception", "resource", "retry_exhausted", "timeout", "validation"],
+                        },
+                    })
                     entry, exit_id, outputs = node_id, node_id, {}
                 else:
                     child_states, child_edges, entry, exit_id, outputs = self._inline_flow_release(
@@ -447,7 +463,7 @@ class CreatorRuntimeBridge:
         edges.append({"id": "compose.application.start", "kind": "sequence", "from": "start", "to": segment_entries[0]})
         for index in range(len(segment_exits) - 1):
             edges.append({"id": f"compose.application.{index:03d}", "kind": "sequence", "from": segment_exits[index], "to": segment_entries[index + 1]})
-        outgoing_steps = {relation["from_step_id"] for relation in relationships}
+        outgoing_steps = {self._execution_relationship_endpoints(relation)[0] for relation in relationships}
         sink_steps = [step_id for step_id in order if step_id not in outgoing_steps]
         application_outputs = [
             {
@@ -489,11 +505,11 @@ class CreatorRuntimeBridge:
                 "locked": True,
             }
             states["application_delivery"] = delivery_state
-            states["application_failed"] = {
+            states.setdefault("application_failed", {
                 "type": "terminal",
                 "title": "Package application failed",
                 "locked": True,
-            }
+            })
             edges.append({"id": "compose.application.delivery", "kind": "sequence", "from": segment_exits[-1], "to": "application_delivery"})
             edges.append({"id": "compose.application.complete", "kind": "sequence", "from": "application_delivery", "to": "complete"})
             edges.append({
@@ -829,12 +845,23 @@ class CreatorRuntimeBridge:
         }
 
     @staticmethod
-    def _topological_order(steps: list[dict], relationships: list[dict]) -> list[str]:
+    def _execution_relationship_endpoints(relation: dict) -> tuple[str, str]:
+        """Translate Creator semantics into provider-to-consumer execution order."""
+        source = str(relation.get("from_step_id") or "")
+        target = str(relation.get("to_step_id") or "")
+        return (target, source) if relation.get("relation") == "uses" else (source, target)
+
+    @classmethod
+    def _topological_order(cls, steps: list[dict], relationships: list[dict], *, semantic: bool = False) -> list[str]:
         ids = {item["id"] for item in steps}
         outgoing = {step_id: [] for step_id in ids}
         indegree = {step_id: 0 for step_id in ids}
         for relation in relationships:
-            source, target = relation.get("from_step_id"), relation.get("to_step_id")
+            source, target = (
+                cls._execution_relationship_endpoints(relation)
+                if semantic
+                else (relation.get("from_step_id"), relation.get("to_step_id"))
+            )
             if source not in ids or target not in ids or source == target or target in outgoing[source]:
                 raise CreatorRuntimeBridgeError("CREATOR_HANDOFF_TOPOLOGY_INCOMPATIBLE", "Accepted semantic relationships cannot be represented as a valid CF-FARP Root Flow.")
             outgoing[source].append(target)

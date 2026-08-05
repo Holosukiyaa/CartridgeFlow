@@ -748,7 +748,8 @@ class AuthoringSessionStore:
     @staticmethod
     def proposal_projection(proposal: dict) -> dict:
         return {"proposal_id": proposal["id"], "revision": proposal["expected_revision"], "summary": proposal["summary"],
-                "changes": [{"id": x["id"], "target_id": x["target_id"], "operation": x["operation"]} for x in proposal["changes"]]}
+                "changes": [{"id": x["id"], "target_id": x["target_id"], "operation": x["operation"],
+                             "value": deepcopy(x.get("value"))} for x in proposal["changes"]]}
 
     def _freeze_guard(self, state: dict, proposal: dict, selected: list[str] | None, freeze_revision: dict | None) -> tuple[list[dict], dict | None]:
         ids = set(selected or [x["id"] for x in proposal["changes"]])

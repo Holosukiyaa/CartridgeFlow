@@ -56,6 +56,11 @@ input:focus-visible, textarea:focus-visible, select:focus-visible, button:focus-
 .node-editor header strong { font-size: 16px; }
 .node-editor > p { color: #737c83; line-height: 1.5; }
 .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.execution-contract { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.execution-contract > span { min-width: 0; padding: 9px 10px; border: 1px solid #d8e0e2; background: #f7f9f9; }
+.execution-contract small { display: block; color: #728085; font-size: 10px; }
+.execution-contract strong { display: block; margin-top: 3px; overflow: hidden; color: #26383d; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.contract-note { margin: 0; color: #657379; font-size: 11px; line-height: 1.5; }
 .node-editor > button, .publish-panel > button { color: #fff; background: #236846; border-color: #236846; }
 .node-editor > button:hover:not(:disabled), .publish-panel > button:hover:not(:disabled) { background: #175237; border-color: #175237; }
 .advanced { border: 1px solid #dce1e4; border-radius: 4px; }
@@ -105,7 +110,7 @@ button.icon { width: 34px; padding: 6px; }
   .topbar, .workshop-toolbar { padding-inline: 12px; }
   .workshop-toolbar { align-items: flex-start; flex-direction: column; }
   .publish-panel { margin-inline: 10px; }
-  .publish-fields, .field-grid { grid-template-columns: 1fr; }
+  .publish-fields, .field-grid, .execution-contract { grid-template-columns: 1fr; }
   .publish-fields .wide { grid-column: auto; }
   .flowmap { height: 360px; }
 }

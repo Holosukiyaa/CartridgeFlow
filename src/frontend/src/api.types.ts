@@ -31,7 +31,7 @@ export interface CreatorProposal {
   proposal_id: string
   revision: number
   summary: string
-  changes: Array<{ id: string; target_id: string; operation: string }>
+  changes: Array<{ id: string; target_id: string; operation: string; value?: unknown }>
 }
 
 export interface CreatorProjection {

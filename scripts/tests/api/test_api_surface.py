@@ -8,6 +8,7 @@ import zipfile
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from backend import main as backend_main
@@ -493,6 +494,78 @@ class ApiSurfaceTests(unittest.TestCase):
             self.assertEqual(["external_service_call"], [item["id"] for item in manifest["permissions"]])
             input_root_flow = json.loads(input_result["files"]["root_flow"])
             self.assertEqual(["input_1", "input_2"], input_root_flow["states"]["collect_brief"]["params"]["fields"])
+
+    def test_checkpoint_template_is_runnable_and_invalid_node_update_is_not_persisted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            manager = DevFlowManager(Path(directory))
+            flow_id = "dev.checkpoint-contract"
+            manager.create_flow(flow_id, "审核能力", "验证人工审核节点契约。")
+            editable = {"id": flow_id, "editable": True}
+            with patch.object(backend_main, "dev_flow_manager", manager), patch.object(
+                backend_main.registry, "get_cartridge", return_value=editable,
+            ):
+                created = backend_main.create_lab_flow_node(
+                    flow_id,
+                    NodeCreatePayload(
+                        template_id="checkpoint",
+                        node_id="review_result",
+                        title="人工审核结果",
+                        after_node_id="start",
+                    ),
+                )
+
+                root_flow = json.loads(created["files"]["root_flow"])
+                review = root_flow["states"]["review_result"]
+                self.assertEqual("human_gate", review["kind"])
+                self.assertEqual("confirm_checkpoint", review["action"])
+                self.assertEqual("review_response", review["params"]["interaction"]["store_key"])
+                self.assertTrue(created["validation"]["valid"])
+
+                before = manager.read_files(flow_id)["root_flow"]
+                with self.assertRaises(HTTPException) as rejected:
+                    backend_main.update_lab_flow_node(
+                        flow_id,
+                        "review_result",
+                        NodeUpdatePayload(
+                            kind="interaction",
+                            executor="interaction",
+                            action="request_input",
+                            component_ref="",
+                        ),
+                    )
+                self.assertEqual(409, rejected.exception.status_code)
+                self.assertEqual(before, manager.read_files(flow_id)["root_flow"])
+
+                transfer = backend_main.create_lab_flow_node(
+                    flow_id,
+                    NodeCreatePayload(
+                        template_id="runtime",
+                        node_id="persist_result",
+                        title="固化结果",
+                        after_node_id="review_result",
+                    ),
+                )
+                transfer_state = json.loads(transfer["files"]["root_flow"])["states"]["persist_result"]
+                self.assertEqual("input", transfer_state["params"]["input"])
+                self.assertEqual("result", transfer_state["params"]["output"])
+                self.assertEqual("result", transfer_state["outputs"]["result"]["target"]["key"])
+
+    def test_creator_proposal_projection_keeps_reviewable_values(self):
+        projected = AuthoringSessionStore.proposal_projection({
+            "id": "proposal.review",
+            "expected_revision": 3,
+            "summary": "深化审核节点",
+            "changes": [{
+                "id": "change.review",
+                "target_id": "review",
+                "operation": "set_creator_binding",
+                "value": {"instructions": "同时展示原始记录和整理后的草稿。"},
+            }],
+        })
+        self.assertEqual(
+            "同时展示原始记录和整理后的草稿。",
+            projected["changes"][0]["value"]["instructions"],
+        )
 
     def test_validation_errors_do_not_echo_api_keys(self):
         secret = "sk-security-regression-secret"

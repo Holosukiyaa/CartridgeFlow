@@ -3,7 +3,7 @@
 This is a dependency-free reference for a runtime team that does not use Python.
 It consumes a signed `CF-CRE@1` archive whose payload declares a matching,
 supported `CF-FARP@1.0`, `CF-FARP@1.1`, or Creator package-boundary
-`CF-FARP@1.6` Root Flow.
+`CF-FARP@1.6` / recursive capability `CF-FARP@1.7` Root Flow.
 
 Use Node 20 or later.
 
@@ -38,8 +38,9 @@ Edges:
 - `fork` / `join` — sequential simulation of the parallel branches; the runner
   executes every branch up to its join edge and verifies that the join receives
   all declared branches before continuing.
-- `failure` — intentionally not executed by this minimal reference; a production
-  runtime must implement fail-closed failure routing.
+- `failure` — routes an exception on the main execution sequence to its declared
+  failure terminal. A routed failure writes the run result and exits with a
+  non-zero status; production runtimes must also cover failures inside branches.
 
 Nodes:
 
@@ -49,16 +50,16 @@ Nodes:
   `CF_RUNTIME_MODEL`. The result is stored under the node's declared
   `outputs.<name>.target.key` (the key consumers bind to).
 - `human_gate` / `action=confirm_checkpoint`: `--mock` auto-approves into the
-  interaction `store_key` (e.g. `{approval: "approved", feedback: ""}`); the
-  real path aborts (fail-closed) — interactive review UI must be implemented by
-  the production runtime.
+  interaction `store_key` and every declared public store output (e.g.
+  `{approval: "approved", feedback: ""}`); the real path aborts (fail-closed) —
+  interactive review UI must be implemented by the production runtime.
 - `process` / `action=render_template`: reads the template asset from the
   unpacked `package/` directory and substitutes `{{placeholder}}` values from
   the store (missing values fail-closed).
-- `process` / `action=pass_result`: writes the declared `outputs` artifact
-  target (e.g. `article.md`, `research.md`, `scene.html`) underneath the run
-  directory; the source value comes from `params`/`preset_config` or the single
-  `inputs` binding.
+- `process` / `action=pass_result`: writes every declared store output and any
+  declared artifact target underneath the run directory; the source value comes
+  from `params`/`preset_config` or the single `inputs` binding. A missing required
+  source fails closed.
 - `mcp_execute` / `executor=mcp`: the portable `filesystem_write` built-in MCP
   tool writes a run artifact underneath the supplied run directory.
 

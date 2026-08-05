@@ -199,6 +199,9 @@ button svg, a svg { width: 16px; height: 16px; flex: 0 0 auto; }
 .creator-composer-error { display: grid; gap: 4px; margin-bottom: 10px; padding: 10px 11px; color: #7b331f; background: #fff4ee; border: 1px solid #d58f76; border-radius: 5px; font-size: 12px; line-height: 1.5; }
 .creator-composer-error strong { font-size: 12px; }
 .creator-composer-error span { color: #6a4337; }
+.creator-package-error { position: absolute; z-index: 24; top: 106px; right: 0; left: 0; display: flex; align-items: center; gap: 10px; padding: 8px 18px; color: #7b331f; background: #fff4ee; border-bottom: 1px solid #d58f76; font-size: 12px; line-height: 1.45; }
+.creator-package-error strong { flex: 0 0 auto; }
+.creator-package-error span { color: #6a4337; }
 .creator-possibilities { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; margin: 0 0 12px; }
 .creator-possibilities article { min-width: 0; padding: 12px; background: #f8fbfb; border: 1px solid #d6e1e2; border-radius: 6px; }
 .creator-possibilities h3 { margin: 0; color: #28353a; font-size: 13px; line-height: 1.4; }
@@ -260,6 +263,10 @@ button svg, a svg { width: 16px; height: 16px; flex: 0 0 auto; }
 .creator-review > span { color: var(--creator-accent); font-size: 11px; font-weight: 750; }
 .creator-review h3 { margin: 8px 0; font-size: 15px; }
 .creator-review p { margin: 0; color: #56636a; font-size: 12px; line-height: 1.55; }
+.creator-review-changes { display: grid; gap: 7px; margin: 10px 0 12px; }
+.creator-review-changes > div { display: grid; gap: 3px; padding: 9px 10px; border: 1px solid #dce5e6; background: #fff; }
+.creator-review-changes strong { color: #3a4b50; font-size: 11px; }
+.creator-review-changes span { color: #1f2d31; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
 .creator-review > div { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
 
 .creator-model-setup { position: absolute; z-index: 40; top: 50%; left: 50%; width: min(440px, calc(100% - 32px)); transform: translate(-50%, -50%); background: #fff; border: 1px solid #afc1c4; border-top: 3px solid var(--creator-accent); border-radius: 8px; box-shadow: 0 22px 58px rgba(31, 48, 54, .22); }
@@ -298,9 +305,11 @@ button svg, a svg { width: 16px; height: 16px; flex: 0 0 auto; }
   .creator-statusbar { inset: 60px 0 auto; height: 36px; gap: 12px; padding: 0 12px; overflow-x: auto; }
   .creator-statusbar span { flex: 0 0 auto; }
   .creator-canvas { inset: 96px 0 0; }
+  .creator-workspace:has(.creator-composer) .creator-canvas { bottom: min(266px, 44vh); }
   .creator-canvas .react-flow__minimap { display: none; }
   .creator-canvas .react-flow__controls { top: 10px; right: 10px; bottom: auto; left: auto; }
-  .creator-composer { bottom: 8px; width: calc(100% - 16px); max-height: calc(100% - 118px); padding: 13px; }
+  .creator-composer { bottom: 8px; width: calc(100% - 16px); max-height: min(250px, calc(44vh - 16px)); padding: 13px; }
+  .creator-package-error { top: 96px; padding-inline: 12px; }
   .creator-composer-heading strong { white-space: normal; }
   .creator-possibilities { grid-template-columns: 1fr; }
   .creator-possibilities small { min-height: 0; }

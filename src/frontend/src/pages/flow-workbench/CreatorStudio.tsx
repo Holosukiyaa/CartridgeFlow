@@ -78,6 +78,27 @@ function FieldEditor({ node, values, onChange, disabled }: {
   </div>
 }
 
+function proposalValue(value: unknown) {
+  if (Array.isArray(value)) return value.join('、')
+  if (typeof value === 'boolean') return value ? '开启' : '关闭'
+  if (value == null || value === '') return '留空'
+  return String(value)
+}
+
+function ProposalChanges({ node, proposal }: { node: CreatorRecipeNode; proposal: CreatorProposal }) {
+  const fieldLabels = new Map(node.editable_fields.map((field) => [field.id, field.label]))
+  const rows = proposal.changes.flatMap((change) => {
+    if (change.operation === 'set_creator_binding' && change.value && typeof change.value === 'object' && !Array.isArray(change.value)) {
+      return Object.entries(change.value).map(([key, value]) => ({ label: fieldLabels.get(key) || key, value: proposalValue(value) }))
+    }
+    if (change.operation === 'set_step_intent') return [{ label: '节点目标', value: proposalValue(change.value) }]
+    return [{ label: '调整内容', value: proposalValue(change.value) }]
+  })
+  return <div className="creator-review-changes">
+    {rows.map((row, index) => <div key={`${row.label}:${index}`}><strong>{row.label}</strong><span>{row.value}</span></div>)}
+  </div>
+}
+
 function NodeEditor({ creator, node, busy, onCreatorChange, onClose, onModelRequired }: {
   creator: CreatorProjection
   node: CreatorRecipeNode
@@ -208,6 +229,7 @@ function NodeEditor({ creator, node, busy, onCreatorChange, onClose, onModelRequ
       {proposal && <section className="creator-review">
         <span>修改确认</span>
         <h3>{proposal.summary}</h3>
+        <ProposalChanges node={node} proposal={proposal} />
         <p>{impact || '先检查这次修改的影响，再决定是否应用。'}</p>
         <div>
           <button className="secondary-button" type="button" disabled={isBusy} onClick={() => void reject()}>放弃</button>
@@ -265,6 +287,7 @@ export function CreatorStudio({ projectId }: { projectId: string }) {
   const [selectedId, setSelectedId] = useState('')
   const [possibilities, setPossibilities] = useState<CreatorPossibility[]>([])
   const [packageResult, setPackageResult] = useState<CreatorPackage | null>(null)
+  const [packageError, setPackageError] = useState('')
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [composerError, setComposerError] = useState('')
@@ -316,6 +339,7 @@ export function CreatorStudio({ projectId }: { projectId: string }) {
   const saveCreator = (next: CreatorProjection) => {
     setCreator(next)
     setPackageResult(null)
+    setPackageError('')
   }
   const requestModelConnection = (action: 'discover' | 'compose' | 'node') => {
     setPendingAiAction(action)
@@ -377,12 +401,15 @@ export function CreatorStudio({ projectId }: { projectId: string }) {
   const buildPackage = async () => {
     if (!creator) return
     setBusy(true)
+    setPackageError('')
     try {
       const result = await packageCreatorProject(creator.session_id, creator.revision)
       setPackageResult(result)
       showToast({ title: '打包完成', description: '签名已验证，可以交给独立测试台。', type: 'success' })
     } catch (error) {
-      showToast({ title: '暂时不能打包', description: friendlyError(error, 'package'), type: 'error' })
+      const description = friendlyError(error, 'package')
+      setPackageError(description)
+      showToast({ title: '暂时不能打包', description, type: 'error' })
     } finally { setBusy(false) }
   }
   const refreshCapabilities = async () => {
@@ -437,6 +464,7 @@ export function CreatorStudio({ projectId }: { projectId: string }) {
         {Boolean(creator.capability_resolution?.unresolved) && <button type="button" disabled={busy} onClick={() => void refreshCapabilities()} title="重新检查可信能力"><RefreshCw />{creator.capability_resolution?.unresolved} 个待补齐</button>}
       </> : <span><Sparkles />空白草稿</span>}
     </div>
+    {packageError && <div className="creator-package-error" role="alert"><strong>打包未完成</strong><span>{packageError}</span></div>}
 
     <section className="creator-canvas" aria-label="项目链路图">
       <CreatorCanvas creator={creator} selectedId={selectedId} onSelect={setSelectedId} />

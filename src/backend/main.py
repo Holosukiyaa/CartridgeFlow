@@ -539,6 +539,24 @@ def _ensure_typed_node_contracts(root_flow: dict, state: dict) -> None:
             state["outputs"] = {}
 
 
+def _validate_candidate_interaction_contracts(cartridge_id: str, files: dict, root_flow: dict) -> None:
+    states = root_flow.get("states") if isinstance(root_flow.get("states"), dict) else {}
+    if not any(isinstance(state, dict) and state.get("kind") == "interaction" for state in states.values()):
+        return
+    import json as _json
+    from core.cartridge.assets import load_asset_bundle, validate_interaction_nodes
+
+    manifest = _json.loads(files.get("manifest") or "{}")
+    bundle = load_asset_bundle(dev_flow_manager._flow_path(cartridge_id), manifest)
+    blockers = [item for item in validate_interaction_nodes(root_flow, bundle) if item.get("severity") == "blocker"]
+    if blockers:
+        finding = blockers[0]
+        raise HTTPException(
+            status_code=409,
+            detail=f"{finding.get('code')}: {finding.get('node')}: {finding.get('message')}",
+        )
+
+
 def _validate_cartridge_archive_members(members, extract_dir: Path) -> None:
     import stat as _stat
 
@@ -3877,8 +3895,32 @@ def create_lab_flow_node(cartridge_id: str, payload: NodeCreatePayload):
             "action": "confirm_checkpoint",
             "output_contract": "gate_result.v1",
             "inputs": {},
-            "outputs": {},
-            "params": {"message": "请确认是否继续。", "node_category": "control"},
+            "outputs": {
+                "review_result": {
+                    "schema": {"type": "object"},
+                    "target": {"type": "store", "key": "review_result"},
+                },
+            },
+            "params": {
+                "condition": "请审核当前结果，并选择批准或填写修改意见。",
+                "output": "review_result",
+                "node_category": "control",
+                "interaction": {
+                    "id": "capability_review",
+                    "store_key": "review_response",
+                    "prompt": "请审核当前结果，并选择批准或填写修改意见。",
+                    "resume_policy": "resume_same_node",
+                    "input_schema": {
+                        "type": "object",
+                        "required": ["approval"],
+                        "properties": {
+                            "approval": {"type": "string", "enum": ["approved", "rejected"]},
+                            "feedback": {"type": "string"},
+                        },
+                    },
+                    "offline_answer": {"approval": "approved", "feedback": ""},
+                },
+            },
         },
         "runtime": {
             "type": "process",
@@ -3889,8 +3931,13 @@ def create_lab_flow_node(cartridge_id: str, payload: NodeCreatePayload):
             "title": "运行处理",
             "action": "pass_result",
             "inputs": {},
-            "outputs": {},
-            "params": {"node_category": "transfer"},
+            "outputs": {
+                "result": {
+                    "schema": {"type": "object"},
+                    "target": {"type": "store", "key": "result"},
+                },
+            },
+            "params": {"node_category": "transfer", "input": "input", "output": "result"},
         },
         "remote_call": {
             "type": "process",
@@ -3978,11 +4025,12 @@ def create_lab_flow_node(cartridge_id: str, payload: NodeCreatePayload):
         root_flow.pop("edges", None)
         root_flow.pop("control_edges", None)
         files["root_flow"] = _json.dumps(root_flow, ensure_ascii=False, indent=2)
+        _validate_candidate_interaction_contracts(cartridge_id, files, root_flow)
+        validation = dev_flow_manager.validate_files(cartridge_id, files)
+        graph = flow_graph_builder.build(dev_flow_manager.preview_graph(cartridge_id, files))
         dev_flow_manager.save_file(cartridge_id, "root_flow", files["root_flow"])
         if manifest_changed:
             dev_flow_manager.save_file(cartridge_id, "manifest", files["manifest"])
-        validation = dev_flow_manager.validate_files(cartridge_id, files)
-        graph = flow_graph_builder.build(dev_flow_manager.preview_graph(cartridge_id, files))
         return {"status": "node_created", "node_id": node_id, "files": files, "validation": validation, "graph": graph}
     current_edges = _flow_edges(root_flow)
     branch_edges = [edge for edge in current_edges if _edge_scope(edge) != "root"]
@@ -4006,11 +4054,12 @@ def create_lab_flow_node(cartridge_id: str, payload: NodeCreatePayload):
     states[node_id] = new_state
     _sync_flow_edges_from_next(root_flow, branch_edges)
     files["root_flow"] = _json.dumps(root_flow, ensure_ascii=False, indent=2)
+    _validate_candidate_interaction_contracts(cartridge_id, files, root_flow)
+    validation = dev_flow_manager.validate_files(cartridge_id, files)
+    graph = flow_graph_builder.build(dev_flow_manager.preview_graph(cartridge_id, files))
     dev_flow_manager.save_file(cartridge_id, "root_flow", files["root_flow"])
     if manifest_changed:
         dev_flow_manager.save_file(cartridge_id, "manifest", files["manifest"])
-    validation = dev_flow_manager.validate_files(cartridge_id, files)
-    graph = flow_graph_builder.build(dev_flow_manager.preview_graph(cartridge_id, files))
     return {"status": "node_created", "node_id": node_id, "files": files, "validation": validation, "graph": graph}
 
 
@@ -4109,12 +4158,13 @@ def update_lab_flow_node(cartridge_id: str, node_id: str, payload: NodeUpdatePay
         _sync_flow_edges_from_next(root_flow, branch_edges)
 
     files["root_flow"] = _json.dumps(root_flow, ensure_ascii=False, indent=2)
+    _validate_candidate_interaction_contracts(cartridge_id, files, root_flow)
     validation = dev_flow_manager.validate_files(cartridge_id, files)
+    graph = flow_graph_builder.build(dev_flow_manager.preview_graph(cartridge_id, files))
     if validation.get("valid"):
         dev_flow_manager.save_file(cartridge_id, "root_flow", files["root_flow"])
         if manifest_changed:
             dev_flow_manager.save_file(cartridge_id, "manifest", files["manifest"])
-    graph = flow_graph_builder.build(dev_flow_manager.preview_graph(cartridge_id, files))
     return {
         "status": "node_updated",
         "node_id": node_id,

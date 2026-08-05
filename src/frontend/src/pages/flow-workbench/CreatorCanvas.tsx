@@ -114,9 +114,9 @@ export function CreatorCanvas({ creator, selectedId, onSelect }: {
     }))
     const edges: Edge[] = creator.trusted_recipe.relations.map((relation) => ({
       id: relation.id,
-      source: relation.from_node_id,
-      target: relation.to_node_id,
-      label: relation.relation === 'produces' ? '产出' : relation.relation === 'uses' ? '使用' : '提供信息',
+      source: relation.relation === 'uses' ? relation.to_node_id : relation.from_node_id,
+      target: relation.relation === 'uses' ? relation.from_node_id : relation.to_node_id,
+      label: relation.relation === 'produces' ? '产出' : relation.relation === 'uses' ? '提供' : '提供信息',
       type: 'smoothstep',
       animated: true,
       markerEnd: { type: MarkerType.ArrowClosed, color: '#447675', width: 18, height: 18 },

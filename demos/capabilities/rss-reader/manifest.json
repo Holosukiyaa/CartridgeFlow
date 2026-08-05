@@ -19,7 +19,7 @@
   },
   "root_flow": {"entry": "root.flow.json", "mode": "lifecycle", "required": true},
   "runtime": {"type": "capability_flow"},
-  "permissions": [{"id": "access_network", "reason": "Read Creator-reviewed public HTTPS feeds.", "required": true, "level": "safe"}],
+  "permissions": [{"id": "access_network", "reason": "Read Creator-reviewed public HTTPS feeds.", "required": true, "level": "sensitive", "auth_mode": "always_allow"}],
   "mcp_tools": [{
     "id": "rss_fetch",
     "name": "Fetch public RSS",

@@ -7,6 +7,14 @@ supported `CF-FARP@1.0`, `CF-FARP@1.1`, or Creator package-boundary
 
 Use Node 20 or later.
 
+For the repository's real Creator-to-Base closure acceptance (including a live
+RSS fetch and a fail-closed invalid source), run Base on `127.0.0.1:8765` and
+execute:
+
+```powershell
+python demos/runtime-developer-toolkit/demo/live_creator_rss.py
+```
+
 ```powershell
 node run.mjs verify <archive.cf-cre.zip> --trust <trusted_publishers.json>
 node run.mjs install <archive.cf-cre.zip> <install-directory> --trust <trusted_publishers.json>

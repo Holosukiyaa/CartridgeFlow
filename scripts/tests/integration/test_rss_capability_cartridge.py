@@ -25,7 +25,10 @@ def rss_release() -> dict:
     source_files = {
         path.relative_to(DEMO).as_posix(): path.read_text(encoding="utf-8")
         for path in DEMO.rglob("*")
-        if path.is_file() and path.name not in {"manifest.json", "root.flow.json", "README.md"}
+        if path.is_file()
+        and "__pycache__" not in path.parts
+        and path.suffix != ".pyc"
+        and path.name not in {"manifest.json", "root.flow.json", "README.md"}
     }
     return build_flow_capability_release(
         capability_id="workspace.rss-reader",
@@ -128,6 +131,10 @@ class RssCapabilityCartridgeIntegrationTests(unittest.TestCase):
             tool_params = fetch["params"]["tools"][0]["params"]
             self.assertEqual(["https://example.com/ai.xml"], tool_params["urls"])
             self.assertEqual(7, tool_params["max_items"])
+            self.assertEqual("cap.sources.items", fetch["params"]["output"])
+            self.assertEqual("cap.sources.items", fetch["params"]["tools"][0]["output"])
+            self.assertEqual("cap.sources.items", root_flow["states"]["application_delivery"]["params"]["input"])
+            self.assertEqual("handoff", manifest["delivery"]["primary_output"])
             self.assertEqual(release["digest"], fetch["capability_release"]["digest"])
 
             descriptor = load_portable_dlc_descriptor(package_root, manifest)

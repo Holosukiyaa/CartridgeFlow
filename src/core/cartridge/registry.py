@@ -30,7 +30,7 @@ class CartridgeRegistry:
                     continue
                 try:
                     manifest = self.validator.validate_package(path, self._read_json(manifest_path))
-                    if source != "dev" and isinstance(manifest.get("tuning_contract"), dict):
+                    if source != "dev" and self._uses_recipe_release(manifest):
                         self._materialize_published_tuning(path, manifest)
                 except (ManifestValidationError, OSError, ValueError, json.JSONDecodeError):
                     continue
@@ -58,7 +58,7 @@ class CartridgeRegistry:
         source = self._source_for_path(path)
         tuning_context = None
         tuning_contract = manifest.get("tuning_contract") if isinstance(manifest.get("tuning_contract"), dict) else None
-        if tuning_contract:
+        if tuning_contract and self._uses_recipe_release(manifest):
             if source == "dev":
                 repository = self.tuning.load(cartridge_id, root_flow)
                 root_flow, tuning_context = materialize_tuning(
@@ -90,7 +90,7 @@ class CartridgeRegistry:
     def get_packaging_cartridge(self, cartridge_id: str) -> dict:
         cartridge = self.get_runtime_cartridge(cartridge_id)
         tuning_contract = cartridge.get("tuning_contract") if isinstance(cartridge.get("tuning_contract"), dict) else None
-        if not tuning_contract or cartridge.get("source") != "dev":
+        if not tuning_contract or not self._uses_recipe_release(cartridge.get("manifest") or {}) or cartridge.get("source") != "dev":
             return cartridge
         package_path = Path(cartridge["package_path"])
         packaged_flow, packaged_context = self._materialize_published_tuning(
@@ -132,6 +132,11 @@ class CartridgeRegistry:
         if release.get("flow_id") != manifest.get("id"):
             raise ValueError("Published recipe release flow identity does not match manifest")
         return materialize_tuning(root_flow, release, draft=False)
+
+    @staticmethod
+    def _uses_recipe_release(manifest: dict) -> bool:
+        contract = manifest.get("tuning_contract") if isinstance(manifest.get("tuning_contract"), dict) else {}
+        return bool(str(contract.get("release_entry") or "").strip())
 
     def _find_cartridge_path(self, cartridge_id: str) -> Path:
         for directory in (self.dev_dir, self.installed_dir, self.builtin_dir):

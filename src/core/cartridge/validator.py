@@ -314,7 +314,7 @@ class ManifestValidator:
                 if not tool.get("id"):
                     errors.append(f"manifest.mcp_tools[{i}].id is required")
                 allowed_tool_types = {None, "builtin", "mcp", "remote", "plugin"}
-                if is_typed_protocol:
+                if is_typed_protocol or supports_portable_dlc:
                     allowed_tool_types.update({"base_builtin", "local_resource", "cartridge_dlc"})
                 if tool.get("type") not in allowed_tool_types:
                     errors.append(f"manifest.mcp_tools[{i}].type is not supported by the selected protocol")

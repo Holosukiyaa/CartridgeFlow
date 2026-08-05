@@ -19,7 +19,7 @@
       "entry": "dlc/mcp_nodes/rss_reader.py"
     },
     "transparency": "declared_graph",
-    "source_digest": "sha256:ee134a5aec7c504e9ddda687c97e22362e18bd53b7bd5ef6416611608a6203e7"
+    "source_digest": "sha256:1eb4104f7f8832ec29f7eacc6a5e2d41898100d7ce14fe750232d76ca08777bd"
   }],
   "protocols": [],
   "resources": [{"path": "dlc", "ownership": "package"}],
@@ -30,7 +30,7 @@
     "role": "backend_entry"
   }, {
     "path": "dlc/mcp_nodes/rss_reader.py",
-    "sha256": "ee134a5aec7c504e9ddda687c97e22362e18bd53b7bd5ef6416611608a6203e7",
+    "sha256": "1eb4104f7f8832ec29f7eacc6a5e2d41898100d7ce14fe750232d76ca08777bd",
     "media_type": "text/x-python",
     "role": "mcp_node_source"
   }]

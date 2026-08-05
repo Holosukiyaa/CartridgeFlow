@@ -159,7 +159,11 @@ class CreatorRuntimeBridge:
             protocol_version=flow_protocol["version"],
         )
         if findings:
-            raise CreatorRuntimeBridgeError("CREATOR_HANDOFF_TOPOLOGY_INCOMPATIBLE", "Accepted semantic relationships cannot be represented as a valid CF-FARP Root Flow.")
+            codes = ", ".join(sorted({str(item.get("code") or "unknown") for item in findings}))
+            raise CreatorRuntimeBridgeError(
+                "CREATOR_HANDOFF_TOPOLOGY_INCOMPATIBLE",
+                f"Accepted semantic relationships cannot be represented as a valid CF-FARP Root Flow: {codes}.",
+            )
 
         manifest = self._manifest(actual_candidate, lineage, flow_protocol, mappings or {}, expanded_publications)
         combined_dlc = self._combined_dlc_descriptor(expanded_publications, manifest["id"])
@@ -173,6 +177,10 @@ class CreatorRuntimeBridge:
             source = Path(source_dir)
             self._write_json(source / "manifest.json", manifest)
             self._write_json(source / "root.flow.json", root_flow)
+            self._write_json(
+                source / "assets" / "registry.json",
+                {"schema": "cartridgeflow.asset_registry.v1", "assets": []},
+            )
             if combined_dlc:
                 self._write_json(source / "dlc" / "descriptor.json", combined_dlc)
             for publication in expanded_publications.values():
@@ -238,11 +246,23 @@ class CreatorRuntimeBridge:
             "publisher": {"id": self.PUBLISHER_ID},
             "base_contract": deepcopy(self.BASE_CONTRACT),
             "runtime_contract": {"protocol": flow_protocol["id"], "protocol_version": flow_protocol["version"]},
+            "tuning_contract": {
+                "protocol": "CF-TUNING",
+                "protocol_version": "1.5" if capability_publications else "1.0",
+                "adapter": "cf-tuning.capability-cartridges.v1" if capability_publications else "cf-tuning.repository.v1",
+                "binding": "recursive_capability_materialization" if capability_publications else "authoring_tuning",
+            },
             "runtime": {"type": "composed_flow" if capability_publications else "handoff_only"},
             "root_flow": {"entry": "root.flow.json", "mode": "lifecycle", "required": True},
+            "asset_registry": "assets/registry.json",
             "inputs": [],
             "outputs": [],
             "delivery": {"primary_output": "handoff"},
+            "delivery_readiness": {
+                "level": "production",
+                "certification_target": f"{flow_protocol['id']}@{flow_protocol['version']}",
+                "notes": "Creator package was materialized from reviewed immutable capability releases.",
+            },
             "creator_lineage": deepcopy(lineage),
         }
 
@@ -427,7 +447,67 @@ class CreatorRuntimeBridge:
         edges.append({"id": "compose.application.start", "kind": "sequence", "from": "start", "to": segment_entries[0]})
         for index in range(len(segment_exits) - 1):
             edges.append({"id": f"compose.application.{index:03d}", "kind": "sequence", "from": segment_exits[index], "to": segment_entries[index + 1]})
-        edges.append({"id": "compose.application.complete", "kind": "sequence", "from": segment_exits[-1], "to": "complete"})
+        outgoing_steps = {relation["from_step_id"] for relation in relationships}
+        sink_steps = [step_id for step_id in order if step_id not in outgoing_steps]
+        application_outputs = [
+            {
+                "node_id": step_id,
+                "port_id": port_id,
+                "store_key": output["store_key"],
+                "schema": deepcopy(output["schema"]),
+            }
+            for step_id in sink_steps
+            for port_id, output in sorted(step_outputs.get(step_id, {}).items())
+        ]
+        if application_outputs:
+            output_keys = [item["store_key"] for item in application_outputs]
+            delivery_state = {
+                "type": "process",
+                "kind": "delivery",
+                "executor": "deterministic",
+                "effect": "writes_store",
+                "action": "pass_result",
+                "title": "Package application result",
+                "input": ",".join(output_keys),
+                "output": "handoff",
+                "primary_output": "handoff",
+                "outputs": {
+                    "handoff": {
+                        "schema": deepcopy(application_outputs[0]["schema"]) if len(application_outputs) == 1 else {"type": "object"},
+                        "target": {"type": "store", "key": "handoff"},
+                    }
+                },
+                "params": {
+                    "input": output_keys[0],
+                    "output": "handoff",
+                    **(
+                        {"preset_config": {"items": ",".join(output_keys), "output_name": "handoff"}}
+                        if len(output_keys) > 1
+                        else {}
+                    ),
+                },
+                "locked": True,
+            }
+            states["application_delivery"] = delivery_state
+            states["application_failed"] = {
+                "type": "terminal",
+                "title": "Package application failed",
+                "locked": True,
+            }
+            edges.append({"id": "compose.application.delivery", "kind": "sequence", "from": segment_exits[-1], "to": "application_delivery"})
+            edges.append({"id": "compose.application.complete", "kind": "sequence", "from": "application_delivery", "to": "complete"})
+            edges.append({
+                "id": "compose.application.delivery-failed",
+                "kind": "failure",
+                "from": "application_delivery",
+                "to": "application_failed",
+                "failure": {
+                    "id": "application.delivery.failure",
+                    "causes": ["cancelled", "exception", "resource", "retry_exhausted", "timeout", "validation"],
+                },
+            })
+        else:
+            edges.append({"id": "compose.application.complete", "kind": "sequence", "from": segment_exits[-1], "to": "complete"})
         return {
             "schema_version": "1.0",
             "id": f"creator-{lineage['compile_candidate']['digest'][:24]}.root",
@@ -441,6 +521,7 @@ class CreatorRuntimeBridge:
                 "schema": "cartridgeflow.recursive_capability_materialization.v1",
                 "strategy": "deterministic_namespace_expansion",
                 "releases": nested_releases,
+                "application_outputs": application_outputs,
             },
             "creator_lineage": deepcopy(lineage),
         }
@@ -575,7 +656,14 @@ class CreatorRuntimeBridge:
             if value.startswith("store:"):
                 key = value[6:]
                 return "store:" + store_map.setdefault(key, f"{store_prefix}{key}")
-            return id_map.get(value, value) if parent_key in {"node_id", "target_node", "entry", "from", "to"} else value
+            if parent_key in {"node_id", "target_node", "entry", "from", "to"} and value in id_map:
+                return id_map[value]
+            if parent_key in {"input", "output", "primary_output", "output_name", "from", "to", "source", "items"}:
+                keys = [item.strip() for item in value.split(",") if item.strip()]
+                if keys and all(key in store_map for key in keys):
+                    return ",".join(store_map[key] for key in keys)
+                return store_map.get(value, value)
+            return value
         if not isinstance(value, dict):
             return value
         result = {

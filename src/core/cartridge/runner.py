@@ -491,6 +491,21 @@ class CartridgeRunner:
             def _handle(_state_doc: dict):
                 nonlocal lab_failed
                 state_ = root_flow_states.get(state_name_) or {}
+                if (
+                    state_.get("type") in {"control", "system"}
+                    and not state_.get("action")
+                    and state_.get("locked") is True
+                    and isinstance(state_.get("capability_release"), dict)
+                ):
+                    self._append_event(
+                        run_id,
+                        cartridge_id,
+                        "control_boundary_passed",
+                        state_name_,
+                        f"Control boundary {state_name_} passed",
+                        {"type": state_.get("type")},
+                    )
+                    return
                 store = _state_doc["context"].setdefault("store", {})
                 params_ = state_.get("params") or {}
                 preset_config_ = params_.get("preset_config") or {}
@@ -1971,6 +1986,21 @@ class CartridgeRunner:
             def _handle(_state_doc: dict):
                 nonlocal lab_failed
                 state_ = root_flow_states.get(state_name_) or {}
+                if (
+                    state_.get("type") in {"control", "system"}
+                    and not state_.get("action")
+                    and state_.get("locked") is True
+                    and isinstance(state_.get("capability_release"), dict)
+                ):
+                    self._append_event(
+                        run_id,
+                        cartridge_id,
+                        "control_boundary_passed",
+                        state_name_,
+                        f"Control boundary {state_name_} passed",
+                        {"type": state_.get("type")},
+                    )
+                    return
                 store = _state_doc["context"].setdefault("store", {})
                 params_ = state_.get("params") or {}
                 preset_config_ = params_.get("preset_config") or {}

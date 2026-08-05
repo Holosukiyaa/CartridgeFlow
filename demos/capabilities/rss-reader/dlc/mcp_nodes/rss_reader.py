@@ -33,6 +33,20 @@ def _text(element, names):
     return ""
 
 
+def _declaration_outside_cdata(document, token):
+    upper = document.upper()
+    cursor = 0
+    while True:
+        declaration = upper.find(token, cursor)
+        if declaration < 0:
+            return False
+        cdata_start = upper.rfind("<![CDATA[", 0, declaration)
+        cdata_end = upper.rfind("]]>", 0, declaration)
+        if cdata_start <= cdata_end:
+            return True
+        cursor = declaration + len(token)
+
+
 @mcp_operation("validate_sources")
 def op_validate_sources(ctx: McpContext, data: dict) -> dict:
     urls = data.get("urls") or []
@@ -59,7 +73,7 @@ def op_normalize_items(ctx: McpContext, data: dict) -> dict:
             document = str(response)
         if len(document.encode("utf-8")) > 2 * 1024 * 1024:
             raise ValueError("feed document exceeds the 2 MiB parsing limit")
-        if "<!DOCTYPE" in document.upper() or "<!ENTITY" in document.upper():
+        if _declaration_outside_cdata(document, "<!DOCTYPE") or _declaration_outside_cdata(document, "<!ENTITY"):
             raise ValueError("entity declarations are not allowed")
         root = ET.fromstring(document)
         for entry in root.iter():

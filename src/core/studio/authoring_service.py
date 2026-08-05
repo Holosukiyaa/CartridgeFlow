@@ -127,7 +127,7 @@ class AuthoringSessionStore:
                 "head": instance, "instances": {instance["id"]: instance}, "history": [], "proposals": {},
                 "rejections": [], "freezes": [], "freeze_replacements": [], "freeze_revisions": [], "reversals": [],
                 "semantic_recipe": deepcopy(recipe), "capability_publications": deepcopy(publications),
-                "capability_reviews": {}, "resolution_revision": 1,
+                "capability_reviews": {}, "capability_rejections": {}, "resolution_revision": 1,
             }
             self._write(path, state)
             return self.creator_projection(state)
@@ -150,6 +150,7 @@ class AuthoringSessionStore:
             state["semantic_recipe"] = deepcopy(recipe)
             state["capability_publications"] = deepcopy(publications)
             state["capability_reviews"] = {}
+            state["capability_rejections"] = {}
             state["resolution_revision"] = int(state.get("resolution_revision") or 0) + 1
             state["proposals"] = {}
             state["freezes"] = []
@@ -193,7 +194,20 @@ class AuthoringSessionStore:
             if not isinstance(recipe, dict):
                 raise AuthoringServiceError("AUTHORING_SEMANTIC_RECIPE_REQUIRED", "This project does not use semantic capability resolution.", status=409)
             try:
-                next_recipe, publications, resolved = resolve_semantic_recipe(recipe, capabilities)
+                rejected_digests = {
+                    node_id: {
+                        str(item.get("digest") or "")
+                        for item in records
+                        if isinstance(item, dict) and item.get("digest")
+                    }
+                    for node_id, records in (state.get("capability_rejections") or {}).items()
+                    if isinstance(records, list)
+                }
+                next_recipe, publications, resolved = resolve_semantic_recipe(
+                    recipe,
+                    capabilities,
+                    rejected_capability_digests=rejected_digests,
+                )
             except CapabilityCartridgeError as exc:
                 raise AuthoringServiceError("AUTHORING_CAPABILITY_RESOLUTION_INVALID", str(exc)) from exc
             if not resolved:
@@ -220,6 +234,51 @@ class AuthoringSessionStore:
             state["proposals"] = {}
             self._write(self._path(session_id), state)
             return self.creator_projection(state), resolved
+
+    def reject_capability(self, session_id: str, node_id: str, *, expected_revision: int) -> dict:
+        """Return one proposed capability binding to an unresolved node in place."""
+        with self._lock:
+            state = self.get(session_id)
+            self._require_revision(state, expected_revision)
+            recipe = deepcopy(state.get("semantic_recipe"))
+            if not isinstance(recipe, dict):
+                raise AuthoringServiceError("AUTHORING_SEMANTIC_RECIPE_REQUIRED", "This project does not use semantic capability resolution.", status=409)
+            node = next((item for item in recipe.get("nodes") or [] if item.get("id") == node_id), None)
+            if node is None:
+                raise AuthoringServiceError("AUTHORING_STEP_UNKNOWN", "Semantic recipe node was not found.", status=404)
+            publications = deepcopy(state.get("capability_publications") or {})
+            release = publications.pop(node_id, None)
+            if not isinstance(release, dict):
+                raise AuthoringServiceError("AUTHORING_CAPABILITY_UNRESOLVED", "This node has no capability binding to reject.", status=409)
+
+            node["capability"] = None
+            node["values"] = validate_values_for_node(node, None, {})
+            recipe["digest"] = canonical_digest({key: value for key, value in recipe.items() if key != "digest"})
+            bindings = deepcopy(state["head"]["bindings"])
+            bindings[node_id] = deepcopy(node["values"])
+            try:
+                instance = create_recipe_instance(
+                    state["head"]["blueprint"],
+                    bindings,
+                    revision=state["head"]["revision"] + 1,
+                    parent_instance=state["head"],
+                )
+            except TuningProtocolError as exc:
+                raise AuthoringServiceError("AUTHORING_FACT_INVALID", str(exc)) from exc
+
+            rejected = state.setdefault("capability_rejections", {}).setdefault(node_id, [])
+            rejection = {key: release[key] for key in ("id", "revision", "digest")}
+            if rejection not in rejected:
+                rejected.append(rejection)
+            state["head"] = instance
+            state["instances"][instance["id"]] = instance
+            state["semantic_recipe"] = recipe
+            state["capability_publications"] = publications
+            state.setdefault("capability_reviews", {}).pop(node_id, None)
+            state["resolution_revision"] = int(state.get("resolution_revision") or 0) + 1
+            state["proposals"] = {}
+            self._write(self._path(session_id), state)
+            return self.creator_projection(state)
 
     def replace_from_recipe(self, session_id: str, recipe: dict, presets: list[dict], *, mappings: dict[str, dict] | None, expected_revision: int) -> dict:
         """Atomically replace the current overall draft while preserving project identity."""

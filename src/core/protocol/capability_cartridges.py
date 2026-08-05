@@ -58,14 +58,15 @@ def validate_capability_release(value: dict) -> dict:
     if not isinstance(interface, dict):
         raise AuthoringServiceError("CAPABILITY_RELEASE_INTERFACE_INVALID", "Capability public interface is missing.")
     _validate_ports(interface.get("inputs"), "input")
-    _validate_ports(interface.get("outputs"), "output")
+    normalized_outputs = _validate_ports(interface.get("outputs"), "output")
     implementation = value.get("implementation")
     if not isinstance(implementation, dict) or implementation.get("kind") not in {"flow", "node_snapshot"}:
         raise AuthoringServiceError("CAPABILITY_RELEASE_IMPLEMENTATION_INVALID", "Capability implementation is invalid.")
     if implementation["kind"] == "flow":
         if not isinstance(implementation.get("manifest"), dict) or not isinstance(implementation.get("root_flow"), dict):
             raise AuthoringServiceError("CAPABILITY_RELEASE_IMPLEMENTATION_INVALID", "Flow capability must carry its manifest and Root Flow.")
-        validate_flow_capability_boundary(implementation["root_flow"])
+        boundary = validate_flow_capability_boundary(implementation["root_flow"], implementation["manifest"])
+        _validate_capability_outputs(implementation["root_flow"], boundary, normalized_outputs)
         files = implementation.get("files")
         if not isinstance(files, dict) or any(
             not _safe_source_path(path)
@@ -95,7 +96,7 @@ def validate_capability_release(value: dict) -> dict:
     return deepcopy(value)
 
 
-def validate_flow_capability_boundary(root_flow: dict) -> dict:
+def validate_flow_capability_boundary(root_flow: dict, manifest: dict | None = None) -> dict:
     """Require one reachable success boundary and no orphan executable states."""
     states = root_flow.get("states") if isinstance(root_flow, dict) else None
     plan = root_flow.get("execution_plan") if isinstance(root_flow, dict) else None
@@ -135,13 +136,86 @@ def validate_flow_capability_boundary(root_flow: dict) -> dict:
                 changed = True
     if success_terminals[0] not in success_reachable:
         raise AuthoringServiceError("CAPABILITY_FLOW_SUCCESS_PATH_MISSING", "Capability Flow has no reachable successful exit.")
+    can_reach_success = {success_terminals[0]}
+    changed = True
+    while changed:
+        changed = False
+        for source, target, kind in edges:
+            if kind != "failure" and target in can_reach_success and source not in can_reach_success:
+                can_reach_success.add(source)
+                changed = True
+    executable_states = sorted(
+        state_id for state_id, state in states.items()
+        if (
+            isinstance(state, dict)
+            and state.get("type") not in {"control", "system", "terminal"}
+            and state_id in success_reachable
+            and state_id in can_reach_success
+        )
+    )
+    if not executable_states:
+        raise AuthoringServiceError("CAPABILITY_FLOW_EXECUTION_MISSING", "Capability Flow must execute at least one real state before its successful exit.")
+    manifest_tool_ids = {
+        str(item.get("id") or "")
+        for item in ((manifest or {}).get("mcp_tools") or [])
+        if isinstance(item, dict) and item.get("id")
+    }
+    for state_id in executable_states:
+        state = states[state_id]
+        action = str(state.get("action") or "").strip()
+        if not action:
+            raise AuthoringServiceError("CAPABILITY_FLOW_ACTION_MISSING", f"Capability executable state has no runtime action: {state_id}.")
+        if action not in {"tool_call", "remote_call"}:
+            continue
+        params = state.get("params") if isinstance(state.get("params"), dict) else {}
+        preset = params.get("preset_config") if isinstance(params.get("preset_config"), dict) else {}
+        inline_tools = params.get("tools") if isinstance(params.get("tools"), list) else state.get("tools") if isinstance(state.get("tools"), list) else []
+        has_inline_tool = any(
+            isinstance(item, dict) and (item.get("mcp_tool_id") or (item.get("server") and item.get("tool")))
+            for item in inline_tools
+        )
+        declared_ids = {
+            str(item)
+            for item in (
+                state.get("allowed_tools")
+                or ((state.get("mcp_binding") or {}).get("allowed_tools") if isinstance(state.get("mcp_binding"), dict) else [])
+                or []
+            )
+            if str(item)
+        }
+        has_declared_tool = bool(declared_ids & manifest_tool_ids)
+        has_param_tool = bool(
+            params.get("mcp_tool_id")
+            or preset.get("mcp_tool_id")
+            or ((params.get("server") or preset.get("server")) and (params.get("tool") or preset.get("tool")))
+        )
+        if not (has_inline_tool or has_declared_tool or has_param_tool):
+            raise AuthoringServiceError("CAPABILITY_FLOW_TOOL_BINDING_MISSING", f"Capability tool state has no callable tool binding: {state_id}.")
+        endpoint = str(state.get("endpoint") or params.get("endpoint") or "").strip().casefold()
+        if action == "remote_call" and (not endpoint or endpoint.endswith("pending")):
+            raise AuthoringServiceError("CAPABILITY_FLOW_REMOTE_TARGET_MISSING", f"Capability remote state has no configured target: {state_id}.")
     orphaned = sorted(
         state_id for state_id, state in states.items()
         if isinstance(state, dict) and state.get("type") not in {"terminal"} and state_id not in reachable
     )
     if orphaned:
         raise AuthoringServiceError("CAPABILITY_FLOW_ORPHANED_STATE", f"Capability Flow contains unreachable executable states: {', '.join(orphaned)}.")
-    return {"valid": True, "entry": entry, "success_exit": success_terminals[0]}
+    return {"valid": True, "entry": entry, "success_exit": success_terminals[0], "executable_states": executable_states}
+
+
+def _validate_capability_outputs(root_flow: dict, boundary: dict, outputs: list[dict]) -> None:
+    produced_store_keys = {
+        str((output.get("target") or {}).get("key") or "")
+        for state_id in boundary["executable_states"]
+        for output in ((root_flow.get("states") or {}).get(state_id, {}).get("outputs") or {}).values()
+        if isinstance(output, dict) and isinstance(output.get("target"), dict) and output["target"].get("type") == "store"
+    }
+    missing_outputs = sorted(port["store_key"] for port in outputs if port["store_key"] not in produced_store_keys)
+    if missing_outputs:
+        raise AuthoringServiceError(
+            "CAPABILITY_RELEASE_OUTPUT_UNPRODUCED",
+            f"Capability public outputs are not produced on its successful path: {', '.join(missing_outputs)}.",
+        )
 
 
 def build_flow_capability_release(
@@ -156,6 +230,8 @@ def build_flow_capability_release(
     normalized_fields = _validate_fields(editable_fields)
     normalized_inputs = _validate_ports(public_inputs, "input")
     normalized_outputs = _validate_ports(public_outputs, "output")
+    boundary = validate_flow_capability_boundary(root_flow, manifest)
+    _validate_capability_outputs(root_flow, boundary, normalized_outputs)
     normalized_terms = sorted({_text(item, 120) for item in match_terms if _text(item, 120)}, key=str.casefold)
     normalized_files = {str(key): str(value) for key, value in sorted((source_files or {}).items())}
     source_digest = canonical_digest({"manifest": manifest, "root_flow": root_flow, "files": normalized_files})
@@ -294,20 +370,27 @@ def create_semantic_recipe(recipe_id: str, goal: str, raw: dict, capabilities: l
     return recipe, publications
 
 
-def resolve_semantic_recipe(recipe: dict, capabilities: list[dict]) -> tuple[dict, dict[str, dict], list[str]]:
+def resolve_semantic_recipe(
+    recipe: dict,
+    capabilities: list[dict],
+    *,
+    rejected_capability_digests: dict[str, set[str]] | None = None,
+) -> tuple[dict, dict[str, dict], list[str]]:
     current = deepcopy(recipe)
     available = {item["id"]: validate_capability_release(item) for item in capabilities}
+    rejected_capability_digests = rejected_capability_digests or {}
     publications: dict[str, dict] = {}
     resolved: list[str] = []
     for node in current.get("nodes") or []:
+        rejected = rejected_capability_digests.get(node["id"], set())
         ref = node.get("capability")
         release = available.get(str((ref or {}).get("id") or ""))
-        if release and _release_ref(release) == ref:
+        if release and release["digest"] not in rejected and _release_ref(release) == ref:
             publications[node["id"]] = release
             continue
         release = _best_match(
             f"{node.get('creator_label', '')} {node.get('creator_description', '')} {node.get('needed_capability', '')}",
-            available.values(),
+            (item for item in available.values() if item["digest"] not in rejected),
         )
         node["capability"] = _release_ref(release) if release else None
         if release:

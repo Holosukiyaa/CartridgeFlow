@@ -28,6 +28,7 @@ import {
   proposeCreatorNodeValues,
   recomposeCreatorRecipe,
   refineCreatorNodeWithAi,
+  rejectCreatorCapability,
   rejectCreatorProposal,
   resolveCreatorCapabilities,
   type CreatorPackage,
@@ -177,6 +178,14 @@ function NodeEditor({ creator, node, busy, onCreatorChange, onClose, onModelRequ
       showToast({ title: '节点已确认', type: 'success' })
     } catch (error) { fail(error) } finally { setWorking(false) }
   }
+  const rejectCapability = async () => {
+    setWorking(true)
+    try {
+      const result = await rejectCreatorCapability(creator.session_id, node.id, creator.revision)
+      onCreatorChange(result.creator)
+      showToast({ title: '已退回为待补齐能力', description: '需求保留在原节点，可以从这里进入能力卡带工坊。', type: 'success' })
+    } catch (error) { fail(error) } finally { setWorking(false) }
+  }
 
   return <aside className="creator-node-editor" aria-label={`调整 ${node.label}`}>
     <header>
@@ -185,7 +194,7 @@ function NodeEditor({ creator, node, busy, onCreatorChange, onClose, onModelRequ
     </header>
     <div className="creator-node-editor-body">
       {unresolved && <section className="creator-capability-gap"><div><strong>这个想法已经保留</strong><p>{node.resolution?.needed_capability}</p></div><a href={`/developer?goal=${encodeURIComponent(node.resolution?.needed_capability || node.description)}&projectId=${encodeURIComponent(creator.project_id)}&nodeId=${encodeURIComponent(node.id)}`}><Wrench />进入能力卡带工坊</a><small>发布可信能力后，回到这里会在原节点上重新匹配。</small></section>}
-      {!unresolved && node.resolution?.capability && <section className="creator-capability-source"><ShieldCheck /><div><strong>{node.resolution.capability.label}</strong><span>{node.resolution.capability.trust_scope === 'workspace' ? '当前工作区可信' : node.resolution.capability.trust_scope === 'organization' ? '组织可信' : '系统可信'} · v{node.resolution.capability.revision}</span></div></section>}
+      {!unresolved && node.resolution?.capability && <section className="creator-capability-source"><ShieldCheck /><div><strong>{node.resolution.capability.label}</strong><span>{node.resolution.capability.trust_scope === 'workspace' ? '当前工作区可信' : node.resolution.capability.trust_scope === 'organization' ? '组织可信' : '系统可信'} · v{node.resolution.capability.revision}</span></div><button className="secondary-button" type="button" disabled={isBusy} onClick={() => void rejectCapability()}><X />不适合当前节点</button></section>}
       {!proposal && <>
         <FieldEditor node={node} values={values} onChange={setValues} disabled={isBusy} />
         <button className="secondary-button" type="button" disabled={isBusy || !changed} onClick={() => void stage()}><Check />保存字段修改</button>
@@ -257,6 +266,7 @@ export function CreatorStudio({ projectId }: { projectId: string }) {
   const [packageResult, setPackageResult] = useState<CreatorPackage | null>(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
+  const [composerError, setComposerError] = useState('')
   const [modelSetupOpen, setModelSetupOpen] = useState(false)
   const [pendingAiAction, setPendingAiAction] = useState<'discover' | 'compose' | 'node' | null>(null)
   const composerRef = useRef<HTMLTextAreaElement | null>(null)
@@ -322,12 +332,15 @@ export function CreatorStudio({ projectId }: { projectId: string }) {
       return
     }
     setBusy(true)
+    setComposerError('')
     try {
       const result = await discoverCreatorPossibilities(goal.trim())
       setPossibilities(result.possibilities)
     } catch (error) {
       if (isModelBlock(error, 'discover')) return
-      showToast({ title: '暂时无法打开新方向', description: friendlyError(error, 'discover'), type: 'error' })
+      const description = friendlyError(error, 'discover')
+      setComposerError(description)
+      showToast({ title: '暂时无法打开新方向', description, type: 'error' })
     } finally { setBusy(false) }
   }
   const compose = async (requestedGoal: string) => {
@@ -338,6 +351,7 @@ export function CreatorStudio({ projectId }: { projectId: string }) {
       return
     }
     setBusy(true)
+    setComposerError('')
     setPossibilities([])
     try {
       const result = creator
@@ -350,7 +364,9 @@ export function CreatorStudio({ projectId }: { projectId: string }) {
       showToast({ title: creator ? '整体草稿已更新' : '整体草稿已生成', description: '请逐个打开节点进行审核。', type: 'success' })
     } catch (error) {
       if (isModelBlock(error, 'compose')) return
-      showToast({ title: '整体编排未完成', description: friendlyError(error, 'compose'), type: 'error' })
+      const description = friendlyError(error, 'compose')
+      setComposerError(description)
+      showToast({ title: '整体编排未完成', description, type: 'error' })
     } finally { setBusy(false) }
   }
   const submit = (event: FormEvent) => {
@@ -427,7 +443,8 @@ export function CreatorStudio({ projectId }: { projectId: string }) {
           <button type="button" onClick={() => { setGoal(item.recipe.intent); void compose(item.recipe.intent) }}><Send />沿这个方向生成草稿</button>
         </article>)}
       </div>}
-      <label className="creator-goal-input"><textarea ref={composerRef} value={goal} disabled={busy} onChange={(event) => setGoal(event.currentTarget.value)} placeholder={creator ? '例如：增加来源审核，并让最终内容更适合每天阅读' : '例如：我想每天收到一份可靠的 AI 日报，但不知道该选哪些来源'} aria-label={creator ? '整体调整要求' : '创作目标'} /></label>
+      {composerError && <div className="creator-composer-error" role="alert"><strong>这次没有生成草稿</strong><span>{composerError} 你的想法已经保留，可以直接重试。</span></div>}
+      <label className="creator-goal-input"><textarea ref={composerRef} value={goal} disabled={busy} onChange={(event) => { setGoal(event.currentTarget.value); setComposerError('') }} placeholder={creator ? '例如：增加来源审核，并让最终内容更适合每天阅读' : '例如：我想每天收到一份可靠的 AI 日报，但不知道该选哪些来源'} aria-label={creator ? '整体调整要求' : '创作目标'} /></label>
       <div className="creator-composer-actions">
         {!creator && <button className="secondary-button" type="button" disabled={busy || goal.trim().length < 3} onClick={() => void discover()}>{busy ? <Loader2 className="spinning" /> : <Lightbulb />}帮我打开思路</button>}
         <button type="submit" disabled={busy || goal.trim().length < 3}>{busy ? <Loader2 className="spinning" /> : <Sparkles />}{creator ? '重新编排整体草稿' : '生成整体草稿'}</button>

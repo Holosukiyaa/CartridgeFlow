@@ -2147,6 +2147,14 @@ def _authoring_error(exc: AuthoringServiceError):
     raise HTTPException(status_code=exc.status, detail=exc.as_dict())
 
 
+def _creator_ai_timeout(model) -> int:
+    try:
+        configured = int(getattr(model, "timeout", 120) or 120)
+    except (TypeError, ValueError):
+        configured = 120
+    return min(120, max(30, configured))
+
+
 @app.post("/api/creator/possibilities")
 async def discover_creator_possibilities_endpoint(payload: CreatorDiscoveryPayload):
     from core.llm import chat
@@ -2158,7 +2166,10 @@ async def discover_creator_possibilities_endpoint(payload: CreatorDiscoveryPaylo
             raise AuthoringServiceError("AI_CREATOR_DISCOVERY_MODEL_UNBOUND", "No configured discovery model is available.", status=409)
         messages = build_creator_discovery_messages(payload.context)
         try:
-            response = await asyncio.wait_for(chat(model, messages, agent_name="creator_discovery", phase="possibility_discovery"), timeout=30)
+            response = await asyncio.wait_for(
+                chat(model, messages, agent_name="creator_discovery", phase="possibility_discovery"),
+                timeout=_creator_ai_timeout(model),
+            )
         except TimeoutError as exc:
             raise AuthoringServiceError("AI_CREATOR_DISCOVERY_TIMEOUT", "The AI discovery service did not respond in time.", status=504) from exc
         try:
@@ -2184,7 +2195,10 @@ async def create_creator_default_recipe(payload: CreatorDefaultRecipePayload):
         if not str(model.api_key or "").strip():
             raise AuthoringServiceError("AI_CREATOR_DEFAULT_RECIPE_MODEL_UNBOUND", "No configured default recipe model is available.", status=409)
         try:
-            response = await asyncio.wait_for(chat(model, build_default_recipe_messages(payload.context), agent_name="creator_default_recipe", phase="default_recipe"), timeout=30)
+            response = await asyncio.wait_for(
+                chat(model, build_default_recipe_messages(payload.context), agent_name="creator_default_recipe", phase="default_recipe"),
+                timeout=_creator_ai_timeout(model),
+            )
         except TimeoutError as exc:
             raise AuthoringServiceError("AI_CREATOR_DEFAULT_RECIPE_TIMEOUT", "The AI default recipe service did not respond in time.", status=504) from exc
         try:
@@ -2245,7 +2259,7 @@ def get_developer_flow_capability_readiness(flow_id: str):
             for message in validation.get("errors") or []
         ]
         try:
-            validate_flow_capability_boundary(cartridge.get("root_flow") or {})
+            validate_flow_capability_boundary(cartridge.get("root_flow") or {}, cartridge.get("manifest") or {})
         except CapabilityCartridgeError as exc:
             findings.append({"code": exc.code, "message": str(exc)})
         return {
@@ -2274,7 +2288,7 @@ def publish_developer_flow_capability(flow_id: str, payload: CapabilityCartridge
             raise AuthoringServiceError("CAPABILITY_SOURCE_FLOW_READ_ONLY", "Only editable Developer flows can publish capabilities.", status=403)
         manifest = cartridge.get("manifest") if isinstance(cartridge.get("manifest"), dict) else {}
         root_flow = cartridge.get("root_flow") if isinstance(cartridge.get("root_flow"), dict) else {}
-        validate_flow_capability_boundary(root_flow)
+        validate_flow_capability_boundary(root_flow, manifest)
         validation = dev_flow_manager.validate_files(flow_id)
         if not validation.get("valid"):
             raise AuthoringServiceError("CAPABILITY_SOURCE_VALIDATION_BLOCKED", "; ".join(validation.get("errors") or ["Developer Flow validation failed."]), status=409)
@@ -2654,7 +2668,10 @@ async def _compose_trusted_creator_recipe(goal: str, recipe_id: str) -> tuple[di
     if not str(model.api_key or "").strip():
         raise AuthoringServiceError("AI_CREATOR_FLOW_MODEL_UNBOUND", "No configured whole-flow model is available.", status=409)
     try:
-        response = await asyncio.wait_for(chat(model, build_creator_flow_messages(goal, capabilities), agent_name="creator_flow_skill", phase="semantic_recipe_composition"), timeout=30)
+        response = await asyncio.wait_for(
+            chat(model, build_creator_flow_messages(goal, capabilities), agent_name="creator_flow_skill", phase="semantic_recipe_composition"),
+            timeout=_creator_ai_timeout(model),
+        )
     except TimeoutError as exc:
         raise AuthoringServiceError("AI_CREATOR_FLOW_TIMEOUT", "The whole-flow AI service did not respond in time.", status=504) from exc
     try:
@@ -2728,6 +2745,14 @@ def resolve_creator_capabilities(session_id: str, payload: AuthoringReadinessPay
         _authoring_error(exc)
 
 
+@app.post("/api/creator/authoring-sessions/{session_id}/nodes/{node_id}/reject-capability")
+def reject_creator_capability(session_id: str, node_id: str, payload: AuthoringReadinessPayload):
+    try:
+        return {"creator": authoring_sessions.reject_capability(session_id, node_id, expected_revision=payload.expected_revision)}
+    except AuthoringServiceError as exc:
+        _authoring_error(exc)
+
+
 @app.post("/api/creator/authoring-sessions/{session_id}/source-candidates")
 async def discover_creator_source_candidates(session_id: str, payload: CreatorSourceDiscoveryPayload):
     from core.llm import chat
@@ -2741,7 +2766,10 @@ async def discover_creator_source_candidates(session_id: str, payload: CreatorSo
         blueprint = state["head"]["blueprint"]
         messages = build_source_discovery_messages(blueprint["intent"], blueprint["steps"], payload.request)
         try:
-            response = await asyncio.wait_for(chat(model, messages, agent_name="creator_source_discovery", phase="source_discovery"), timeout=30)
+            response = await asyncio.wait_for(
+                chat(model, messages, agent_name="creator_source_discovery", phase="source_discovery"),
+                timeout=_creator_ai_timeout(model),
+            )
         except TimeoutError as exc:
             raise AuthoringServiceError("AI_CREATOR_SOURCE_DISCOVERY_TIMEOUT", "The AI source discovery service did not respond in time.", status=504) from exc
         try:
@@ -2838,7 +2866,10 @@ async def create_trusted_node_ai_proposal(session_id: str, node_id: str, payload
         if not str(model.api_key or "").strip():
             raise AuthoringServiceError("AI_CREATOR_NODE_MODEL_UNBOUND", "No configured node-refinement model is available.", status=409)
         try:
-            response = await asyncio.wait_for(chat(model, build_creator_node_messages(current_node, preset, payload.prompt), agent_name="creator_node_skill", phase="trusted_node_refinement"), timeout=30)
+            response = await asyncio.wait_for(
+                chat(model, build_creator_node_messages(current_node, preset, payload.prompt), agent_name="creator_node_skill", phase="trusted_node_refinement"),
+                timeout=_creator_ai_timeout(model),
+            )
         except TimeoutError as exc:
             raise AuthoringServiceError("AI_CREATOR_NODE_TIMEOUT", "The node-refinement AI service did not respond in time.", status=504) from exc
         try:
@@ -2870,7 +2901,7 @@ async def create_ai_authoring_proposal(session_id: str, payload: AuthoringAIProp
         try:
             proposal = await asyncio.wait_for(
                 authoring_sessions.propose_ai(session_id, prompt=payload.prompt, author=payload.author, summary=payload.summary, expected_revision=payload.expected_revision, model_call=model_call),
-                timeout=30,
+                timeout=_creator_ai_timeout(model),
             )
         except TimeoutError as exc:
             raise AuthoringServiceError("AI_AUTHORING_MODEL_TIMEOUT", "The AI authoring service did not respond in time.", status=504) from exc

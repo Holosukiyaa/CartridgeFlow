@@ -26,6 +26,17 @@ class ApiSurfaceTests(unittest.TestCase):
         self.assertEqual(200, self.client.get("/api/health").status_code)
         self.assertEqual(200, self.client.get("/api/base").status_code)
 
+    def test_creator_ai_timeout_uses_bounded_model_configuration(self):
+        model = type("Model", (), {})()
+        model.timeout = 75
+        self.assertEqual(75, backend_main._creator_ai_timeout(model))
+        model.timeout = 5
+        self.assertEqual(30, backend_main._creator_ai_timeout(model))
+        model.timeout = 600
+        self.assertEqual(120, backend_main._creator_ai_timeout(model))
+        model.timeout = "invalid"
+        self.assertEqual(120, backend_main._creator_ai_timeout(model))
+
     def test_service_root_and_local_authoring_cors_are_available_without_a_bundled_frontend(self):
         root = self.client.get("/")
         self.assertEqual(200, root.status_code)

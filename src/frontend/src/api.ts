@@ -95,17 +95,17 @@ export async function connectCreatorAi(body: { base_url: string; api_key: string
 
 export const discoverCreatorPossibilities = (context: string) =>
   api<{ possibilities: CreatorPossibility[] }>('/api/creator/possibilities', {
-    method: 'POST', body: JSON.stringify({ context }), timeoutMs: 45_000,
+    method: 'POST', body: JSON.stringify({ context }), timeoutMs: 135_000,
   })
 
 export const composeCreatorRecipe = (body: { session_id: string; project_id: string; goal: string }) =>
   api<{ creator: CreatorProjection }>('/api/creator/compose-recipe', {
-    method: 'POST', body: JSON.stringify(body), timeoutMs: 45_000,
+    method: 'POST', body: JSON.stringify(body), timeoutMs: 135_000,
   })
 
 export const recomposeCreatorRecipe = (sessionId: string, body: { goal: string; expected_revision: number }) =>
   api<{ creator: CreatorProjection }>(`${sessionRoute(sessionId)}/recompose`, {
-    method: 'POST', body: JSON.stringify(body), timeoutMs: 45_000,
+    method: 'POST', body: JSON.stringify(body), timeoutMs: 135_000,
   })
 
 export const proposeCreatorNodeValues = (sessionId: string, body: unknown) =>
@@ -115,7 +115,7 @@ export const proposeCreatorNodeValues = (sessionId: string, body: unknown) =>
 
 export const refineCreatorNodeWithAi = (sessionId: string, nodeId: string, body: unknown) =>
   api<{ proposal: CreatorProposal }>(`${sessionRoute(sessionId)}/nodes/${encodeURIComponent(nodeId)}/ai-proposals`, {
-    method: 'POST', body: JSON.stringify(body), timeoutMs: 45_000,
+    method: 'POST', body: JSON.stringify(body), timeoutMs: 135_000,
   })
 
 export const previewCreatorProposal = (sessionId: string, proposalId: string, freezeRevision?: unknown) =>
@@ -141,6 +141,11 @@ export const confirmCreatorNode = (sessionId: string, nodeId: string) =>
 
 export const resolveCreatorCapabilities = (sessionId: string, expectedRevision: number) =>
   api<{ creator: CreatorProjection; resolved_node_ids: string[] }>(`${sessionRoute(sessionId)}/resolve-capabilities`, {
+    method: 'POST', body: JSON.stringify({ expected_revision: expectedRevision }),
+  })
+
+export const rejectCreatorCapability = (sessionId: string, nodeId: string, expectedRevision: number) =>
+  api<{ creator: CreatorProjection }>(`${sessionRoute(sessionId)}/nodes/${encodeURIComponent(nodeId)}/reject-capability`, {
     method: 'POST', body: JSON.stringify({ expected_revision: expectedRevision }),
   })
 

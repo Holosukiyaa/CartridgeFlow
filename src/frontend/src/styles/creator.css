@@ -68,6 +68,9 @@ button svg, a svg { width: 16px; height: 16px; flex: 0 0 auto; }
 .creator-goal-input textarea, .creator-ai-refine textarea, .creator-fields textarea, .creator-fields input { width: 100%; color: #252a2f; background: #fff; border: 1px solid #b9c0c7; border-radius: 4px; }
 .creator-goal-input textarea { min-height: 72px; max-height: 150px; padding: 10px 11px; resize: vertical; }
 .creator-composer-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 9px; }
+.creator-composer-error { display: grid; gap: 3px; margin-bottom: 9px; padding: 9px 10px; color: #7b331f; background: #fff4ee; border: 1px solid #d58f76; border-radius: 4px; font-size: 12px; line-height: 1.45; }
+.creator-composer-error strong { font-size: 12px; }
+.creator-composer-error span { color: #6a4337; }
 .creator-possibilities { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0 0 11px; }
 .creator-possibilities article { min-width: 0; padding: 11px; background: #f8f9fa; border: 1px solid #dce0e4; border-radius: 5px; }
 .creator-possibilities h3 { margin: 0; font-size: 13px; line-height: 1.35; }
@@ -99,6 +102,7 @@ button svg, a svg { width: 16px; height: 16px; flex: 0 0 auto; }
 .creator-capability-source strong, .creator-capability-source span { display: block; }
 .creator-capability-source strong { font-size: 12px; }
 .creator-capability-source span { margin-top: 2px; color: #52715f; font-size: 11px; }
+.creator-capability-source button { margin-left: auto; min-height: 30px; padding: 5px 8px; font-size: 11px; white-space: nowrap; }
 .creator-fields { display: grid; gap: 13px; }
 .creator-fields label, .creator-ai-refine label { display: grid; gap: 6px; color: #464d54; font-size: 12px; font-weight: 650; }
 .creator-fields input, .creator-fields textarea, .creator-ai-refine textarea { min-height: 38px; padding: 8px 9px; }

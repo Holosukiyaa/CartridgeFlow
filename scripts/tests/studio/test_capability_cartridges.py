@@ -10,7 +10,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "src"))
 
-from core.protocol.capability_cartridges import CapabilityCartridgeError, build_flow_capability_release, create_semantic_recipe
+from core.protocol.capability_cartridges import CapabilityCartridgeError, build_flow_capability_release, create_semantic_recipe, validate_flow_capability_boundary
 from core.studio.authoring_service import AuthoringSessionStore
 from core.studio.capability_cartridges import CapabilityCartridgeStore
 from core.studio.creator_runtime_bridge import CreatorRuntimeBridge
@@ -69,6 +69,79 @@ def release(
 
 
 class CapabilityCartridgeTests(unittest.TestCase):
+    def test_empty_success_path_cannot_become_a_trusted_capability(self):
+        root = capability_root()
+        root["states"].pop("fetch")
+        root["states"].pop("failed")
+        root["execution_plan"]["edges"] = [{"id": "start_complete", "kind": "sequence", "from": "start", "to": "complete"}]
+        with self.assertRaisesRegex(CapabilityCartridgeError, "at least one real state"):
+            validate_flow_capability_boundary(root)
+
+    def test_public_output_must_be_produced_by_the_success_path(self):
+        with self.assertRaisesRegex(CapabilityCartridgeError, "not produced"):
+            release(public_outputs=[{
+                "id": "missing", "label": "Missing", "required": True,
+                "schema": {"type": "array"}, "store_key": "not_produced",
+            }])
+
+    def test_placeholder_remote_node_cannot_become_trusted(self):
+        root = capability_root()
+        root["states"]["fetch"].update({
+            "kind": "remote_call", "executor": "remote", "effect": "external_side_effect",
+            "action": "remote_call", "endpoint": "remote://pending", "params": {},
+        })
+        with self.assertRaisesRegex(CapabilityCartridgeError, "no callable tool binding"):
+            validate_flow_capability_boundary(root, {"mcp_tools": []})
+
+    def test_manifest_tool_binding_survives_release_revalidation(self):
+        root = capability_root()
+        root["states"]["fetch"].update({
+            "kind": "mcp_read", "executor": "mcp", "effect": "read_only", "action": "tool_call",
+            "allowed_tools": ["rss_fetch"], "mcp_binding": {"mode": "read_only", "allowed_tools": ["rss_fetch"]},
+            "params": {"output": "items"},
+        })
+        candidate = build_flow_capability_release(
+            capability_id="workspace.manifest-tool", revision=1, trust_scope="workspace",
+            label="Manifest tool", description="Uses a declared package tool.", match_terms=["tool"],
+            editable_fields=[], creator_bindings={}, public_inputs=[],
+            public_outputs=[{"id": "items", "label": "Items", "required": True, "schema": {"type": "array"}, "store_key": "items"}],
+            dependencies=[], source_flow_id="dev.manifest-tool",
+            manifest={"id": "dev.manifest-tool", "mcp_tools": [{"id": "rss_fetch"}]}, root_flow=root,
+            source_files={}, evidence={"status": "passed", "checks": [{"id": "test", "status": "passed"}]},
+        )
+        self.assertEqual("workspace.manifest-tool", candidate["id"])
+
+    def test_creator_can_reject_one_binding_without_rejecting_a_future_release(self):
+        with tempfile.TemporaryDirectory() as directory:
+            sessions = AuthoringSessionStore(Path(directory) / "sessions")
+            first = release()
+            recipe, publications = create_semantic_recipe(
+                "recipe.review", "制作 AI 日报",
+                {"nodes": [{
+                    "id": "sources", "label": "收集公开信息", "description": "通过 RSS 获取可审核的最新内容。",
+                    "needed_capability": "RSS 公开信息获取", "capability_id": first["id"], "values": {},
+                }], "relations": []},
+                [first],
+            )
+            created = sessions.create_from_semantic_recipe("creator.review", "project.review", recipe, publications)
+            self.assertEqual("resolved", created["trusted_recipe"]["nodes"][0]["resolution"]["status"])
+
+            rejected = sessions.reject_capability("creator.review", "sources", expected_revision=1)
+            node = rejected["trusted_recipe"]["nodes"][0]
+            self.assertEqual(2, rejected["revision"])
+            self.assertEqual("unresolved", node["resolution"]["status"])
+            self.assertEqual("RSS 公开信息获取", node["values"]["instructions"])
+
+            unchanged, resolved = sessions.resolve_capabilities("creator.review", [first], expected_revision=2)
+            self.assertEqual([], resolved)
+            self.assertEqual("unresolved", unchanged["trusted_recipe"]["nodes"][0]["resolution"]["status"])
+
+            second = release(revision=2)
+            updated, resolved = sessions.resolve_capabilities("creator.review", [second], expected_revision=2)
+            self.assertEqual(["sources"], resolved)
+            self.assertEqual(3, updated["revision"])
+            self.assertEqual(second["digest"], updated["trusted_recipe"]["nodes"][0]["resolution"]["capability"]["digest"])
+
     def test_unresolved_node_reresolves_in_place_and_packages_namespaced_flow(self):
         with tempfile.TemporaryDirectory() as directory:
             temp = Path(directory)

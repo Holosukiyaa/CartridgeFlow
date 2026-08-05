@@ -10,6 +10,7 @@ import {
   Send,
   ShieldCheck,
   Sparkles,
+  Workflow,
   Wrench,
   X,
 } from 'lucide-react'
@@ -416,14 +417,26 @@ export function CreatorStudio({ projectId }: { projectId: string }) {
 
   return <main className="creator-workspace">
     <header className="creator-topbar">
-      <div><strong>CartridgeFlow</strong><span>Creator Studio</span></div>
-      <div className="creator-project-state">
-        {creator ? <><span><Check />已自动保存</span><span>{confirmedCount}/{totalCount} 个节点已确认</span>{Boolean(creator.capability_resolution?.unresolved) && <button type="button" disabled={busy} onClick={() => void refreshCapabilities()} title="重新检查可信能力"><RefreshCw />{creator.capability_resolution?.unresolved} 个待补齐</button>}</> : <span>新项目</span>}
+      <div className="creator-brand">
+        <span className="creator-brand-mark" aria-hidden="true"><Workflow /></span>
+        <span className="creator-brand-copy"><strong>CartridgeFlow</strong><small>Creator Studio</small></span>
+      </div>
+      <div className="creator-project-title">
+        <span>{creator ? '项目链路图' : '新项目'}</span>
+        <strong>{creator?.intent || '从一个想法开始'}</strong>
       </div>
       <div className="creator-package-action">
         {packageResult ? <a href={packageResult.url} download><Download />下载包</a> : <button type="button" disabled={busy || !creator?.generation_readiness.ready} onClick={() => void buildPackage()} title={creator?.generation_readiness.ready ? '打包当前项目' : '确认全部节点后可打包'}>{busy && creator?.generation_readiness.ready ? <Loader2 className="spinning" /> : <PackageCheck />}打包</button>}
       </div>
     </header>
+    <div className="creator-statusbar">
+      {creator ? <>
+        <span className="is-saved"><Check />已自动保存</span>
+        <span><i aria-hidden="true" />{totalCount} 个步骤</span>
+        <span><i className="is-confirmed" aria-hidden="true" />{confirmedCount} 个已确认</span>
+        {Boolean(creator.capability_resolution?.unresolved) && <button type="button" disabled={busy} onClick={() => void refreshCapabilities()} title="重新检查可信能力"><RefreshCw />{creator.capability_resolution?.unresolved} 个待补齐</button>}
+      </> : <span><Sparkles />空白草稿</span>}
+    </div>
 
     <section className="creator-canvas" aria-label="项目链路图">
       <CreatorCanvas creator={creator} selectedId={selectedId} onSelect={setSelectedId} />

@@ -39,11 +39,12 @@ button svg, a svg { width: 16px; height: 16px; flex: 0 0 auto; }
 .creator-canvas .react-flow__controls-button { width: 30px; height: 30px; min-height: 30px; padding: 7px; color: #30363c; background: #fff; border: 0; border-bottom: 1px solid #e1e4e7; border-radius: 0; }
 .creator-canvas .react-flow__controls-button:hover { background: #f0f2f4; }
 .creator-canvas .react-flow__controls-button svg { width: 14px; height: 14px; }
-.creator-canvas .react-flow__edge-path { stroke: #8b949d; stroke-width: 1.5; }
+.creator-canvas .react-flow__edge-path { stroke: #66717c; stroke-width: 1.8; }
 .creator-canvas .react-flow__edge-text { fill: #697078; font-size: 11px; }
 .creator-canvas .react-flow__edge-textbg { fill: #f5f6f7; }
 
 .creator-node { width: 240px; min-height: 116px; display: grid; grid-template-columns: 30px 1fr; gap: 10px; padding: 15px; color: #252a2f; background: #fff; border: 1px solid #aeb5bc; border-radius: 6px; box-shadow: 0 2px 8px rgba(28, 34, 40, .06); }
+.creator-node .react-flow__handle { width: 9px; height: 9px; background: #66717c; border: 2px solid #fff; pointer-events: none; }
 .creator-node.is-selected { border-color: #2f6fdd; box-shadow: 0 0 0 2px rgba(47, 111, 221, .14); }
 .creator-node-state { width: 28px; height: 28px; display: grid; place-items: center; color: #9a6710; background: #fff6dc; border-radius: 50%; }
 .creator-node-state svg { width: 16px; height: 16px; }

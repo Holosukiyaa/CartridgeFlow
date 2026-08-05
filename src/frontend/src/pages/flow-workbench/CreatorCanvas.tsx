@@ -3,7 +3,9 @@ import dagre from '@dagrejs/dagre'
 import {
   Background,
   Controls,
+  Handle,
   MarkerType,
+  Position,
   ReactFlow,
   type Edge,
   type Node,
@@ -22,6 +24,7 @@ type CanvasNode = Node<CanvasNodeData, 'creator'>
 
 function CreatorNode({ data, selected }: NodeProps<CanvasNode>) {
   return <div className={`creator-node creator-node-${data.state} ${selected ? 'is-selected' : ''}`}>
+    <Handle type="target" position={Position.Left} />
     <span className="creator-node-state" aria-hidden="true">
       {data.state === 'confirmed' ? <Check /> : data.state === 'empty' ? <Sparkles /> : data.state === 'unresolved' ? <Wrench /> : <CircleDashed />}
     </span>
@@ -30,6 +33,7 @@ function CreatorNode({ data, selected }: NodeProps<CanvasNode>) {
       <p>{data.description}</p>
       <small>{data.state === 'confirmed' ? '已确认' : data.state === 'review' ? '待审核' : data.state === 'unresolved' ? '待补齐能力' : '从这里开始'}</small>
     </div>
+    <Handle type="source" position={Position.Right} />
   </div>
 }
 
@@ -80,7 +84,8 @@ export function CreatorCanvas({ creator, selectedId, onSelect }: {
       source: relation.from_node_id,
       target: relation.to_node_id,
       label: relation.relation === 'produces' ? '产出' : relation.relation === 'uses' ? '使用' : '提供信息',
-      markerEnd: { type: MarkerType.ArrowClosed },
+      animated: true,
+      markerEnd: { type: MarkerType.ArrowClosed, color: '#66717c', width: 18, height: 18 },
       className: 'creator-edge',
     }))
     return { nodes: layout(nodes, edges), edges }

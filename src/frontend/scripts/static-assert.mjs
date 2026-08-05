@@ -55,6 +55,8 @@ check((api.match(/timeoutMs: 135_000/g) || []).length >= 4, 'Creator waits for t
 check(api.includes('/reject-capability') && workspace.includes('不适合当前节点'), 'Creator can reject a proposed capability in place')
 check(workspace.includes('NodeEditor') && workspace.includes('refineCreatorNodeWithAi'), 'a selected node has a scoped deepening flow')
 check(canvas.includes('nodesDraggable={false}') && canvas.includes('nodesConnectable={false}'), 'the Creator canvas cannot place or wire engineering nodes')
+check(canvas.includes('<Handle type="target"') && canvas.includes('<Handle type="source"'), 'semantic nodes retain both endpoints required to render relationships')
+check(canvas.includes('animated: true') && canvas.includes('MarkerType.ArrowClosed'), 'semantic relationships render as animated directional arrows')
 
 const visibleForbidden = ['Developer', '工程语义', '运行测试', '调试', '调优', '版本切换', '执行映射', '配置模型', '配置工具', '权限设置']
 for (const phrase of visibleForbidden) check(!workspace.includes(phrase), `Creator UI omits ${phrase}`)

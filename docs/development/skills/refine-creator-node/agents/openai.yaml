@@ -1,4 +1,0 @@
-interface:
-  display_name: "Creator Node Refiner"
-  short_description: "Maintain scoped node refinement"
-  default_prompt: "Use $refine-creator-node to implement or repair creator-safe node refinement."

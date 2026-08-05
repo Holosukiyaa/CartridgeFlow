@@ -7,6 +7,7 @@ generic declared-graph runner and brokered host capabilities that Base owns.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 import ipaddress
 import socket
 import ssl
@@ -238,3 +239,17 @@ class McpContext:
             raise McpRuntimeError("dlc_output_missing", f"declared outputs are missing: {', '.join(missing)}")
         content = data[next(iter(expected_outputs))] if len(expected_outputs) == 1 else data
         return {"ok": True, "content": content, "outputs": data, "operation_trace": trace}
+
+
+def inspect_public_https_url(url: str) -> dict:
+    """Use the same SSRF-safe network broker for a read-only Creator source review."""
+    context = McpContext()
+    context._active_operation = _Operation("creator.source.inspect", "network", "network.fetch")
+    try:
+        result = context.network._fetch(str(url), "creator.source.inspect")
+    finally:
+        context._active_operation = None
+    content = str(result.pop("content", ""))
+    result["content_digest"] = hashlib.sha256(content.encode("utf-8")).hexdigest()
+    result["sample"] = " ".join(content[:12000].split())[:1000]
+    return result

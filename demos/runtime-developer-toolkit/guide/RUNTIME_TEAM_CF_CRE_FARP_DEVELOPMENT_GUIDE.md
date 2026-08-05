@@ -1,6 +1,6 @@
 # 运行台团队 CF-CRE@1 与 CF-FARP 执行计划开发指南
 
-> Creator Studio 的严格打包边界输出 CF-FARP@1.6。它与本指南的
+> 创作空间的严格打包边界输出 CF-FARP@1.6。它与本指南的
 > `execution_plan.v1` 执行载荷兼容；1.6 的新增语义发生在打包校验阶段，
 > 不向运行台增加 Creator 会话或工程配置输入。
 
@@ -490,4 +490,4 @@ runtime_contract_invalid
 - `src/core/protocol/release_builder.py`：Base 的发行包构建和检查实现。
 - `src/core/protocol/release_signing.py`：签名和本地信任实现。
 - `runtime-developer-toolkit/demo/run.mjs`：无 Python 最小运行台参考。
-- `docs/development/PROJECT_CLEANUP_AUDIT_2026-07-31.md`：全仓审计和文件树。
+- `docs/development/FILE_INVENTORY.md`：当前源码所有权和入口索引。

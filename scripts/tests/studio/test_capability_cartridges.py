@@ -10,7 +10,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "src"))
 
-from core.protocol.capability_cartridges import CapabilityCartridgeError, build_flow_capability_release, create_semantic_recipe, validate_flow_capability_boundary
+from core.protocol.capability_cartridges import CapabilityCartridgeError, _best_match, build_flow_capability_release, create_semantic_recipe, validate_flow_capability_boundary
 from core.studio.authoring_service import AuthoringSessionStore
 from core.studio.capability_cartridges import CapabilityCartridgeStore
 from core.studio.creator_runtime_bridge import CreatorRuntimeBridge
@@ -69,6 +69,17 @@ def release(
 
 
 class CapabilityCartridgeTests(unittest.TestCase):
+    def test_generic_ai_term_does_not_match_external_information_acquisition(self):
+        generic_ai = release(capability_id="workspace.ai-transform")
+        generic_ai["creator"].update({
+            "label": "AI 内容处理",
+            "match_terms": ["AI", "内容整理", "总结", "提炼", "改写", "创作"],
+        })
+        self.assertIsNone(_best_match(
+            "从已审核的公开来源抓取当天的 AI 相关最新内容",
+            [generic_ai],
+        ))
+
     def test_empty_success_path_cannot_become_a_trusted_capability(self):
         root = capability_root()
         root["states"].pop("fetch")
@@ -141,6 +152,40 @@ class CapabilityCartridgeTests(unittest.TestCase):
             self.assertEqual(["sources"], resolved)
             self.assertEqual(3, updated["revision"])
             self.assertEqual(second["digest"], updated["trusted_recipe"]["nodes"][0]["resolution"]["capability"]["digest"])
+
+    def test_developer_exact_target_binding_still_enforces_adjacent_ports(self):
+        with tempfile.TemporaryDirectory() as directory:
+            sessions = AuthoringSessionStore(Path(directory) / "sessions")
+            source = release()
+            recipe, publications = create_semantic_recipe(
+                "recipe.exact", "Build an unusual report",
+                {
+                    "nodes": [
+                        {"id": "source", "label": "Source", "description": "Provide items", "needed_capability": "RSS", "capability_id": source["id"], "values": {}},
+                        {"id": "special", "label": "Unique semantic gap", "description": "A capability created for this exact node", "needed_capability": "not keyword matched", "capability_id": None, "values": {}},
+                    ],
+                    "relations": [{"id": "source_special", "from_node_id": "source", "to_node_id": "special", "relation": "produces"}],
+                },
+                [source],
+            )
+            sessions.create_from_semantic_recipe("creator.exact", "project.exact", recipe, publications)
+            incompatible = release(
+                capability_id="workspace.exact-special",
+                public_inputs=[{"id": "items", "label": "Items", "required": True, "schema": {"type": "object"}, "store_key": "items"}],
+            )
+            with self.assertRaisesRegex(ValueError, "does not satisfy"):
+                sessions.validate_capability_binding("project.exact", "special", incompatible)
+            compatible = release(
+                capability_id="workspace.exact-special",
+                public_inputs=[{"id": "items", "label": "Items", "required": True, "schema": {"type": "array"}, "store_key": "items"}],
+            )
+            revision = sessions.get_by_project_id("project.exact")["head"]["revision"]
+            sessions.validate_capability_binding("project.exact", "special", compatible)
+            self.assertEqual(revision, sessions.get_by_project_id("project.exact")["head"]["revision"])
+            bound = sessions.bind_capability("project.exact", "special", compatible)
+            special = next(item for item in bound["trusted_recipe"]["nodes"] if item["id"] == "special")
+            self.assertEqual("resolved", special["resolution"]["status"])
+            self.assertEqual(compatible["digest"], special["resolution"]["capability"]["digest"])
 
     def test_unresolved_node_reresolves_in_place_and_packages_namespaced_flow(self):
         with tempfile.TemporaryDirectory() as directory:

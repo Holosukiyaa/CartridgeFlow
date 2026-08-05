@@ -28,7 +28,7 @@ if ($LASTEXITCODE -ne 0) {
     throw "Python dependency installation failed."
 }
 
-foreach ($frontend in @("src\frontend", "src\developer-console")) {
+foreach ($frontend in @("src\intent-studio", "src\capability-workshop")) {
     Write-Host "Installing $frontend dependencies..."
     Push-Location (Join-Path $Root $frontend)
     try {

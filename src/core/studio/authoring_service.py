@@ -31,6 +31,7 @@ from core.protocol.capability_cartridges import (
     semantic_recipe_projection,
     validate_capability_release,
     validate_values_for_node,
+    capability_compatible_with_recipe_node,
 )
 from core.llm.authoring import AuthoringProposalError, build_authoring_messages, parse_authoring_proposal
 
@@ -235,6 +236,97 @@ class AuthoringSessionStore:
             self._write(self._path(session_id), state)
             return self.creator_projection(state), resolved
 
+    def bind_capability(self, project_id: str, node_id: str, release: dict) -> dict:
+        """Bind a just-published capability to the exact Creator gap that opened Developer."""
+        with self._lock:
+            state = self.get_by_project_id(project_id)
+            recipe = deepcopy(state.get("semantic_recipe"))
+            if not isinstance(recipe, dict):
+                raise AuthoringServiceError(
+                    "AUTHORING_SEMANTIC_RECIPE_REQUIRED",
+                    "The target project does not use semantic capability resolution.",
+                    status=409,
+                )
+            node = next((item for item in recipe.get("nodes") or [] if item.get("id") == node_id), None)
+            if node is None:
+                raise AuthoringServiceError("AUTHORING_STEP_UNKNOWN", "The target Creator node was not found.", status=404)
+            try:
+                publication = validate_capability_release(release)
+                publications = deepcopy(state.get("capability_publications") or {})
+                compatibility = capability_compatible_with_recipe_node(recipe, node_id, publication, publications)
+                if not compatibility["compatible"]:
+                    raise AuthoringServiceError(
+                        "AUTHORING_CAPABILITY_INTERFACE_INCOMPATIBLE",
+                        "The published capability does not satisfy the adjacent node data contracts.",
+                        status=409,
+                    )
+                node["capability"] = {
+                    key: publication[key] for key in ("id", "revision", "digest", "trust_scope")
+                }
+                node["values"] = validate_values_for_node(node, publication, state["head"]["bindings"].get(node_id, {}))
+            except CapabilityCartridgeError as exc:
+                raise AuthoringServiceError("AUTHORING_CAPABILITY_BINDING_INVALID", str(exc), status=409) from exc
+            recipe["digest"] = canonical_digest({key: value for key, value in recipe.items() if key != "digest"})
+            publications[node_id] = publication
+            bindings = deepcopy(state["head"]["bindings"])
+            bindings[node_id] = deepcopy(node["values"])
+            try:
+                instance = create_recipe_instance(
+                    state["head"]["blueprint"],
+                    bindings,
+                    revision=state["head"]["revision"] + 1,
+                    parent_instance=state["head"],
+                )
+            except TuningProtocolError as exc:
+                raise AuthoringServiceError("AUTHORING_FACT_INVALID", str(exc)) from exc
+            state["head"] = instance
+            state["instances"][instance["id"]] = instance
+            state["semantic_recipe"] = recipe
+            state["capability_publications"] = publications
+            state["resolution_revision"] = int(state.get("resolution_revision") or 0) + 1
+            state["proposals"] = {}
+            state.setdefault("capability_bindings", []).append({
+                "node_id": node_id,
+                "capability_id": publication["id"],
+                "revision": publication["revision"],
+                "digest": publication["digest"],
+                "binding": "developer_exact_target",
+            })
+            self._write(self._path(state["id"]), state)
+            return self.creator_projection(state)
+
+    def validate_capability_binding(self, project_id: str, node_id: str, release: dict) -> dict:
+        """Validate an exact Creator target without changing the project."""
+        with self._lock:
+            state = self.get_by_project_id(project_id)
+            recipe = state.get("semantic_recipe")
+            if not isinstance(recipe, dict):
+                raise AuthoringServiceError(
+                    "AUTHORING_SEMANTIC_RECIPE_REQUIRED",
+                    "The target project does not use semantic capability resolution.",
+                    status=409,
+                )
+            node = next((item for item in recipe.get("nodes") or [] if item.get("id") == node_id), None)
+            if node is None:
+                raise AuthoringServiceError("AUTHORING_STEP_UNKNOWN", "The target Creator node was not found.", status=404)
+            try:
+                publication = validate_capability_release(release)
+                compatibility = capability_compatible_with_recipe_node(
+                    recipe,
+                    node_id,
+                    publication,
+                    state.get("capability_publications") or {},
+                )
+            except CapabilityCartridgeError as exc:
+                raise AuthoringServiceError("AUTHORING_CAPABILITY_BINDING_INVALID", str(exc), status=409) from exc
+            if not compatibility["compatible"]:
+                raise AuthoringServiceError(
+                    "AUTHORING_CAPABILITY_INTERFACE_INCOMPATIBLE",
+                    "The published capability does not satisfy the adjacent node data contracts.",
+                    status=409,
+                )
+            return compatibility
+
     def reject_capability(self, session_id: str, node_id: str, *, expected_revision: int) -> dict:
         """Return one proposed capability binding to an unresolved node in place."""
         with self._lock:
@@ -362,6 +454,40 @@ class AuthoringSessionStore:
                 raise AuthoringServiceError("AUTHORING_PROJECT_UNKNOWN", "Project was not found.", status=404)
             return state
 
+    def list_projects(self) -> list[dict]:
+        with self._lock:
+            projects = []
+            for path in sorted(self.root.glob("*.json")):
+                state = self._read(path)
+                head = state.get("head") if isinstance(state.get("head"), dict) else {}
+                blueprint = head.get("blueprint") if isinstance(head.get("blueprint"), dict) else {}
+                projects.append({
+                    "project_id": state.get("project_id", state.get("id")),
+                    "session_id": state.get("id"),
+                    "name": state.get("project_name") or blueprint.get("intent") or state.get("project_id"),
+                    "intent": blueprint.get("intent") or "",
+                    "revision": head.get("revision") or 0,
+                    "updated_at": path.stat().st_mtime,
+                })
+            return sorted(projects, key=lambda item: (-float(item["updated_at"]), str(item["project_id"])))
+
+    def rename_project(self, project_id: str, name: str) -> dict:
+        with self._lock:
+            state = self.get_by_project_id(project_id)
+            normalized = " ".join(str(name or "").split())
+            if not normalized:
+                raise AuthoringServiceError("AUTHORING_PROJECT_NAME_INVALID", "Project name is required.")
+            state["project_name"] = normalized[:200]
+            self._write(self._path(state["id"]), state)
+            return self.creator_projection(state)
+
+    def delete_project(self, project_id: str) -> dict:
+        with self._lock:
+            state = self.get_by_project_id(project_id)
+            path = self._path(state["id"])
+            path.unlink()
+            return {"deleted": True, "project_id": project_id, "session_id": state["id"]}
+
     def trusted_preset_usage(self, preset_id: str) -> list[dict]:
         """Return Developer-visible references without exposing Creator-safe projections."""
         with self._lock:
@@ -376,6 +502,24 @@ class AuthoringSessionStore:
                     for node in recipe.get("nodes") or []
                     if isinstance(node, dict) and (node.get("preset") or {}).get("id") == preset_id
                 ]
+                if nodes:
+                    usage.append({
+                        "project_id": state.get("project_id", state["id"]),
+                        "session_id": state["id"],
+                        "nodes": nodes,
+                    })
+            return usage
+
+    def capability_usage(self, capability_id: str) -> list[dict]:
+        with self._lock:
+            usage = []
+            for path in sorted(self.root.glob("*.json")):
+                state = self._read(path)
+                publications = state.get("capability_publications") or {}
+                nodes = []
+                for node_id, release in publications.items():
+                    if isinstance(release, dict) and release.get("id") == capability_id:
+                        nodes.append({"node_id": node_id, "revision": release.get("revision"), "digest": release.get("digest")})
                 if nodes:
                     usage.append({
                         "project_id": state.get("project_id", state["id"]),
@@ -565,7 +709,7 @@ class AuthoringSessionStore:
         head = state["head"]
         checks = AuthoringSessionStore.design_checks(state)
         freezes = AuthoringSessionStore._active_freezes(state)
-        projection = {"project_id": state.get("project_id", state["id"]), "session_id": state["id"], "revision": head["revision"], "intent": head["blueprint"]["intent"],
+        projection = {"project_id": state.get("project_id", state["id"]), "project_name": state.get("project_name") or head["blueprint"]["intent"], "session_id": state["id"], "revision": head["revision"], "intent": head["blueprint"]["intent"],
                 "semantic_steps": [{"id": item["id"], "intent": item["intent"], "plain_inputs": sorted(item["inputs"]), "plain_outputs": sorted(item["outputs"])} for item in head["blueprint"]["steps"]],
                 "steps": [{"id": item["id"], "intent": item["intent"]} for item in head["blueprint"]["steps"]],
                 "relationships": deepcopy(head["blueprint"].get("relations", [])),
@@ -610,7 +754,7 @@ class AuthoringSessionStore:
             },
             "journey_graph": AuthoringSessionStore.journey_graph(state, audience="developer"),
             "generation_readiness": readiness,
-            "creator_url": f"/projects/{state.get('project_id', state['id'])}/creator",
+            "creator_url": f"/projects/{state.get('project_id', state['id'])}/studio",
         }
         if state.get("semantic_recipe"):
             publications = state.get("capability_publications") or {}

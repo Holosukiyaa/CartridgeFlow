@@ -116,4 +116,4 @@ v0.8 完整保留 v0.7 的以下安全与运行边界：
 - Portable DLC 宿主：`src/core/extensions/`
 - 卡带校验和运行：`src/core/cartridge/`
 - 流程执行：`src/core/lab/`
-- 通用 sandbox host：`src/frontend/src/components/DlcSandboxFrame.tsx`
+- 通用 sandbox host：`src/core/extensions/sandbox_service.py`、`sandbox_renderer.py`

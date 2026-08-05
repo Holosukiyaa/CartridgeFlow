@@ -124,6 +124,11 @@ class CreatorRecomposeRecipePayload(BaseModel):
     expected_revision: int = Field(ge=1)
 
 
+class CreatorRecomposeAcceptPayload(BaseModel):
+    proposal_id: str = Field(min_length=16, max_length=200)
+    expected_revision: int = Field(ge=1)
+
+
 class TrustedNodePresetPayload(BaseModel):
     preset: dict
     mapping: dict
@@ -158,6 +163,22 @@ class CapabilityCartridgePublishPayload(BaseModel):
     dependencies: list[dict] = Field(default_factory=list)
     trust_scope: str = "workspace"
     expected_revision: int | None = None
+    verification_token: str = Field(min_length=16, max_length=200)
+    target_project_id: str | None = Field(default=None, max_length=200)
+    target_node_id: str | None = Field(default=None, max_length=120)
+
+
+class CapabilityVerificationPayload(BaseModel):
+    success_run_id: str = Field(min_length=1, max_length=120)
+    failure_run_id: str = Field(min_length=1, max_length=120)
+
+
+class CreatorProjectRenamePayload(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+
+
+class CreatorSourceInspectPayload(BaseModel):
+    url: str = Field(min_length=8, max_length=2000)
 
 
 class CreatorNodeRefinementPayload(BaseModel):
@@ -405,6 +426,14 @@ class McpOperationCreatePayload(BaseModel):
 class McpSourceReplacePayload(BaseModel):
     expected_source_digest: str
     source: str
+
+
+class PortableDlcScaffoldPayload(BaseModel):
+    node_id: str = Field(min_length=1, max_length=120)
+    server: str = Field(min_length=1, max_length=120)
+    tool: str = Field(min_length=1, max_length=120)
+    name: str = Field(min_length=1, max_length=200)
+    description: str = Field(default="Package-owned custom capability", max_length=1000)
 
 class UploadTextPayload(BaseModel):
     filename: str = "upload.txt"

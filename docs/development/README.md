@@ -5,10 +5,8 @@
 ```text
 docs/development/
 ├─ README.md               本入口
-├─ DEVELOPMENT_CONSOLE_RELEASE_PROTOCOL_GUIDE.md
-│                         开发台使用 CF-CRE@1 生成发行候选包的指南
-├─ FILE_INVENTORY.md       项目自有文件清单和废弃审计
-└─ skills/                 可选 AI Skill 包
+├─ FILE_INVENTORY.md       当前源码所有权索引
+└─ skills/                 Flow 创作与协议升级 Skill
 ```
 
 ## 脚本结构
@@ -31,7 +29,9 @@ scripts/
 │  └─ fixtures/          跨测试复用的夹具，不单独执行
 ```
 
-本目录中的 `skills/cartridgeflow-protocol-upgrader/` 是可选的协议升级 AI Skill 包。它包含机器指令和升级清单，因此随开发文档归档，不参与应用运行。
+本目录保留两个维护 Skill：`cartridgeflow-flow-author/` 用于制作和校验
+可执行 Flow，`cartridgeflow-protocol-upgrader/` 用于协议升级。它们包含机器指令、
+检查清单和验证脚本，不参与应用运行。
 
 ## 常用命令
 

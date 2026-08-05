@@ -1,4 +1,4 @@
-"""Build and launch the Creator product on one local port."""
+"""Build and launch the CartridgeFlow authoring surfaces on one local port."""
 
 from __future__ import annotations
 
@@ -11,16 +11,16 @@ import sys
 import time
 import webbrowser
 from pathlib import Path
+from urllib.parse import quote
 
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE_DIR = ROOT / "src"
 FRONTEND_DIRS = {
-    "Creator": SOURCE_DIR / "frontend",
-    "capability workshop": SOURCE_DIR / "developer-console",
+    "Intent Studio": SOURCE_DIR / "intent-studio",
+    "Capability Workshop": SOURCE_DIR / "capability-workshop",
 }
 PORT = 8765
-URL = f"http://127.0.0.1:{PORT}/"
 
 
 def load_env() -> None:
@@ -119,24 +119,37 @@ def ensure_frontend_bundle() -> None:
         subprocess.run([npm, "run", "build"], cwd=frontend_dir, check=True)
 
 
-def wait_until_ready(process: subprocess.Popen[object]) -> None:
+def wait_until_ready(process: subprocess.Popen[object], host: str = "127.0.0.1") -> None:
     for _ in range(40):
         if process.poll() is not None:
             raise SystemExit("CartridgeFlow stopped before it became ready.")
         try:
-            with socket.create_connection(("127.0.0.1", PORT), timeout=0.25):
+            with socket.create_connection(("127.0.0.1" if host in {"0.0.0.0", "::"} else host, PORT), timeout=0.25):
                 return
         except OSError:
             time.sleep(0.25)
     raise SystemExit("CartridgeFlow did not become ready within 10 seconds.")
 
 
+def intent_studio_browser_url(base_url: str, token: str) -> str:
+    url = f"{base_url}studio"
+    return f"{url}?access_token={quote(token, safe='')}" if token else url
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--no-browser", action="store_true", help="Do not open Creator automatically.")
+    parser.add_argument("--no-browser", action="store_true", help="Do not open the Intent Studio automatically.")
+    parser.add_argument("--host", default="127.0.0.1", help="Bind host. Non-loopback binding requires --api-token or CARTRIDGEFLOW_API_TOKEN.")
+    parser.add_argument("--api-token", default="", help="Workspace bearer token for server deployment.")
     args = parser.parse_args()
 
     load_env()
+    token = args.api_token.strip() or str(os.environ.get("CARTRIDGEFLOW_API_TOKEN") or "").strip()
+    if args.host not in {"127.0.0.1", "localhost", "::1"} and not token:
+        raise SystemExit("Non-loopback deployment requires --api-token or CARTRIDGEFLOW_API_TOKEN.")
+    if token:
+        os.environ["CARTRIDGEFLOW_API_TOKEN"] = token
+    os.environ.setdefault("CARTRIDGEFLOW_TRUSTED_HOSTS", args.host if args.host not in {"0.0.0.0", "::"} else "*")
     ensure_frontend_bundle()
     restart_managed_listener(PORT, "backend.main:app")
     require_port_available(PORT)
@@ -148,7 +161,7 @@ def main() -> None:
             "uvicorn",
             "backend.main:app",
             "--host",
-            "127.0.0.1",
+            args.host,
             "--port",
             str(PORT),
             "--log-level",
@@ -157,11 +170,13 @@ def main() -> None:
         cwd=SOURCE_DIR,
     )
     try:
-        wait_until_ready(process)
-        print(f"CartridgeFlow Creator: {URL}creator")
-        print(f"Capability workshop: {URL}developer")
+        wait_until_ready(process, args.host)
+        browser_host = "127.0.0.1" if args.host in {"0.0.0.0", "::"} else args.host
+        url = f"http://{browser_host}:{PORT}/"
+        print(f"CartridgeFlow Intent Studio: {url}studio")
+        print(f"Capability Workshop: {url}capabilities")
         if not args.no_browser:
-            webbrowser.open(URL)
+            webbrowser.open(intent_studio_browser_url(url, token))
         process.wait()
     except KeyboardInterrupt:
         pass

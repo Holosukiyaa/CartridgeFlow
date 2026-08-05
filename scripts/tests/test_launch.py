@@ -39,8 +39,8 @@ class LaunchTests(unittest.TestCase):
 
         self.assertEqual(
             [
-                call(["npm.cmd", "run", "build"], cwd=LAUNCH.FRONTEND_DIRS["Creator"], check=True),
-                call(["npm.cmd", "run", "build"], cwd=LAUNCH.FRONTEND_DIRS["capability workshop"], check=True),
+                call(["npm.cmd", "run", "build"], cwd=LAUNCH.FRONTEND_DIRS["Intent Studio"], check=True),
+                call(["npm.cmd", "run", "build"], cwd=LAUNCH.FRONTEND_DIRS["Capability Workshop"], check=True),
             ],
             run.call_args_list,
         )
@@ -50,3 +50,13 @@ class LaunchTests(unittest.TestCase):
         process.poll.return_value = 1
         with self.assertRaisesRegex(SystemExit, "stopped before"):
             LAUNCH.wait_until_ready(process)
+
+    def test_browser_url_passes_encoded_token_only_to_intent_studio(self) -> None:
+        self.assertEqual(
+            "http://127.0.0.1:8765/studio?access_token=secret%20value%2F%3F",
+            LAUNCH.intent_studio_browser_url("http://127.0.0.1:8765/", "secret value/?"),
+        )
+        self.assertEqual(
+            "http://127.0.0.1:8765/studio",
+            LAUNCH.intent_studio_browser_url("http://127.0.0.1:8765/", ""),
+        )

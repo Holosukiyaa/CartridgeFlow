@@ -16,8 +16,8 @@ run.bat
 
 One FastAPI process serves both authoring surfaces on one origin:
 
-- Creator: `http://127.0.0.1:8765/creator`
-- Capability workshop: `http://127.0.0.1:8765/developer`
+- Intent Studio: `http://127.0.0.1:8765/studio`
+- Capability Workshop: `http://127.0.0.1:8765/capabilities`
 
 `run.bat` clears only a stale CartridgeFlow listener on port 8765, builds both
 bundles and starts the shared backend. Drafts, capability releases and generated
@@ -31,21 +31,22 @@ idea -> semantic canvas -> trusted capability binding
      -> recursive package -> demos/runtime verification
 ```
 
-If no implementation matches a semantic node, Creator preserves the node as a
+If no implementation matches a semantic node, the Intent Studio preserves the node as a
 capability gap. An advanced user can open the workshop, build and publish a
 complete Flow as a workspace-trusted capability, then return to the same
-Creator node for automatic re-resolution and review. Creator contains no run,
-debug or third-layer configuration UI; package publication is its only handoff.
+Intent Studio node for automatic re-resolution and review. The Intent Layer
+contains no run or implementation configuration UI; package publication is its
+only handoff into executable facts.
 
 ## Verify
 
 ```powershell
 python scripts/run_conformance.py --quiet
 python scripts/audit_protocol_governance.py
-npm --prefix src/frontend run build
-npm --prefix src/frontend run test
-npm --prefix src/developer-console run build
-npm --prefix src/developer-console run test
+npm --prefix src/intent-studio run build
+npm --prefix src/intent-studio run test
+npm --prefix src/capability-workshop run build
+npm --prefix src/capability-workshop run test
 trufflehog filesystem . --results=verified --exclude-detectors=Lob --fail --fail-on-scan-errors --no-update --exclude-paths=config/trufflehog-filesystem-exclude.txt
 trufflehog git file://. --results=verified --exclude-detectors=Lob --fail --fail-on-scan-errors --no-update
 ```
@@ -59,8 +60,8 @@ integration; all other detectors remain enabled.
 
 - `src/backend/`: shared HTTP application and API routes.
 - `src/core/`: cartridge, runtime, protocol, lab and studio logic.
-- `src/frontend/`: Creator first- and second-layer canvas.
-- `src/developer-console/`: advanced capability-cartridge workshop.
+- `src/intent-studio/`: direction discovery and semantic composition.
+- `src/capability-workshop/`: executable capability design, verification and publication.
 - `protocol/`: versioned Base, Flow Authoring, Tuning and release contracts.
 - `demos/capabilities/`: package-owned capability examples such as RSS.
 - `demos/runtime-developer-toolkit/`: independent package test bench.

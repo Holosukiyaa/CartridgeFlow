@@ -164,7 +164,7 @@ python docs/development/skills/cartridgeflow-flow-author/scripts/validate_author
 
 ```powershell
 python -B scripts/run_conformance.py --quiet
-npm --prefix src/frontend run build
+npm --prefix src/intent-studio run build
 ```
 
 Resolve analyzer blockers instead of bypassing a contract. Warnings are still design evidence and should be explained at handoff.

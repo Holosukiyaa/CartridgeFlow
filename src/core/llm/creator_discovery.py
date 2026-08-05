@@ -1,4 +1,4 @@
-"""Strict model adapter for the Creator Studio's open-thinking entry point."""
+"""Strict model adapter for the Intent Studio discovery entry point."""
 from __future__ import annotations
 
 import json

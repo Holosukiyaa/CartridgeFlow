@@ -99,12 +99,12 @@ node runtime-developer-toolkit/demo/run.mjs run `
 
 - 完整 CF-CRE@1 校验链（哈希、摘要、Ed25519 签名、信任库）。
 - `execution_plan` 边：`sequence`、`loop`（`continue_when` 求值 + `exit_to`）、`fork`/`join`（顺序模拟并行分支 + join 等齐校验）。
-- 节点执行：`llm_prompt`（mock / OpenAI-compatible HTTP）、`confirm_checkpoint`（mock 自动批准；真实模式中止——交互审核需生产实现）、`pass_result`（artifact 落盘）、`filesystem_write` MCP。
+- 节点执行：`llm_prompt`（mock / OpenAI-compatible HTTP）、`confirm_checkpoint`（mock 自动批准；真实模式通过终端收集批准/驳回与反馈）、`pass_result`（artifact 落盘）、`filesystem_write` MCP。
 - `failure` 边支持主执行链上的最小 fail-closed 路由；交互式人工审核 UI **不在**最小 demo 范围内，生产运行台必须实现完整分支失败路由与真实审核交互。
 
 ## 重要限制
 
-这个工具包不是生产运行台，也不是完整开发台。demo 只实现最小执行语义；生产实现仍需补齐完整资源重绑定、权限 broker、MCP transport、checkpoint、升级回滚和审计策略。
+这个工具包不是生产运行台，也不是完整开发台。交互审核现在可以用于人工验收，但仍是单进程终端交互；生产实现仍需补齐身份绑定、持久化待办、完整资源重绑定、权限 broker、MCP transport、checkpoint、升级回滚和审计策略。
 
 ## 规范来源
 

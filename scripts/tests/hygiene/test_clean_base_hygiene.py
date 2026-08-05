@@ -69,7 +69,8 @@ class CleanBaseHygieneTests(unittest.TestCase):
             "/config/llm/assignments.json*",
             "/config/studio/credentials.json*",
             "/config/studio/resources.json*",
-            "/src/frontend/dist/",
+            "/src/intent-studio/dist/",
+            "/src/capability-workshop/dist/",
             "/temp/",
             "Thumbs.db",
         ):
@@ -106,13 +107,13 @@ class CleanBaseHygieneTests(unittest.TestCase):
         for legacy_dir in ("development", "devtools", "skills", "web_static", "logs", "tests", "tooling"):
             self.assertFalse((ROOT / legacy_dir).exists(), legacy_dir)
 
-        vite_config = (ROOT / "src" / "frontend" / "vite.config.ts").read_text(encoding="utf-8")
+        vite_config = (ROOT / "src" / "intent-studio" / "vite.config.ts").read_text(encoding="utf-8")
         server_main = (ROOT / "src" / "backend" / "main.py").read_text(encoding="utf-8")
         self.assertIn("outDir: 'dist'", vite_config)
-        self.assertIn('ROOT / "src" / "frontend" / "dist"', server_main)
+        self.assertIn('ROOT / "src" / "intent-studio" / "dist"', server_main)
         self.assertIn("ROOT / LOGS_DIR", server_main)
         self.assertNotIn('ROOT / "logs"', server_main)
-        self.assertIn("/src/frontend/dist/", (ROOT / ".gitignore").read_text(encoding="utf-8"))
+        self.assertIn("/src/intent-studio/dist/", (ROOT / ".gitignore").read_text(encoding="utf-8"))
 
     def test_scripts_tree_contains_only_executable_maintenance_code(self):
         scripts_root = ROOT / "scripts"
@@ -226,9 +227,9 @@ class CleanBaseHygieneTests(unittest.TestCase):
             }), encoding="utf-8")
             (root / "src" / "core").mkdir(parents=True)
             (root / "src" / "backend").mkdir(parents=True)
-            (root / "src" / "frontend" / "src").mkdir(parents=True)
+            (root / "src" / "intent-studio" / "src").mkdir(parents=True)
             (root / "src" / "core" / "leak.py").write_text("TOOL = 'render_acme_video'\n", encoding="utf-8")
-            (root / "src" / "frontend" / "src" / "branch.tsx").write_text(
+            (root / "src" / "intent-studio" / "src" / "branch.tsx").write_text(
                 "if (cartridgeId === 'dev.acme_video') return <AcmeVideo />\n",
                 encoding="utf-8",
             )
@@ -244,7 +245,7 @@ class CleanBaseHygieneTests(unittest.TestCase):
     def test_base_runtime_contains_no_vendor_specific_adapter(self):
         vendor_markers = ("comfyui", "comfy_ui", "krea", "runway", "pika", "godot")
         findings = []
-        for relative in ("src/core", "src/backend", "src/frontend/src"):
+        for relative in ("src/core", "src/backend", "src/intent-studio/src", "src/capability-workshop/src"):
             source_root = ROOT / relative
             for path in source_root.rglob("*"):
                 if not path.is_file() or path.suffix.lower() not in {".py", ".ts", ".tsx", ".js", ".jsx", ".css", ".html"}:

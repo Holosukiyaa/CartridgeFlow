@@ -167,7 +167,7 @@ def audit(root: Path = ROOT) -> list[str]:
     _require_text(root / "src/core/lab/dev_flow.py", "self.default_protocol_version", errors)
     _require_text(root / "src/backend/main.py", "protocol_catalog", errors)
     _require_text(root / "src/core/studio/creator_runtime_bridge.py", 'CREATOR_PACKAGE_PROTOCOL = {"id": "CF-FARP", "version": "1.6"}', errors)
-    _require_text(root / "src/frontend/src/pages/flow-workbench/CreatorStudio.tsx", "packageCreatorProject", errors)
+    _require_text(root / "src/intent-studio/src/pages/intent-studio/IntentStudio.tsx", "packageCreatorProject", errors)
     _require_text(protocol_dir / "governance/GOVERNANCE.md", "release_manifest.json", errors)
     for document in [
         "AGENT.md",

@@ -3,24 +3,24 @@
 ## Product Boundary
 
 `PLAN.md` and `PRODUCT_EXPERIENCE_ARCHITECTURE.md` are the current product
-decisions. CartridgeFlow has two same-origin authoring surfaces backed by one
-FastAPI application:
+decisions. CartridgeFlow has two same-origin layers backed by one FastAPI
+application:
 
-- `/creator` and `/projects/{project_id}/creator`: first- and second-layer
-  semantic authoring on a dynamic canvas;
-- `/developer`: the third-layer capability-cartridge workshop for advanced
-  users.
+- `/studio` and `/projects/{project_id}/studio`: the Intent Layer, containing
+  direction discovery and reviewed semantic composition;
+- `/capabilities`: the Capability Layer workshop for executable implementation,
+  verification and immutable publication.
 
-Creator never exposes Root Flow topology, executor/tool bindings, permissions,
+The Intent Studio never exposes Root Flow topology, executor/tool bindings, permissions,
 runtime controls, debug events or tuning versions. The capability workshop
 builds complete internal Flows and publishes immutable reusable releases. A
-Creator project reaches third-layer facts only through strict recursive package
+A project reaches Capability Layer facts only through strict recursive package
 materialization. Production execution and independent package tests belong in
 `demos/`.
 
 The two surfaces share project identity, the capability registry and backend
 facts. Do not couple separate frontend ports or duplicate backend state. Do not
-restore the retired `src/creator-studio/` projection.
+restore retired generic or persona-named frontend projections.
 
 Business-specific behavior belongs in a capability cartridge and its DLC. The
 Base owns cross-cartridge contracts, execution safety, storage boundaries and
@@ -66,10 +66,10 @@ as package-owned DLC.
 ```powershell
 python scripts/run_conformance.py --quiet
 python scripts/audit_protocol_governance.py
-npm --prefix src/frontend run build
-npm --prefix src/frontend run test
-npm --prefix src/developer-console run build
-npm --prefix src/developer-console run test
+npm --prefix src/intent-studio run build
+npm --prefix src/intent-studio run test
+npm --prefix src/capability-workshop run build
+npm --prefix src/capability-workshop run test
 python -m compileall -q src scripts
 trufflehog filesystem . --results=verified --exclude-detectors=Lob --fail --fail-on-scan-errors --no-update --exclude-paths=config/trufflehog-filesystem-exclude.txt
 trufflehog git file://. --results=verified --exclude-detectors=Lob --fail --fail-on-scan-errors --no-update
@@ -87,8 +87,8 @@ Creator review and final package download. Check browser console errors.
 - `src/core/protocol/`: release, compatibility and capability contracts.
 - `src/core/runtime/`: checkpoints, recovery, errors and runtime adapters.
 - `src/core/studio/`: semantic sessions, capability registry and packaging.
-- `src/frontend/`: Creator semantic canvas only.
-- `src/developer-console/`: capability-cartridge workshop canvas only.
+- `src/intent-studio/`: direction discovery and semantic composition only.
+- `src/capability-workshop/`: executable capability design, verification and publication only.
 - `demos/`: capability examples and independent runtime/test bench.
 
 When maintained files move, update `docs/development/FILE_INVENTORY.md`.

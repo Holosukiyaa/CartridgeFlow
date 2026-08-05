@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 
 from backend import main as backend_main
 from backend.main import app
-from core.studio.authoring_service import AuthoringSessionStore
+from core.studio.authoring_service import AuthoringServiceError, AuthoringSessionStore
 from core.studio.trusted_node_presets import TrustedNodePresetStore, build_trusted_node_mapping
 from core.studio.capability_cartridges import CapabilityCartridgeStore
 from core.cartridge import CartridgeRegistry
@@ -51,12 +51,18 @@ class TrustedCreatorApiTests(unittest.TestCase):
         self.capabilities = CapabilityCartridgeStore(root / "capabilities")
         self.registry = CartridgeRegistry(root)
         self.dev_flows = DevFlowManager(root)
+        self.verifications = root / "capability_verifications"
+        self.test_runs = root / "capability_test_runs"
+        self.verifications.mkdir()
+        self.test_runs.mkdir()
         self.patches = [
             patch.object(backend_main, "authoring_sessions", self.sessions),
             patch.object(backend_main, "trusted_node_presets", self.presets),
             patch.object(backend_main, "capability_cartridges", self.capabilities),
             patch.object(backend_main, "registry", self.registry),
             patch.object(backend_main, "dev_flow_manager", self.dev_flows),
+            patch.object(backend_main, "capability_verification_dir", self.verifications),
+            patch.object(backend_main, "capability_test_run_dir", self.test_runs),
         ]
         for item in self.patches: item.start()
 
@@ -68,6 +74,72 @@ class TrustedCreatorApiTests(unittest.TestCase):
         response = self.client.get("/api/creator/projects/project.missing?optional=true")
         self.assertEqual(200, response.status_code, response.text)
         self.assertIsNone(response.json()["creator"])
+
+    def test_creator_project_list_rename_and_delete(self):
+        created = self.client.post("/api/creator/authoring-sessions", json={
+            "session_id": "creator.projects", "project_id": "project.projects",
+            "recipe_id": "recipe.projects", "intent": "Original project",
+            "steps": [{"id": "draft", "intent": "Draft", "inputs": {}, "outputs": {}}],
+            "source_references": [], "bindings": {},
+        })
+        self.assertEqual(200, created.status_code, created.text)
+        listed = self.client.get("/api/creator/projects")
+        self.assertEqual("project.projects", listed.json()["projects"][0]["project_id"])
+        renamed = self.client.patch("/api/creator/projects/project.projects", json={"name": "Daily brief"})
+        self.assertEqual("Daily brief", renamed.json()["creator"]["project_name"])
+        deleted = self.client.delete("/api/creator/projects/project.projects")
+        self.assertTrue(deleted.json()["deleted"])
+        self.assertIsNone(self.client.get("/api/creator/projects/project.projects?optional=true").json()["creator"])
+
+    def test_developer_node_delete_accepts_an_empty_delete_request(self):
+        created = self.client.post("/api/lab/flows", json={
+            "flow_id": "dev.delete-node", "name": "Delete node", "description": "test",
+        })
+        self.assertEqual(200, created.status_code, created.text)
+        node = self.client.post("/api/lab/flows/dev.delete-node/nodes", json={
+            "template_id": "runtime", "node_id": "temporary", "title": "Temporary",
+            "after_node_id": "start",
+        })
+        self.assertEqual(200, node.status_code, node.text)
+        deleted = self.client.request("DELETE", "/api/lab/flows/dev.delete-node/nodes/temporary")
+        self.assertEqual(200, deleted.status_code, deleted.text)
+        self.assertEqual("node_deleted", deleted.json()["status"])
+        root = json.loads(self.client.get("/api/lab/flows/dev.delete-node/files").json()["files"]["root_flow"])
+        self.assertNotIn("temporary", root["states"])
+        self.assertNotIn("temporary_failed", root["states"])
+
+    def test_developer_tool_node_inserted_after_start_has_a_sequence_edge(self):
+        created = self.client.post("/api/lab/flows", json={
+            "flow_id": "dev.insert-node", "name": "Insert node", "description": "test",
+        })
+        self.assertEqual(200, created.status_code, created.text)
+        node = self.client.post("/api/lab/flows/dev.insert-node/nodes", json={
+            "template_id": "tool_call", "node_id": "fetch", "title": "Fetch", "after_node_id": "start",
+        })
+        self.assertEqual(200, node.status_code, node.text)
+        root = json.loads(self.client.get("/api/lab/flows/dev.insert-node/files").json()["files"]["root_flow"])
+        self.assertIn({"id": "start_fetch", "kind": "sequence", "from": "start", "to": "fetch"}, root["execution_plan"]["edges"])
+        self.assertIn("fetch_failed", root["states"])
+
+    def test_developer_can_scaffold_and_edit_package_owned_dlc(self):
+        created = self.client.post("/api/lab/flows", json={
+            "flow_id": "dev.custom-dlc", "name": "Custom DLC", "description": "Package-owned adapter",
+        })
+        self.assertEqual(200, created.status_code, created.text)
+        scaffold = self.client.post("/api/developer/flows/dev.custom-dlc/portable-dlc", json={
+            "node_id": "custom_adapter", "server": "custom_adapter", "tool": "run",
+            "name": "Custom adapter", "description": "Protocol-owned blank adapter",
+        })
+        self.assertEqual(200, scaffold.status_code, scaffold.text)
+        descriptor = self.client.get("/api/developer/flows/dev.custom-dlc/portable-dlc")
+        self.assertEqual("custom_adapter", descriptor.json()["tools"][0]["node_id"])
+        source = self.client.get("/api/lab/flows/dev.custom-dlc/mcp-nodes/custom_adapter/source")
+        self.assertEqual(200, source.status_code, source.text)
+        replaced = self.client.put("/api/lab/flows/dev.custom-dlc/mcp-nodes/custom_adapter/source", json={
+            "expected_source_digest": source.json()["source_digest"], "source": source.json()["source"],
+        })
+        self.assertEqual(200, replaced.status_code, replaced.text)
+        self.assertEqual("custom_adapter", replaced.json()["source_model"]["node_id"])
 
     def test_empty_registry_keeps_unresolved_semantic_nodes(self):
         model = type("Model", (), {"api_key": "test-key"})()
@@ -181,11 +253,23 @@ class TrustedCreatorApiTests(unittest.TestCase):
             "template_id": "runtime", "node_id": "normalize", "title": "Normalize content",
         })
         self.assertEqual(200, node.status_code, node.text)
+        token = "verify_test_complete_capability"
+        snapshot = backend_main._capability_flow_snapshot("dev.complete-capability")
+        backend_main._atomic_json(self.verifications / f"{token}.json", {
+            "schema": "cartridgeflow.capability_runtime_evidence.v1",
+            "token": token,
+            "flow_id": "dev.complete-capability",
+            "source_digest": snapshot["source_digest"],
+            "success_run": {"run_id": "run_success", "status": "completed"},
+            "failure_run": {"run_id": "run_failure", "status": "failed", "error_code": "INPUT_REQUIRED"},
+            "consumed": False,
+        })
         published = self.client.post("/api/developer/flows/dev.complete-capability/capability-cartridges", json={
             "capability_id": "workspace.normalize-content",
             "label": "整理内容", "description": "把输入内容整理为可复用结果。",
             "match_terms": ["整理", "标准化"], "editable_fields": [], "creator_bindings": {},
             "public_inputs": [], "public_outputs": [], "dependencies": [], "trust_scope": "workspace",
+            "verification_token": token,
         })
         self.assertEqual(200, published.status_code, published.text)
         release = published.json()["release"]
@@ -197,6 +281,48 @@ class TrustedCreatorApiTests(unittest.TestCase):
         self.assertIn("workspace.normalize-content", serialized)
         self.assertNotIn("root_flow", serialized)
         self.assertNotIn("implementation", serialized)
+
+    def test_target_binding_is_validated_before_publication_and_evidence_consumption(self):
+        created = self.client.post("/api/lab/flows", json={
+            "flow_id": "dev.atomic-capability", "name": "Atomic capability", "description": "test",
+        })
+        self.assertEqual(200, created.status_code, created.text)
+        node = self.client.post("/api/lab/flows/dev.atomic-capability/nodes", json={
+            "template_id": "runtime", "node_id": "normalize", "title": "Normalize content",
+        })
+        self.assertEqual(200, node.status_code, node.text)
+        token = "verify_test_atomic_capability"
+        snapshot = backend_main._capability_flow_snapshot("dev.atomic-capability")
+        evidence_path = self.verifications / f"{token}.json"
+        backend_main._atomic_json(evidence_path, {
+            "schema": "cartridgeflow.capability_runtime_evidence.v1",
+            "token": token,
+            "flow_id": "dev.atomic-capability",
+            "source_digest": snapshot["source_digest"],
+            "success_run": {"run_id": "run_success", "status": "completed"},
+            "failure_run": {"run_id": "run_failure", "status": "failed", "error_code": "INPUT_REQUIRED"},
+            "consumed": False,
+        })
+        with patch.object(
+            self.sessions,
+            "validate_capability_binding",
+            side_effect=AuthoringServiceError(
+                "AUTHORING_CAPABILITY_INTERFACE_INCOMPATIBLE",
+                "The published capability does not satisfy the adjacent node data contracts.",
+                status=409,
+            ),
+        ):
+            response = self.client.post("/api/developer/flows/dev.atomic-capability/capability-cartridges", json={
+                "capability_id": "workspace.atomic-capability",
+                "label": "Atomic capability", "description": "Must not partially publish.",
+                "match_terms": ["atomic"], "editable_fields": [], "creator_bindings": {},
+                "public_inputs": [], "public_outputs": [], "dependencies": [], "trust_scope": "workspace",
+                "verification_token": token,
+                "target_project_id": "project.target", "target_node_id": "target",
+            })
+        self.assertEqual(409, response.status_code, response.text)
+        self.assertEqual(0, self.capabilities.latest_revision("workspace.atomic-capability"))
+        self.assertFalse(json.loads(evidence_path.read_text(encoding="utf-8"))["consumed"])
 
     def test_developer_can_check_trusted_node_readiness_before_publish(self):
         created = self.client.post("/api/lab/flows", json={

@@ -3,6 +3,8 @@ import { inflateRawSync } from 'node:zlib'
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { createInterface } from 'node:readline/promises'
+import { stdin, stdout } from 'node:process'
 
 const CONTROL_FILES = new Set(['release.manifest.json', 'hashes.json'])
 const SHA256 = /^sha256:[0-9a-f]{64}$/
@@ -238,7 +240,22 @@ async function executeNode(state, nodeId, store, mock, runDirectory, tools) {
       }
       console.log(`[review] ${state.title || nodeId}: auto-approved (mock)`)
     } else {
-      fail(`review node ${state.title || nodeId} requires interactive approval, which the minimal demo does not implement; run with --mock to auto-approve`)
+      if (!stdin.isTTY || !stdout.isTTY) fail(`review node ${state.title || nodeId} requires an interactive terminal`)
+      const terminal = createInterface({ input: stdin, output: stdout })
+      try {
+        const prompt = interaction.prompt || state.params?.condition || `Review ${state.title || nodeId}`
+        const decision = (await terminal.question(`\n[review] ${prompt}\nApprove? [y/N] `)).trim().toLowerCase()
+        const approved = decision === 'y' || decision === 'yes' || decision === 'approved'
+        const feedback = (await terminal.question('Feedback (optional): ')).trim()
+        const answer = { approval: approved ? 'approved' : 'rejected', feedback }
+        store[key] = answer
+        for (const output of Object.values(state.outputs || {})) {
+          if (output?.target?.type === 'store' && output.target.key) store[output.target.key] = answer
+        }
+        console.log(`[review] ${state.title || nodeId}: ${answer.approval}`)
+      } finally {
+        terminal.close()
+      }
     }
     return
   }

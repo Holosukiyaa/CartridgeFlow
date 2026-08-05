@@ -1,4 +1,0 @@
-interface:
-  display_name: "Creator Flow Composer"
-  short_description: "Maintain trusted-node flow composition"
-  default_prompt: "Use $compose-creator-flow to implement or repair trusted-node recipe composition."

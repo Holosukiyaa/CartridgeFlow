@@ -14,8 +14,10 @@ __pycache__/
 
 # JavaScript dependencies and build output
 node_modules/
-/src/frontend/dist/
-/src/frontend/dist-ssr/
+/src/intent-studio/dist/
+/src/intent-studio/dist-ssr/
+/src/capability-workshop/dist/
+/src/capability-workshop/dist-ssr/
 
 # Local secrets and legacy machine-owned configuration paths
 .env

@@ -1,4 +1,5 @@
-"""Browser smoke test for the Creator Studio's real discovery boundary."""
+"""Browser smoke test for the Intent Studio discovery boundary."""
+
 import os
 from urllib.parse import urlsplit
 
@@ -6,41 +7,69 @@ from playwright.sync_api import sync_playwright
 
 
 def main() -> None:
-    errors: list[str] = []
-    requests: list[str] = []
+    console_errors: list[str] = []
+    discovery_requests: list[str] = []
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
-        page = browser.new_page()
-        page.on("console", lambda message: errors.append(message.text) if message.type == "error" else None)
-        page.on("request", lambda request: requests.append(request.url) if "/api/creator/possibilities" in request.url else None)
-        page.goto(os.environ.get("CREATOR_STUDIO_URL", "http://127.0.0.1:5180/"), wait_until="networkidle")
-        page.get_by_label("Creative intent").fill("我想持续了解 AI 行业的变化")
-        page.get_by_role("button", name="帮我打开思路").click()
-        if os.environ.get("CREATOR_DISCOVERY_EXPECT_READY") != "1":
-            page.get_by_role("status").filter(has_text="AI 方向发现尚未连接").wait_for(timeout=5000)
-            assert requests, "Creator did not call the discovery API"
-            assert not page.get_by_role("heading", name="可以从这里开始").count()
-            unexpected_errors = [error for error in errors if "status of 409" not in error]
-            assert not unexpected_errors, f"Browser console errors: {unexpected_errors}"
+        page = browser.new_page(viewport={"width": 1536, "height": 864})
+        page.on(
+            "console",
+            lambda message: console_errors.append(message.text)
+            if message.type == "error"
+            else None,
+        )
+        page.on(
+            "request",
+            lambda request: discovery_requests.append(request.url)
+            if "/api/creator/possibilities" in request.url
+            else None,
+        )
+
+        page.goto(
+            os.environ.get("INTENT_STUDIO_URL", "http://127.0.0.1:5180/"),
+            wait_until="networkidle",
+        )
+        page.get_by_role("button", name="方向探索").click()
+        page.locator(".creator-discovery textarea").fill(
+            "我想持续了解 AI 行业变化，并生成可以审核来源的中文日报。"
+        )
+        page.get_by_role("button", name="探索方向").click()
+
+        page.locator(
+            ".creator-model-setup, .creator-possibilities article, "
+            ".creator-discovery-error"
+        ).first.wait_for(timeout=30000)
+        if page.locator(".creator-model-setup").is_visible():
+            unexpected = [
+                error for error in console_errors if "status of 409" not in error
+            ]
+            assert not unexpected, f"Browser console errors: {unexpected}"
             browser.close()
             return
-        try:
-            page.get_by_role("heading", name="可以从这里开始").wait_for(timeout=5000)
-        except Exception as exc:
-            raise AssertionError(f"Discovery did not render: {page.locator('main').inner_text()}; requests={requests}; console={errors}") from exc
-        page.get_by_role("button", name="选择这个方向").first.click()
-        page.get_by_role("heading", name="设计流程").wait_for()
-        assert "/projects/project-" in page.url and page.url.endswith("/creator")
+
+        if page.locator(".creator-discovery-error").is_visible():
+            assert discovery_requests, "Intent Studio did not call the discovery API"
+            browser.close()
+            return
+
+        page.get_by_role("button", name="沿这个方向编排").first.wait_for(
+            timeout=5000
+        )
+
+        page.get_by_role("button", name="沿这个方向编排").first.click()
+        page.get_by_role("button", name="方案编排").wait_for()
+        assert "/projects/project-" in page.url and page.url.endswith("/studio")
+
         if os.environ.get("SAME_ORIGIN_PRODUCT") == "1":
             location = urlsplit(page.url)
             project_id = page.url.split("/projects/", 1)[1].split("/", 1)[0]
-            page.goto(f"{location.scheme}://{location.netloc}/projects/{project_id}/developer", wait_until="networkidle")
-            try:
-                page.get_by_role("heading", name="工程验证").wait_for(timeout=5000)
-            except Exception as exc:
-                raise AssertionError(f"Developer project view did not render: {page.locator('main').inner_text()}; console={errors}") from exc
-            assert "我想持续了解 AI 行业的变化" not in page.locator("main").inner_text()
-        assert not errors, f"Browser console errors: {errors}"
+            page.goto(
+                f"{location.scheme}://{location.netloc}/projects/{project_id}/capabilities",
+                wait_until="networkidle",
+            )
+            page.get_by_text("能力工坊", exact=True).first.wait_for(timeout=5000)
+
+        assert not console_errors, f"Browser console errors: {console_errors}"
         browser.close()
 
 

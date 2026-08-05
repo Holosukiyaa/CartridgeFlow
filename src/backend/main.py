@@ -8,6 +8,7 @@ import sys
 import threading
 import uuid
 import hashlib
+import hmac
 from datetime import datetime
 from pathlib import Path
 
@@ -32,12 +33,16 @@ from backend.api_models import (
     CreatorDefaultRecipePayload,
     CreatorComposeRecipePayload,
     CreatorRecomposeRecipePayload,
+    CreatorRecomposeAcceptPayload,
     CreatorPackagePayload,
     CreatorNodeRefinementPayload,
     DeveloperMaterializationPayload,
     TrustedNodePresetPayload,
     TrustedNodeActivationPayload,
     CapabilityCartridgePublishPayload,
+    CapabilityVerificationPayload,
+    CreatorProjectRenamePayload,
+    CreatorSourceInspectPayload,
     TrustedNodePublishFromFlowPayload,
     CreatorSourceDiscoveryPayload,
     AuthoringFreezePayload,
@@ -77,6 +82,7 @@ from backend.api_models import (
     NodeDeletePayload,
     NodeUpdatePayload,
     PendingInteractionAnswerPayload,
+    PortableDlcScaffoldPayload,
     RecipeReleasePayload,
     SandboxHostRequestPayload,
     StudioCredentialPayload,
@@ -172,10 +178,14 @@ class UTF8JSONResponse(JSONResponse):
     media_type = "application/json; charset=utf-8"
 
 
+SERVER_API_TOKEN = str(os.environ.get("CARTRIDGEFLOW_API_TOKEN") or "").strip()
+_configured_origins = [item.strip() for item in str(os.environ.get("CARTRIDGEFLOW_CORS_ORIGINS") or "").split(",") if item.strip()]
+_configured_hosts = [item.strip() for item in str(os.environ.get("CARTRIDGEFLOW_TRUSTED_HOSTS") or "").split(",") if item.strip()]
+
 app = FastAPI(title="CartridgeFlow", version=PRODUCT_VERSION, default_response_class=UTF8JSONResponse)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
+    allow_origins=_configured_origins or [
         "http://127.0.0.1:5173",
         "http://localhost:5173",
         "http://127.0.0.1:5180",
@@ -188,8 +198,21 @@ app.add_middleware(
 )
 app.add_middleware(
     TrustedHostMiddleware,
-    allowed_hosts=["127.0.0.1", "localhost", "[::1]", "testserver"],
+    allowed_hosts=_configured_hosts or ["127.0.0.1", "localhost", "[::1]", "testserver"],
 )
+
+
+@app.middleware("http")
+async def require_server_api_token(request: Request, call_next):
+    if SERVER_API_TOKEN and request.url.path.startswith("/api/"):
+        supplied = str(request.headers.get("authorization") or "")
+        expected = f"Bearer {SERVER_API_TOKEN}"
+        if not hmac.compare_digest(supplied, expected):
+            return UTF8JSONResponse(
+                status_code=401,
+                content={"detail": {"code": "SERVER_AUTH_REQUIRED", "message": "A valid workspace access token is required."}},
+            )
+    return await call_next(request)
 
 
 def _request_error_context(request: Request) -> dict:
@@ -347,6 +370,12 @@ registry = CartridgeRegistry(ROOT)
 authoring_sessions = AuthoringSessionStore(ROOT / DATA_ROOT / "user" / "authoring_sessions")
 trusted_node_presets = TrustedNodePresetStore(ROOT / DATA_ROOT / "user" / "trusted_node_presets")
 capability_cartridges = CapabilityCartridgeStore(ROOT / DATA_ROOT / "user" / "capability_cartridges")
+capability_verification_dir = ROOT / DATA_ROOT / "user" / "capability_verifications"
+capability_test_run_dir = ROOT / DATA_ROOT / "user" / "capability_test_runs"
+creator_recipe_proposal_dir = ROOT / DATA_ROOT / "user" / "creator_recipe_proposals"
+capability_verification_dir.mkdir(parents=True, exist_ok=True)
+capability_test_run_dir.mkdir(parents=True, exist_ok=True)
+creator_recipe_proposal_dir.mkdir(parents=True, exist_ok=True)
 runner = CartridgeRunner(ROOT, registry)
 artifact_manager = ArtifactManager(ROOT)
 flow_graph_builder = FlowGraphBuilder()
@@ -2248,6 +2277,143 @@ def _all_capability_releases() -> list[dict]:
     return [releases[key] for key in sorted(releases)]
 
 
+def _capability_flow_snapshot(flow_id: str) -> dict:
+    cartridge = registry.get_cartridge(flow_id)
+    manifest = cartridge.get("manifest") if isinstance(cartridge.get("manifest"), dict) else {}
+    root_flow = cartridge.get("root_flow") if isinstance(cartridge.get("root_flow"), dict) else {}
+    source_path = dev_flow_manager._flow_path(flow_id)
+    source_files: dict[str, str] = {}
+    for path in sorted(source_path.rglob("*")):
+        if not path.is_file() or path.name in {"manifest.json", "root.flow.json"} or ".tuning" in path.parts:
+            continue
+        relative = path.relative_to(source_path).as_posix()
+        if path.is_symlink():
+            raise AuthoringServiceError(
+                "CAPABILITY_SOURCE_FILE_UNSUPPORTED",
+                f"Capability file must not be a symbolic link: {relative}",
+                status=409,
+            )
+        if path.stat().st_size > MAX_SOURCE_FILE_BYTES:
+            raise AuthoringServiceError(
+                "CAPABILITY_SOURCE_FILE_UNSUPPORTED",
+                f"Capability file exceeds the 4 MiB limit: {relative}",
+                status=409,
+            )
+        try:
+            source_files[relative] = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            raise AuthoringServiceError(
+                "CAPABILITY_SOURCE_FILE_UNSUPPORTED",
+                f"Capability file must be UTF-8 text: {relative}",
+                status=409,
+            ) from exc
+    digest = canonical_digest({"manifest": manifest, "root_flow": root_flow, "files": source_files})
+    return {
+        "manifest": manifest,
+        "root_flow": root_flow,
+        "source_files": source_files,
+        "source_digest": digest,
+    }
+
+
+def _atomic_json(path: Path, value: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    temporary.replace(path)
+
+
+def _safe_evidence_path(root: Path, value: str) -> Path:
+    normalized = str(value or "").strip()
+    if not normalized or Path(normalized).name != normalized or not re.fullmatch(r"[A-Za-z0-9_.-]+", normalized):
+        raise AuthoringServiceError("CAPABILITY_EVIDENCE_ID_INVALID", "Capability evidence id is invalid.")
+    return root / f"{normalized}.json"
+
+
+@app.post("/api/developer/flows/{flow_id}/capability-verifications")
+def verify_developer_flow_capability(flow_id: str, payload: CapabilityVerificationPayload):
+    """Bind one real success and one real safe-failure run to the current Flow source."""
+    try:
+        if payload.success_run_id == payload.failure_run_id:
+            raise AuthoringServiceError(
+                "CAPABILITY_EVIDENCE_RUNS_NOT_DISTINCT",
+                "Success and failure evidence must come from different runs.",
+                status=409,
+            )
+        snapshot = _capability_flow_snapshot(flow_id)
+        success = runner.get_run(payload.success_run_id)
+        failure = runner.get_run(payload.failure_run_id)
+        for run, expected, label in ((success, "completed", "success"), (failure, "failed", "failure")):
+            if run.get("cartridge_id") != flow_id:
+                raise AuthoringServiceError(
+                    "CAPABILITY_EVIDENCE_FLOW_MISMATCH",
+                    f"The {label} run belongs to a different Flow.",
+                    status=409,
+                )
+            record_path = _safe_evidence_path(capability_test_run_dir, str(run.get("run_id") or ""))
+            if not record_path.is_file():
+                raise AuthoringServiceError(
+                    "CAPABILITY_EVIDENCE_SOURCE_UNKNOWN",
+                    f"The {label} run was not started as a capability verification run.",
+                    status=409,
+                )
+            record = json.loads(record_path.read_text(encoding="utf-8"))
+            if record.get("source_digest") != snapshot["source_digest"]:
+                raise AuthoringServiceError(
+                    "CAPABILITY_EVIDENCE_SOURCE_STALE",
+                    f"The Flow changed after the {label} run. Run both checks again.",
+                    status=409,
+                )
+            if run.get("status") != expected:
+                raise AuthoringServiceError(
+                    "CAPABILITY_EVIDENCE_OUTCOME_INVALID",
+                    f"The {label} run must finish with status {expected}; current status is {run.get('status')}.",
+                    status=409,
+                )
+        delivery = success.get("delivery") if isinstance(success.get("delivery"), dict) else {}
+        if delivery.get("status") not in {"ready", "completed", "delivered"}:
+            raise AuthoringServiceError(
+                "CAPABILITY_EVIDENCE_DELIVERY_MISSING",
+                "The successful run did not produce a ready delivery.",
+                status=409,
+            )
+        state_path = runner.runs_dir / str(success.get("run_id") or "") / "root_flow_state.json"
+        state_document = json.loads(state_path.read_text(encoding="utf-8")) if state_path.is_file() else {}
+        store = ((state_document.get("context") or {}).get("store") or {}) if isinstance(state_document, dict) else {}
+        observed_store_keys = sorted(
+            str(key) for key, value in store.items()
+            if key != "local_resources" and value not in (None, "", [], {})
+        ) if isinstance(store, dict) else []
+        if not isinstance(failure.get("error"), dict) or not failure["error"].get("code"):
+            raise AuthoringServiceError(
+                "CAPABILITY_EVIDENCE_FAILURE_UNSTRUCTURED",
+                "The failure run did not produce a structured runtime error.",
+                status=409,
+            )
+        token = f"verify_{uuid.uuid4().hex}"
+        evidence = {
+            "schema": "cartridgeflow.capability_runtime_evidence.v1",
+            "token": token,
+            "flow_id": flow_id,
+            "source_digest": snapshot["source_digest"],
+            "success_run": {"run_id": success["run_id"], "status": success["status"]},
+            "failure_run": {
+                "run_id": failure["run_id"],
+                "status": failure["status"],
+                "error_code": failure["error"]["code"],
+            },
+            "observed_store_keys": observed_store_keys,
+            "created_at": datetime.now().isoformat(timespec="seconds"),
+            "consumed": False,
+        }
+        _atomic_json(_safe_evidence_path(capability_verification_dir, token), evidence)
+        return {"verification": evidence}
+    except FileNotFoundError as exc:
+        _authoring_error(AuthoringServiceError("CAPABILITY_EVIDENCE_RUN_UNKNOWN", str(exc), status=404))
+    except AuthoringServiceError as exc:
+        _authoring_error(exc)
+
+
 @app.get("/api/creator/capability-cartridges")
 def list_creator_capability_cartridges():
     return {
@@ -2258,10 +2424,13 @@ def list_creator_capability_cartridges():
 
 @app.get("/api/developer/capability-cartridges")
 def list_developer_capability_cartridges():
+    entries = capability_cartridges.list_entries()
+    for entry in entries:
+        entry["usage"] = authoring_sessions.capability_usage(str(entry.get("id") or ""))
     return {
         "schema": "cartridgeflow.developer_capability_registry.v1",
         "capabilities": capability_cartridges.list_active(),
-        "entries": capability_cartridges.list_entries(),
+        "entries": entries,
     }
 
 
@@ -2304,26 +2473,41 @@ def publish_developer_flow_capability(flow_id: str, payload: CapabilityCartridge
         cartridge = registry.get_cartridge(flow_id)
         if not cartridge.get("editable"):
             raise AuthoringServiceError("CAPABILITY_SOURCE_FLOW_READ_ONLY", "Only editable Developer flows can publish capabilities.", status=403)
-        manifest = cartridge.get("manifest") if isinstance(cartridge.get("manifest"), dict) else {}
-        root_flow = cartridge.get("root_flow") if isinstance(cartridge.get("root_flow"), dict) else {}
+        snapshot = _capability_flow_snapshot(flow_id)
+        manifest = snapshot["manifest"]
+        root_flow = snapshot["root_flow"]
         validate_flow_capability_boundary(root_flow, manifest)
         validation = dev_flow_manager.validate_files(flow_id)
         if not validation.get("valid"):
             raise AuthoringServiceError("CAPABILITY_SOURCE_VALIDATION_BLOCKED", "; ".join(validation.get("errors") or ["Developer Flow validation failed."]), status=409)
-        source_path = dev_flow_manager._flow_path(flow_id)
-        source_files: dict[str, str] = {}
-        for path in sorted(source_path.rglob("*")):
-            if not path.is_file() or path.name in {"manifest.json", "root.flow.json"} or ".tuning" in path.parts:
-                continue
-            relative = path.relative_to(source_path).as_posix()
-            if path.is_symlink():
-                raise AuthoringServiceError("CAPABILITY_SOURCE_FILE_UNSUPPORTED", f"Capability file must not be a symbolic link: {relative}", status=409)
-            if path.stat().st_size > MAX_SOURCE_FILE_BYTES:
-                raise AuthoringServiceError("CAPABILITY_SOURCE_FILE_UNSUPPORTED", f"Capability file exceeds the 4 MiB limit: {relative}", status=409)
-            try:
-                source_files[relative] = path.read_text(encoding="utf-8")
-            except UnicodeDecodeError as exc:
-                raise AuthoringServiceError("CAPABILITY_SOURCE_FILE_UNSUPPORTED", f"Capability file must be UTF-8 text: {relative}", status=409) from exc
+        evidence_path = _safe_evidence_path(capability_verification_dir, payload.verification_token)
+        if not evidence_path.is_file():
+            raise AuthoringServiceError(
+                "CAPABILITY_RUNTIME_EVIDENCE_REQUIRED",
+                "Run and register one successful test and one safe failure test before publishing.",
+                status=409,
+            )
+        runtime_evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+        if runtime_evidence.get("consumed"):
+            raise AuthoringServiceError("CAPABILITY_RUNTIME_EVIDENCE_CONSUMED", "This runtime evidence was already used.", status=409)
+        if runtime_evidence.get("flow_id") != flow_id or runtime_evidence.get("source_digest") != snapshot["source_digest"]:
+            raise AuthoringServiceError(
+                "CAPABILITY_RUNTIME_EVIDENCE_STALE",
+                "The verified Flow source does not match the current publishing source.",
+                status=409,
+            )
+        missing_observed_outputs = sorted(
+            str(item.get("store_key") or "")
+            for item in payload.public_outputs
+            if isinstance(item, dict)
+            and str(item.get("store_key") or "") not in set(runtime_evidence.get("observed_store_keys") or [])
+        )
+        if missing_observed_outputs:
+            raise AuthoringServiceError(
+                "CAPABILITY_RUNTIME_OUTPUT_UNOBSERVED",
+                "The successful verification run did not produce public outputs: " + ", ".join(missing_observed_outputs),
+                status=409,
+            )
         latest = capability_cartridges.latest_revision(payload.capability_id)
         expected = latest if payload.expected_revision is None else payload.expected_revision
         release = build_flow_capability_release(
@@ -2341,17 +2525,41 @@ def publish_developer_flow_capability(flow_id: str, payload: CapabilityCartridge
             source_flow_id=flow_id,
             manifest=manifest,
             root_flow=root_flow,
-            source_files=source_files,
+            source_files=snapshot["source_files"],
             evidence={
                 "status": "passed",
                 "checks": [
                     {"id": "developer_flow_validation", "status": "passed"},
                     {"id": "immutable_source_snapshot", "status": "passed"},
                     {"id": "workspace_trust_boundary", "status": "passed"},
+                    {"id": "runtime_success", "status": "passed", "run_id": runtime_evidence["success_run"]["run_id"]},
+                    {
+                        "id": "runtime_safe_failure",
+                        "status": "passed",
+                        "run_id": runtime_evidence["failure_run"]["run_id"],
+                        "error_code": runtime_evidence["failure_run"]["error_code"],
+                    },
                 ],
             },
         )
+        if payload.target_project_id and payload.target_node_id:
+            authoring_sessions.validate_capability_binding(
+                payload.target_project_id,
+                payload.target_node_id,
+                release,
+            )
         publication = capability_cartridges.put(release, expected_revision=expected)
+        runtime_evidence["consumed"] = True
+        runtime_evidence["published"] = {
+            "id": publication["id"], "revision": publication["revision"], "digest": publication["digest"],
+        }
+        _atomic_json(evidence_path, runtime_evidence)
+        if payload.target_project_id and payload.target_node_id:
+            authoring_sessions.bind_capability(
+                payload.target_project_id,
+                payload.target_node_id,
+                publication,
+            )
         return {"release": publication, "creator": creator_capability_projection(publication)}
     except FileNotFoundError as exc:
         _authoring_error(AuthoringServiceError("CAPABILITY_SOURCE_FLOW_UNKNOWN", str(exc), status=404))
@@ -2750,6 +2958,96 @@ async def recompose_creator_recipe(session_id: str, payload: CreatorRecomposeRec
         _authoring_error(AuthoringServiceError("AI_CREATOR_FLOW_FAILED", str(exc), status=502))
 
 
+@app.post("/api/creator/authoring-sessions/{session_id}/recompose-preview")
+async def preview_recompose_creator_recipe(session_id: str, payload: CreatorRecomposeRecipePayload):
+    """Generate a whole-recipe candidate without replacing the current canvas."""
+    try:
+        current = authoring_sessions.get(session_id)
+        authoring_sessions._require_revision(current, payload.expected_revision)
+        recipe, publications = await _compose_trusted_creator_recipe(
+            payload.goal,
+            f"recipe.{session_id}.{payload.expected_revision + 1}",
+        )
+        proposal_id = f"recipe_{uuid.uuid4().hex}"
+        proposal = {
+            "schema": "cartridgeflow.creator_recipe_proposal.v1",
+            "id": proposal_id,
+            "session_id": session_id,
+            "base_revision": payload.expected_revision,
+            "goal": payload.goal,
+            "recipe": recipe,
+            "publications": publications,
+            "created_at": datetime.now().isoformat(timespec="seconds"),
+        }
+        proposal["digest"] = canonical_digest(proposal)
+        _atomic_json(_safe_evidence_path(creator_recipe_proposal_dir, proposal_id), proposal)
+        preview_nodes = []
+        for node in recipe.get("nodes") or []:
+            preview_nodes.append({
+                "id": node.get("id"),
+                "label": node.get("creator_label") or node.get("label") or node.get("id"),
+                "description": node.get("creator_description") or node.get("description") or "",
+                "resolution": "resolved" if node.get("capability") or node.get("preset") else "unresolved",
+            })
+        current_ids = {
+            item.get("id") for item in ((current.get("semantic_recipe") or current.get("trusted_recipe") or {}).get("nodes") or [])
+        }
+        next_ids = {item.get("id") for item in recipe.get("nodes") or []}
+        return {
+            "schema": "cartridgeflow.creator_recipe_preview.v1",
+            "proposal_id": proposal_id,
+            "goal": payload.goal,
+            "nodes": preview_nodes,
+            "relations": recipe.get("relations") or [],
+            "impact": {
+                "added_node_ids": sorted(next_ids - current_ids),
+                "removed_node_ids": sorted(current_ids - next_ids),
+                "retained_node_ids": sorted(current_ids & next_ids),
+            },
+        }
+    except AuthoringServiceError as exc:
+        _authoring_error(exc)
+    except ValueError as exc:
+        _authoring_error(AuthoringServiceError("AI_CREATOR_FLOW_MODEL_UNBOUND", str(exc), status=409))
+    except Exception as exc:
+        _authoring_error(AuthoringServiceError("AI_CREATOR_FLOW_FAILED", str(exc), status=502))
+
+
+@app.post("/api/creator/authoring-sessions/{session_id}/recompose-proposals/{proposal_id}/accept")
+def accept_recompose_creator_recipe(session_id: str, proposal_id: str, payload: CreatorRecomposeAcceptPayload):
+    try:
+        if proposal_id != payload.proposal_id:
+            raise AuthoringServiceError("AUTHORING_RECIPE_PROPOSAL_INVALID", "Recipe proposal identity does not match.")
+        path = _safe_evidence_path(creator_recipe_proposal_dir, proposal_id)
+        if not path.is_file():
+            raise AuthoringServiceError("AUTHORING_RECIPE_PROPOSAL_UNKNOWN", "Recipe proposal was not found.", status=404)
+        proposal = json.loads(path.read_text(encoding="utf-8"))
+        body = {key: value for key, value in proposal.items() if key != "digest"}
+        if proposal.get("digest") != canonical_digest(body) or proposal.get("session_id") != session_id:
+            raise AuthoringServiceError("AUTHORING_RECIPE_PROPOSAL_INVALID", "Recipe proposal integrity check failed.", status=409)
+        if proposal.get("base_revision") != payload.expected_revision:
+            raise AuthoringServiceError("AUTHORING_REVISION_CONFLICT", "The canvas changed after this preview.", status=409)
+        result = proposal["recipe"]
+        publications = proposal["publications"]
+        if result.get("schema") == "cartridgeflow.dynamic_creator_recipe.v1":
+            presets = [item["implementation"]["preset"] for item in publications.values()]
+            mappings = {
+                node["id"]: publications[node["preset"]["id"]]["implementation"]["mapping"]
+                for node in result["nodes"]
+            }
+            creator = authoring_sessions.replace_from_recipe(
+                session_id, result, presets, mappings=mappings, expected_revision=payload.expected_revision,
+            )
+        else:
+            creator = authoring_sessions.replace_from_semantic_recipe(
+                session_id, result, publications, expected_revision=payload.expected_revision,
+            )
+        path.unlink(missing_ok=True)
+        return {"creator": creator}
+    except AuthoringServiceError as exc:
+        _authoring_error(exc)
+
+
 @app.post("/api/creator/authoring-sessions/{session_id}/resolve-capabilities")
 def resolve_creator_capabilities(session_id: str, payload: AuthoringReadinessPayload):
     try:
@@ -2803,6 +3101,23 @@ async def discover_creator_source_candidates(session_id: str, payload: CreatorSo
         _authoring_error(AuthoringServiceError("AI_CREATOR_SOURCE_DISCOVERY_FAILED", str(exc), status=502))
 
 
+@app.post("/api/creator/source-inspections")
+def inspect_creator_source(payload: CreatorSourceInspectPayload):
+    from cartridgeflow_dlc import McpRuntimeError, inspect_public_https_url
+    try:
+        result = inspect_public_https_url(payload.url)
+        return {
+            "schema": "cartridgeflow.creator_source_inspection.v1",
+            "status": "reachable",
+            **result,
+        }
+    except McpRuntimeError as exc:
+        raise HTTPException(
+            status_code=400 if exc.code in {"network_url_denied", "network_request_invalid"} else 502,
+            detail={"code": exc.code.upper(), "message": str(exc)},
+        )
+
+
 @app.post("/api/creator/authoring-sessions")
 def create_authoring_session(payload: AuthoringSessionCreatePayload):
     try:
@@ -2819,6 +3134,11 @@ def get_creator_authoring_session(session_id: str):
         _authoring_error(exc)
 
 
+@app.get("/api/creator/projects")
+def list_creator_projects():
+    return {"schema": "cartridgeflow.creator_project_list.v1", "projects": authoring_sessions.list_projects()}
+
+
 @app.get("/api/creator/projects/{project_id}")
 def get_creator_project(project_id: str, optional: bool = False):
     try:
@@ -2826,6 +3146,22 @@ def get_creator_project(project_id: str, optional: bool = False):
     except AuthoringServiceError as exc:
         if optional and exc.code == "AUTHORING_PROJECT_UNKNOWN":
             return {"creator": None}
+        _authoring_error(exc)
+
+
+@app.patch("/api/creator/projects/{project_id}")
+def rename_creator_project(project_id: str, payload: CreatorProjectRenamePayload):
+    try:
+        return {"creator": authoring_sessions.rename_project(project_id, payload.name)}
+    except AuthoringServiceError as exc:
+        _authoring_error(exc)
+
+
+@app.delete("/api/creator/projects/{project_id}")
+def delete_creator_project(project_id: str):
+    try:
+        return authoring_sessions.delete_project(project_id)
+    except AuthoringServiceError as exc:
         _authoring_error(exc)
 
 
@@ -3272,6 +3608,99 @@ def list_lab_flow_mcp_tools(cartridge_id: str):
         return {"cartridge_id": cartridge_id, "mcp_tools": _enrich_mcp_tools(manifest.get("mcp_tools", [])), "files": files}
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.get("/api/developer/flows/{cartridge_id}/portable-dlc")
+def get_developer_portable_dlc(cartridge_id: str):
+    try:
+        cartridge = registry.get_cartridge(cartridge_id)
+        manifest = cartridge.get("manifest") or {}
+        if not manifest.get("portable_dlc"):
+            return {"portable_dlc": None, "tools": []}
+        descriptor = load_portable_dlc_descriptor(cartridge.get("package_path"), manifest)
+        return {
+            "portable_dlc": {key: descriptor.get(key) for key in ("id", "version", "scope")},
+            "tools": [{
+                "node_id": item.get("node_id"), "server": item.get("server"), "tool": item.get("tool"),
+                "effect": item.get("effect"), "description": item.get("description"),
+                "source_digest": item.get("source_digest"),
+            } for item in descriptor.get("tools") or [] if isinstance(item, dict)],
+        }
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except PortableDlcValidationError as exc:
+        raise HTTPException(status_code=409, detail={"code": "DLC_DESCRIPTOR_INVALID", "message": str(exc)})
+
+
+@app.post("/api/developer/flows/{cartridge_id}/portable-dlc")
+def scaffold_developer_portable_dlc(cartridge_id: str, payload: PortableDlcScaffoldPayload):
+    """Create a protocol-owned blank DLC skeleton; business behavior remains package-owned source."""
+    try:
+        cartridge = registry.get_cartridge(cartridge_id)
+        if not cartridge.get("editable"):
+            raise AuthoringServiceError("DLC_SOURCE_FLOW_READ_ONLY", "Only editable Developer flows can own a DLC.", status=403)
+        manifest, files = _flow_manifest_files(cartridge_id)
+        if manifest.get("portable_dlc"):
+            raise AuthoringServiceError("DLC_ALREADY_EXISTS", "This Flow already owns a Portable DLC.", status=409)
+        identifier = re.sub(r"[^A-Za-z0-9_]+", "_", payload.node_id).strip("_")
+        if not identifier or identifier[0].isdigit():
+            raise AuthoringServiceError("DLC_NODE_ID_INVALID", "DLC node id must be a valid Python identifier.")
+        server = re.sub(r"[^A-Za-z0-9_.-]+", "_", payload.server).strip("_")
+        tool = re.sub(r"[^A-Za-z0-9_.-]+", "_", payload.tool).strip("_")
+        package_root = dev_flow_manager._flow_path(cartridge_id)
+        source_relative = f"dlc/mcp_nodes/{identifier}.py"
+        backend_relative = "dlc/backend/entry.py"
+        descriptor_relative = "dlc/descriptor.json"
+        source = f'''"""Package-owned custom capability implementation."""\n\nfrom cartridgeflow_dlc import McpContext, mcp_operation\n\n\nMCP_NODE = {{\n    "schema": "cartridgeflow.mcp_python.v1",\n    "node_id": "{identifier}",\n    "server": "{server}",\n    "tool": "{tool}",\n    "effect": "read_only",\n    "inputs": {{"input": {{"type": "object"}}}},\n    "outputs": {{"result": {{"type": "object"}}}},\n    "operations": [{{"id": "transform", "kind": "transform"}}],\n    "edges": [],\n    "fallbacks": [],\n}}\n\n\n@mcp_operation("transform")\ndef op_transform(ctx: McpContext, data: dict) -> dict:\n    return {{"result": data.get("input", data)}}\n\n\nOPERATIONS = {{"transform": op_transform}}\n\n\ndef run(ctx: McpContext, inputs: dict) -> dict:\n    return ctx.run_declared_graph(MCP_NODE, OPERATIONS, inputs)\n'''
+        source_model = parse_mcp_python_source(source, display_path=source_relative)
+        if not source_model.get("ok"):
+            raise AuthoringServiceError("DLC_SCAFFOLD_INVALID", "Generated DLC source did not pass static validation.", status=500)
+        backend = '''"""Portable DLC worker entry."""\n\nfrom core.extensions.worker_sdk import DlcWorkerRegistry\n\n\ndef invoke(request: dict) -> dict:\n    registry = DlcWorkerRegistry(request["workspace_root"], request["package_path"])\n    return registry.call(request.get("server", ""), request.get("tool", ""), request.get("params") or {{}})\n'''
+        source_bytes = source.encode("utf-8")
+        backend_bytes = backend.encode("utf-8")
+        descriptor = {
+            "schema": "cartridgeflow.portable_dlc.v3",
+            "id": f"dlc.{cartridge_id.removeprefix('dev.').replace('.', '-')}",
+            "version": str(manifest.get("version") or "0.0.1"),
+            "owner_cartridge": cartridge_id,
+            "scope": "cartridge",
+            "backend": {"transport": "json_stdio_worker", "entry": backend_relative},
+            "tools": [{
+                "node_id": identifier, "server": server, "tool": tool, "handler": "run",
+                "effect": "read_only", "timeout_ms": 45000, "description": payload.description,
+                "implementation": {"language": "python", "format": "cartridgeflow.mcp_python.v1", "entry": source_relative},
+                "transparency": "declared_graph", "source_digest": source_model["source_digest"],
+            }],
+            "protocols": [],
+            "resources": [{"path": "dlc", "ownership": "package"}],
+            "files": [
+                {"path": backend_relative, "sha256": hashlib.sha256(backend_bytes).hexdigest(), "media_type": "text/x-python", "role": "backend_entry"},
+                {"path": source_relative, "sha256": hashlib.sha256(source_bytes).hexdigest(), "media_type": "text/x-python", "role": "mcp_node_source"},
+            ],
+        }
+        created = [package_root / source_relative, package_root / backend_relative, package_root / descriptor_relative]
+        try:
+            for path in created:
+                path.parent.mkdir(parents=True, exist_ok=True)
+            _atomic_write_bytes(created[0], source_bytes)
+            _atomic_write_bytes(created[1], backend_bytes)
+            _atomic_write_bytes(created[2], (json.dumps(descriptor, ensure_ascii=False, indent=2) + "\n").encode("utf-8"))
+            manifest["portable_dlc"] = {"protocol": "CF-FARP@1.1", "descriptor": descriptor_relative}
+            manifest["mcp_tools"] = [{
+                "id": identifier, "name": payload.name, "type": "cartridge_dlc", "server": server, "tool": tool,
+                "required": True, "enabled": True, "transparency": "declared_graph", "description": payload.description,
+                "contract": {"side_effect": "read_only", "idempotent": True, "timeout_ms": 45000},
+            }]
+            result = _write_manifest_tools(cartridge_id, files, manifest)
+        except Exception:
+            for path in created:
+                path.unlink(missing_ok=True)
+            raise
+        return {"status": "portable_dlc_created", "node_id": identifier, "source_model": source_model, **result}
+    except FileNotFoundError as exc:
+        _authoring_error(AuthoringServiceError("DLC_SOURCE_FLOW_UNKNOWN", str(exc), status=404))
+    except AuthoringServiceError as exc:
+        _authoring_error(exc)
 
 
 def _editable_mcp_source_context(cartridge_id: str, node_id: str) -> tuple[dict, dict, dict, Path, str, dict]:
@@ -3939,6 +4368,28 @@ def create_lab_flow_node(cartridge_id: str, payload: NodeCreatePayload):
             },
             "params": {"node_category": "transfer", "input": "input", "output": "result"},
         },
+        "tool_call": {
+            "type": "process",
+            "kind": "mcp_read",
+            "executor": "mcp",
+            "effect": "read_only",
+            "display": {"suffix": "工具调用", "label": "处理节点-工具调用"},
+            "title": "调用工具",
+            "action": "tool_call",
+            "tool_binding": "static_params",
+            "failure_policy": "fail_closed",
+            "audit_log": True,
+            "allowed_tools": [],
+            "mcp_binding": {"mode": "read_only", "allowed_tools": []},
+            "inputs": {},
+            "outputs": {
+                "result": {
+                    "schema": {"type": "object"},
+                    "target": {"type": "store", "key": "result"},
+                },
+            },
+            "params": {"node_category": "tool", "output": "result", "tool_params": {}},
+        },
         "remote_call": {
             "type": "process",
             "kind": "remote_call",
@@ -4004,6 +4455,8 @@ def create_lab_flow_node(cartridge_id: str, payload: NodeCreatePayload):
                 edges.append({"id": f"{after_node_id}_{node_id}", "kind": "sequence", "from": after_node_id, "to": node_id})
                 if successor_target:
                     edges.append({"id": f"{node_id}_{successor_target}", "kind": "sequence", "from": node_id, "to": successor_target})
+            else:
+                edges.append({"id": f"{after_node_id}_{node_id}", "kind": "sequence", "from": after_node_id, "to": node_id})
         elif not root_flow.get("start"):
             root_flow["start"] = node_id
             plan["entry"] = node_id
@@ -4064,7 +4517,7 @@ def create_lab_flow_node(cartridge_id: str, payload: NodeCreatePayload):
 
 
 @app.delete("/api/lab/flows/{cartridge_id}/nodes/{node_id}")
-def delete_lab_flow_node(cartridge_id: str, node_id: str, payload: NodeDeletePayload):
+def delete_lab_flow_node(cartridge_id: str, node_id: str, payload: NodeDeletePayload | None = None):
     try:
         cartridge = registry.get_cartridge(cartridge_id)
         if not cartridge.get("editable"):
@@ -4074,7 +4527,7 @@ def delete_lab_flow_node(cartridge_id: str, node_id: str, payload: NodeDeletePay
 
     import json as _json
     files = dev_flow_manager.read_files(cartridge_id)
-    files.update(payload.files)
+    files.update(payload.files if payload else {})
     root_flow = _json.loads(files.get("root_flow") or "{}")
     states = root_flow.get("states") or {}
     if node_id not in states:
@@ -4107,6 +4560,9 @@ def delete_lab_flow_node(cartridge_id: str, node_id: str, payload: NodeDeletePay
             else:
                 source_state.pop("next", None)
     states.pop(node_id, None)
+    failure_id = f"{node_id}_failed"
+    if failure_id in states and states[failure_id].get("locked"):
+        states.pop(failure_id, None)
 
     for annotation in root_flow.get("annotations") or []:
         if not isinstance(annotation, dict):
@@ -4400,6 +4856,17 @@ def create_lab_flow_test_run(cartridge_id: str, payload: LabTestRunCreate | None
         else:
             inputs[input_id] = f"Lab {input_id}"
     run_id = f"run_{uuid.uuid4().hex[:12]}"
+    capability_source = _capability_flow_snapshot(cartridge_id)
+    _atomic_json(
+        _safe_evidence_path(capability_test_run_dir, run_id),
+        {
+            "schema": "cartridgeflow.capability_test_source.v1",
+            "run_id": run_id,
+            "flow_id": cartridge_id,
+            "source_digest": capability_source["source_digest"],
+            "created_at": datetime.now().isoformat(timespec="seconds"),
+        },
+    )
     run = runner.create_queued_run(
         cartridge_id,
         inputs,
@@ -4958,8 +5425,8 @@ def serve_package_file(filename: str):
     return FileResponse(target, media_type="application/zip", filename=target.name)
 
 
-static_dir = ROOT / "src" / "frontend" / "dist"
-developer_static_dir = ROOT / "src" / "developer-console" / "dist"
+static_dir = ROOT / "src" / "intent-studio" / "dist"
+capability_static_dir = ROOT / "src" / "capability-workshop" / "dist"
 if static_dir.exists():
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
     assets_dir = static_dir / "assets"
@@ -4987,32 +5454,38 @@ def _spa_file(static_root: Path, relative_path: str) -> FileResponse | None:
     return FileResponse(index, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
 
+@app.get("/studio")
+@app.get("/studio/{full_path:path}")
 @app.get("/creator")
 @app.get("/creator/{full_path:path}")
-def serve_creator_studio(full_path: str = ""):
+def serve_intent_studio(full_path: str = ""):
     response = _spa_file(static_dir, full_path)
     if response is None:
-        raise HTTPException(status_code=404, detail="Creator Studio has not been built")
+        raise HTTPException(status_code=404, detail="Intent Studio has not been built")
     return response
 
 
+@app.get("/projects/{project_id}/studio")
 @app.get("/projects/{project_id}/creator")
-def serve_creator_project(project_id: str):
-    return serve_creator_studio()
+def serve_intent_project(project_id: str):
+    return serve_intent_studio()
 
 
+@app.get("/capabilities")
+@app.get("/capabilities/{full_path:path}")
 @app.get("/developer")
 @app.get("/developer/{full_path:path}")
-def serve_developer_console(full_path: str = ""):
-    response = _spa_file(developer_static_dir, full_path)
+def serve_capability_workshop(full_path: str = ""):
+    response = _spa_file(capability_static_dir, full_path)
     if response is None:
-        raise HTTPException(status_code=404, detail="Developer Console has not been built")
+        raise HTTPException(status_code=404, detail="Capability Workshop has not been built")
     return response
 
 
+@app.get("/projects/{project_id}/capabilities")
 @app.get("/projects/{project_id}/developer")
-def serve_developer_project(project_id: str):
-    return serve_developer_console()
+def serve_capability_project(project_id: str):
+    return serve_capability_workshop()
 
 
 @app.get("/")
@@ -5024,7 +5497,7 @@ def service_root():
         "service": "CartridgeFlow API",
         "docs": "/docs",
         "health": "/api/health",
-        "creator_studio": "Build src/frontend or run the Creator development server.",
+        "intent_studio": "Build src/intent-studio or run the Intent Studio development server.",
     }
 
 

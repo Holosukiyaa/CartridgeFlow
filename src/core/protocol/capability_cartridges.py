@@ -388,9 +388,14 @@ def resolve_semantic_recipe(
         if release and release["digest"] not in rejected and _release_ref(release) == ref:
             publications[node["id"]] = release
             continue
+        compatible = (
+            item for item in available.values()
+            if item["digest"] not in rejected
+            and capability_compatible_with_recipe_node(current, node["id"], item, publications)["compatible"]
+        )
         release = _best_match(
             f"{node.get('creator_label', '')} {node.get('creator_description', '')} {node.get('needed_capability', '')}",
-            (item for item in available.values() if item["digest"] not in rejected),
+            compatible,
         )
         node["capability"] = _release_ref(release) if release else None
         if release:
@@ -428,11 +433,28 @@ def validate_values_for_node(node: dict, release: dict | None, values: object) -
 
 def _best_match(text: str, releases: Iterable[dict]) -> dict | None:
     haystack = " ".join(str(text).casefold().split())
+    haystack_tokens = set(re.findall(r"[\w\u4e00-\u9fff]+", haystack))
+    generic_terms = {
+        "ai", "内容", "处理", "能力", "流程", "工具", "数据", "结果",
+        "content", "process", "capability", "flow", "tool", "data", "result",
+    }
     scored: list[tuple[int, str, dict]] = []
     for release in releases:
         terms = [release["creator"]["label"], *release["creator"].get("match_terms", [])]
         normalized_terms = [str(term).casefold().strip() for term in terms]
-        score = sum(max(1, len(term) // 4) for term in normalized_terms if term and term in haystack)
+        score = 0
+        for term in normalized_terms:
+            if not term or term in generic_terms:
+                continue
+            if term in haystack:
+                score += 100 + min(len(term), 40)
+                continue
+            term_tokens = set(re.findall(r"[\w\u4e00-\u9fff]+", term))
+            if not term_tokens:
+                continue
+            overlap = len(term_tokens & haystack_tokens)
+            if overlap and overlap / len(term_tokens) >= 0.6:
+                score += overlap * 10
         if score:
             scored.append((score, release["id"], release))
     if not scored:
@@ -441,6 +463,54 @@ def _best_match(text: str, releases: Iterable[dict]) -> dict | None:
     if len(scored) > 1 and scored[0][0] == scored[1][0]:
         return None
     return deepcopy(scored[0][2])
+
+
+def capability_compatible_with_recipe_node(
+    recipe: dict,
+    node_id: str,
+    candidate: dict,
+    publications: dict[str, dict],
+) -> dict:
+    """Check public data contracts against already resolved adjacent capabilities."""
+    candidate = validate_capability_release(candidate)
+    failures: list[dict] = []
+    for relation in recipe.get("relations") or []:
+        if not isinstance(relation, dict):
+            continue
+        source = str(relation.get("from_node_id") or "")
+        target = str(relation.get("to_node_id") or "")
+        kind = str(relation.get("relation") or "")
+        provider_id, consumer_id = (target, source) if kind == "uses" else (source, target)
+        if node_id not in {provider_id, consumer_id}:
+            continue
+        provider = candidate if provider_id == node_id else publications.get(provider_id)
+        consumer = candidate if consumer_id == node_id else publications.get(consumer_id)
+        if not isinstance(provider, dict) or not isinstance(consumer, dict):
+            continue
+        outputs = (provider.get("interface") or {}).get("outputs") or []
+        required_inputs = [item for item in ((consumer.get("interface") or {}).get("inputs") or []) if item.get("required")]
+        for input_port in required_inputs:
+            matches = [
+                output for output in outputs
+                if output.get("id") == input_port.get("id")
+                or output.get("store_key") == input_port.get("store_key")
+            ]
+            if not matches or not any(_schemas_compatible(output.get("schema"), input_port.get("schema")) for output in matches):
+                failures.append({
+                    "relation_id": relation.get("id"),
+                    "provider_node_id": provider_id,
+                    "consumer_node_id": consumer_id,
+                    "input_id": input_port.get("id"),
+                })
+    return {"compatible": not failures, "failures": failures}
+
+
+def _schemas_compatible(output_schema: object, input_schema: object) -> bool:
+    if not isinstance(output_schema, dict) or not isinstance(input_schema, dict):
+        return False
+    output_type = output_schema.get("type")
+    input_type = input_schema.get("type")
+    return not output_type or not input_type or output_type == input_type
 
 
 def _release_ref(release: dict | None) -> dict | None:

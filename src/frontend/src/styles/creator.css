@@ -102,6 +102,16 @@ button svg, a svg { width: 16px; height: 16px; flex: 0 0 auto; }
 .creator-review p { margin: 0; color: #555d64; font-size: 12px; line-height: 1.55; }
 .creator-review > div { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
 
+.creator-model-setup { position: absolute; z-index: 30; top: 50%; left: 50%; width: min(430px, calc(100% - 32px)); transform: translate(-50%, -50%); background: #fff; border: 1px solid #bcc3ca; border-radius: 6px; box-shadow: 0 18px 48px rgba(28, 34, 40, .2); }
+.creator-model-setup > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 18px; border-bottom: 1px solid #e0e3e6; }
+.creator-model-setup header span { color: #8a641c; font-size: 11px; font-weight: 700; }
+.creator-model-setup h2 { margin: 6px 0 0; font-size: 19px; }
+.creator-model-setup form { display: grid; gap: 13px; padding: 18px; }
+.creator-model-setup label { display: grid; gap: 6px; color: #464d54; font-size: 12px; font-weight: 650; }
+.creator-model-setup input { width: 100%; min-height: 38px; padding: 8px 9px; color: #252a2f; background: #fff; border: 1px solid #b9c0c7; border-radius: 4px; }
+.creator-model-setup form > div:last-child { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+.creator-connection-error { padding: 9px 10px; color: #8b2525; background: #fff2f1; border: 1px solid #e5b8b5; border-radius: 4px; font-size: 12px; line-height: 1.45; }
+
 @media (max-width: 760px) {
   .creator-topbar { grid-template-columns: 1fr auto; height: 58px; padding: 0 12px; }
   .creator-project-state { display: none; }
@@ -110,6 +120,7 @@ button svg, a svg { width: 16px; height: 16px; flex: 0 0 auto; }
   .creator-possibilities { grid-template-columns: 1fr; }
   .creator-possibilities small { min-height: 0; }
   .creator-node-editor { inset: 68px 10px 10px; width: auto; }
+  .creator-model-setup { top: 68px; bottom: 10px; width: calc(100% - 20px); transform: translateX(-50%); overflow-y: auto; }
   .creator-node-editor > header, .creator-node-editor-body { padding: 14px; }
   .creator-composer-actions { flex-direction: column-reverse; }
   .creator-composer-actions button { width: 100%; }

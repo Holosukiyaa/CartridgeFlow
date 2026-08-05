@@ -73,6 +73,38 @@ class TrustedCreatorApiTests(unittest.TestCase):
         self.assertEqual("cartridgeflow.creator_capability_gap.v1", result.json()["capability_gap"]["schema"])
         chat.assert_not_called()
 
+    def test_canvas_setup_publishes_one_simulated_base_owned_starter_capability(self):
+        model = type("Model", (), {
+            "api_key": "test-key",
+            "provider_id": "creator-test-provider",
+            "model": "creator-test-model",
+        })()
+        report = {"status": "ok", "items": [
+            {"node_id": "ai-transform", "status": "ok"},
+        ]}
+        assignments = {"version": 1, "defaults": {}, "cartridges": {}, "nodes": {}}
+        with (
+            patch("core.llm.config_manager.resolve_model", return_value=model),
+            patch("core.llm.config_manager.get_provider", return_value={"id": model.provider_id}),
+            patch("core.llm.config_manager.get_assignments", return_value=assignments),
+            patch("core.llm.config_manager.save_assignments") as save_assignments,
+            patch("core.llm.config_manager.build_model_binding_report", return_value=report),
+        ):
+            created = self.client.post("/api/creator/starter-capabilities")
+            repeated = self.client.post("/api/creator/starter-capabilities")
+        self.assertEqual(200, created.status_code, created.text)
+        self.assertEqual(200, repeated.status_code, repeated.text)
+        self.assertTrue(created.json()["ready"])
+        self.assertEqual("starter-ai-transform", created.json()["capability"]["id"])
+        self.assertEqual(1, self.presets.latest_revision("starter-ai-transform"))
+        publication = self.presets.get_publication("starter-ai-transform")
+        self.assertEqual("llm_prompt", publication["mapping"]["state_template"]["action"])
+        entry = self.presets.list_entries()[0]
+        self.assertEqual("passed", entry["simulation_evidence"]["1"]["status"])
+        creator_registry = self.client.get("/api/creator/trusted-node-presets").json()
+        self.assertNotIn("state_template", json.dumps(creator_registry))
+        save_assignments.assert_called_once()
+
     def test_registry_composition_node_refinement_and_developer_confirmation(self):
         registered = self.client.put("/api/developer/trusted-node-presets/rss-source", json={"preset": PRESET, "mapping": mapping(), "expected_revision": 0})
         self.assertEqual(200, registered.status_code, registered.text)

@@ -15,8 +15,11 @@ import {
   ApiError,
   acceptCreatorProposal,
   composeCreatorRecipe,
+  connectCreatorAi,
   confirmCreatorNode,
   discoverCreatorPossibilities,
+  ensureCreatorStarterCapabilities,
+  fetchCreatorAiStatus,
   fetchCreatorProject,
   fetchCreatorSession,
   packageCreatorProject,
@@ -72,12 +75,13 @@ function FieldEditor({ node, values, onChange, disabled }: {
   </div>
 }
 
-function NodeEditor({ creator, node, busy, onCreatorChange, onClose }: {
+function NodeEditor({ creator, node, busy, onCreatorChange, onClose, onModelRequired }: {
   creator: CreatorProjection
   node: CreatorRecipeNode
   busy: boolean
   onCreatorChange: (creator: CreatorProjection) => void
   onClose: () => void
+  onModelRequired: () => void
 }) {
   const [values, setValues] = useState<Record<string, unknown>>(node.values)
   const [prompt, setPrompt] = useState('')
@@ -96,7 +100,13 @@ function NodeEditor({ creator, node, busy, onCreatorChange, onClose }: {
     setImpact('')
   }, [creator.pending_proposals, node.id, node.values])
 
-  const fail = (error: unknown) => showToast({ title: '节点调整未完成', description: friendlyError(error, 'node'), type: 'error' })
+  const fail = (error: unknown) => {
+    if (error instanceof ApiError && error.code.includes('MODEL_UNBOUND')) {
+      onModelRequired()
+      return
+    }
+    showToast({ title: '节点调整未完成', description: friendlyError(error, 'node'), type: 'error' })
+  }
   const stage = async () => {
     setWorking(true)
     try {
@@ -126,7 +136,10 @@ function NodeEditor({ creator, node, busy, onCreatorChange, onClose }: {
     setWorking(true)
     try {
       const result = await previewCreatorProposal(creator.session_id, proposal.proposal_id, freezeRevision)
-      setImpact(result.impact.plain_summary || '本次修改只影响当前节点。')
+      const changedSteps = result.impact.changed_steps?.length || 1
+      setImpact(changedSteps === 1
+        ? '检查完成：这次修改只影响当前节点。'
+        : `检查完成：这次修改会同时影响 ${changedSteps} 个相关节点。`)
     } catch (error) { fail(error) } finally { setWorking(false) }
   }
   const accept = async () => {
@@ -191,6 +204,46 @@ function NodeEditor({ creator, node, busy, onCreatorChange, onClose }: {
   </aside>
 }
 
+function ModelConnectionPanel({ onConnect, onClose }: {
+  onConnect: (connection: { base_url: string; api_key: string; model: string }) => Promise<void>
+  onClose: () => void
+}) {
+  const [baseUrl, setBaseUrl] = useState('https://api.deepseek.com')
+  const [apiKey, setApiKey] = useState('')
+  const [model, setModel] = useState('deepseek-chat')
+  const [working, setWorking] = useState(false)
+  const [error, setError] = useState('')
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault()
+    if (!baseUrl.trim() || !apiKey.trim()) return
+    setWorking(true)
+    setError('')
+    try {
+      await onConnect({ base_url: baseUrl.trim(), api_key: apiKey.trim(), model: model.trim() })
+    } catch (reason) {
+      setError(reason instanceof ApiError ? reason.message : '连接没有通过测试，请检查后重试。')
+    } finally { setWorking(false) }
+  }
+
+  return <aside className="creator-model-setup" aria-label="连接 AI 共创">
+    <header>
+      <div><span>AI 共创尚未连接</span><h2>连接 AI</h2></div>
+      <button className="icon-button" type="button" onClick={onClose} title="关闭"><X /></button>
+    </header>
+    <form onSubmit={submit}>
+      <label><span>服务地址</span><input value={baseUrl} disabled={working} onChange={(event) => setBaseUrl(event.currentTarget.value)} /></label>
+      <label><span>API Key</span><input type="password" autoComplete="off" value={apiKey} disabled={working} onChange={(event) => setApiKey(event.currentTarget.value)} /></label>
+      <label><span>模型</span><input value={model} disabled={working} onChange={(event) => setModel(event.currentTarget.value)} /></label>
+      {error && <div className="creator-connection-error" role="alert">{error}</div>}
+      <div>
+        <button className="secondary-button" type="button" disabled={working} onClick={onClose}>取消</button>
+        <button type="submit" disabled={working || !baseUrl.trim() || !apiKey.trim()}>{working ? <Loader2 className="spinning" /> : <Check />}连接并继续</button>
+      </div>
+    </form>
+  </aside>
+}
+
 export function CreatorStudio({ projectId }: { projectId: string }) {
   const [creator, setCreator] = useState<CreatorProjection | null>(null)
   const [goal, setGoal] = useState('')
@@ -200,7 +253,10 @@ export function CreatorStudio({ projectId }: { projectId: string }) {
   const [packageResult, setPackageResult] = useState<CreatorPackage | null>(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
+  const [modelSetupOpen, setModelSetupOpen] = useState(false)
+  const [pendingAiAction, setPendingAiAction] = useState<'discover' | 'compose' | 'node' | null>(null)
   const composerRef = useRef<HTMLTextAreaElement | null>(null)
+  const aiConnectedRef = useRef<boolean | null>(null)
 
   useEffect(() => {
     let active = true
@@ -215,6 +271,15 @@ export function CreatorStudio({ projectId }: { projectId: string }) {
     return () => { active = false }
   }, [projectId])
 
+  useEffect(() => {
+    fetchCreatorAiStatus()
+      .then((status) => {
+        aiConnectedRef.current = status.has_key
+        return status.has_key ? ensureCreatorStarterCapabilities() : null
+      })
+      .catch(() => null)
+  }, [])
+
   const selectedNode = useMemo(() => creator?.trusted_recipe.nodes.find((node) => node.id === selectedId) || null, [creator, selectedId])
   const confirmedCount = creator?.frozen_steps.length || 0
   const totalCount = creator?.trusted_recipe.nodes.length || 0
@@ -223,20 +288,38 @@ export function CreatorStudio({ projectId }: { projectId: string }) {
     setCreator(next)
     setPackageResult(null)
   }
+  const requestModelConnection = (action: 'discover' | 'compose' | 'node') => {
+    setPendingAiAction(action)
+    setModelSetupOpen(true)
+  }
+  const isModelBlock = (error: unknown, action: 'discover' | 'compose' | 'node') => {
+    if (!(error instanceof ApiError) || !error.code.includes('MODEL_UNBOUND')) return false
+    requestModelConnection(action)
+    return true
+  }
   const discover = async () => {
     if (goal.trim().length < 3) return
+    if (aiConnectedRef.current === false) {
+      requestModelConnection('discover')
+      return
+    }
     setBusy(true)
     setGap(null)
     try {
       const result = await discoverCreatorPossibilities(goal.trim())
       setPossibilities(result.possibilities)
     } catch (error) {
+      if (isModelBlock(error, 'discover')) return
       showToast({ title: '暂时无法打开新方向', description: friendlyError(error, 'discover'), type: 'error' })
     } finally { setBusy(false) }
   }
   const compose = async (requestedGoal: string) => {
     const nextGoal = requestedGoal.trim()
     if (nextGoal.length < 3) return
+    if (aiConnectedRef.current === false) {
+      requestModelConnection('compose')
+      return
+    }
     setBusy(true)
     setGap(null)
     setPossibilities([])
@@ -254,6 +337,7 @@ export function CreatorStudio({ projectId }: { projectId: string }) {
       setSelectedId('')
       showToast({ title: creator ? '整体草稿已更新' : '整体草稿已生成', description: '请逐个打开节点进行审核。', type: 'success' })
     } catch (error) {
+      if (isModelBlock(error, 'compose')) return
       showToast({ title: '整体编排未完成', description: friendlyError(error, 'compose'), type: 'error' })
     } finally { setBusy(false) }
   }
@@ -271,6 +355,20 @@ export function CreatorStudio({ projectId }: { projectId: string }) {
     } catch (error) {
       showToast({ title: '暂时不能打包', description: friendlyError(error, 'package'), type: 'error' })
     } finally { setBusy(false) }
+  }
+  const connectModel = async (connection: { base_url: string; api_key: string; model: string }) => {
+    await connectCreatorAi(connection)
+    aiConnectedRef.current = true
+    const retry = pendingAiAction
+    setModelSetupOpen(false)
+    setPendingAiAction(null)
+    showToast({
+      title: 'AI 已连接',
+      description: retry === 'node' ? '可以继续调整这个节点。' : '正在继续刚才的创作。',
+      type: 'success',
+    })
+    if (retry === 'discover') void discover()
+    if (retry === 'compose') void compose(goal)
   }
 
   return <main className="creator-workspace">
@@ -310,6 +408,7 @@ export function CreatorStudio({ projectId }: { projectId: string }) {
       {gap && <div className="creator-gap" role="status"><ShieldCheck /><div><strong>当前可信能力还不够</strong>{gap.needed_capabilities.map((item) => <span key={item}>{item}</span>)}<small>能力补齐后，可在这里直接重新生成。</small></div></div>}
     </form>}
 
-    {creator && selectedNode && <NodeEditor key={`${selectedNode.id}:${creator.revision}`} creator={creator} node={selectedNode} busy={busy} onCreatorChange={saveCreator} onClose={() => setSelectedId('')} />}
+    {creator && selectedNode && <NodeEditor key={`${selectedNode.id}:${creator.revision}`} creator={creator} node={selectedNode} busy={busy} onCreatorChange={saveCreator} onClose={() => setSelectedId('')} onModelRequired={() => requestModelConnection('node')} />}
+    {modelSetupOpen && <ModelConnectionPanel onConnect={connectModel} onClose={() => { setModelSetupOpen(false); setPendingAiAction(null) }} />}
   </main>
 }

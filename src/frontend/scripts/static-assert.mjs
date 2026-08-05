@@ -47,6 +47,9 @@ for (const forbidden of ['/api/lab', '/api/developer', 'runtime-handoff', 'compi
 }
 check(api.includes('/package') && workspace.includes('packageCreatorProject'), 'package is the sole Creator mapping action')
 check(api.includes('/possibilities') && api.includes('/compose-recipe') && api.includes('/recompose'), 'both discovery and whole-draft collaboration are wired')
+check(api.includes('/api/llm/detect') && api.includes('/api/llm/providers') && api.includes('/api/llm/test'), 'AI connection is completed from the Creator canvas')
+check(api.includes('/api/creator/starter-capabilities'), 'Creator can request the simulated Base-owned starter capability')
+check(workspace.includes('ModelConnectionPanel') && workspace.includes('aiConnectedRef.current === false'), 'AI actions resolve an unbound model before sending generation requests')
 check(workspace.includes('NodeEditor') && workspace.includes('refineCreatorNodeWithAi'), 'a selected node has a scoped deepening flow')
 check(canvas.includes('nodesDraggable={false}') && canvas.includes('nodesConnectable={false}'), 'the Creator canvas cannot place or wire engineering nodes')
 

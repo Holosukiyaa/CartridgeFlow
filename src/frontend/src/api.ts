@@ -60,6 +60,46 @@ export const fetchCreatorProject = (projectId: string) =>
 export const fetchCreatorSession = (sessionId: string) =>
   api<{ creator: CreatorProjection }>(sessionRoute(sessionId))
 
+export const fetchCreatorAiStatus = () =>
+  api<{ has_key: boolean; base_url: string; model: string }>('/api/settings')
+
+export async function connectCreatorAi(body: { base_url: string; api_key: string; model: string }) {
+  const detected = await api<{
+    provider: { name: string; api_type: string; base_url: string; default_model: string; wire_api: string; capabilities: string[]; timeout: number }
+    detection: { models: string[] }
+  }>('/api/llm/detect', {
+    method: 'POST',
+    body: JSON.stringify({ base_url: body.base_url, api_key: body.api_key, preferred_model: body.model }),
+    timeoutMs: 45_000,
+  })
+  const selectedModel = body.model.trim() || detected.provider.default_model
+  const saved = await api<{ provider: { id: string } }>('/api/llm/providers', {
+    method: 'POST',
+    body: JSON.stringify({
+      ...detected.provider,
+      id: 'creator-ai',
+      name: 'Creator AI',
+      api_key: body.api_key,
+      default_model: selectedModel,
+      available_models: detected.detection.models,
+      enabled: true,
+      adapter_profile: 'standard',
+    }),
+  })
+  await api('/api/llm/test', {
+    method: 'POST',
+    body: JSON.stringify({ provider_id: saved.provider.id, model: selectedModel, prompt: 'Reply with OK.', vision: false }),
+    timeoutMs: 45_000,
+  })
+  return api<{ ready: true; capability: { id: string; label: string } }>('/api/creator/starter-capabilities', {
+    method: 'POST',
+    timeoutMs: 45_000,
+  })
+}
+
+export const ensureCreatorStarterCapabilities = () =>
+  api<{ ready: true }>('/api/creator/starter-capabilities', { method: 'POST', timeoutMs: 45_000 })
+
 export const discoverCreatorPossibilities = (context: string) =>
   api<{ possibilities: CreatorPossibility[] }>('/api/creator/possibilities', {
     method: 'POST', body: JSON.stringify({ context }), timeoutMs: 45_000,

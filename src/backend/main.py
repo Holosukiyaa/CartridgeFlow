@@ -2423,6 +2423,139 @@ def _simulate_trusted_node_candidate(flow_id: str, node_id: str, cartridge: dict
     return evidence
 
 
+_CREATOR_STARTER_FLOW_ID = "builtin.creator-starter"
+_CREATOR_STARTER_NODE_ID = "ai-transform"
+_CREATOR_STARTER_PRESET_ID = "starter-ai-transform"
+
+
+def _ensure_creator_starter_capability() -> dict:
+    """Publish the Base-owned starter capability through the normal Developer trust gate."""
+    if trusted_node_presets.latest_revision(_CREATOR_STARTER_PRESET_ID):
+        entries = {item["id"]: item for item in trusted_node_presets.list_entries()}
+        if entries[_CREATOR_STARTER_PRESET_ID]["status"] != "active":
+            trusted_node_presets.set_activation(_CREATOR_STARTER_PRESET_ID, active=True)
+        return trusted_node_presets.get_publication(_CREATOR_STARTER_PRESET_ID)
+
+    from core.llm.config_manager import get_assignments, get_provider, resolve_model, save_assignments
+
+    model = resolve_model("mentor")
+    if not str(model.api_key or "").strip():
+        raise AuthoringServiceError(
+            "AI_CREATOR_FLOW_MODEL_UNBOUND",
+            "No configured whole-flow model is available.",
+            status=409,
+        )
+    provider = get_provider(model.provider_id)
+    if not provider:
+        raise AuthoringServiceError(
+            "AI_CREATOR_FLOW_MODEL_UNBOUND",
+            "The configured whole-flow model connection is unavailable.",
+            status=409,
+        )
+
+    binding = {"provider_id": model.provider_id, "model": model.model}
+    assignments = get_assignments()
+    assignments.setdefault("cartridges", {}).setdefault(_CREATOR_STARTER_FLOW_ID, {})["runtime"] = binding
+    assignments.setdefault("nodes", {}).setdefault(
+        f"{_CREATOR_STARTER_FLOW_ID}/{_CREATOR_STARTER_NODE_ID}", {},
+    )["runtime"] = binding
+    save_assignments(assignments)
+
+    default_instruction = "根据用户提供的内容和目标，整理出清晰、可检查的结果。"
+    preset = {
+        "schema": "cartridgeflow.trusted_node_preset.v1",
+        "protocol": {"id": "CF-TUNING", "version": "1.4"},
+        "id": _CREATOR_STARTER_PRESET_ID,
+        "revision": 1,
+        "creator_label": "AI 内容处理",
+        "creator_description": "根据你的要求整理、提炼、改写或创作内容，不读取外部实时信息。",
+        "match_terms": ["内容整理", "总结", "提炼", "改写", "创作", "AI"],
+        "editable_fields": [{
+            "id": "instruction",
+            "label": "处理要求",
+            "value_type": "string",
+            "required": True,
+            "default": default_instruction,
+        }],
+        "developer_mapping_key": "builtin.creator.ai-transform.v1",
+    }
+    state = {
+        "type": "process",
+        "kind": "decision",
+        "executor": "llm",
+        "effect": "none",
+        "action": "llm_prompt",
+        "model_role": "runtime",
+        "title": "AI content transform",
+        "inputs": {},
+        "outputs": {},
+        "params": {
+            "model_role": "runtime",
+            "prompt": default_instruction,
+            "output": "result",
+        },
+    }
+    manifest = {
+        "id": _CREATOR_STARTER_FLOW_ID,
+        "llm_recipe": {
+            "schema": "cartridgeflow.llm_recipe.v1",
+            "roles": [{
+                "id": "runtime",
+                "label": "Runtime",
+                "capability": "text_reasoning",
+                "api_type": "openai",
+                "wire_api": "chat_completions",
+                "model": "configured-locally",
+                "required": True,
+            }],
+        },
+    }
+    mapping = build_trusted_node_mapping(
+        preset,
+        state,
+        source_flow_id=_CREATOR_STARTER_FLOW_ID,
+        source_node_id=_CREATOR_STARTER_NODE_ID,
+        creator_bindings={"instruction": "params.prompt"},
+        source_manifest=manifest,
+    )
+    evidence = _simulate_trusted_node_candidate(
+        _CREATOR_STARTER_FLOW_ID,
+        _CREATOR_STARTER_NODE_ID,
+        {"manifest": manifest, "root_flow": {"states": {_CREATOR_STARTER_NODE_ID: state}}},
+        state,
+        mapping,
+    )
+    if evidence["status"] != "passed":
+        blocker = next((item for item in evidence["checks"] if item["status"] == "blocked"), {})
+        raise AuthoringServiceError(
+            str(blocker.get("code") or "CREATOR_STARTER_CAPABILITY_BLOCKED"),
+            str(blocker.get("message") or "The starter capability did not pass isolated simulation."),
+            status=409,
+        )
+    return trusted_node_presets.put(
+        preset,
+        mapping,
+        expected_revision=0,
+        simulation_evidence=evidence,
+    )
+
+
+@app.post("/api/creator/starter-capabilities")
+def ensure_creator_starter_capabilities():
+    try:
+        publication = _ensure_creator_starter_capability()
+        return {
+            "schema": "cartridgeflow.creator_starter_capabilities.v1",
+            "ready": True,
+            "capability": {
+                "id": publication["preset"]["id"],
+                "label": publication["preset"]["creator_label"],
+            },
+        }
+    except AuthoringServiceError as exc:
+        _authoring_error(exc)
+
+
 @app.get("/api/developer/flows/{flow_id}/nodes/{node_id}/trusted-node-preset/readiness")
 def get_developer_flow_node_trusted_readiness(flow_id: str, node_id: str):
     """Check whether one Developer node can produce a portable trusted snapshot."""

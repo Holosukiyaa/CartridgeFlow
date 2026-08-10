@@ -13,60 +13,18 @@
 <div class="knowledge-shell">
     {% include "protocol_sidebar.html" %}
     <main class="protocol-reader">
+        {% if selected_document %}
         <header class="reader-header">
             <div class="reader-kicker">{{ major_layer.number }} {{ major_layer.label }} / {{ layer.label }} / {{ family.protocol_id }} / {{ release.version }}</div>
-            <h1>{{ family.protocol_id }}</h1>
-            <p class="reader-name">{{ family.name or release.name or family.protocol_id }}</p>
-            <p class="reader-summary">{{ family.responsibility_boundary }}</p>
-            {% if family.exclusions_json %}<p class="reader-boundary">边界外：{{ family.exclusions_json|replace('[', '')|replace(']', '')|replace('"', '') }}</p>{% endif %}
+            <h1>{{ selected_section.heading if selected_section else selected_document.file_name }}</h1>
+            <p class="reader-path">{{ selected_document.artifact_path }}{% if selected_section %} / 第 {{ selected_section.line_start }} 行{% endif %}</p>
         </header>
-
-        <section class="reader-controls" aria-label="协议版本与状态">
-            <dl class="reader-facts">
-                <div><dt>版本</dt><dd>{{ release.version }}</dd></div>
-                <div><dt>负责人</dt><dd>{{ family.owner or "未指定" }}</dd></div>
-                <div><dt>规范状态</dt><dd>{{ release.specification_status or "未指定" }}</dd></div>
-                <div><dt>实现状态</dt><dd>{{ release.implementation_status or "未指定" }}</dd></div>
-                <div><dt>运行时适配器</dt><dd>{{ release.runtime_adapter or "未指定" }}</dd></div>
-            </dl>
-        </section>
-
-        <section class="reader-section">
-            <div class="reader-section-header"><h2>文件内容</h2><span>从左侧文件树切换</span></div>
-            {% if documents %}
-            {% if selected_document %}<article class="document-body"><h3>{{ selected_document.artifact_path }}</h3>{% if selected_document.is_json %}<pre>{{ selected_document.raw_content }}</pre>{% else %}{{ selected_document.rendered_content }}{% endif %}</article>{% endif %}
-            {% else %}<p class="empty-note">此版本没有可读文本材料。</p>{% endif %}
-        </section>
-
-        <details class="reader-disclosure">
-            <summary><span class="disclosure-title">数据合同</span><span class="disclosure-meta">协议族共 {{ contract_history.artifact_count }} 份材料 · {{ contract_history.section_count }} 个章节</span></summary>
-            <div class="disclosure-body">
-                <p class="reader-summary">归属于 {{ major_layer.label }} / {{ layer.label }} / {{ family.protocol_id }}。集中管理 schema、输入输出、端口、Store、绑定、资源和合同章节。</p>
-                {% if contract_history.versions %}<div class="contract-history-list">
-                    {% for item in contract_history.versions %}<div class="contract-history-item"><a href="/protocol/{{ source_id }}/{{ family.protocol_id }}?version={{ item.version|urlencode }}">{{ item.version }}</a><span class="document-meta">{{ item.artifact_count }} 份 · {{ item.section_count }} 章</span></div>{% endfor %}
-                </div>{% endif %}
-                <div class="contract-current">
-                    <h3>当前版本 {{ release.version }}</h3>
-                    {% if contract_artifacts or contract_sections %}
-                    <details class="contract-entries"><summary>展开 {{ contract_artifacts|length }} 份材料与 {{ contract_sections|length }} 个章节</summary>
-                        <div class="contract-index">
-                            {% for artifact in contract_artifacts %}<details><summary>{{ artifact.artifact_path }} <span class="document-meta">{{ artifact.artifact_kind }} · {{ artifact.byte_size }} bytes</span></summary><span class="contract-path">SHA-256 {{ artifact.content_digest }}</span></details>{% endfor %}
-                            {% for section in contract_sections %}<details><summary>{{ section.heading }} <span class="document-meta">{{ section.artifact_path }} · 第 {{ section.line_start }} 行</span></summary><div class="contract-body">{{ section.rendered_content }}</div></details>{% endfor %}
-                        </div>
-                    </details>
-                    {% elif contract_history.versions %}<p class="empty-note">此版本没有重复收录合同正文，可从上方版本谱系进入承载版本。</p>
-                    {% else %}<p class="empty-note">此协议族目前尚未登记可识别的数据合同材料。</p>{% endif %}
-                </div>
-            </div>
-        </details>
-
-        <details class="reader-disclosure">
-            <summary><span class="disclosure-title">协议关系</span><span class="disclosure-meta">{{ relations|length }} 条依赖、信任或迁移关系</span></summary>
-            <div class="disclosure-body">
-                {% if relations %}<div class="relation-list">{% for relation in relations %}<div class="relation-item"><span class="relation-label">{{ relation.label }}</span><a href="{{ relation.target_url }}">{{ relation.target_name }} @ {{ relation.target_version }}</a></div>{% endfor %}</div>
-                {% else %}<p class="empty-note">此版本没有登记外部关系。</p>{% endif %}
-            </div>
-        </details>
+        <article class="document-body">
+            {% if selected_section %}{{ selected_section.rendered_content }}
+            {% elif selected_document.is_json %}<pre>{{ selected_document.raw_content }}</pre>
+            {% else %}{{ selected_document.rendered_content }}{% endif %}
+        </article>
+        {% else %}<p class="empty-note">此版本没有可读内容。</p>{% endif %}
     </main>
 </div>
 <script>
@@ -77,7 +35,7 @@
     const paneRect = treePane.getBoundingClientRect();
     const fileRect = activeFile.getBoundingClientRect();
     if (fileRect.top < paneRect.top || fileRect.bottom > paneRect.bottom) {
-        treePane.scrollTop += fileRect.top - paneRect.top - paneRect.height / 3;
+        treePane.scrollTop += fileRect.top - paneRect.top - treePane.clientHeight / 3;
     }
 })();
 </script>

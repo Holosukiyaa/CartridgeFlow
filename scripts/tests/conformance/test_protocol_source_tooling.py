@@ -105,7 +105,7 @@ class ProtocolSourceToolingTests(unittest.TestCase):
         self.assertIn("运行查询", (templates / "query.html").read_text(encoding="utf-8"))
         self.assertIn(
             "数据合同",
-            (templates / "protocol_detail.html").read_text(encoding="utf-8"),
+            (templates / "protocol_sidebar.html").read_text(encoding="utf-8"),
         )
         self.assertIn(
             "协议文件树",

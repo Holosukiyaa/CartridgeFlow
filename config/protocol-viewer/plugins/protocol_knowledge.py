@@ -80,13 +80,6 @@ DEFAULT_LAYER = {
     "description": "暂未归入标准协议层的治理材料。",
     "order": 99,
 }
-RELATION_LABELS = {
-    "requires": "依赖",
-    "trusts": "信任 / 承载",
-    "hosted_by": "承载于",
-    "supersedes": "替代",
-    "migrates_to": "迁移至",
-}
 VERSION_RE = re.compile(r"\d+")
 CONTRACT_TOKENS = (
     "schema",
@@ -134,23 +127,36 @@ def _detail_url(source_id: str, protocol_id: str, version: str | None = None) ->
     return f"{path}?version={quote(version, safe='')}" if version else path
 
 
-def _document_url(source_id: str, protocol_id: str, version: str, artifact_path: str) -> str:
-    return (
+def _document_url(
+    source_id: str,
+    protocol_id: str,
+    version: str,
+    artifact_path: str,
+    *,
+    kind: str | None = None,
+    section_key: str | None = None,
+) -> str:
+    url = (
         f"{_detail_url(source_id, protocol_id, version)}"
         f"&document={quote(artifact_path, safe='')}"
     )
+    if kind:
+        url += f"&kind={quote(kind, safe='')}"
+    if section_key:
+        url += f"&section={quote(section_key, safe='')}"
+    return url
 
 
-def _is_contract_artifact(artifact: dict, sections: list[dict] | None = None) -> bool:
+def _is_contract_artifact(artifact: dict) -> bool:
     path = str(artifact.get("artifact_path") or "").lower()
     if artifact.get("artifact_kind") == "schema":
         return True
-    if any(token in path for token in CONTRACT_TOKENS):
-        return True
-    return any(
-        any(token in str(section.get("heading") or "").lower() for token in CONTRACT_TOKENS)
-        for section in sections or []
-    )
+    return any(token in path for token in CONTRACT_TOKENS)
+
+
+def _is_contract_section(section: dict) -> bool:
+    heading = str(section.get("heading") or "").lower()
+    return any(token in heading for token in CONTRACT_TOKENS)
 
 
 def _pretty_json(text: str) -> str:
@@ -166,6 +172,7 @@ def _document_context(artifact: dict, selected: bool = False) -> dict:
     raw = _pretty_json(text) if is_json else text
     return {
         **artifact,
+        "file_name": str(artifact.get("artifact_path") or "").rsplit("/", 1)[-1],
         "selected": selected,
         "is_json": is_json,
         "raw_content": raw,
@@ -173,66 +180,6 @@ def _document_context(artifact: dict, selected: bool = False) -> dict:
             None
             if is_json
             else render_markdown(raw, extensions=["tables", "fenced_code"])
-        ),
-    }
-
-
-async def _contract_history(database, source_id: str, protocol_id: str) -> dict:
-    artifacts = await _rows(
-        database,
-        "SELECT release.version, artifact.artifact_id, artifact.artifact_path, "
-        "artifact.artifact_kind, artifact.media_type, artifact.byte_size, artifact.content_digest "
-        "FROM artifact JOIN protocol_release AS release "
-        "ON release.release_key = artifact.release_key "
-        "WHERE release.source_id = :source_id AND release.protocol_id = :protocol_id "
-        "ORDER BY release.version, artifact.artifact_path",
-        {"source_id": source_id, "protocol_id": protocol_id},
-    )
-    sections = await _rows(
-        database,
-        "SELECT release.version, section.artifact_id, artifact.artifact_path, "
-        "section.heading, section.line_start "
-        "FROM document_section AS section "
-        "JOIN protocol_release AS release ON release.release_key = section.release_key "
-        "JOIN artifact ON artifact.artifact_id = section.artifact_id "
-        "WHERE release.source_id = :source_id AND release.protocol_id = :protocol_id "
-        "ORDER BY release.version, artifact.artifact_path, section.line_start",
-        {"source_id": source_id, "protocol_id": protocol_id},
-    )
-    sections_by_artifact: dict[str, list[dict]] = defaultdict(list)
-    for section in sections:
-        sections_by_artifact[section["artifact_id"]].append(section)
-    contract_artifacts = [
-        artifact
-        for artifact in artifacts
-        if _is_contract_artifact(
-            artifact,
-            sections_by_artifact.get(artifact["artifact_id"], []),
-        )
-    ]
-    contract_sections = [
-        section
-        for section in sections
-        if any(token in str(section.get("heading") or "").lower() for token in CONTRACT_TOKENS)
-    ]
-    versions: dict[str, dict] = {}
-    for artifact in contract_artifacts:
-        versions.setdefault(
-            artifact["version"],
-            {"version": artifact["version"], "artifact_count": 0, "section_count": 0},
-        )["artifact_count"] += 1
-    for section in contract_sections:
-        versions.setdefault(
-            section["version"],
-            {"version": section["version"], "artifact_count": 0, "section_count": 0},
-        )["section_count"] += 1
-    return {
-        "artifact_count": len(contract_artifacts),
-        "section_count": len(contract_sections),
-        "versions": sorted(
-            versions.values(),
-            key=lambda value: _version_key(value["version"]),
-            reverse=True,
         ),
     }
 
@@ -256,7 +203,7 @@ async def _release_cards(database, source_id: str) -> list[dict]:
         by_protocol[release["protocol_id"]].append(release)
     reader_artifacts = await _rows(
         database,
-        "SELECT release.protocol_id, release.version, artifact.artifact_path, "
+        "SELECT release.protocol_id, release.version, artifact.artifact_id, artifact.artifact_path, "
         "artifact.artifact_kind, artifact.media_type "
         "FROM artifact JOIN protocol_release AS release "
         "ON release.release_key = artifact.release_key "
@@ -274,6 +221,20 @@ async def _release_cards(database, source_id: str) -> list[dict]:
             artifact["artifact_path"],
         )
         artifacts_by_release[(artifact["protocol_id"], artifact["version"])].append(artifact)
+    reader_sections = await _rows(
+        database,
+        "SELECT release.protocol_id, release.version, section.section_key, "
+        "artifact.artifact_path, section.heading, section.line_start "
+        "FROM document_section AS section "
+        "JOIN protocol_release AS release ON release.release_key = section.release_key "
+        "JOIN artifact ON artifact.artifact_id = section.artifact_id "
+        "WHERE release.source_id = :source_id AND artifact.text_content IS NOT NULL "
+        "ORDER BY release.protocol_id, release.version, artifact.artifact_path, section.line_start",
+        {"source_id": source_id},
+    )
+    sections_by_release: dict[tuple[str, str], list[dict]] = defaultdict(list)
+    for section in reader_sections:
+        sections_by_release[(section["protocol_id"], section["version"])].append(section)
     cards: list[dict] = []
     for family in families:
         protocol_releases = sorted(
@@ -284,20 +245,76 @@ async def _release_cards(database, source_id: str) -> list[dict]:
             continue
         latest = protocol_releases[-1]
         layer = _layer(latest["category"])
-        contract_history = await _contract_history(
-            database,
-            source_id,
-            family["protocol_id"],
-        )
         release_nodes = []
         for item in reversed(protocol_releases):
+            release_documents = artifacts_by_release.get(
+                (family["protocol_id"], item["version"]),
+                [],
+            )
+            explicit_contract_paths = {
+                document["artifact_path"]
+                for document in release_documents
+                if _is_contract_artifact(document)
+            }
+            contract_documents = []
+            for document in release_documents:
+                artifact_path = document["artifact_path"]
+                if artifact_path in explicit_contract_paths:
+                    contract_documents.append(
+                        {
+                            "artifact_path": artifact_path,
+                            "file_name": document["file_name"],
+                            "direct_url": _document_url(
+                                source_id,
+                                family["protocol_id"],
+                                item["version"],
+                                artifact_path,
+                                kind="contract",
+                            ),
+                            "entries": [],
+                        }
+                    )
+                    continue
+                contract_sections = [
+                    section
+                    for section in sections_by_release.get(
+                        (family["protocol_id"], item["version"]),
+                        [],
+                    )
+                    if section["artifact_path"] == artifact_path
+                    and _is_contract_section(section)
+                ]
+                if contract_sections:
+                    contract_documents.append(
+                        {
+                            "artifact_path": artifact_path,
+                            "file_name": document["file_name"],
+                            "direct_url": None,
+                            "entries": [
+                                {
+                                    **section,
+                                    "detail_url": _document_url(
+                                        source_id,
+                                        family["protocol_id"],
+                                        item["version"],
+                                        artifact_path,
+                                        kind="contract",
+                                        section_key=section["section_key"],
+                                    ),
+                                }
+                                for section in contract_sections
+                            ],
+                        }
+                    )
             release_nodes.append(
                 {
                     **item,
                     "detail_url": _detail_url(source_id, family["protocol_id"], item["version"]),
-                    "documents": artifacts_by_release.get(
-                        (family["protocol_id"], item["version"]),
-                        [],
+                    "documents": release_documents,
+                    "contract_documents": contract_documents,
+                    "contract_count": sum(
+                        1 if document["direct_url"] else len(document["entries"])
+                        for document in contract_documents
                     ),
                 }
             )
@@ -310,9 +327,6 @@ async def _release_cards(database, source_id: str) -> list[dict]:
                 "versions": [item["version"] for item in reversed(protocol_releases)],
                 "release_nodes": release_nodes,
                 "detail_url": _detail_url(source_id, family["protocol_id"], latest["version"]),
-                "contract_count": contract_history["artifact_count"],
-                "contract_section_count": contract_history["section_count"],
-                "contract_version_count": len(contract_history["versions"]),
             }
         )
     return sorted(cards, key=lambda value: (value["layer"]["order"], value["protocol_id"]))
@@ -323,6 +337,8 @@ def _catalog_groups(
     active_protocol_id: str | None = None,
     active_version: str | None = None,
     active_document: str | None = None,
+    active_kind: str | None = None,
+    active_section: str | None = None,
 ) -> list[dict]:
     groups = []
     known_categories = {
@@ -336,14 +352,44 @@ def _catalog_groups(
         release_nodes = []
         for release in card["release_nodes"]:
             release_active = protocol_active and release["version"] == active_version
+            contract_documents = []
+            for contract_document in release["contract_documents"]:
+                direct_active = (
+                    release_active
+                    and active_kind == "contract"
+                    and not active_section
+                    and contract_document["artifact_path"] == active_document
+                )
+                entries = [
+                    {
+                        **entry,
+                        "active": release_active
+                        and entry["section_key"] == active_section,
+                    }
+                    for entry in contract_document["entries"]
+                ]
+                contract_documents.append(
+                    {
+                        **contract_document,
+                        "active": direct_active or any(entry["active"] for entry in entries),
+                        "direct_active": direct_active,
+                        "entries": entries,
+                    }
+                )
+            contract_active = any(document["active"] for document in contract_documents)
             release_nodes.append(
                 {
                     **release,
                     "active": release_active,
+                    "contract_active": contract_active,
+                    "document_active": release_active and not contract_active,
+                    "contract_documents": contract_documents,
                     "documents": [
                         {
                             **document,
                             "active": release_active
+                            and active_kind != "contract"
+                            and not active_section
                             and document["artifact_path"] == active_document,
                         }
                         for document in release["documents"]
@@ -354,6 +400,8 @@ def _catalog_groups(
             {
                 **card,
                 "active": protocol_active,
+                "contract_active": any(node["contract_active"] for node in release_nodes),
+                "document_active": any(node["document_active"] for node in release_nodes),
                 "release_nodes": release_nodes,
             }
         )
@@ -369,7 +417,14 @@ def _catalog_groups(
                 {
                     "layer": _layer(category),
                     "protocols": protocols,
+                    "contract_protocols": [
+                        protocol
+                        for protocol in protocols
+                        if any(node["contract_count"] for node in protocol["release_nodes"])
+                    ],
                     "active": any(protocol["active"] for protocol in protocols),
+                    "contract_active": any(protocol["contract_active"] for protocol in protocols),
+                    "document_active": any(protocol["document_active"] for protocol in protocols),
                 }
             )
         if major["key"] == "foundation":
@@ -379,11 +434,19 @@ def _catalog_groups(
                 if card["latest"]["category"] not in known_categories
             ]
             if uncategorized:
+                contract_protocols = [
+                    protocol
+                    for protocol in uncategorized
+                    if any(node["contract_count"] for node in protocol["release_nodes"])
+                ]
                 sublayers.append(
                     {
                         "layer": DEFAULT_LAYER,
                         "protocols": uncategorized,
+                        "contract_protocols": contract_protocols,
                         "active": any(card["active"] for card in uncategorized),
+                        "contract_active": any(card["contract_active"] for card in uncategorized),
+                        "document_active": any(card["document_active"] for card in uncategorized),
                     }
                 )
         groups.append(
@@ -403,6 +466,8 @@ async def _catalog_context(
     active_protocol_id: str | None = None,
     active_version: str | None = None,
     active_document: str | None = None,
+    active_kind: str | None = None,
+    active_section: str | None = None,
 ) -> dict:
     cards = await _release_cards(database, source_id)
     return {
@@ -413,6 +478,8 @@ async def _catalog_context(
             active_protocol_id,
             active_version,
             active_document,
+            active_kind,
+            active_section,
         ),
         "sources": (
             {
@@ -496,26 +563,17 @@ async def protocol_detail(request, datasette):
         "WHERE section.release_key = :release_key ORDER BY artifact.artifact_path, section.line_start",
         {"release_key": release["release_key"]},
     )
-    sections_by_artifact: dict[str, list[dict]] = defaultdict(list)
-    for section in sections:
-        sections_by_artifact[section["artifact_id"]].append(section)
-    contract_artifacts = [
-        artifact
-        for artifact in artifacts
-        if _is_contract_artifact(artifact, sections_by_artifact.get(artifact["artifact_id"], []))
-    ]
-    contract_sections = [
-        section
-        for section in sections
-        if any(token in str(section.get("heading") or "").lower() for token in CONTRACT_TOKENS)
-    ]
-    contract_history = await _contract_history(database, source_id, protocol_id)
     documents = []
     for artifact in artifacts:
         if artifact.get("text_content") is None:
             continue
         documents.append(_document_context(artifact))
     requested_document = request.args.get("document")
+    requested_section = request.args.get("section")
+    selected_section = next(
+        (section for section in sections if section["section_key"] == requested_section),
+        None,
+    )
     preferred = next(
         (
             document
@@ -525,7 +583,11 @@ async def protocol_detail(request, datasette):
         ),
         documents[0] if documents else None,
     )
-    selected_path = requested_document or (preferred["artifact_path"] if preferred else None)
+    selected_path = (
+        selected_section["artifact_path"]
+        if selected_section
+        else requested_document or (preferred["artifact_path"] if preferred else None)
+    )
     selected_document = next(
         (document for document in documents if document["artifact_path"] == selected_path),
         preferred,
@@ -534,38 +596,17 @@ async def protocol_detail(request, datasette):
         {**document, "selected": document is selected_document}
         for document in documents
     ]
-    target_releases = {
-        (item["source_id"], item["protocol_id"], item["version"]): item
-        for item in await _rows(
-            database,
-            "SELECT source_id, protocol_id, version, name FROM protocol_release",
-        )
-    }
-    relation_rows = await _rows(
-        database,
-        "SELECT relation_type, target_source_id, target_protocol_id, target_version, metadata_json "
-        "FROM release_relation WHERE source_release_key = :release_key ORDER BY relation_type, target_protocol_id",
-        {"release_key": release["release_key"]},
+    selected_section_context = (
+        {
+            **selected_section,
+            "rendered_content": render_markdown(
+                selected_section["content"],
+                extensions=["tables", "fenced_code"],
+            ),
+        }
+        if selected_section
+        else None
     )
-    relations = []
-    for relation in relation_rows:
-        target_source = relation["target_source_id"] or source_id
-        target = target_releases.get(
-            (target_source, relation["target_protocol_id"], relation["target_version"]),
-            {},
-        )
-        relations.append(
-            {
-                **relation,
-                "label": RELATION_LABELS.get(relation["relation_type"], relation["relation_type"]),
-                "target_name": target.get("name") or relation["target_protocol_id"],
-                "target_url": _detail_url(
-                    target_source,
-                    relation["target_protocol_id"],
-                    relation["target_version"],
-                ),
-            }
-        )
     context = {
         "family": family,
         "layer": _layer(release["category"]),
@@ -576,19 +617,15 @@ async def protocol_detail(request, datasette):
             protocol_id,
             release["version"],
             selected_document["artifact_path"] if selected_document else None,
+            "contract" if request.args.get("kind") == "contract" or selected_section else None,
+            selected_section["section_key"] if selected_section else None,
         ),
         "source_id": source_id,
         "release": release,
         "releases": releases,
-        "relations": relations,
         "documents": documents,
         "selected_document": selected_document,
-        "contract_artifacts": contract_artifacts,
-        "contract_sections": [
-            {**section, "rendered_content": render_markdown(section["content"], extensions=["tables", "fenced_code"])}
-            for section in contract_sections
-        ],
-        "contract_history": contract_history,
+        "selected_section": selected_section_context,
         "detail_url": _detail_url(source_id, protocol_id),
     }
     body = await datasette.render_template(

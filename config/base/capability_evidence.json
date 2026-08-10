@@ -16,6 +16,22 @@
       "failure_tests": ["test_llm_recipe.LlmRecipeManifestTests.test_rejects_local_credentials_and_urls"],
       "ui": {"status": "not_applicable", "entries": []}
     },
+    "data_contract_governance": {
+      "verification": "verified",
+      "implementation": ["src/core/protocol/data_contracts.py#DataContractRegistry", "src/core/protocol/base_manifest.py#validate_base_implementation", "scripts/validate_data_contract_support.py"],
+      "positive_tests": ["test_data_contract_support.DataContractSupportTests.test_base_supports_all_active_contract_releases", "test_data_contract_support.DataContractSupportTests.test_registered_json_contracts_accept_valid_values", "test_data_contract_support.DataContractSupportTests.test_presentation_contract_applies_settings_only_to_an_in_memory_flow_copy", "test_data_contract_support.DataContractSupportTests.test_settings_store_isolates_publisher_and_cartridge_identities"],
+      "failure_tests": ["test_data_contract_support.DataContractSupportTests.test_missing_support_or_failure_evidence_fails_closed", "test_data_contract_support.DataContractSupportTests.test_registered_json_contracts_reject_invalid_values", "test_data_contract_support.DataContractSupportTests.test_presentation_contract_rejects_missing_targets_and_unknown_values"],
+      "ui": {"status": "not_applicable", "entries": []},
+      "notes": "Exact contract releases, source definitions, validator references, implementation evidence, and positive/failure tests are checked fail-closed."
+    },
+    "artifact_contract": {
+      "verification": "verified",
+      "implementation": ["src/core/cartridge/artifacts.py#ArtifactManager"],
+      "positive_tests": ["test_process_nodes.ProcessNodeExecutionTests.test_artifacts_are_scoped_to_the_current_run_with_external_data_root"],
+      "failure_tests": ["test_process_nodes.ProcessNodeExecutionTests.test_artifacts_are_scoped_to_the_current_run_with_external_data_root"],
+      "ui": {"status": "not_applicable", "entries": []},
+      "notes": "The same boundary test proves valid run-local resolution and rejection of forged paths and run identifiers."
+    },
     "compatibility": {
       "verification": "verified",
       "implementation": ["src/core/protocol/compatibility.py#build_compatibility_report"],
@@ -264,7 +280,7 @@
       "verification": "verified",
       "implementation": ["src/core/runtime/checkpoints.py#CheckpointManager", "src/core/cartridge/runner.py#CartridgeRunner._checkpoint_handlers"],
       "positive_tests": ["test_runtime_recovery.RuntimeRecoveryTests.test_checkpoint_round_trip_preserves_run_and_store", "test_runtime_recovery.RuntimeRecoveryTests.test_completed_flow_has_before_and_after_checkpoint_for_every_node"],
-      "failure_tests": [],
+      "failure_tests": ["test_runtime_recovery.RuntimeRecoveryTests.test_checkpoint_rejects_invalid_schema"],
       "ui": {"status": "not_applicable", "entries": []}
     },
     "runtime_recovery": {
@@ -386,6 +402,22 @@
       "failure_tests": ["test_release_builder.ReleaseBuilderTests.test_archive_reader_rejects_duplicate_members_before_contract_validation", "test_release_builder.ReleaseBuilderTests.test_untrusted_or_tampered_signature_blocks_activation", "test_release_builder.ReleaseBuilderTests.test_builder_rejects_local_runtime_artifacts", "test_release_envelope_protocol.ReleaseEnvelopeProtocolTests.test_altered_or_unlisted_bundle_content_is_rejected"],
       "ui": {"status": "not_applicable", "entries": []},
       "notes": "Base creates deterministic signed archives, verifies Ed25519 signatures, checks a user-owned local trust store, stages only verified payloads, and exposes activation readiness after compatibility and resource preflight."
+    },
+    "release_envelope_v2": {
+      "verification": "verified",
+      "implementation": ["src/core/protocol/release_envelope.py#validate_release_envelope", "src/core/protocol/release_builder.py#build_release_archive", "src/core/protocol/data_contracts.py#validate_cartridge_presentation_contracts", "src/core/protocol/data_contracts.py#apply_cartridge_settings", "src/core/protocol/data_contracts.py#CartridgeSettingsStore"],
+      "positive_tests": ["test_release_builder.ReleaseBuilderTests.test_builds_and_inspects_cf_cre_v2_with_four_public_contracts", "test_data_contract_support.DataContractSupportTests.test_presentation_contract_applies_settings_only_to_an_in_memory_flow_copy", "test_data_contract_support.DataContractSupportTests.test_settings_store_isolates_publisher_and_cartridge_identities"],
+      "failure_tests": ["test_release_builder.ReleaseBuilderTests.test_cf_cre_v2_rejects_invalid_or_incomplete_presentation_contracts", "test_data_contract_support.DataContractSupportTests.test_presentation_contract_rejects_missing_targets_and_unknown_values"],
+      "ui": {"status": "not_applicable", "entries": []},
+      "notes": "CF-CRE@2 builds, hashes, signs, reads, and validates four public contracts while keeping settings bindings private in the signed payload."
+    },
+    "runtime_profile_negotiation": {
+      "verification": "verified",
+      "implementation": ["src/core/protocol/data_contracts.py#build_runtime_profile_compatibility_report", "src/core/protocol/release_builder.py#build_release_archive"],
+      "positive_tests": ["test_data_contract_support.DataContractSupportTests.test_runtime_profile_accepts_derived_supported_payload", "test_release_builder.ReleaseBuilderTests.test_builds_and_inspects_cf_cre_v2_with_four_public_contracts"],
+      "failure_tests": ["test_data_contract_support.DataContractSupportTests.test_runtime_profile_rejects_target_and_derived_capability_mismatches", "test_release_builder.ReleaseBuilderTests.test_cf_cre_v2_rejects_invalid_or_incomplete_presentation_contracts"],
+      "ui": {"status": "not_applicable", "entries": []},
+      "notes": "The authoring Base and Desktop Runner independently derive compatibility from signed payload facts with the same stable CF-DRP error codes."
     }
   },
   "capabilities": {

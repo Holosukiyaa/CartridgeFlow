@@ -464,7 +464,7 @@ class AgentSquadRuntime:
             run_dir=run_dir,
             artifact_id="agent_squad_response",
             name="response.md",
-            content=self._render_markdown(task, content, worker, status),
+            content=self._format_markdown_artifact(task, content, worker, status),
             artifact_type="text",
             mime_type="text/markdown",
         )
@@ -508,7 +508,7 @@ class AgentSquadRuntime:
             "message": tip,
         }
 
-    def _render_markdown(self, task: str, content: str, worker: _WorkerAgent, status: str) -> str:
+    def _format_markdown_artifact(self, task: str, content: str, worker: _WorkerAgent, status: str) -> str:
         """生成 Markdown 格式的 artifact 内容。"""
         status_text = "已完成" if worker.finished else f"未完成（已达最大轮数 {self.MAX_ROUNDS}）"
         return (

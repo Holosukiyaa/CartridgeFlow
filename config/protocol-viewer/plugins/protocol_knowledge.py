@@ -1,4 +1,4 @@
-"""Progressive protocol catalog and detail pages for the local viewer."""
+"""Simple tree and reader pages for the protocol knowledge database."""
 
 from __future__ import annotations
 
@@ -12,98 +12,15 @@ from datasette.utils.asgi import Response
 from datasette_render_markdown import render_markdown
 
 
-CATEGORY_LAYERS = {
-    "base": {
-        "key": "foundation",
-        "label": "基础合同",
-        "description": "跨卡带的宿主安全、执行服务、存储边界与兼容性底线。",
-        "order": 0,
-    },
-    "flow-authoring": {
-        "key": "flow",
-        "label": "Flow 与数据合同",
-        "description": "Flow 的结构、节点、端口、输入输出、Store、工具与运行时执行契约。",
-        "order": 1,
-    },
-    "tuning": {
-        "key": "tuning",
-        "label": "受信语义配方",
-        "description": "由 Flow 层承载的语义配方、能力匹配、调优版本与作者侧物化输入。",
-        "order": 2,
-    },
-    "release-envelope": {
-        "key": "release",
-        "label": "发行封装",
-        "description": "发行布局、哈希、签名、安装、激活与运行时交接。",
-        "order": 3,
-    },
-    "runtime-profiles": {
-        "key": "runtime",
-        "label": "运行时画像",
-        "description": "宿主能力声明、目标协商与 fail-closed 支持检查。",
-        "order": 4,
-    },
-}
 FOUR_MAJOR_LAYERS = (
-    {
-        "key": "foundation",
-        "number": "01",
-        "label": "基础与边界",
-        "description": "定义所有卡带共同遵守的宿主底线。",
-        "categories": ("base",),
-    },
-    {
-        "key": "authoring",
-        "number": "02",
-        "label": "创作与数据",
-        "description": "定义 Flow、数据合同与受信语义配方。",
-        "categories": ("flow-authoring", "tuning"),
-    },
-    {
-        "key": "release",
-        "number": "03",
-        "label": "发行与信任",
-        "description": "定义协议如何封装、验证、安装和激活。",
-        "categories": ("release-envelope",),
-    },
-    {
-        "key": "runtime",
-        "number": "04",
-        "label": "运行时适配",
-        "description": "定义宿主能力画像与运行前支持检查。",
-        "categories": ("runtime-profiles",),
-    },
+    {"number": "01", "label": "基础与边界"},
+    {"number": "02", "label": "创作与数据"},
+    {"number": "03", "label": "发行与信任"},
+    {"number": "04", "label": "运行与证明"},
 )
-DEFAULT_LAYER = {
-    "key": "other",
-    "label": "待归类材料",
-    "description": "暂未归入标准协议层的治理材料。",
-    "order": 99,
-}
+SOURCE_LABELS = {"current": "正式线", "temp-runtime": "演进线"}
 VERSION_RE = re.compile(r"\d+")
-CONTRACT_TOKENS = (
-    "schema",
-    "contract",
-    "data",
-    "port",
-    "input",
-    "output",
-    "binding",
-    "store",
-    "edge",
-    "resource",
-    "合同",
-    "数据",
-    "端口",
-    "输入",
-    "输出",
-    "绑定",
-)
 DOCUMENT_PRIORITY = ("readme.md", "overview.md", "specification.md")
-
-
-def _version_key(version: str) -> tuple[int, ...]:
-    return tuple(int(value) for value in VERSION_RE.findall(str(version))) or (0,)
 
 
 async def _rows(database, sql: str, params: dict | None = None) -> list[dict]:
@@ -111,52 +28,28 @@ async def _rows(database, sql: str, params: dict | None = None) -> list[dict]:
     return [dict(zip(result.columns, row)) for row in result.rows]
 
 
-def _layer(category: str | None) -> dict:
-    return CATEGORY_LAYERS.get(category or "", DEFAULT_LAYER)
+def _version_key(version: str) -> tuple[int, ...]:
+    return tuple(int(value) for value in VERSION_RE.findall(str(version))) or (0,)
 
 
-def _major_layer(category: str | None) -> dict:
-    for major in FOUR_MAJOR_LAYERS:
-        if category in major["categories"]:
-            return major
-    return FOUR_MAJOR_LAYERS[0]
-
-
-def _detail_url(source_id: str, protocol_id: str, version: str | None = None) -> str:
-    path = f"/protocol/{quote(source_id, safe='')}/{quote(protocol_id, safe='')}"
+def _contract_url(contract_id: str, version: str | None = None) -> str:
+    path = f"/contract/{quote(contract_id, safe='')}"
     return f"{path}?version={quote(version, safe='')}" if version else path
 
 
-def _document_url(
+def _protocol_url(
     source_id: str,
     protocol_id: str,
-    version: str,
-    artifact_path: str,
-    *,
-    kind: str | None = None,
-    section_key: str | None = None,
+    version: str | None = None,
+    artifact_path: str | None = None,
 ) -> str:
-    url = (
-        f"{_detail_url(source_id, protocol_id, version)}"
-        f"&document={quote(artifact_path, safe='')}"
-    )
-    if kind:
-        url += f"&kind={quote(kind, safe='')}"
-    if section_key:
-        url += f"&section={quote(section_key, safe='')}"
-    return url
-
-
-def _is_contract_artifact(artifact: dict) -> bool:
-    path = str(artifact.get("artifact_path") or "").lower()
-    if artifact.get("artifact_kind") == "schema":
-        return True
-    return any(token in path for token in CONTRACT_TOKENS)
-
-
-def _is_contract_section(section: dict) -> bool:
-    heading = str(section.get("heading") or "").lower()
-    return any(token in heading for token in CONTRACT_TOKENS)
+    path = f"/protocol/{quote(source_id, safe='')}/{quote(protocol_id, safe='')}"
+    query = []
+    if version:
+        query.append(f"version={quote(version, safe='')}")
+    if artifact_path:
+        query.append(f"document={quote(artifact_path, safe='')}")
+    return f"{path}?{'&'.join(query)}" if query else path
 
 
 def _pretty_json(text: str) -> str:
@@ -166,467 +59,328 @@ def _pretty_json(text: str) -> str:
         return text
 
 
-def _document_context(artifact: dict, selected: bool = False) -> dict:
-    text = artifact.get("text_content") or ""
+def _reader_document(artifact: dict) -> dict:
+    text = str(artifact.get("text_content") or "")
     is_json = str(artifact.get("media_type") or "").startswith("application/json")
     raw = _pretty_json(text) if is_json else text
     return {
         **artifact,
-        "file_name": str(artifact.get("artifact_path") or "").rsplit("/", 1)[-1],
-        "selected": selected,
+        "file_name": str(artifact["artifact_path"]).rsplit("/", 1)[-1],
         "is_json": is_json,
         "raw_content": raw,
-        "rendered_content": (
-            None
-            if is_json
-            else render_markdown(raw, extensions=["tables", "fenced_code"])
-        ),
+        "rendered_content": None if is_json else render_markdown(raw, extensions=["tables", "fenced_code"]),
     }
 
 
-async def _release_cards(database, source_id: str) -> list[dict]:
-    families = await _rows(
+async def _contract_tree(database, active_id: str | None, active_version: str | None) -> list[dict]:
+    rows = await _rows(
         database,
-        "SELECT source_id, protocol_id, name, owner, responsibility_boundary, exclusions_json "
-        "FROM protocol_family WHERE source_id = :source_id ORDER BY protocol_id",
-        {"source_id": source_id},
+        "SELECT family.contract_id, family.display_name, family.layer, family.domain, "
+        "family.domain_order, family.sort_order, release.version "
+        "FROM data_contract_family AS family "
+        "JOIN data_contract_release AS release ON release.contract_id = family.contract_id "
+        "ORDER BY family.layer, family.domain_order, family.domain, family.sort_order, "
+        "family.contract_id, release.version",
     )
+    by_layer: dict[int, dict[str, dict[str, dict]]] = defaultdict(
+        lambda: defaultdict(dict)
+    )
+    for row in rows:
+        family = by_layer[int(row["layer"])][row["domain"]].setdefault(
+            row["contract_id"],
+            {
+                "contract_id": row["contract_id"],
+                "display_name": row["display_name"],
+                "sort_order": row["sort_order"],
+                "versions": [],
+                "active": row["contract_id"] == active_id,
+            },
+        )
+        family["versions"].append(
+            {
+                "version": row["version"],
+                "url": _contract_url(row["contract_id"], row["version"]),
+                "active": row["contract_id"] == active_id and row["version"] == active_version,
+            }
+        )
+    layers = []
+    for layer_number, layer_meta in enumerate(FOUR_MAJOR_LAYERS, start=1):
+        domains = []
+        for domain, families in by_layer[layer_number].items():
+            family_list = sorted(families.values(), key=lambda item: (item["sort_order"], item["contract_id"]))
+            for family in family_list:
+                family["versions"].sort(key=lambda item: _version_key(item["version"]), reverse=True)
+            domains.append(
+                {
+                    "name": domain,
+                    "families": family_list,
+                    "active": any(item["active"] for item in family_list),
+                }
+            )
+        layers.append(
+            {
+                **layer_meta,
+                "domains": domains,
+                "active": any(item["active"] for item in domains),
+            }
+        )
+    return layers
+
+
+async def _protocol_tree(
+    database,
+    active_source: str | None,
+    active_protocol: str | None,
+    active_version: str | None,
+    active_document: str | None,
+) -> list[dict]:
     releases = await _rows(
         database,
-        "SELECT release_key, source_id, protocol_id, version, name, category, lifecycle, "
-        "specification_status, implementation_status, runtime_adapter "
-        "FROM protocol_release WHERE source_id = :source_id",
-        {"source_id": source_id},
+        "SELECT source_id, protocol_id, version FROM protocol_release "
+        "ORDER BY source_id, protocol_id, version",
     )
-    by_protocol: dict[str, list[dict]] = defaultdict(list)
+    artifacts = await _rows(
+        database,
+        "SELECT release.source_id, release.protocol_id, release.version, "
+        "artifact.artifact_path FROM artifact "
+        "JOIN protocol_release AS release ON release.release_key = artifact.release_key "
+        "WHERE artifact.text_content IS NOT NULL "
+        "ORDER BY release.source_id, release.protocol_id, release.version, artifact.artifact_path",
+    )
+    documents: dict[tuple[str, str, str], list[str]] = defaultdict(list)
+    for artifact in artifacts:
+        documents[(artifact["source_id"], artifact["protocol_id"], artifact["version"])].append(
+            artifact["artifact_path"]
+        )
+    grouped: dict[str, dict[str, list[dict]]] = defaultdict(lambda: defaultdict(list))
     for release in releases:
-        by_protocol[release["protocol_id"]].append(release)
-    reader_artifacts = await _rows(
-        database,
-        "SELECT release.protocol_id, release.version, artifact.artifact_id, artifact.artifact_path, "
-        "artifact.artifact_kind, artifact.media_type "
-        "FROM artifact JOIN protocol_release AS release "
-        "ON release.release_key = artifact.release_key "
-        "WHERE release.source_id = :source_id AND artifact.text_content IS NOT NULL "
-        "ORDER BY release.protocol_id, release.version, artifact.artifact_path",
-        {"source_id": source_id},
-    )
-    artifacts_by_release: dict[tuple[str, str], list[dict]] = defaultdict(list)
-    for artifact in reader_artifacts:
-        artifact["file_name"] = artifact["artifact_path"].rsplit("/", 1)[-1]
-        artifact["detail_url"] = _document_url(
-            source_id,
-            artifact["protocol_id"],
-            artifact["version"],
-            artifact["artifact_path"],
-        )
-        artifacts_by_release[(artifact["protocol_id"], artifact["version"])].append(artifact)
-    reader_sections = await _rows(
-        database,
-        "SELECT release.protocol_id, release.version, section.section_key, "
-        "artifact.artifact_path, section.heading, section.line_start "
-        "FROM document_section AS section "
-        "JOIN protocol_release AS release ON release.release_key = section.release_key "
-        "JOIN artifact ON artifact.artifact_id = section.artifact_id "
-        "WHERE release.source_id = :source_id AND artifact.text_content IS NOT NULL "
-        "ORDER BY release.protocol_id, release.version, artifact.artifact_path, section.line_start",
-        {"source_id": source_id},
-    )
-    sections_by_release: dict[tuple[str, str], list[dict]] = defaultdict(list)
-    for section in reader_sections:
-        sections_by_release[(section["protocol_id"], section["version"])].append(section)
-    cards: list[dict] = []
-    for family in families:
-        protocol_releases = sorted(
-            by_protocol.get(family["protocol_id"], []),
-            key=lambda value: _version_key(value["version"]),
-        )
-        if not protocol_releases:
-            continue
-        latest = protocol_releases[-1]
-        layer = _layer(latest["category"])
-        release_nodes = []
-        for item in reversed(protocol_releases):
-            release_documents = artifacts_by_release.get(
-                (family["protocol_id"], item["version"]),
-                [],
-            )
-            explicit_contract_paths = {
-                document["artifact_path"]
-                for document in release_documents
-                if _is_contract_artifact(document)
+        source_id = release["source_id"]
+        protocol_id = release["protocol_id"]
+        version = release["version"]
+        is_active = source_id == active_source and protocol_id == active_protocol and version == active_version
+        grouped[source_id][protocol_id].append(
+            {
+                "version": version,
+                "url": _protocol_url(source_id, protocol_id, version),
+                "active": is_active,
+                "documents": [
+                    {
+                        "path": path,
+                        "name": path.rsplit("/", 1)[-1],
+                        "url": _protocol_url(source_id, protocol_id, version, path),
+                        "active": is_active and path == active_document,
+                    }
+                    for path in documents[(source_id, protocol_id, version)]
+                ],
             }
-            contract_documents = []
-            for document in release_documents:
-                artifact_path = document["artifact_path"]
-                if artifact_path in explicit_contract_paths:
-                    contract_documents.append(
-                        {
-                            "artifact_path": artifact_path,
-                            "file_name": document["file_name"],
-                            "direct_url": _document_url(
-                                source_id,
-                                family["protocol_id"],
-                                item["version"],
-                                artifact_path,
-                                kind="contract",
-                            ),
-                            "entries": [],
-                        }
-                    )
-                    continue
-                contract_sections = [
-                    section
-                    for section in sections_by_release.get(
-                        (family["protocol_id"], item["version"]),
-                        [],
-                    )
-                    if section["artifact_path"] == artifact_path
-                    and _is_contract_section(section)
-                ]
-                if contract_sections:
-                    contract_documents.append(
-                        {
-                            "artifact_path": artifact_path,
-                            "file_name": document["file_name"],
-                            "direct_url": None,
-                            "entries": [
-                                {
-                                    **section,
-                                    "detail_url": _document_url(
-                                        source_id,
-                                        family["protocol_id"],
-                                        item["version"],
-                                        artifact_path,
-                                        kind="contract",
-                                        section_key=section["section_key"],
-                                    ),
-                                }
-                                for section in contract_sections
-                            ],
-                        }
-                    )
-            release_nodes.append(
+        )
+    sources = []
+    for source_id in ("current", "temp-runtime"):
+        protocols = []
+        for protocol_id, versions in sorted(grouped[source_id].items()):
+            versions.sort(key=lambda item: _version_key(item["version"]), reverse=True)
+            protocols.append(
                 {
-                    **item,
-                    "detail_url": _detail_url(source_id, family["protocol_id"], item["version"]),
-                    "documents": release_documents,
-                    "contract_documents": contract_documents,
-                    "contract_count": sum(
-                        1 if document["direct_url"] else len(document["entries"])
-                        for document in contract_documents
-                    ),
+                    "protocol_id": protocol_id,
+                    "versions": versions,
+                    "active": any(item["active"] for item in versions),
                 }
             )
-        cards.append(
+        sources.append(
             {
-                **family,
-                "layer": layer,
-                "major_layer": _major_layer(latest["category"]),
-                "latest": latest,
-                "versions": [item["version"] for item in reversed(protocol_releases)],
-                "release_nodes": release_nodes,
-                "detail_url": _detail_url(source_id, family["protocol_id"], latest["version"]),
+                "source_id": source_id,
+                "label": SOURCE_LABELS[source_id],
+                "protocols": protocols,
+                "active": source_id == active_source,
             }
         )
-    return sorted(cards, key=lambda value: (value["layer"]["order"], value["protocol_id"]))
+    return sources
 
 
-def _catalog_groups(
-    cards: list[dict],
-    active_protocol_id: str | None = None,
-    active_version: str | None = None,
-    active_document: str | None = None,
-    active_kind: str | None = None,
-    active_section: str | None = None,
-) -> list[dict]:
-    groups = []
-    known_categories = {
-        category
-        for major in FOUR_MAJOR_LAYERS
-        for category in major["categories"]
-    }
-    catalog_cards = []
-    for card in cards:
-        protocol_active = card["protocol_id"] == active_protocol_id
-        release_nodes = []
-        for release in card["release_nodes"]:
-            release_active = protocol_active and release["version"] == active_version
-            contract_documents = []
-            for contract_document in release["contract_documents"]:
-                direct_active = (
-                    release_active
-                    and active_kind == "contract"
-                    and not active_section
-                    and contract_document["artifact_path"] == active_document
-                )
-                entries = [
-                    {
-                        **entry,
-                        "active": release_active
-                        and entry["section_key"] == active_section,
-                    }
-                    for entry in contract_document["entries"]
-                ]
-                contract_documents.append(
-                    {
-                        **contract_document,
-                        "active": direct_active or any(entry["active"] for entry in entries),
-                        "direct_active": direct_active,
-                        "entries": entries,
-                    }
-                )
-            contract_active = any(document["active"] for document in contract_documents)
-            release_nodes.append(
-                {
-                    **release,
-                    "active": release_active,
-                    "contract_active": contract_active,
-                    "document_active": release_active and not contract_active,
-                    "contract_documents": contract_documents,
-                    "documents": [
-                        {
-                            **document,
-                            "active": release_active
-                            and active_kind != "contract"
-                            and not active_section
-                            and document["artifact_path"] == active_document,
-                        }
-                        for document in release["documents"]
-                    ],
-                }
-            )
-        catalog_cards.append(
-            {
-                **card,
-                "active": protocol_active,
-                "contract_active": any(node["contract_active"] for node in release_nodes),
-                "document_active": any(node["document_active"] for node in release_nodes),
-                "release_nodes": release_nodes,
-            }
-        )
-    for major in FOUR_MAJOR_LAYERS:
-        sublayers = []
-        for category in major["categories"]:
-            protocols = [
-                card
-                for card in catalog_cards
-                if card["latest"]["category"] == category
-            ]
-            sublayers.append(
-                {
-                    "layer": _layer(category),
-                    "protocols": protocols,
-                    "contract_protocols": [
-                        protocol
-                        for protocol in protocols
-                        if any(node["contract_count"] for node in protocol["release_nodes"])
-                    ],
-                    "active": any(protocol["active"] for protocol in protocols),
-                    "contract_active": any(protocol["contract_active"] for protocol in protocols),
-                    "document_active": any(protocol["document_active"] for protocol in protocols),
-                }
-            )
-        if major["key"] == "foundation":
-            uncategorized = [
-                card
-                for card in catalog_cards
-                if card["latest"]["category"] not in known_categories
-            ]
-            if uncategorized:
-                contract_protocols = [
-                    protocol
-                    for protocol in uncategorized
-                    if any(node["contract_count"] for node in protocol["release_nodes"])
-                ]
-                sublayers.append(
-                    {
-                        "layer": DEFAULT_LAYER,
-                        "protocols": uncategorized,
-                        "contract_protocols": contract_protocols,
-                        "active": any(card["active"] for card in uncategorized),
-                        "contract_active": any(card["contract_active"] for card in uncategorized),
-                        "document_active": any(card["document_active"] for card in uncategorized),
-                    }
-                )
-        groups.append(
-            {
-                "major": major,
-                "sublayers": sublayers,
-                "protocol_count": sum(len(item["protocols"]) for item in sublayers),
-                "active": any(item.get("active") for item in sublayers),
-            }
-        )
-    return groups
-
-
-async def _catalog_context(
+async def _catalog(
     database,
-    source_id: str,
-    active_protocol_id: str | None = None,
-    active_version: str | None = None,
+    *,
+    active_contract: str | None = None,
+    active_contract_version: str | None = None,
+    active_source: str | None = None,
+    active_protocol: str | None = None,
+    active_protocol_version: str | None = None,
     active_document: str | None = None,
-    active_kind: str | None = None,
-    active_section: str | None = None,
 ) -> dict:
-    cards = await _release_cards(database, source_id)
     return {
-        "source_id": source_id,
-        "active_protocol_id": active_protocol_id,
-        "groups": _catalog_groups(
-            cards,
-            active_protocol_id,
-            active_version,
+        "contract_active": active_contract is not None,
+        "protocol_active": active_protocol is not None,
+        "contract_layers": await _contract_tree(database, active_contract, active_contract_version),
+        "protocol_sources": await _protocol_tree(
+            database,
+            active_source,
+            active_protocol,
+            active_protocol_version,
             active_document,
-            active_kind,
-            active_section,
-        ),
-        "sources": (
-            {
-                "source_id": "current",
-                "label": "正式线",
-                "url": "/?source=current",
-                "active": source_id == "current",
-            },
-            {
-                "source_id": "temp-runtime",
-                "label": "演进线",
-                "url": "/?source=temp-runtime",
-                "active": source_id == "temp-runtime",
-            },
         ),
     }
 
 
 async def protocol_index(request, datasette):
     database = datasette.get_database("protocol-source")
-    requested_source = request.args.get("source")
-    source_id = requested_source if requested_source in {"current", "temp-runtime"} else "current"
-    cards = await _release_cards(database, source_id)
-    preferred = next(
-        (card for card in cards if card["protocol_id"] == "CF-FARP"),
-        cards[0] if cards else None,
+    row = await _rows(
+        database,
+        "SELECT release.contract_id, release.version FROM data_contract_release AS release "
+        "JOIN data_contract_family AS family ON family.contract_id = release.contract_id "
+        "ORDER BY family.layer, family.domain_order, family.sort_order, release.version LIMIT 1",
     )
-    if preferred:
+    if row:
         return Response.redirect(
-            preferred["detail_url"],
+            _contract_url(row[0]["contract_id"], row[0]["version"]),
             headers={"X-CartridgeFlow-Protocol-Viewer": "1"},
         )
-    catalog = await _catalog_context(database, source_id)
+    return Response.text("协议知识库中没有可读数据。", status=404)
+
+
+async def contract_detail(request, datasette):
+    database = datasette.get_database("protocol-source")
+    contract_id = request.url_vars["contract_id"]
+    releases = await _rows(
+        database,
+        "SELECT release.*, family.display_name, family.layer, family.domain, family.purpose, "
+        "family.owner, family.visibility, owner.protocol_id AS owner_protocol_id, "
+        "owner.version AS owner_protocol_version, artifact.artifact_path AS definition_path, "
+        "artifact.media_type, artifact.text_content, section.heading AS definition_heading, "
+        "section.content AS section_content "
+        "FROM data_contract_release AS release "
+        "JOIN data_contract_family AS family ON family.contract_id = release.contract_id "
+        "JOIN protocol_release AS owner ON owner.release_key = release.owner_protocol_release_key "
+        "JOIN artifact ON artifact.artifact_id = release.definition_artifact_id "
+        "LEFT JOIN document_section AS section ON section.section_key = release.definition_section_key "
+        "WHERE release.contract_id = :contract_id",
+        {"contract_id": contract_id},
+    )
+    if not releases:
+        return Response.text("数据合同不存在。", status=404)
+    requested_version = request.args.get("version")
+    selected = next((item for item in releases if item["version"] == requested_version), None)
+    if selected is None:
+        selected = max(releases, key=lambda item: _version_key(item["version"]))
+        if requested_version:
+            return Response.text("数据合同版本不存在。", status=404)
+    release_key = selected["contract_release_key"]
+    definition_text = str(selected["section_content"] or selected["text_content"] or "")
+    is_json = str(selected["media_type"] or "").startswith("application/json") and not selected["section_content"]
+    selected["definition_raw"] = _pretty_json(definition_text) if is_json else definition_text
+    selected["definition_is_json"] = is_json
+    selected["definition_rendered"] = (
+        None if is_json else render_markdown(definition_text, extensions=["tables", "fenced_code"])
+    )
+    rules = await _rows(
+        database,
+        "SELECT rule_code, severity, rule_kind, description, validator_ref "
+        "FROM data_contract_rule WHERE contract_release_key = :key ORDER BY severity, rule_code",
+        {"key": release_key},
+    )
+    usage = await _rows(
+        database,
+        "SELECT stage, actor, direction, notes FROM data_contract_usage "
+        "WHERE contract_release_key = :key ORDER BY direction DESC, actor",
+        {"key": release_key},
+    )
+    bindings = await _rows(
+        database,
+        "SELECT binding.binding_role, binding.required, binding.notes, protocol.source_id, "
+        "protocol.protocol_id, protocol.version FROM data_contract_protocol_binding AS binding "
+        "JOIN protocol_release AS protocol ON protocol.release_key = binding.protocol_release_key "
+        "WHERE binding.contract_release_key = :key "
+        "ORDER BY binding.binding_role, protocol.protocol_id, protocol.version",
+        {"key": release_key},
+    )
+    examples = await _rows(
+        database,
+        "SELECT example.example_kind, example.description, example.expected_error_code, "
+        "artifact.artifact_path, protocol.source_id, protocol.protocol_id, protocol.version "
+        "FROM data_contract_example AS example "
+        "JOIN artifact ON artifact.artifact_id = example.artifact_id "
+        "LEFT JOIN protocol_release AS protocol ON protocol.release_key = artifact.release_key "
+        "WHERE example.contract_release_key = :key ORDER BY example.example_kind, artifact.artifact_path",
+        {"key": release_key},
+    )
+    for item in examples:
+        item["url"] = _protocol_url(
+            item["source_id"], item["protocol_id"], item["version"], item["artifact_path"]
+        )
+    version_links = [
+        {
+            "version": item["version"],
+            "url": _contract_url(contract_id, item["version"]),
+            "active": item["version"] == selected["version"],
+        }
+        for item in sorted(releases, key=lambda value: _version_key(value["version"]), reverse=True)
+    ]
+    context = {
+        "contract": selected,
+        "layer": FOUR_MAJOR_LAYERS[int(selected["layer"]) - 1],
+        "rules": rules,
+        "usage": usage,
+        "bindings": bindings,
+        "examples": examples,
+        "versions": version_links,
+        "catalog": await _catalog(
+            database,
+            active_contract=contract_id,
+            active_contract_version=selected["version"],
+        ),
+    }
     body = await datasette.render_template(
-        "protocol_home.html",
-        {"catalog": catalog, "major_layers": FOUR_MAJOR_LAYERS},
+        "contract_detail.html",
+        context,
         request=request,
-        view_name="protocol-knowledge-home",
+        view_name="data-contract-detail",
     )
     return Response.html(body, headers={"X-CartridgeFlow-Protocol-Viewer": "1"})
 
 
 async def protocol_detail(request, datasette):
+    database = datasette.get_database("protocol-source")
     source_id = request.url_vars["source_id"]
     protocol_id = request.url_vars["protocol_id"]
-    database = datasette.get_database("protocol-source")
-    family_rows = await _rows(
-        database,
-        "SELECT source_id, protocol_id, name, owner, responsibility_boundary, exclusions_json "
-        "FROM protocol_family WHERE source_id = :source_id AND protocol_id = :protocol_id",
-        {"source_id": source_id, "protocol_id": protocol_id},
-    )
-    if not family_rows:
-        return Response.html("<h1>找不到该协议</h1><p><a href='/'>返回知识库</a></p>", status=404)
-    family = family_rows[0]
     releases = await _rows(
         database,
-        "SELECT release_key, source_id, protocol_id, version, name, category, lifecycle, "
-        "specification_status, implementation_status, runtime_adapter, release_path "
-        "FROM protocol_release WHERE source_id = :source_id AND protocol_id = :protocol_id",
+        "SELECT * FROM protocol_release WHERE source_id = :source_id AND protocol_id = :protocol_id",
         {"source_id": source_id, "protocol_id": protocol_id},
     )
-    releases.sort(key=lambda value: _version_key(value["version"]), reverse=True)
+    if not releases:
+        return Response.text("协议不存在。", status=404)
     requested_version = request.args.get("version")
-    release = next(
-        (item for item in releases if item["version"] == requested_version),
-        releases[0],
-    )
+    release = next((item for item in releases if item["version"] == requested_version), None)
+    if release is None:
+        release = max(releases, key=lambda item: _version_key(item["version"]))
+        if requested_version:
+            return Response.text("协议版本不存在。", status=404)
     artifacts = await _rows(
         database,
-        "SELECT artifact_id, artifact_path, artifact_kind, media_type, byte_size, content_digest, text_content "
-        "FROM artifact WHERE release_key = :release_key ORDER BY artifact_path",
+        "SELECT artifact_path, artifact_kind, media_type, text_content FROM artifact "
+        "WHERE release_key = :release_key AND text_content IS NOT NULL ORDER BY artifact_path",
         {"release_key": release["release_key"]},
     )
-    sections = await _rows(
-        database,
-        "SELECT section.section_key, section.artifact_id, artifact.artifact_path, "
-        "section.heading, section.anchor, section.heading_level, section.line_start, "
-        "section.line_end, section.content FROM document_section AS section "
-        "JOIN artifact ON artifact.artifact_id = section.artifact_id "
-        "WHERE section.release_key = :release_key ORDER BY artifact.artifact_path, section.line_start",
-        {"release_key": release["release_key"]},
-    )
-    documents = []
-    for artifact in artifacts:
-        if artifact.get("text_content") is None:
-            continue
-        documents.append(_document_context(artifact))
     requested_document = request.args.get("document")
-    requested_section = request.args.get("section")
-    selected_section = next(
-        (section for section in sections if section["section_key"] == requested_section),
-        None,
-    )
-    preferred = next(
-        (
-            document
-            for priority in DOCUMENT_PRIORITY
-            for document in documents
-            if str(document["artifact_path"]).lower().endswith(priority)
-        ),
-        documents[0] if documents else None,
-    )
-    selected_path = (
-        selected_section["artifact_path"]
-        if selected_section
-        else requested_document or (preferred["artifact_path"] if preferred else None)
-    )
-    selected_document = next(
-        (document for document in documents if document["artifact_path"] == selected_path),
-        preferred,
-    )
-    documents = [
-        {**document, "selected": document is selected_document}
-        for document in documents
-    ]
-    selected_section_context = (
-        {
-            **selected_section,
-            "rendered_content": render_markdown(
-                selected_section["content"],
-                extensions=["tables", "fenced_code"],
-            ),
-        }
-        if selected_section
-        else None
-    )
+    selected = next((item for item in artifacts if item["artifact_path"] == requested_document), None)
+    if selected is None and artifacts:
+        def priority(item: dict) -> tuple[int, str]:
+            name = item["artifact_path"].rsplit("/", 1)[-1].lower()
+            return (DOCUMENT_PRIORITY.index(name) if name in DOCUMENT_PRIORITY else len(DOCUMENT_PRIORITY), name)
+        selected = min(artifacts, key=priority)
+    selected_document = _reader_document(selected) if selected else None
     context = {
-        "family": family,
-        "layer": _layer(release["category"]),
-        "major_layer": _major_layer(release["category"]),
-        "catalog": await _catalog_context(
-            database,
-            source_id,
-            protocol_id,
-            release["version"],
-            selected_document["artifact_path"] if selected_document else None,
-            "contract" if request.args.get("kind") == "contract" or selected_section else None,
-            selected_section["section_key"] if selected_section else None,
-        ),
+        "source_label": SOURCE_LABELS.get(source_id, source_id),
         "source_id": source_id,
+        "protocol_id": protocol_id,
         "release": release,
-        "releases": releases,
-        "documents": documents,
         "selected_document": selected_document,
-        "selected_section": selected_section_context,
-        "detail_url": _detail_url(source_id, protocol_id),
+        "catalog": await _catalog(
+            database,
+            active_source=source_id,
+            active_protocol=protocol_id,
+            active_protocol_version=release["version"],
+            active_document=selected["artifact_path"] if selected else None,
+        ),
     }
     body = await datasette.render_template(
         "protocol_detail.html",
@@ -641,5 +395,6 @@ async def protocol_detail(request, datasette):
 def register_routes(datasette):
     return [
         (r"/$", protocol_index),
+        (r"/contract/(?P<contract_id>[A-Za-z0-9_.-]+)/?$", contract_detail),
         (r"/protocol/(?P<source_id>[a-z0-9_-]+)/(?P<protocol_id>[A-Za-z0-9_-]+)/?$", protocol_detail),
     ]

@@ -95,6 +95,28 @@ class RuntimeRecoveryTests(unittest.TestCase):
             self.assertEqual("completed", loaded["state_snapshot"]["history"][-1]["status"])
             self.assertEqual("dict", loaded["input_summary"]["brief"]["type"])
 
+    def test_checkpoint_rejects_invalid_schema(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            manager = CheckpointManager()
+            run = {"run_id": "run_test", "status": "running", "artifacts": []}
+            state = {"status": "running", "history": [], "context": {"store": {}}}
+            summary = manager.save(
+                root,
+                run,
+                state,
+                node_id="node",
+                phase="before",
+                outcome="entered",
+            )
+            checkpoint_path = root / summary["path"]
+            checkpoint = json.loads(checkpoint_path.read_text(encoding="utf-8"))
+            checkpoint["schema"] = "cartridgeflow.run_checkpoint.unknown"
+            checkpoint_path.write_text(json.dumps(checkpoint), encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "Invalid checkpoint schema"):
+                manager.load(root, summary["checkpoint_id"])
+
     def test_completed_flow_has_before_and_after_checkpoint_for_every_node(self):
         root_flow = self._safe_flow()
         manifest = self._safe_manifest()

@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Iterable
 
 
-REGISTRY_SCHEMA_VERSION = "2"
+REGISTRY_SCHEMA_VERSION = "3"
 REGISTRY_SCHEMA_NAME = "cartridgeflow.protocol_knowledge_registry.v1"
 LOCK_SCHEMA_NAME = "cartridgeflow.protocol_line_lock.v1"
 MANIFEST_RELATIVE_PATH = Path("protocol/catalog/release_manifest.json")
@@ -33,6 +33,16 @@ DEFAULT_SCHEMA_PATH = Path(__file__).with_name("knowledge_registry_schema.sql")
 _SOURCE_ID_RE = re.compile(r"^[a-z][a-z0-9_-]*$")
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
 _TEXT_SUFFIXES = {".json", ".md", ".sql", ".txt", ".yaml", ".yml"}
+_SEMVER_RE = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$")
+_CONTRACT_DIGEST_ORDER = {
+    "data_contract_family": "contract_id",
+    "data_contract_release": "contract_release_key",
+    "data_contract_protocol_binding": "contract_release_key, protocol_release_key, binding_role",
+    "data_contract_rule": "rule_key",
+    "data_contract_usage": "usage_key",
+    "data_contract_example": "example_key",
+    "data_contract_migration": "migration_key",
+}
 
 
 class ProtocolKnowledgeRegistryError(ValueError):
@@ -177,6 +187,9 @@ def build_protocol_knowledge_registry(
     ]
     findings = [finding for inventory in inventories for finding in inventory.findings]
     findings.extend(_identity_collision_findings(inventories))
+    contract_registry_digest = _sha256_json(
+        {table: [] for table in _CONTRACT_DIGEST_ORDER}
+    )
     registry_digest = _sha256_json(
         {
             "schema": REGISTRY_SCHEMA_NAME,
@@ -189,6 +202,7 @@ def build_protocol_knowledge_registry(
                 }
                 for item in sorted(inventories, key=lambda value: value.source.source_id)
             ],
+            "contract_registry_digest": contract_registry_digest,
         }
     )
 
@@ -203,6 +217,7 @@ def build_protocol_knowledge_registry(
             inventories,
             findings,
             registry_digest,
+            contract_registry_digest,
             registry_role=registry_role,
         )
         os.replace(temporary, output)
@@ -311,6 +326,7 @@ def publish_protocol_knowledge_registry(
                 }
                 for row in source_rows
             ],
+            "contract_registry_digest": metadata["contract_registry_digest"],
         }
     )
 
@@ -471,6 +487,70 @@ def _validate_authoritative_source_registry(
                 f"authoritative {source['source_id']} source digest mismatch"
             )
 
+    for contract in connection.execute(
+        "SELECT contract.contract_release_key, contract.version, contract.source_id, "
+        "contract.owner_protocol_release_key, contract.definition_artifact_id, "
+        "contract.definition_section_key, contract.definition_kind, contract.content_digest, "
+        "artifact.source_id AS artifact_source_id "
+        "FROM data_contract_release AS contract "
+        "JOIN artifact ON artifact.artifact_id = contract.definition_artifact_id "
+        "ORDER BY contract.contract_release_key"
+    ):
+        label = str(contract["contract_release_key"])
+        if not _SEMVER_RE.fullmatch(str(contract["version"])):
+            raise ProtocolKnowledgeRegistryError(
+                f"authoritative data contract does not use normalized SemVer: {label}"
+            )
+        if contract["source_id"] != contract["artifact_source_id"]:
+            raise ProtocolKnowledgeRegistryError(
+                f"authoritative data contract crosses its source boundary: {label}"
+            )
+        owner = connection.execute(
+            "SELECT source_id FROM protocol_release WHERE release_key = ?",
+            (contract["owner_protocol_release_key"],),
+        ).fetchone()
+        if owner is None or owner["source_id"] != contract["source_id"]:
+            raise ProtocolKnowledgeRegistryError(
+                f"authoritative data contract has an invalid owner: {label}"
+            )
+        if contract["definition_kind"] == "normative_section" and not contract["definition_section_key"]:
+            raise ProtocolKnowledgeRegistryError(
+                f"authoritative data contract has no definition section: {label}"
+            )
+        if contract["definition_section_key"]:
+            section = connection.execute(
+                "SELECT artifact_id, content FROM document_section WHERE section_key = ?",
+                (contract["definition_section_key"],),
+            ).fetchone()
+            if section is None or section["artifact_id"] != contract["definition_artifact_id"]:
+                raise ProtocolKnowledgeRegistryError(
+                    f"authoritative data contract section is invalid: {label}"
+                )
+            expected_content_digest = _sha256(str(section["content"]).encode("utf-8"))
+        else:
+            expected_content_digest = connection.execute(
+                "SELECT content_digest FROM artifact WHERE artifact_id = ?",
+                (contract["definition_artifact_id"],),
+            ).fetchone()[0]
+        if expected_content_digest != contract["content_digest"]:
+            raise ProtocolKnowledgeRegistryError(
+                f"authoritative data contract definition digest mismatch: {label}"
+            )
+        if connection.execute(
+            "SELECT COUNT(*) FROM data_contract_protocol_binding "
+            "WHERE contract_release_key = ? AND protocol_release_key = ? AND binding_role = 'defines'",
+            (label, contract["owner_protocol_release_key"]),
+        ).fetchone()[0] != 1:
+            raise ProtocolKnowledgeRegistryError(
+                f"authoritative data contract owner does not define it: {label}"
+            )
+
+    contract_registry_digest = _contract_registry_digest(connection)
+    if metadata.get("contract_registry_digest") != contract_registry_digest:
+        raise ProtocolKnowledgeRegistryError(
+            "authoritative data-contract registry logical digest mismatch"
+        )
+
     expected_registry_digest = _sha256_json(
         {
             "schema": REGISTRY_SCHEMA_NAME,
@@ -483,6 +563,7 @@ def _validate_authoritative_source_registry(
                 }
                 for source in source_rows
             ],
+            "contract_registry_digest": contract_registry_digest,
         }
     )
     if metadata.get("registry_digest") != expected_registry_digest:
@@ -523,6 +604,9 @@ class ProtocolKnowledgeRegistry:
             "finding_count": self.connection.execute("SELECT COUNT(*) FROM governance_finding").fetchone()[0],
             "implementation_count": self.connection.execute("SELECT COUNT(*) FROM implementation_manifest").fetchone()[0],
             "evidence_count": self.connection.execute("SELECT COUNT(*) FROM implementation_evidence").fetchone()[0],
+            "contract_family_count": self.connection.execute("SELECT COUNT(*) FROM data_contract_family").fetchone()[0],
+            "contract_release_count": self.connection.execute("SELECT COUNT(*) FROM data_contract_release").fetchone()[0],
+            "contract_rule_count": self.connection.execute("SELECT COUNT(*) FROM data_contract_rule").fetchone()[0],
         }
 
     def get_release(self, source_id: str, protocol_id: str, version: str) -> dict | None:
@@ -944,6 +1028,7 @@ def _write_database(
     inventories: list[_SourceInventory],
     findings: list[dict],
     registry_digest: str,
+    contract_registry_digest: str,
     *,
     registry_role: str,
 ) -> None:
@@ -958,6 +1043,7 @@ def _write_database(
                 ("schema", REGISTRY_SCHEMA_NAME),
                 ("schema_version", REGISTRY_SCHEMA_VERSION),
                 ("registry_digest", registry_digest),
+                ("contract_registry_digest", contract_registry_digest),
                 ("registry_role", registry_role),
                 ("search_engine", search_engine),
                 ("evidence_test_reference_format", "python_unittest_owner_case.v1"),
@@ -1522,6 +1608,7 @@ def _load_implementation_governance(
         base_items = [{**base_contract, "status": "current"}] if base_contract else []
     for support_kind, items in (
         ("base_contract", base_items),
+        ("data_contract", manifest.get("supported_data_contracts") or []),
         ("protocol", manifest.get("supported_protocols") or []),
         ("subprotocol", manifest.get("supported_subprotocols") or []),
         ("adapter", manifest.get("supported_protocol_adapters") or []),
@@ -1833,6 +1920,15 @@ def _sha256(content: bytes) -> str:
 
 def _sha256_json(value: object) -> str:
     return _sha256(_canonical_json(value).encode("utf-8"))
+
+
+def _contract_registry_digest(connection: sqlite3.Connection) -> str:
+    payload: dict[str, list[dict]] = {}
+    for table, order_by in _CONTRACT_DIGEST_ORDER.items():
+        payload[table] = [
+            dict(row) for row in connection.execute(f"SELECT * FROM {table} ORDER BY {order_by}")
+        ]
+    return _sha256_json(payload)
 
 
 def _canonical_json(value: object) -> str:

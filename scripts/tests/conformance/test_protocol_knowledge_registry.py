@@ -37,7 +37,7 @@ class ProtocolKnowledgeRegistryTests(unittest.TestCase):
 
         with ProtocolKnowledgeRegistry(target) as registry:
             summary = registry.summary()
-            self.assertEqual("2", summary["schema_version"])
+            self.assertEqual("3", summary["schema_version"])
             self.assertEqual("product_snapshot", summary["registry_role"])
             self.assertEqual(
                 lock["source_database"]["logical_digest"],
@@ -49,6 +49,9 @@ class ProtocolKnowledgeRegistryTests(unittest.TestCase):
             self.assertGreater(summary["section_count"], 3000)
             self.assertEqual(1, summary["implementation_count"])
             self.assertGreater(summary["evidence_count"], 10)
+            self.assertEqual(30, summary["contract_family_count"])
+            self.assertEqual(31, summary["contract_release_count"])
+            self.assertEqual(31, summary["contract_rule_count"])
             self.assertGreater(summary["finding_count"], 0)
             self.assertEqual(
                 {"protocol_identity_collision"},
@@ -88,6 +91,15 @@ class ProtocolKnowledgeRegistryTests(unittest.TestCase):
                 registry.connection.execute(
                     "SELECT 1 FROM artifact WHERE artifact_path LIKE '.data/%' LIMIT 1"
                 ).fetchone()
+            )
+            settings_contract = registry.connection.execute(
+                "SELECT layer, domain, version, definition_kind, owner_protocol_id, "
+                "owner_protocol_version, example_count FROM data_contract_overview "
+                "WHERE contract_id = 'cartridgeflow.capability.settings'"
+            ).fetchone()
+            self.assertEqual(
+                (2, "意图与能力", "1.0.0", "json_schema", "CF-FARP", "1.1", 2),
+                tuple(settings_contract),
             )
             self.assertGreater(
                 registry.connection.execute(

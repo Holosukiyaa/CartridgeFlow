@@ -1,45 +1,64 @@
 <style>
-    body.protocol-home section.content,
-    body.protocol-detail section.content { max-width: 1440px; padding: 16px 20px 40px; }
-    .knowledge-shell { border: 1px solid var(--cf-line); display: grid; grid-template-columns: 360px minmax(0, 1fr); min-height: calc(100vh - 112px); }
-    .protocol-directory { background: #f4f6f5; border-right: 1px solid var(--cf-line); min-width: 0; padding: 14px 0; }
+    body.protocol-detail section.content { max-width: 1480px; padding: 16px 20px 40px; }
+    .knowledge-shell { border: 1px solid var(--cf-line); display: grid; grid-template-columns: minmax(300px, 340px) minmax(0, 1fr); min-height: calc(100vh - 112px); }
+    .protocol-directory { background: #f5f6f5; border-right: 1px solid var(--cf-line); min-width: 0; padding: 12px 0; }
     .directory-sticky { position: sticky; top: 12px; }
-    .directory-title { padding: 0 14px 10px; }
-    .source-switch { display: grid; grid-template-columns: 1fr 1fr; padding: 0 10px 12px; }
-    .source-switch a { color: var(--cf-muted); padding: 8px; text-align: center; text-decoration: none; }
-    .source-switch a.active { background: #fff; color: var(--cf-accent); font-weight: 700; }
-    .file-tree { border-top: 1px solid var(--cf-line); font-size: 13px; max-height: calc(100vh - 180px); overflow-y: auto; padding: 8px; }
+    .directory-title { border-bottom: 1px solid var(--cf-line); padding: 0 14px 12px; }
+    .directory-title a { color: var(--cf-ink); font-size: 15px; font-weight: 700; text-decoration: none; }
+    .file-tree { font-size: 13px; max-height: calc(100vh - 150px); overflow-y: auto; padding: 8px; }
     .tree-folder { margin: 1px 0; }
     .tree-folder > summary { cursor: pointer; line-height: 1.45; overflow-wrap: anywhere; padding: 5px; }
-    .tree-major > summary,
-    .tree-sublayer > summary,
-    .tree-collection > summary,
+    .tree-root > summary,
+    .tree-layer > summary,
+    .tree-domain > summary,
+    .tree-source > summary,
     .tree-protocol > summary { font-weight: 700; }
+    .tree-family > summary,
+    .tree-version > summary { color: var(--cf-muted); }
     .tree-number { color: var(--cf-accent); font-family: ui-monospace, Consolas, monospace; font-size: 11px; margin-right: 6px; }
-    .tree-version > summary,
-    .tree-contract-document > summary { color: var(--cf-muted); }
-    .tree-children { border-left: 1px solid #c5cdca; margin-left: 10px; padding-left: 7px; }
+    .tree-children { border-left: 1px solid #c7cecb; margin-left: 10px; padding-left: 7px; }
     .tree-file { border-left: 3px solid transparent; color: var(--cf-ink); display: block; line-height: 1.4; overflow-wrap: anywhere; padding: 6px 7px; text-decoration: none; }
     .tree-file:hover { background: #fff; }
     .tree-file.active { background: #fff; border-left-color: var(--cf-accent); color: var(--cf-accent); font-weight: 700; }
-    .tree-empty { color: var(--cf-muted); display: block; padding: 6px; }
-    .protocol-reader { min-width: 0; padding: 26px 32px 40px; }
-    .reader-header { border-bottom: 1px solid var(--cf-line); padding-bottom: 16px; }
+    .protocol-reader { min-width: 0; padding: 24px 32px 40px; }
+    .reader-header { border-bottom: 1px solid var(--cf-line); padding: 0 0 16px 34px; position: relative; }
+    .reader-back { color: var(--cf-ink); font-size: 22px; left: 0; line-height: 30px; position: absolute; text-decoration: none; top: 0; width: 28px; }
     .reader-kicker { color: var(--cf-accent); font-family: ui-monospace, Consolas, monospace; font-size: 12px; font-weight: 700; }
-    .reader-header h1 { font-size: 24px; margin: 8px 0 5px; overflow-wrap: anywhere; }
-    .reader-path { color: var(--cf-muted); font-family: ui-monospace, Consolas, monospace; font-size: 12px; margin: 0; overflow-wrap: anywhere; }
-    .document-body { line-height: 1.7; overflow-wrap: anywhere; padding-top: 20px; }
+    .reader-header h1 { font-size: 24px; margin: 7px 0 4px; overflow-wrap: anywhere; }
+    .reader-path,
+    .contract-identity { color: var(--cf-muted); font-family: ui-monospace, Consolas, monospace; font-size: 12px; margin: 0; overflow-wrap: anywhere; }
+    .version-links { color: var(--cf-muted); font-size: 13px; margin-top: 10px; }
+    .version-links a { color: var(--cf-muted); margin-right: 10px; }
+    .version-links a.active { color: var(--cf-accent); font-weight: 700; }
+    .contract-facts { display: grid; grid-template-columns: 96px minmax(0, 1fr); margin: 20px 0 28px; }
+    .contract-facts dt,
+    .contract-facts dd { border-bottom: 1px solid var(--cf-line); margin: 0; padding: 8px 0; }
+    .contract-facts dt { color: var(--cf-muted); font-weight: 700; }
+    .contract-facts dd { min-width: 0; overflow-wrap: anywhere; }
+    .contract-section { margin-top: 28px; }
+    .contract-section h2 { font-size: 17px; margin: 0 0 10px; }
+    .contract-section table { border-collapse: collapse; display: block; max-width: 100%; overflow-x: auto; width: max-content; }
+    .contract-section th,
+    .contract-section td { border: 1px solid var(--cf-line); max-width: 460px; padding: 8px 10px; text-align: left; vertical-align: top; }
+    .contract-section th { background: #f3f5f4; white-space: nowrap; }
+    .contract-section td { overflow-wrap: anywhere; }
+    .plain-list { margin: 0; padding-left: 20px; }
+    .contract-definition { border-top: 1px solid var(--cf-line); padding-top: 24px; }
+    .document-body { line-height: 1.7; overflow-wrap: anywhere; padding-top: 18px; }
     .document-body h1 { font-size: 24px; }
     .document-body h2 { font-size: 19px; }
-    .document-body pre { background: #f0f4f3; overflow-x: auto; padding: 14px; white-space: pre-wrap; }
+    .document-body pre { background: #f0f3f2; overflow-x: auto; padding: 14px; white-space: pre-wrap; }
+    .document-body table { border-collapse: collapse; display: block; overflow-x: auto; }
+    .document-body th,
+    .document-body td { border: 1px solid var(--cf-line); padding: 7px 9px; text-align: left; }
     .empty-note { color: var(--cf-muted); }
     @media (max-width: 760px) {
-        body.protocol-home section.content,
         body.protocol-detail section.content { padding: 0 0 28px; }
         .knowledge-shell { border-width: 0 0 1px; grid-template-columns: 1fr; }
         .protocol-directory { border-bottom: 1px solid var(--cf-line); border-right: 0; }
         .directory-sticky { position: static; }
-        .file-tree { max-height: 320px; }
+        .file-tree { max-height: 330px; }
         .protocol-reader { padding: 20px 16px 30px; }
+        .contract-facts { grid-template-columns: 78px minmax(0, 1fr); }
     }
 </style>

@@ -76,7 +76,7 @@ class ProtocolSourceToolingTests(unittest.TestCase):
             set(databases_metadata),
         )
         self.assertEqual(
-            {"protocol_catalog", "read_protocol", "search_protocols"},
+            {"data_contract_catalog", "protocol_catalog", "read_protocol", "search_protocols"},
             set(databases_metadata["protocol-source"]["queries"]),
         )
         self.assertEqual(
@@ -119,6 +119,8 @@ class ProtocolSourceToolingTests(unittest.TestCase):
         plugin_text = plugin.read_text(encoding="utf-8")
         self.assertIn("register_routes", plugin_text)
         self.assertIn("FOUR_MAJOR_LAYERS", plugin_text)
+        self.assertNotIn("CONTRACT_TOKENS", plugin_text)
+        self.assertIn("data_contract_release", plugin_text)
 
     def test_existing_background_viewer_reopens_in_browser(self):
         with (

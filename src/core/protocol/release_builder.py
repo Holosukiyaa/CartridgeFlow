@@ -1,4 +1,4 @@
-"""CF-CRE@1 archive construction and staged runtime-consumer validation.
+"""CF-CRE@1/@2 archive construction and staged runtime-consumer validation.
 
 This module verifies the envelope, signature, trust decision, and payload
 staging boundary. It never executes cartridge code; runtime execution remains
@@ -16,8 +16,8 @@ from pathlib import Path, PurePosixPath
 from typing import Mapping
 
 from core.studio.hygiene import scan_package_hygiene
-
-from .release_envelope import build_release_envelope_report
+from .data_contracts import DataContractError, build_runtime_profile_compatibility_report, validate_cartridge_presentation_contracts
+from .release_envelope import RELEASE_SCHEMA, RELEASE_SCHEMA_V2, build_release_envelope_report
 from .release_catalog import load_protocol_release_catalog
 from .release_signing import ReleaseSigningIdentity, build_signature_metadata, generate_signing_identity, verify_signature_metadata
 
@@ -38,6 +38,10 @@ def build_release_archive(
     publisher_id: str,
     experience: dict,
     delivery: dict,
+    settings: dict | None = None,
+    settings_bindings: dict | None = None,
+    ui: dict | None = None,
+    release_envelope_version: int = 1,
     placement: str = "local",
     required_capabilities: list[str] | None = None,
     required_permissions: list[str] | None = None,
@@ -67,13 +71,61 @@ def build_release_archive(
     if not _SEMVER.fullmatch(version):
         raise ReleaseBuildError("cartridge manifest version must be a semantic version")
 
+    if release_envelope_version not in {1, 2}:
+        raise ReleaseBuildError("release_envelope_version must be 1 or 2")
+    if release_envelope_version == 1 and any(value is not None for value in (settings, settings_bindings, ui)):
+        raise ReleaseBuildError("settings, settings_bindings, and ui require CF-CRE@2")
+    if release_envelope_version == 2:
+        if not all(isinstance(value, dict) for value in (settings, settings_bindings, ui)):
+            raise ReleaseBuildError("CF-CRE@2 requires settings, settings_bindings, and ui contracts")
+        component_by_id: dict[str, dict] = {}
+        if ui.get("mode") in {"passive", "sandboxed"}:
+            try:
+                from core.cartridge.assets import CartridgeAssetError, load_asset_bundle
+
+                component_by_id = load_asset_bundle(source, manifest).get("component_by_id") or {}
+            except (CartridgeAssetError, OSError, ValueError) as exc:
+                raise ReleaseBuildError(f"CF-CRE@2 UI component is invalid: {exc}") from exc
+        try:
+            validate_cartridge_presentation_contracts(
+                settings,
+                settings_bindings,
+                ui,
+                flow,
+                component_by_id=component_by_id,
+            )
+        except DataContractError as exc:
+            raise ReleaseBuildError(f"CF-CRE@2 presentation contract is invalid: {exc}") from exc
+        runtime_report = build_runtime_profile_compatibility_report(manifest, flow, ui)
+        if not runtime_report["ok"]:
+            codes = ", ".join(item["code"] for item in runtime_report["findings"])
+            raise ReleaseBuildError(f"CF-CRE@2 runtime profile is incompatible: {codes}")
+
     payload = _payload_files(source)
+    if release_envelope_version == 2:
+        binding_path = "payload/settings/bindings.json"
+        binding_bytes = _canonical_bytes(settings_bindings)
+        if binding_path in payload:
+            try:
+                source_bindings = json.loads(payload[binding_path].decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise ReleaseBuildError("source settings/bindings.json must be valid UTF-8 JSON") from exc
+            if source_bindings != settings_bindings:
+                raise ReleaseBuildError("source settings/bindings.json does not match the supplied private binding contract")
+        payload[binding_path] = binding_bytes
     payload_entries = _hash_entries(payload)
     payload_digest = _payload_digest(payload_entries)
     public = {
         "public/experience.json": _canonical_bytes(experience),
         "public/delivery.contract.json": _canonical_bytes(delivery),
     }
+    if release_envelope_version == 2:
+        public.update(
+            {
+                "public/settings.contract.json": _canonical_bytes(settings),
+                "public/ui.contract.json": _canonical_bytes(ui),
+            }
+        )
     bundle_content = {**payload, **public}
     hashes = {"schema": "cartridgeflow.release_hashes.v1", "files": _hash_entries(bundle_content)}
     hashes_bytes = _canonical_bytes(hashes)
@@ -85,7 +137,7 @@ def build_release_archive(
     default_base_contract = catalog.data["base_contract"]
     identity = signing_identity or generate_signing_identity(f"{publisher_id}.ephemeral")
     release = {
-        "schema": "cartridgeflow.release_envelope.v1",
+        "schema": RELEASE_SCHEMA_V2 if release_envelope_version == 2 else RELEASE_SCHEMA,
         "release": {"publisher_id": publisher_id, "cartridge_id": cartridge_id, "version": version},
         "release_id": f"{publisher_id}:{cartridge_id}@{version}+{content_digest}",
         "runtime": {
@@ -106,6 +158,13 @@ def build_release_archive(
         "integrity": {"hashes_path": "hashes.json", "content_digest": content_digest},
         "signatures": [{"role": "publisher", "key_id": identity.key_id, "algorithm": "ed25519", "path": "signatures/publisher.ed25519.json"}],
     }
+    if release_envelope_version == 2:
+        release["public_contracts"].update(
+            {
+                "settings": {"path": "public/settings.contract.json", "digest": _digest(public["public/settings.contract.json"])},
+                "ui": {"path": "public/ui.contract.json", "digest": _digest(public["public/ui.contract.json"])},
+            }
+        )
     release_bytes = _canonical_bytes(release)
     signature_metadata = build_signature_metadata(identity, release_bytes, hashes_bytes)
     archive_files = {
@@ -160,7 +219,17 @@ def inspect_release_archive(
         return _rejected_archive_report([_archive_finding("cre_release_manifest_file_invalid", "release.manifest.json must be a UTF-8 JSON object", "release.manifest.json")])
     experience = _load_public_json(files, "public/experience.json")
     delivery = _load_public_json(files, "public/delivery.contract.json")
-    report = build_release_envelope_report(release, experience, delivery, bundle_files=files)
+    is_v2 = release.get("schema") == RELEASE_SCHEMA_V2
+    settings = _load_public_json(files, "public/settings.contract.json") if is_v2 else None
+    ui = _load_public_json(files, "public/ui.contract.json") if is_v2 else None
+    report = build_release_envelope_report(
+        release,
+        experience,
+        delivery,
+        settings=settings,
+        ui=ui,
+        bundle_files=files,
+    )
     signature = verify_signature_metadata(release, files, trusted_keys=trusted_keys)
     findings = [*(report.get("findings") or []), *(signature.get("findings") or [])]
     report = {
@@ -177,7 +246,11 @@ def inspect_release_archive(
         "activation_allowed": activation_allowed,
         "report": report,
         "release": release if report["ok"] else None,
-        "public_contracts": {"experience": experience, "delivery": delivery} if report["ok"] else None,
+        "public_contracts": {
+            "experience": experience,
+            "delivery": delivery,
+            **({"settings": settings, "ui": ui} if is_v2 else {}),
+        } if report["ok"] else None,
         "signature": signature,
     }
 

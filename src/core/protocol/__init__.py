@@ -26,10 +26,27 @@ from .release_builder import ReleaseBuildError, build_release_archive, extract_r
 from .release_signing import ReleaseSigningError, ensure_development_signing_identity, trusted_public_keys
 from .flow_contract import build_flow_contract_report_for_adapter, build_v02_flow_contract_report, build_v03_flow_contract_report, build_v04_flow_contract_report, build_v05_flow_contract_report, build_v06_flow_contract_report, build_v07_flow_contract_report, build_v08_flow_contract_report, build_v09_flow_contract_report, build_v10_flow_contract_report, validate_execution_plan_v1_flow_contract, validate_v02_flow_contract, validate_v03_flow_contract, validate_v04_flow_contract, validate_v05_flow_contract, validate_v06_flow_contract, validate_v07_flow_contract, validate_v08_flow_contract, validate_v09_flow_contract, validate_v10_flow_contract
 from .tool_plan import validate_tool_plan
+from .data_contracts import (
+    CartridgeSettingsStore,
+    DataContractError,
+    DataContractRegistry,
+    DataContractValidationError,
+    assert_base_supports_data_contracts,
+    apply_cartridge_settings,
+    build_data_contract_support_report,
+    build_runtime_profile_compatibility_report,
+    validate_data_contract_instance,
+    validate_cartridge_presentation_contracts,
+    validate_cartridge_settings_values,
+)
 
 __all__ = [
     "BaseManifestError",
     "CompatibilityBlockedError",
+    "CartridgeSettingsStore",
+    "DataContractError",
+    "DataContractRegistry",
+    "DataContractValidationError",
     "ImplementationSource",
     "ProtocolRegistry",
     "ProtocolRegistryError",
@@ -41,12 +58,15 @@ __all__ = [
     "ProtocolReleaseCatalog",
     "ProtocolReleaseCatalogError",
     "apply_protocol_certification_label",
+    "apply_cartridge_settings",
     "build_protocol_certification_report",
     "build_protocol_knowledge_registry",
     "publish_protocol_knowledge_registry",
     "build_release_envelope_report",
     "build_release_archive",
     "build_compatibility_report",
+    "build_data_contract_support_report",
+    "build_runtime_profile_compatibility_report",
     "build_flow_contract_report_for_adapter",
     "build_v02_flow_contract_report",
     "build_v03_flow_contract_report",
@@ -73,6 +93,9 @@ __all__ = [
     "ensure_development_signing_identity",
     "trusted_public_keys",
     "validate_decision_envelope",
+    "validate_data_contract_instance",
+    "validate_cartridge_presentation_contracts",
+    "validate_cartridge_settings_values",
     "validate_execution_plan_v1_flow_contract",
     "validate_release_envelope",
     "validate_tool_plan",
@@ -88,5 +111,6 @@ __all__ = [
     "supports_protocol_release",
     "supports_base_contract",
     "supports_subprotocol_release",
+    "assert_base_supports_data_contracts",
     "resolve_protocol_registry",
 ]

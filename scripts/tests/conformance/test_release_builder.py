@@ -12,7 +12,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "src"))
 
-from core.protocol import build_release_archive, extract_release_payload, inspect_release_archive
+from core.protocol import build_release_archive, build_release_envelope_report, extract_release_payload, inspect_release_archive
 from core.protocol.release_signing import ensure_development_signing_identity, generate_signing_identity, verify_signature_metadata
 
 
@@ -43,6 +43,48 @@ def write_source(path: Path):
     (path / "assets" / "readme.txt").write_text("release fixture", encoding="utf-8")
 
 
+def presentation_contracts():
+    return (
+        {
+            "schema": "cartridgeflow.cartridge_settings.v1",
+            "storage_scope": "cartridge",
+            "fields": [
+                {
+                    "id": "brief_length",
+                    "label": "Brief length",
+                    "type": "enum",
+                    "default": "normal",
+                    "options": [
+                        {"value": "short", "label": "Short"},
+                        {"value": "normal", "label": "Normal"},
+                    ],
+                }
+            ],
+        },
+        {
+            "schema": "cartridgeflow.cartridge_settings_bindings.v1",
+            "bindings": [
+                {
+                    "setting_id": "brief_length",
+                    "target": {"kind": "process_param", "node_id": "generate", "param": "length"},
+                }
+            ],
+        },
+        {"schema": "cartridgeflow.cartridge_ui.v1", "mode": "none", "host_capabilities": []},
+    )
+
+
+def enable_v2_runtime(path: Path):
+    manifest_path = path / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["runtime_contract"] = {
+        "protocol": "CF-FARP",
+        "protocol_version": "1.1",
+        "target_runtimes": [{"id": "CF-DRP", "version": "1.0"}],
+    }
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+
 class ReleaseBuilderTests(unittest.TestCase):
     @unittest.skipIf(os.name == "nt", "POSIX file modes are not enforced on Windows")
     def test_development_signing_material_is_owner_only(self):
@@ -68,6 +110,114 @@ class ReleaseBuilderTests(unittest.TestCase):
             inspection = inspect_release_archive(result["archive"])
             self.assertTrue(inspection["report"]["ok"], inspection["report"]["findings"])
             self.assertEqual("每日摘要", inspection["public_contracts"]["experience"]["product"]["name"])
+
+    def test_builds_and_inspects_cf_cre_v2_with_four_public_contracts(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "source"
+            write_source(source)
+            enable_v2_runtime(source)
+            (source / "root.flow.json").write_text(
+                json.dumps({"protocol": {"id": "CF-FARP", "version": "1.1"}, "states": {"generate": {"type": "process", "action": "pass_result", "params": {"length": "normal"}}}, "execution_plan": {"edges": []}}),
+                encoding="utf-8",
+            )
+            experience, delivery = public_contracts()
+            settings, bindings, ui = presentation_contracts()
+            (source / "settings").mkdir()
+            (source / "settings" / "bindings.json").write_text(
+                json.dumps(bindings, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+
+            result = build_release_archive(
+                source,
+                root / "daily-v2.cf-release.zip",
+                publisher_id="demo.publisher",
+                experience=experience,
+                delivery=delivery,
+                settings=settings,
+                settings_bindings=bindings,
+                ui=ui,
+                release_envelope_version=2,
+            )
+            inspection = inspect_release_archive(result["archive"])
+
+            self.assertTrue(inspection["report"]["ok"], inspection["report"]["findings"])
+            self.assertEqual("CF-CRE@2", inspection["report"]["protocol"])
+            self.assertEqual({"experience", "delivery", "settings", "ui"}, set(inspection["public_contracts"]))
+            with zipfile.ZipFile(result["archive"]) as archive:
+                self.assertIn("payload/settings/bindings.json", archive.namelist())
+                release = json.loads(archive.read("release.manifest.json").decode("utf-8"))
+            self.assertEqual("cartridgeflow.release_envelope.v2", release["schema"])
+
+            with zipfile.ZipFile(result["archive"]) as archive:
+                files = {name: archive.read(name) for name in archive.namelist()}
+            manifest = json.loads(files["payload/manifest.json"].decode("utf-8"))
+            del manifest["runtime_contract"]["target_runtimes"]
+            files["payload/manifest.json"] = json.dumps(manifest).encode("utf-8")
+            report = build_release_envelope_report(
+                release,
+                inspection["public_contracts"]["experience"],
+                inspection["public_contracts"]["delivery"],
+                settings=inspection["public_contracts"]["settings"],
+                ui=inspection["public_contracts"]["ui"],
+                bundle_files=files,
+            )
+            self.assertIn("cre_runtime_target_missing", {item["code"] for item in report["findings"]})
+
+    def test_cf_cre_v2_rejects_invalid_or_incomplete_presentation_contracts(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "source"
+            write_source(source)
+            enable_v2_runtime(source)
+            (source / "root.flow.json").write_text(
+                json.dumps({"protocol": {"id": "CF-FARP", "version": "1.1"}, "states": {"generate": {"type": "process", "action": "pass_result", "params": {}}}, "execution_plan": {"edges": []}}),
+                encoding="utf-8",
+            )
+            experience, delivery = public_contracts()
+            settings, bindings, ui = presentation_contracts()
+            with self.assertRaisesRegex(ValueError, "requires settings"):
+                build_release_archive(
+                    source,
+                    root / "missing.cf-release.zip",
+                    publisher_id="demo.publisher",
+                    experience=experience,
+                    delivery=delivery,
+                    release_envelope_version=2,
+                )
+
+            invalid = json.loads(json.dumps(bindings))
+            invalid["bindings"][0]["target"]["node_id"] = "missing"
+            with self.assertRaisesRegex(ValueError, "presentation contract is invalid"):
+                build_release_archive(
+                    source,
+                    root / "invalid.cf-release.zip",
+                    publisher_id="demo.publisher",
+                    experience=experience,
+                    delivery=delivery,
+                    settings=settings,
+                    settings_bindings=invalid,
+                    ui=ui,
+                    release_envelope_version=2,
+                )
+
+            manifest_path = source / "manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            del manifest["runtime_contract"]["target_runtimes"]
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "runtime profile is incompatible"):
+                build_release_archive(
+                    source,
+                    root / "invalid-runtime.cf-release.zip",
+                    publisher_id="demo.publisher",
+                    experience=experience,
+                    delivery=delivery,
+                    settings=settings,
+                    settings_bindings=bindings,
+                    ui=ui,
+                    release_envelope_version=2,
+                )
 
     def test_archive_reader_rejects_duplicate_members_before_contract_validation(self):
         with tempfile.TemporaryDirectory() as temp_dir:

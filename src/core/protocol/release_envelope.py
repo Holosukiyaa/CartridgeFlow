@@ -13,9 +13,11 @@ import re
 from collections.abc import Mapping
 
 from .report import report_status, summarize_findings
+from .data_contracts import DataContractError, build_runtime_profile_compatibility_report, validate_data_contract_instance, validate_cartridge_presentation_contracts
 
 
 RELEASE_SCHEMA = "cartridgeflow.release_envelope.v1"
+RELEASE_SCHEMA_V2 = "cartridgeflow.release_envelope.v2"
 HASHES_SCHEMA = "cartridgeflow.release_hashes.v1"
 EXPERIENCE_SCHEMA = "cartridgeflow.cartridge_experience.v1"
 DELIVERY_SCHEMA = "cartridgeflow.delivery_contract.v1"
@@ -51,6 +53,18 @@ _PUBLIC_FORBIDDEN_KEYS = {
 _INPUT_TYPES = {"string", "number", "boolean", "enum", "file", "object", "array"}
 _PLACEMENTS = {"local", "cloud", "either"}
 _CONTROL_FILES = {"release.manifest.json", "hashes.json"}
+_PUBLIC_CONTRACT_PATHS = {
+    RELEASE_SCHEMA: {
+        "experience": "public/experience.json",
+        "delivery": "public/delivery.contract.json",
+    },
+    RELEASE_SCHEMA_V2: {
+        "experience": "public/experience.json",
+        "delivery": "public/delivery.contract.json",
+        "settings": "public/settings.contract.json",
+        "ui": "public/ui.contract.json",
+    },
+}
 
 
 def validate_release_envelope(
@@ -58,16 +72,20 @@ def validate_release_envelope(
     experience: dict | None,
     delivery: dict | None,
     *,
+    settings: dict | None = None,
+    ui: dict | None = None,
     bundle_files: Mapping[str, bytes | str] | None = None,
 ) -> list[dict]:
-    """Return deterministic findings for one CF-CRE@1 release candidate."""
+    """Return deterministic findings for one CF-CRE@1 or CF-CRE@2 candidate."""
     findings: list[dict] = []
     release = release if isinstance(release, dict) else {}
     supplied_experience = experience if isinstance(experience, dict) else None
     supplied_delivery = delivery if isinstance(delivery, dict) else None
 
-    if release.get("schema") != RELEASE_SCHEMA:
-        findings.append(_finding("cre_release_schema_invalid", "release.schema must be cartridgeflow.release_envelope.v1.", path="release.manifest.json"))
+    release_schema = str(release.get("schema") or "")
+    if release_schema not in _PUBLIC_CONTRACT_PATHS:
+        findings.append(_finding("cre_release_schema_invalid", "release.schema must be cartridgeflow.release_envelope.v1 or cartridgeflow.release_envelope.v2.", path="release.manifest.json"))
+        release_schema = RELEASE_SCHEMA
 
     identity = release.get("release") if isinstance(release.get("release"), dict) else {}
     publisher_id = _require_id(identity.get("publisher_id"), "publisher_id", findings, "release.release")
@@ -91,20 +109,26 @@ def validate_release_envelope(
 
     _validate_runtime(release.get("runtime"), findings)
     _validate_execution(release.get("execution"), findings)
-    _validate_public_refs(release.get("public_contracts"), findings)
+    _validate_public_refs(release.get("public_contracts"), release_schema, findings)
     _validate_payload(release.get("payload"), findings)
     signature_paths = _validate_signatures(release.get("signatures"), findings)
     if bundle_files is not None:
-        public_contracts = _validate_bundle_files(release, bundle_files, signature_paths, findings)
+        public_contracts = _validate_bundle_files(release, bundle_files, signature_paths, release_schema, findings)
         _validate_bound_public_contracts(
             public_contracts,
             supplied_experience,
             supplied_delivery,
+            settings,
+            ui,
+            release_schema,
             findings,
         )
     else:
         _validate_experience(supplied_experience or {}, findings)
         _validate_delivery(supplied_delivery or {}, findings)
+        if release_schema == RELEASE_SCHEMA_V2:
+            _validate_settings(settings or {}, findings)
+            _validate_ui(ui or {}, findings)
     return findings
 
 
@@ -113,13 +137,22 @@ def build_release_envelope_report(
     experience: dict | None,
     delivery: dict | None,
     *,
+    settings: dict | None = None,
+    ui: dict | None = None,
     bundle_files: Mapping[str, bytes | str] | None = None,
 ) -> dict:
-    findings = validate_release_envelope(release, experience, delivery, bundle_files=bundle_files)
+    findings = validate_release_envelope(
+        release,
+        experience,
+        delivery,
+        settings=settings,
+        ui=ui,
+        bundle_files=bundle_files,
+    )
     counts = summarize_findings(findings)
     return {
         "schema": REPORT_SCHEMA,
-        "protocol": "CF-CRE@1",
+        "protocol": "CF-CRE@2" if isinstance(release, dict) and release.get("schema") == RELEASE_SCHEMA_V2 else "CF-CRE@1",
         "implementation_status": "supported",
         "ok": counts["blocker"] == 0,
         "status": report_status(findings),
@@ -149,9 +182,12 @@ def _validate_execution(value, findings: list[dict]) -> None:
             findings.append(_finding("cre_execution_requirements_invalid", f"release.execution.{field} must be a unique array of stable identifiers.", path=f"release.execution.{field}"))
 
 
-def _validate_public_refs(value, findings: list[dict]) -> None:
+def _validate_public_refs(value, release_schema: str, findings: list[dict]) -> None:
     contracts = value if isinstance(value, dict) else {}
-    expected = {"experience": "public/experience.json", "delivery": "public/delivery.contract.json"}
+    expected = _PUBLIC_CONTRACT_PATHS[release_schema]
+    unexpected = sorted(set(contracts) - set(expected))
+    if unexpected:
+        findings.append(_finding("cre_public_contract_unexpected", f"release.public_contracts contains unexpected entries: {unexpected}", path="release.public_contracts"))
     for name, expected_path in expected.items():
         item = contracts.get(name) if isinstance(contracts.get(name), dict) else {}
         if item.get("path") != expected_path:
@@ -248,6 +284,7 @@ def _validate_bundle_files(
     release: dict,
     bundle_files: Mapping[str, bytes | str],
     signature_paths: set[str],
+    release_schema: str,
     findings: list[dict],
 ) -> dict[str, dict]:
     normalized: dict[str, bytes] = {}
@@ -261,7 +298,11 @@ def _validate_bundle_files(
             continue
         normalized[path] = raw_content.encode("utf-8") if isinstance(raw_content, str) else bytes(raw_content)
 
-    public_contracts = _read_bundle_public_contracts(normalized, findings)
+    public_contracts = _read_bundle_public_contracts(
+        normalized,
+        _PUBLIC_CONTRACT_PATHS[release_schema],
+        findings,
+    )
 
     hashes_bytes = normalized.get("hashes.json")
     integrity = release.get("integrity") if isinstance(release.get("integrity"), dict) else {}
@@ -299,7 +340,7 @@ def _validate_bundle_files(
         entries[file_path] = item
 
     expected_public = release.get("public_contracts") if isinstance(release.get("public_contracts"), dict) else {}
-    for name in ("experience", "delivery"):
+    for name in _PUBLIC_CONTRACT_PATHS[release_schema]:
         item = expected_public.get(name) if isinstance(expected_public.get(name), dict) else {}
         file_path = item.get("path")
         entry = entries.get(file_path)
@@ -324,6 +365,28 @@ def _validate_bundle_files(
         if payload.get("digest") != _payload_digest(payload_entries):
             findings.append(_finding("cre_payload_digest_mismatch", "release.payload.digest must match the canonical payload file list.", path="release.payload.digest"))
 
+    if release_schema == RELEASE_SCHEMA_V2:
+        bindings = _read_json_member(normalized, "payload/settings/bindings.json", findings)
+        flow = _read_json_member(normalized, "payload/root.flow.json", findings)
+        manifest = _read_json_member(normalized, "payload/manifest.json", findings)
+        components = _component_index(normalized, manifest, findings)
+        try:
+            validate_cartridge_presentation_contracts(
+                public_contracts.get("settings") or {},
+                bindings,
+                public_contracts.get("ui") or {},
+                flow,
+                component_by_id=components,
+            )
+        except DataContractError as exc:
+            findings.append(_finding(str(exc.code), str(exc), path="payload/settings/bindings.json"))
+        try:
+            runtime_report = build_runtime_profile_compatibility_report(manifest, flow, public_contracts.get("ui"))
+        except DataContractError as exc:
+            findings.append(_finding(str(exc.code), str(exc), path="payload/manifest.json.runtime_contract"))
+        else:
+            findings.extend(runtime_report["findings"])
+
     allowed = _CONTROL_FILES | signature_paths | set(entries)
     for file_path in normalized:
         if file_path not in allowed:
@@ -334,12 +397,13 @@ def _validate_bundle_files(
     return public_contracts
 
 
-def _read_bundle_public_contracts(normalized: Mapping[str, bytes], findings: list[dict]) -> dict[str, dict]:
+def _read_bundle_public_contracts(
+    normalized: Mapping[str, bytes],
+    contract_paths: Mapping[str, str],
+    findings: list[dict],
+) -> dict[str, dict]:
     contracts: dict[str, dict] = {}
-    for name, path in {
-        "experience": "public/experience.json",
-        "delivery": "public/delivery.contract.json",
-    }.items():
+    for name, path in contract_paths.items():
         raw = normalized.get(path)
         if raw is None:
             findings.append(_finding("cre_public_contract_file_missing", "bundle is missing a required public contract file.", path=path))
@@ -360,20 +424,92 @@ def _validate_bound_public_contracts(
     bundle_contracts: Mapping[str, dict],
     supplied_experience: dict | None,
     supplied_delivery: dict | None,
+    supplied_settings: dict | None,
+    supplied_ui: dict | None,
+    release_schema: str,
     findings: list[dict],
 ) -> None:
-    for name, validator, supplied in (
+    contracts = [
         ("experience", _validate_experience, supplied_experience),
         ("delivery", _validate_delivery, supplied_delivery),
-    ):
+    ]
+    if release_schema == RELEASE_SCHEMA_V2:
+        contracts.extend(
+            [
+                ("settings", _validate_settings, supplied_settings),
+                ("ui", _validate_ui, supplied_ui),
+            ]
+        )
+    for name, validator, supplied in contracts:
         actual = bundle_contracts.get(name)
         validator(actual or {}, findings)
         if supplied is not None and actual is not None and supplied != actual:
             findings.append(_finding(
                 "cre_public_contract_object_mismatch",
                 "caller-supplied public contract does not match the contract bytes in the bundle.",
-                path=f"public/{'experience.json' if name == 'experience' else 'delivery.contract.json'}",
+                path=_PUBLIC_CONTRACT_PATHS[release_schema][name],
             ))
+
+
+def _validate_settings(value: dict, findings: list[dict]) -> None:
+    _validate_governed_json_contract("cartridgeflow.capability.settings", value, "public/settings.contract.json", findings)
+
+
+def _validate_ui(value: dict, findings: list[dict]) -> None:
+    _validate_governed_json_contract("cartridgeflow.capability.ui", value, "public/ui.contract.json", findings)
+
+
+def _validate_governed_json_contract(
+    contract_id: str,
+    value: dict,
+    path: str,
+    findings: list[dict],
+) -> None:
+    try:
+        validate_data_contract_instance(contract_id, "1.0.0", value)
+    except DataContractError as exc:
+        findings.append(_finding(str(exc.code), str(exc), path=path))
+
+
+def _read_json_member(
+    normalized: Mapping[str, bytes],
+    path: str,
+    findings: list[dict],
+) -> dict:
+    raw = normalized.get(path)
+    if raw is None:
+        findings.append(_finding("cre_v2_payload_contract_missing", "CF-CRE@2 payload contract file is missing.", path=path))
+        return {}
+    try:
+        value = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        findings.append(_finding("cre_v2_payload_contract_invalid", "CF-CRE@2 payload contract must be a UTF-8 JSON object.", path=path))
+        return {}
+    if not isinstance(value, dict):
+        findings.append(_finding("cre_v2_payload_contract_invalid", "CF-CRE@2 payload contract must be a JSON object.", path=path))
+        return {}
+    return value
+
+
+def _component_index(
+    normalized: Mapping[str, bytes],
+    manifest: dict,
+    findings: list[dict],
+) -> dict[str, dict]:
+    reference = str(manifest.get("interaction_components") or "")
+    if not reference:
+        return {}
+    path = f"payload/{reference}".replace("\\", "/")
+    document = _read_json_member(normalized, path, findings)
+    components = document.get("components") if isinstance(document.get("components"), list) else []
+    result: dict[str, dict] = {}
+    for item in components:
+        component_id = str(item.get("id") or "") if isinstance(item, dict) else ""
+        if not component_id or component_id in result:
+            findings.append(_finding("cre_v2_component_registry_invalid", "interaction component ids must be non-empty and unique.", path=path))
+            continue
+        result[component_id] = item
+    return result
 
 
 def _find_public_leaks(value, path: str, findings: list[dict]) -> None:

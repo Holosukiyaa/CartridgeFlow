@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 
@@ -10,6 +11,7 @@ class BaseManifestError(ValueError):
 
 BASE_IMPLEMENTATION_PATH = Path("config/base/BASE_IMPLEMENTATION.json")
 _ADAPTER_STATUSES = {"partial", "supported"}
+_SEMVER = re.compile(r"^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$")
 
 
 def load_base_implementation(root: str | Path) -> dict:
@@ -49,6 +51,33 @@ def validate_base_implementation(data: dict) -> None:
             raise BaseManifestError(f"base.supported_base_contracts[{index}] requires id and version")
         if item.get("status") not in {"current", "supported_previous"}:
             raise BaseManifestError(f"base.supported_base_contracts[{index}].status is invalid")
+    data_contracts = data.get("supported_data_contracts", [])
+    if data.get("schema_version") == "0.3" and not isinstance(data_contracts, list):
+        raise BaseManifestError("base.supported_data_contracts must be an array")
+    contract_identities: set[tuple[str, str]] = set()
+    for index, item in enumerate(data_contracts if isinstance(data_contracts, list) else []):
+        if not isinstance(item, dict):
+            raise BaseManifestError(f"base.supported_data_contracts[{index}] must be an object")
+        contract_id = str(item.get("id") or "")
+        version = str(item.get("version") or "")
+        identity = (contract_id, version)
+        if not contract_id or not _SEMVER.fullmatch(version):
+            raise BaseManifestError(
+                f"base.supported_data_contracts[{index}] requires id and semantic version"
+            )
+        if identity in contract_identities:
+            raise BaseManifestError(
+                f"base.supported_data_contracts duplicates {contract_id}@{version}"
+            )
+        contract_identities.add(identity)
+        if item.get("status") != "supported":
+            raise BaseManifestError(
+                f"base.supported_data_contracts[{index}].status must be supported"
+            )
+        if not isinstance(item.get("evidence"), str) or not item["evidence"].strip():
+            raise BaseManifestError(
+                f"base.supported_data_contracts[{index}].evidence is required"
+            )
     if not isinstance(data.get("supported_protocols"), list):
         raise BaseManifestError("base.supported_protocols must be an array")
     for index, item in enumerate(data.get("supported_protocols") or []):

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}{{ family.protocol_id }} · {{ release.version }}{% endblock %}
+{% block title %}{{ protocol_id }} {{ release.version }}{% endblock %}
 {% block body_class %}protocol-detail{% endblock %}
 {% block close_open_menus %}{% endblock %}
 
@@ -13,30 +13,15 @@
 <div class="knowledge-shell">
     {% include "protocol_sidebar.html" %}
     <main class="protocol-reader">
-        {% if selected_document %}
         <header class="reader-header">
-            <div class="reader-kicker">{{ major_layer.number }} {{ major_layer.label }} / {{ layer.label }} / {{ family.protocol_id }} / {{ release.version }}</div>
-            <h1>{{ selected_section.heading if selected_section else selected_document.file_name }}</h1>
-            <p class="reader-path">{{ selected_document.artifact_path }}{% if selected_section %} / 第 {{ selected_section.line_start }} 行{% endif %}</p>
+            <a class="reader-back" href="/" aria-label="返回协议知识库" title="返回协议知识库">←</a>
+            <div class="reader-kicker">协议原文 / {{ source_label }} / {{ protocol_id }} / {{ release.version }}</div>
+            <h1>{{ selected_document.file_name if selected_document else protocol_id }}</h1>
+            {% if selected_document %}<p class="reader-path">{{ selected_document.artifact_path }}</p>{% endif %}
         </header>
-        <article class="document-body">
-            {% if selected_section %}{{ selected_section.rendered_content }}
-            {% elif selected_document.is_json %}<pre>{{ selected_document.raw_content }}</pre>
-            {% else %}{{ selected_document.rendered_content }}{% endif %}
-        </article>
-        {% else %}<p class="empty-note">此版本没有可读内容。</p>{% endif %}
+        {% if selected_document %}<article class="document-body">
+            {% if selected_document.is_json %}<pre>{{ selected_document.raw_content }}</pre>{% else %}{{ selected_document.rendered_content }}{% endif %}
+        </article>{% else %}<p class="empty-note">此版本没有可读内容。</p>{% endif %}
     </main>
 </div>
-<script>
-(() => {
-    const treePane = document.querySelector(".file-tree");
-    const activeFile = treePane && treePane.querySelector(".tree-file.active");
-    if (!treePane || !activeFile) return;
-    const paneRect = treePane.getBoundingClientRect();
-    const fileRect = activeFile.getBoundingClientRect();
-    if (fileRect.top < paneRect.top || fileRect.bottom > paneRect.bottom) {
-        treePane.scrollTop += fileRect.top - paneRect.top - treePane.clientHeight / 3;
-    }
-})();
-</script>
 {% endblock %}

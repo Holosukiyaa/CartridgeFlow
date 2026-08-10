@@ -15,9 +15,11 @@ if str(SOURCE_ROOT) not in sys.path:
     sys.path.insert(0, str(SOURCE_ROOT))
 
 from core.protocol import (
+    DataContractError,
     ProtocolArtifactStore,
     ProtocolKnowledgeRegistry,
     ProtocolKnowledgeRegistryError,
+    build_data_contract_support_report,
     load_base_implementation,
     load_protocol_registry_lock,
     load_protocol_release_catalog,
@@ -44,6 +46,15 @@ def audit(root: Path = ROOT) -> list[str]:
     _audit_registry_lock(registry_path, lock, errors)
     _audit_release_catalog(root, artifacts, catalog, errors)
     _audit_product_bindings(root, catalog, errors)
+    try:
+        support_report = build_data_contract_support_report(root)
+    except (DataContractError, ProtocolKnowledgeRegistryError, OSError, ValueError) as exc:
+        errors.append(f"data contract support cannot be audited: {exc}")
+    else:
+        errors.extend(
+            f"data contract support {item['code']}: {item['message']}"
+            for item in support_report["findings"]
+        )
     return errors
 
 

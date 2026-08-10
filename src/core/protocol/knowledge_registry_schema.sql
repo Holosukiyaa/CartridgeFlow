@@ -1,5 +1,5 @@
 PRAGMA application_id = 1128681554;
-PRAGMA user_version = 2;
+PRAGMA user_version = 3;
 PRAGMA foreign_keys = ON;
 
 CREATE TABLE registry_metadata (
@@ -162,6 +162,86 @@ CREATE TABLE governance_finding (
     status TEXT NOT NULL DEFAULT 'open'
 ) STRICT;
 
+CREATE TABLE data_contract_family (
+    contract_id TEXT PRIMARY KEY,
+    display_name TEXT NOT NULL,
+    layer INTEGER NOT NULL CHECK (layer BETWEEN 1 AND 4),
+    domain TEXT NOT NULL,
+    domain_order INTEGER NOT NULL DEFAULT 0,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    purpose TEXT NOT NULL,
+    owner TEXT NOT NULL,
+    visibility TEXT NOT NULL CHECK (visibility IN ('public', 'internal', 'mixed'))
+) STRICT;
+
+CREATE TABLE data_contract_release (
+    contract_release_key TEXT PRIMARY KEY,
+    contract_id TEXT NOT NULL REFERENCES data_contract_family(contract_id) ON DELETE CASCADE,
+    version TEXT NOT NULL,
+    lifecycle TEXT NOT NULL,
+    generation TEXT NOT NULL CHECK (generation IN ('legacy', 'next')),
+    definition_kind TEXT NOT NULL CHECK (
+        definition_kind IN ('normative_section', 'normative_document', 'json_schema', 'machine_contract')
+    ),
+    source_id TEXT NOT NULL REFERENCES registry_source(source_id),
+    owner_protocol_release_key TEXT NOT NULL REFERENCES protocol_release(release_key),
+    definition_artifact_id TEXT NOT NULL REFERENCES artifact(artifact_id),
+    definition_section_key TEXT REFERENCES document_section(section_key),
+    schema_artifact_id TEXT REFERENCES artifact(artifact_id),
+    compatibility_policy TEXT NOT NULL,
+    content_digest TEXT NOT NULL,
+    notes TEXT NOT NULL DEFAULT '',
+    UNIQUE (contract_id, version)
+) STRICT;
+
+CREATE TABLE data_contract_protocol_binding (
+    contract_release_key TEXT NOT NULL REFERENCES data_contract_release(contract_release_key) ON DELETE CASCADE,
+    protocol_release_key TEXT NOT NULL REFERENCES protocol_release(release_key) ON DELETE CASCADE,
+    binding_role TEXT NOT NULL CHECK (binding_role IN ('defines', 'uses', 'carries', 'supports')),
+    required INTEGER NOT NULL DEFAULT 1 CHECK (required IN (0, 1)),
+    notes TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (contract_release_key, protocol_release_key, binding_role)
+) STRICT;
+
+CREATE TABLE data_contract_rule (
+    rule_key TEXT PRIMARY KEY,
+    contract_release_key TEXT NOT NULL REFERENCES data_contract_release(contract_release_key) ON DELETE CASCADE,
+    rule_code TEXT NOT NULL,
+    severity TEXT NOT NULL CHECK (severity IN ('blocker', 'error', 'warning', 'info')),
+    rule_kind TEXT NOT NULL CHECK (rule_kind IN ('shape', 'semantic', 'boundary', 'compatibility', 'integrity')),
+    description TEXT NOT NULL,
+    validator_ref TEXT,
+    UNIQUE (contract_release_key, rule_code)
+) STRICT;
+
+CREATE TABLE data_contract_usage (
+    usage_key TEXT PRIMARY KEY,
+    contract_release_key TEXT NOT NULL REFERENCES data_contract_release(contract_release_key) ON DELETE CASCADE,
+    stage TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    direction TEXT NOT NULL CHECK (direction IN ('producer', 'consumer')),
+    notes TEXT NOT NULL DEFAULT ''
+) STRICT;
+
+CREATE TABLE data_contract_example (
+    example_key TEXT PRIMARY KEY,
+    contract_release_key TEXT NOT NULL REFERENCES data_contract_release(contract_release_key) ON DELETE CASCADE,
+    example_kind TEXT NOT NULL CHECK (example_kind IN ('valid', 'invalid')),
+    artifact_id TEXT NOT NULL REFERENCES artifact(artifact_id),
+    description TEXT NOT NULL,
+    expected_error_code TEXT
+) STRICT;
+
+CREATE TABLE data_contract_migration (
+    migration_key TEXT PRIMARY KEY,
+    from_contract_release_key TEXT NOT NULL REFERENCES data_contract_release(contract_release_key) ON DELETE CASCADE,
+    to_contract_release_key TEXT REFERENCES data_contract_release(contract_release_key),
+    migration_kind TEXT NOT NULL,
+    compatibility TEXT NOT NULL,
+    transformer_ref TEXT,
+    notes TEXT NOT NULL DEFAULT ''
+) STRICT;
+
 CREATE INDEX protocol_release_identity_idx
     ON protocol_release(protocol_id, version);
 CREATE INDEX artifact_release_idx
@@ -176,6 +256,16 @@ CREATE INDEX implementation_support_target_idx
     ON implementation_support(target_id, target_version, support_status);
 CREATE INDEX implementation_evidence_verification_idx
     ON implementation_evidence(verification, evidence_id);
+CREATE INDEX data_contract_family_tree_idx
+    ON data_contract_family(layer, domain_order, domain, sort_order, contract_id);
+CREATE INDEX data_contract_release_lifecycle_idx
+    ON data_contract_release(contract_id, lifecycle, version);
+CREATE INDEX data_contract_binding_protocol_idx
+    ON data_contract_protocol_binding(protocol_release_key, binding_role);
+CREATE INDEX data_contract_rule_release_idx
+    ON data_contract_rule(contract_release_key, severity, rule_code);
+CREATE INDEX data_contract_usage_release_idx
+    ON data_contract_usage(contract_release_key, stage, direction);
 
 CREATE VIEW release_identity AS
 SELECT
@@ -250,3 +340,38 @@ SELECT
 FROM document_section AS section
 JOIN artifact ON artifact.artifact_id = section.artifact_id
 LEFT JOIN protocol_release AS release ON release.release_key = section.release_key;
+
+CREATE VIEW data_contract_overview AS
+SELECT
+    family.contract_id,
+    family.display_name,
+    family.layer,
+    family.domain,
+    family.domain_order,
+    family.sort_order,
+    family.purpose,
+    family.owner,
+    family.visibility,
+    contract.version,
+    contract.lifecycle,
+    contract.generation,
+    contract.definition_kind,
+    contract.source_id,
+    owner.protocol_id AS owner_protocol_id,
+    owner.version AS owner_protocol_version,
+    artifact.artifact_path AS definition_path,
+    section.heading AS definition_heading,
+    contract.compatibility_policy,
+    contract.content_digest,
+    contract.notes,
+    (SELECT COUNT(*) FROM data_contract_rule AS rule
+        WHERE rule.contract_release_key = contract.contract_release_key) AS rule_count,
+    (SELECT COUNT(*) FROM data_contract_usage AS usage
+        WHERE usage.contract_release_key = contract.contract_release_key) AS usage_count,
+    (SELECT COUNT(*) FROM data_contract_example AS example
+        WHERE example.contract_release_key = contract.contract_release_key) AS example_count
+FROM data_contract_release AS contract
+JOIN data_contract_family AS family ON family.contract_id = contract.contract_id
+JOIN protocol_release AS owner ON owner.release_key = contract.owner_protocol_release_key
+JOIN artifact ON artifact.artifact_id = contract.definition_artifact_id
+LEFT JOIN document_section AS section ON section.section_key = contract.definition_section_key;

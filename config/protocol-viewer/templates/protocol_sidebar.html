@@ -1,82 +1,61 @@
 <aside class="protocol-directory">
     <div class="directory-sticky">
-        <div class="directory-title"><strong>协议目录</strong></div>
-        <div class="source-switch" aria-label="协议线">
-            {% for source in catalog.sources %}<a href="{{ source.url }}"{% if source.active %} class="active" aria-current="page"{% endif %}>{{ source.label }}</a>{% endfor %}
-        </div>
+        <div class="directory-title"><a href="/">协议知识库</a></div>
         <nav class="file-tree" aria-label="协议文件树">
-            {% for group in catalog.groups %}
-            <details class="tree-folder tree-major"{% if group.active %} open{% endif %}>
-                <summary><span class="tree-number">{{ group.major.number }}</span><span>{{ group.major.label }}</span></summary>
+            <details class="tree-folder tree-root"{% if catalog.contract_active %} open{% endif %}>
+                <summary>数据合同</summary>
                 <div class="tree-children">
-                    {% for sublayer in group.sublayers %}
-                    <details class="tree-folder tree-sublayer"{% if sublayer.active %} open{% endif %}>
-                        <summary>{{ sublayer.layer.label }}</summary>
+                    {% for layer in catalog.contract_layers %}
+                    <details class="tree-folder tree-layer"{% if layer.active %} open{% endif %}>
+                        <summary><span class="tree-number">{{ layer.number }}</span>{{ layer.label }}</summary>
                         <div class="tree-children">
-                            <details class="tree-folder tree-collection"{% if sublayer.contract_active %} open{% endif %}>
-                                <summary>数据合同</summary>
+                            {% for domain in layer.domains %}
+                            <details class="tree-folder tree-domain"{% if domain.active %} open{% endif %}>
+                                <summary>{{ domain.name }}</summary>
                                 <div class="tree-children">
-                                    {% if sublayer.contract_protocols %}
-                                        {% for protocol in sublayer.contract_protocols %}
-                                        <details class="tree-folder tree-protocol"{% if protocol.contract_active %} open{% endif %}>
-                                            <summary>{{ protocol.protocol_id }}</summary>
-                                            <div class="tree-children">
-                                                {% for release_node in protocol.release_nodes %}{% if release_node.contract_count %}
-                                                <details class="tree-folder tree-version"{% if release_node.contract_active %} open{% endif %}>
-                                                    <summary>{{ release_node.version }}</summary>
-                                                    <div class="tree-children tree-files">
-                                                        {% for contract_document in release_node.contract_documents %}
-                                                            {% if contract_document.direct_url %}
-                                                            <a class="tree-file{% if contract_document.direct_active %} active{% endif %}" href="{{ contract_document.direct_url }}"{% if contract_document.direct_active %} aria-current="page"{% endif %}>{{ contract_document.file_name }}</a>
-                                                            {% else %}
-                                                            <details class="tree-folder tree-contract-document"{% if contract_document.active %} open{% endif %}>
-                                                                <summary>{{ contract_document.file_name }}</summary>
-                                                                <div class="tree-children">
-                                                                    {% for entry in contract_document.entries %}<a class="tree-file{% if entry.active %} active{% endif %}" href="{{ entry.detail_url }}"{% if entry.active %} aria-current="page"{% endif %}>{{ entry.heading }}</a>{% endfor %}
-                                                                </div>
-                                                            </details>
-                                                            {% endif %}
-                                                        {% endfor %}
-                                                    </div>
-                                                </details>
-                                                {% endif %}{% endfor %}
-                                            </div>
-                                        </details>
-                                        {% endfor %}
-                                    {% else %}<span class="tree-empty">暂无数据合同</span>{% endif %}
+                                    {% for family in domain.families %}
+                                    <details class="tree-folder tree-family"{% if family.active %} open{% endif %}>
+                                        <summary>{{ family.display_name }}</summary>
+                                        <div class="tree-children">
+                                            {% for version in family.versions %}<a class="tree-file{% if version.active %} active{% endif %}" href="{{ version.url }}"{% if version.active %} aria-current="page"{% endif %}>{{ version.version }}</a>{% endfor %}
+                                        </div>
+                                    </details>
+                                    {% endfor %}
                                 </div>
                             </details>
-
-                            <details class="tree-folder tree-collection"{% if sublayer.document_active %} open{% endif %}>
-                                <summary>协议文件</summary>
-                                <div class="tree-children">
-                                    {% if sublayer.protocols %}
-                                        {% for protocol in sublayer.protocols %}
-                                        <details class="tree-folder tree-protocol"{% if protocol.document_active %} open{% endif %}>
-                                            <summary>{{ protocol.protocol_id }}</summary>
-                                            <div class="tree-children">
-                                                {% for release_node in protocol.release_nodes %}
-                                                <details class="tree-folder tree-version"{% if release_node.document_active %} open{% endif %}>
-                                                    <summary>{{ release_node.version }}</summary>
-                                                    <div class="tree-children tree-files">
-                                                        {% if release_node.documents %}
-                                                            {% for document in release_node.documents %}<a class="tree-file{% if document.active %} active{% endif %}" href="{{ document.detail_url }}"{% if document.active %} aria-current="page"{% endif %}>{{ document.file_name }}</a>{% endfor %}
-                                                        {% else %}<span class="tree-empty">无可读文件</span>{% endif %}
-                                                    </div>
-                                                </details>
-                                                {% endfor %}
-                                            </div>
-                                        </details>
-                                        {% endfor %}
-                                    {% else %}<span class="tree-empty">暂无协议文件</span>{% endif %}
-                                </div>
-                            </details>
+                            {% endfor %}
                         </div>
                     </details>
                     {% endfor %}
                 </div>
             </details>
-            {% endfor %}
+            <details class="tree-folder tree-root"{% if catalog.protocol_active %} open{% endif %}>
+                <summary>协议原文</summary>
+                <div class="tree-children">
+                    {% for source in catalog.protocol_sources %}
+                    <details class="tree-folder tree-source"{% if source.active %} open{% endif %}>
+                        <summary>{{ source.label }}</summary>
+                        <div class="tree-children">
+                            {% for protocol in source.protocols %}
+                            <details class="tree-folder tree-protocol"{% if protocol.active %} open{% endif %}>
+                                <summary>{{ protocol.protocol_id }}</summary>
+                                <div class="tree-children">
+                                    {% for version in protocol.versions %}
+                                    <details class="tree-folder tree-version"{% if version.active %} open{% endif %}>
+                                        <summary>{{ version.version }}</summary>
+                                        <div class="tree-children">
+                                            {% for document in version.documents %}<a class="tree-file{% if document.active %} active{% endif %}" href="{{ document.url }}"{% if document.active %} aria-current="page"{% endif %}>{{ document.name }}</a>{% endfor %}
+                                        </div>
+                                    </details>
+                                    {% endfor %}
+                                </div>
+                            </details>
+                            {% endfor %}
+                        </div>
+                    </details>
+                    {% endfor %}
+                </div>
+            </details>
         </nav>
     </div>
 </aside>

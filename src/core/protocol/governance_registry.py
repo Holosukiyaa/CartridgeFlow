@@ -20,6 +20,15 @@ MANIFEST_RELATIVE_PATH = Path("protocol/catalog/release_manifest.json")
 FAMILY_METADATA_RELATIVE_PATH = Path("protocol/governance/protocol_families.json")
 IMPLEMENTATION_RELATIVE_PATH = Path("config/base/BASE_IMPLEMENTATION.json")
 EVIDENCE_RELATIVE_PATH = Path("config/base/capability_evidence.json")
+IMPLEMENTATION_KNOWLEDGE_RELATIVE_PATHS = (
+    Path("config/README.md"),
+    Path("config/defaults/llm_retry.json"),
+    Path("config/protocol/README.md"),
+    Path("config/templates/llm/assignments.json"),
+    Path("config/templates/llm/providers.json"),
+    Path("config/templates/studio/credentials.json"),
+    Path("config/templates/studio/resources.json"),
+)
 DEFAULT_SCHEMA_PATH = Path(__file__).with_name("knowledge_registry_schema.sql")
 _SOURCE_ID_RE = re.compile(r"^[a-z][a-z0-9_-]*$")
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
@@ -315,6 +324,7 @@ def publish_protocol_knowledge_registry(
             connection.execute("PRAGMA journal_mode = DELETE")
             for source_id, inventory in inventories.items():
                 _insert_implementation_inventory(connection, source_id, *inventory[:4])
+            _materialize_browseable_compressed_artifacts(connection)
             connection.execute(
                 "INSERT OR REPLACE INTO registry_metadata(key, value) VALUES (?, ?)",
                 ("registry_role", "product_snapshot"),
@@ -1198,6 +1208,34 @@ def _insert_implementation_inventory(
                 "INSERT INTO artifact_fts VALUES (?, ?, ?, ?, ?)",
                 (artifact.artifact_id, source_id, None, artifact.path, artifact.text),
             )
+            for section in _markdown_sections(artifact):
+                connection.execute(
+                    "INSERT INTO document_section VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        section.section_key,
+                        section.artifact_id,
+                        None,
+                        section.anchor,
+                        section.heading,
+                        section.level,
+                        section.line_start,
+                        section.line_end,
+                        section.content,
+                    ),
+                )
+                connection.execute(
+                    "INSERT INTO section_fts VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        section.section_key,
+                        source_id,
+                        None,
+                        artifact.path,
+                        section.heading,
+                        section.line_start,
+                        section.line_end,
+                        section.content,
+                    ),
+                )
 
     connection.execute(
         "INSERT INTO implementation_manifest VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -1246,6 +1284,26 @@ def _insert_implementation_inventory(
                 _canonical_json(evidence["details"]),
                 evidence["artifact_id"],
             ),
+        )
+
+
+def _materialize_browseable_compressed_artifacts(connection: sqlite3.Connection) -> None:
+    """Keep compact storage while exposing compressed UTF-8 artifacts to the viewer."""
+
+    rows = connection.execute(
+        "SELECT artifact_id, source_id, release_key, artifact_path, media_type, content "
+        "FROM artifact WHERE text_content IS NULL "
+        "AND media_type IN ('application/json+zlib', 'text/markdown+zlib')"
+    ).fetchall()
+    for artifact_id, source_id, release_key, artifact_path, media_type, content in rows:
+        logical_text = zlib.decompress(bytes(content)).decode("utf-8")
+        connection.execute(
+            "UPDATE artifact SET text_content = ? WHERE artifact_id = ?",
+            (logical_text, artifact_id),
+        )
+        connection.execute(
+            "INSERT INTO artifact_fts VALUES (?, ?, ?, ?, ?)",
+            (artifact_id, source_id, release_key, artifact_path, logical_text),
         )
 
 
@@ -1493,6 +1551,11 @@ def _load_implementation_governance(
             )
 
     paths = {manifest_path}
+    paths.update(
+        source.root / relative
+        for relative in IMPLEMENTATION_KNOWLEDGE_RELATIVE_PATHS
+        if (source.root / relative).is_file()
+    )
     evidence: list[dict] = []
     conformance = manifest.get("conformance") if isinstance(manifest.get("conformance"), dict) else {}
     evidence_relative = conformance.get("evidence_manifest")
@@ -1648,12 +1711,17 @@ def _owning_release(path: Path, release_dirs: dict[Path, str]) -> str | None:
 def _artifact_kind(path: Path, release_key: str | None) -> str:
     name = path.name.lower()
     parts = {part.lower() for part in path.parts}
+    normalized = path.as_posix().lower()
     if name == "release_manifest.json":
         return "catalog"
     if name == "base_implementation.json":
         return "implementation_manifest"
     if name == "capability_evidence.json":
         return "implementation_evidence"
+    if "/config/templates/" in normalized:
+        return "configuration_template"
+    if "/config/defaults/" in normalized:
+        return "runtime_default"
     if "governance" in parts:
         return "governance"
     if name == "release.json":

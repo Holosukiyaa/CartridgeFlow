@@ -53,7 +53,12 @@ The source of truth is `protocol-source/protocol-source.sqlite`, pinned
 by `config/protocol/protocol-registry.lock.json`. This product consumes the
 read-only `config/protocol/protocol-registry.sqlite` published snapshot. It
 contains `current` and `temp-runtime`; runtime APIs default to `current`, while
-the second source is governance-only unless explicitly selected.
+the second source is governance-only unless explicitly selected. The product
+snapshot additionally includes only the explicit committed `config/` knowledge
+allowlist maintained in `governance_registry.py`: Base declarations and
+evidence, config documentation, runtime defaults and safe templates. Never add
+`.data/`, local credentials, generated databases, locks or viewer tooling to
+that snapshot.
 Creator recursive packaging uses `CF-FARP@1.7` hosted with `CF-TUNING@1.5`.
 These releases define semantic recipes, immutable complete-Flow capabilities,
 typed public ports, exact dependencies, trust scope and provenance. Generic

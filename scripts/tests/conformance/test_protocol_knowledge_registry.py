@@ -62,13 +62,48 @@ class ProtocolKnowledgeRegistryTests(unittest.TestCase):
             )
             self.assertTrue(registry.search("CartridgeFlow", source_id="current"))
             self.assertTrue(registry.search("CartridgeFlow", source_id="temp-runtime"))
+            governed_config_paths = {
+                row["artifact_path"]
+                for row in registry.connection.execute(
+                    "SELECT artifact_path FROM artifact "
+                    "WHERE source_id = 'current' AND artifact_path LIKE 'config/%' "
+                    "ORDER BY artifact_path"
+                )
+            }
+            self.assertEqual(
+                {
+                    "config/README.md",
+                    "config/base/BASE_IMPLEMENTATION.json",
+                    "config/base/capability_evidence.json",
+                    "config/defaults/llm_retry.json",
+                    "config/protocol/README.md",
+                    "config/templates/llm/assignments.json",
+                    "config/templates/llm/providers.json",
+                    "config/templates/studio/credentials.json",
+                    "config/templates/studio/resources.json",
+                },
+                governed_config_paths,
+            )
+            self.assertFalse(
+                registry.connection.execute(
+                    "SELECT 1 FROM artifact WHERE artifact_path LIKE '.data/%' LIMIT 1"
+                ).fetchone()
+            )
+            self.assertGreater(
+                registry.connection.execute(
+                    "SELECT COUNT(*) FROM document_section "
+                    "WHERE artifact_id = 'current:config/README.md'"
+                ).fetchone()[0],
+                0,
+            )
             evidence_artifact = registry.connection.execute(
                 "SELECT media_type, byte_size, length(content), text_content "
                 "FROM artifact WHERE source_id = 'current' AND artifact_path = 'config/base/capability_evidence.json'"
             ).fetchone()
             self.assertTrue(evidence_artifact["media_type"].endswith("+zlib"))
             self.assertGreater(evidence_artifact["byte_size"], evidence_artifact["length(content)"])
-            self.assertIsNone(evidence_artifact["text_content"])
+            self.assertIsNotNone(evidence_artifact["text_content"])
+            self.assertIn('"evidence_sets"', evidence_artifact["text_content"])
             evidence_source = registry.artifact_json(
                 "current", "config/base/capability_evidence.json"
             )

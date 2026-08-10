@@ -43,26 +43,60 @@ class ProtocolSourceToolingTests(unittest.TestCase):
         self.assertEqual(lock["repository"]["url"], remote)
 
     def test_viewer_is_immutable_and_loopback_only(self):
-        database = ROOT / "protocol-source" / "protocol-source.sqlite"
-        command = launch_protocol_viewer.viewer_command(
-            Path("datasette"), database, 8123
+        databases = (
+            ROOT / "protocol-source" / "protocol-source.sqlite",
+            ROOT / "config" / "protocol" / "protocol-registry.sqlite",
         )
-        self.assertIn("-i", command)
+        command = launch_protocol_viewer.viewer_command(
+            Path("datasette"), databases, 8123
+        )
+        self.assertEqual(2, command.count("-i"))
+        for database in databases:
+            self.assertIn(str(database), command)
+        self.assertEqual(
+            str(launch_protocol_viewer.VIEWER_TEMPLATES),
+            command[command.index("--template-dir") + 1],
+        )
         self.assertEqual("127.0.0.1", command[command.index("--host") + 1])
         self.assertEqual("8123", command[command.index("--port") + 1])
 
-        metadata = json.loads(launch_protocol_viewer.VIEWER_CONFIG.read_text(encoding="utf-8"))
-        queries = metadata["databases"]["protocol-source"]["queries"]
+        metadata_bytes = launch_protocol_viewer.VIEWER_CONFIG.read_bytes()
+        self.assertTrue(metadata_bytes.isascii())
+        metadata = json.loads(metadata_bytes)
+        self.assertEqual("CartridgeFlow 协议知识库", metadata["title"])
+        databases_metadata = metadata["databases"]
+        self.assertEqual(
+            {"protocol-source", "protocol-registry"},
+            set(databases_metadata),
+        )
         self.assertEqual(
             {"protocol_catalog", "read_protocol", "search_protocols"},
-            set(queries),
+            set(databases_metadata["protocol-source"]["queries"]),
         )
+        self.assertEqual(
+            {
+                "configuration_catalog",
+                "read_configuration",
+                "search_configuration",
+                "implementation_support",
+                "implementation_evidence",
+            },
+            set(databases_metadata["protocol-registry"]["queries"]),
+        )
+        queries = [
+            query
+            for database in databases_metadata.values()
+            for query in database["queries"].values()
+        ]
         self.assertTrue(
             all(
                 query["sql"].lstrip().casefold().startswith("select ")
-                for query in queries.values()
+                for query in queries
             )
         )
+        templates = launch_protocol_viewer.VIEWER_TEMPLATES
+        self.assertIn("协议知识库", (templates / "index.html").read_text(encoding="utf-8"))
+        self.assertIn("运行查询", (templates / "query.html").read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

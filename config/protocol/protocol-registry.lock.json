@@ -24,8 +24,8 @@
   ],
   "registry": {
     "schema_version": "2",
-    "logical_digest": "334431ae1c7838fb5b51c52a5d91fa4b16653958c04b5448e8f0bdb2e090932c",
-    "database_sha256": "9551054093e74abd62abc5145fbeb7c6f0e7077d75585078974006cf5bddf726",
+    "logical_digest": "374501149770477ba2278ea2063ca5ecfe5c205c717aae7d0be137d412d4db0d",
+    "database_sha256": "479326634760fea80b0559fbdefc72214fbd7b6a5309cfd2415c55759134c0d2",
     "path": "config/protocol/protocol-registry.sqlite"
   }
 }

@@ -74,13 +74,16 @@ Read `AGENT.md` for engineering boundaries and
 
 ## Protocol Library
 
-Open the authoritative protocol database in a local, read-only web interface:
+Open the Chinese, local read-only knowledge browser:
 
 ```powershell
 view-protocols.bat
 ```
 
 The first launch creates an isolated viewer under ignored `.tools/` and installs
-its pinned Datasette dependencies. The browser binds only to `127.0.0.1:8001`.
-Use the named catalog, document reader and section search queries from the
-database page. Stop the viewer with `Ctrl+C`.
+its pinned Datasette dependencies. The browser binds only to `127.0.0.1:8001`
+and opens a Chinese portal for both databases: the authoritative protocol
+original and the product governance snapshot. The product snapshot also makes
+the approved committed `config/` documentation, defaults and safe templates
+readable and searchable. Runtime state under `.data/` is never included. Stop
+the viewer with `Ctrl+C`.

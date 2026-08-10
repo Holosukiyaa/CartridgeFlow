@@ -1,4 +1,4 @@
-"""Prepare and launch a local read-only browser for the protocol source database."""
+"""Prepare and launch the local read-only protocol knowledge browser."""
 
 from __future__ import annotations
 
@@ -12,12 +12,14 @@ import time
 import venv
 import webbrowser
 from pathlib import Path
-from urllib.parse import quote
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_DATABASE = ROOT / "protocol-source" / "protocol-source.sqlite"
+SOURCE_DATABASE = ROOT / "protocol-source" / "protocol-source.sqlite"
+PRODUCT_DATABASE = ROOT / "config" / "protocol" / "protocol-registry.sqlite"
+DEFAULT_DATABASES = (SOURCE_DATABASE, PRODUCT_DATABASE)
 VIEWER_CONFIG = ROOT / "config" / "protocol-viewer" / "datasette.json"
+VIEWER_TEMPLATES = ROOT / "config" / "protocol-viewer" / "templates"
 VIEWER_REQUIREMENTS = ROOT / "config" / "protocol-viewer" / "requirements.txt"
 VIEWER_ENV = ROOT / ".tools" / "protocol-viewer"
 REQUIREMENTS_MARKER = VIEWER_ENV / ".requirements.sha256"
@@ -78,19 +80,26 @@ def prepare_viewer_environment(*, install: bool = True) -> Path:
     return executable
 
 
-def viewer_command(executable: Path, database: Path, port: int) -> list[str]:
-    return [
+def viewer_command(executable: Path, databases: tuple[Path, ...], port: int) -> list[str]:
+    command = [
         str(executable),
         "serve",
-        "-i",
-        str(database),
-        "--metadata",
-        str(VIEWER_CONFIG),
-        "--host",
-        "127.0.0.1",
-        "--port",
-        str(port),
     ]
+    for database in databases:
+        command.extend(("-i", str(database)))
+    command.extend(
+        [
+            "--metadata",
+            str(VIEWER_CONFIG),
+            "--template-dir",
+            str(VIEWER_TEMPLATES),
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(port),
+        ]
+    )
+    return command
 
 
 def require_port_available(port: int) -> None:
@@ -115,7 +124,12 @@ def wait_until_ready(process: subprocess.Popen[object], port: int) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--database", type=Path, default=DEFAULT_DATABASE)
+    parser.add_argument(
+        "--database",
+        action="append",
+        type=Path,
+        help="SQLite database to serve. Repeat to override the two default knowledge bases.",
+    )
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--no-browser", action="store_true")
     parser.add_argument("--no-install", action="store_true")
@@ -124,24 +138,26 @@ def main() -> int:
 
     if not 1 <= args.port <= 65535:
         parser.error("--port must be between 1 and 65535")
-    database = args.database.resolve()
+    databases = tuple(
+        database.resolve() for database in (args.database or DEFAULT_DATABASES)
+    )
     try:
-        if not database.is_file():
+        missing = [str(database) for database in databases if not database.is_file()]
+        if missing:
             raise RuntimeError(
-                f"protocol database not found: {database}. "
-                "Run 'git submodule update --init protocol-source' first."
+                f"knowledge database not found: {', '.join(missing)}. "
+                "Initialize protocol-source and publish the product registry first."
             )
         executable = prepare_viewer_environment(install=not args.no_install)
         if args.prepare_only:
             print(f"Protocol viewer is ready: {executable}")
             return 0
         require_port_available(args.port)
-        process = subprocess.Popen(viewer_command(executable, database, args.port))
+        process = subprocess.Popen(viewer_command(executable, databases, args.port))
         try:
             wait_until_ready(process, args.port)
-            database_name = quote(database.stem, safe="")
-            url = f"http://127.0.0.1:{args.port}/{database_name}"
-            print(f"Protocol library: {url}")
+            url = f"http://127.0.0.1:{args.port}/"
+            print(f"Protocol knowledge base: {url}")
             if not args.no_browser:
                 webbrowser.open(url)
             return process.wait()

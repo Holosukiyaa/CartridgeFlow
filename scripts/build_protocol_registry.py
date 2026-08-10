@@ -17,6 +17,7 @@ from core.protocol import (
     ProtocolKnowledgeRegistryError,
     ProtocolSource,
     build_protocol_knowledge_registry,
+    publish_protocol_knowledge_registry,
 )
 
 
@@ -45,7 +46,13 @@ def _implementation_source(value: str) -> ImplementationSource:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Compile one or more Git-backed protocol trees into a read-only SQLite governance registry."
+        description="Publish a product registry from the authoritative protocol SQLite database."
+    )
+    parser.add_argument(
+        "--source-database",
+        type=Path,
+        default=DEFAULT_PROTOCOL_REPOSITORY / "protocol-source.sqlite",
+        help="Authoritative SQLite protocol source.",
     )
     parser.add_argument(
         "--source",
@@ -77,22 +84,23 @@ def main() -> int:
         help="Return a non-zero status when findings at this severity or higher exist.",
     )
     args = parser.parse_args()
-    sources = args.source or [
-        ProtocolSource("current", DEFAULT_PROTOCOL_REPOSITORY / "sources" / "current"),
-        ProtocolSource(
-            "temp-runtime", DEFAULT_PROTOCOL_REPOSITORY / "sources" / "temp-runtime"
-        ),
-    ]
     implementation_sources = args.implementation_source
     if implementation_sources is None and args.source is None:
         implementation_sources = [ImplementationSource("current", ROOT)]
     try:
-        report = build_protocol_knowledge_registry(
-            args.output,
-            sources,
-            implementation_sources=implementation_sources or [],
-            lock_dir=args.lock_dir,
-        )
+        if args.source:
+            report = build_protocol_knowledge_registry(
+                args.output,
+                args.source,
+                implementation_sources=implementation_sources or [],
+                lock_dir=args.lock_dir,
+            )
+        else:
+            report = publish_protocol_knowledge_registry(
+                args.output,
+                args.source_database,
+                implementation_sources=implementation_sources or [],
+            )
     except (OSError, ProtocolKnowledgeRegistryError) as exc:
         print(f"Protocol registry build failed: {exc}", file=sys.stderr)
         return 1

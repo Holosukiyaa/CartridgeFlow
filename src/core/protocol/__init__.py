@@ -14,6 +14,7 @@ from .governance_registry import (
     ProtocolSource,
     RegistryBuildReport,
     build_protocol_knowledge_registry,
+    publish_protocol_knowledge_registry,
 )
 from .release_catalog import ProtocolReleaseCatalog, ProtocolReleaseCatalogError, load_protocol_release_catalog
 from .features import has_protocol_feature, protocol_features
@@ -42,6 +43,7 @@ __all__ = [
     "apply_protocol_certification_label",
     "build_protocol_certification_report",
     "build_protocol_knowledge_registry",
+    "publish_protocol_knowledge_registry",
     "build_release_envelope_report",
     "build_release_archive",
     "build_compatibility_report",

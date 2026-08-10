@@ -13,9 +13,11 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from core.protocol import (
     ProtocolKnowledgeRegistry,
+    ProtocolKnowledgeRegistryError,
     ProtocolSource,
     build_protocol_knowledge_registry,
     load_protocol_registry_lock,
+    publish_protocol_knowledge_registry,
     resolve_protocol_registry,
 )
 
@@ -24,9 +26,10 @@ class ProtocolKnowledgeRegistryTests(unittest.TestCase):
     def test_product_uses_queryable_read_only_registry_from_pinned_source(self):
         target = resolve_protocol_registry(ROOT)
         lock = load_protocol_registry_lock(ROOT)
-        self.assertEqual("cartridgeflow.product_protocol_registry_lock.v2", lock["schema"])
+        self.assertEqual("cartridgeflow.product_protocol_registry_lock.v3", lock["schema"])
         self.assertEqual("current", lock["runtime_source_id"])
         self.assertEqual(40, len(lock["repository"]["commit"]))
+        self.assertEqual("protocol-source.sqlite", lock["source_database"]["path"])
         self.assertEqual(
             {"current", "temp-runtime"},
             {item["source_id"] for item in lock["sources"]},
@@ -34,6 +37,12 @@ class ProtocolKnowledgeRegistryTests(unittest.TestCase):
 
         with ProtocolKnowledgeRegistry(target) as registry:
             summary = registry.summary()
+            self.assertEqual("2", summary["schema_version"])
+            self.assertEqual("product_snapshot", summary["registry_role"])
+            self.assertEqual(
+                lock["source_database"]["logical_digest"],
+                summary["source_registry_digest"],
+            )
             self.assertEqual(2, summary["source_count"])
             self.assertGreater(summary["release_count"], 40)
             self.assertGreater(summary["artifact_count"], summary["release_count"])
@@ -105,6 +114,55 @@ class ProtocolKnowledgeRegistryTests(unittest.TestCase):
                     "SELECT source_count, distinct_bundle_count FROM release_identity WHERE protocol_id = 'TEST-PROTOCOL' AND version = '1'"
                 ).fetchone()
                 self.assertEqual((2, 2), tuple(identity))
+
+    def test_product_snapshot_is_published_directly_from_authoritative_database(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            source_root = base / "source"
+            self._write_source(source_root, "Authoritative SQL semantics")
+            source_database = base / "protocol-source.sqlite"
+            product_database = base / "protocol-registry.sqlite"
+            build_protocol_knowledge_registry(
+                source_database,
+                [ProtocolSource("current", source_root)],
+            )
+
+            report = publish_protocol_knowledge_registry(
+                product_database,
+                source_database,
+            )
+
+            self.assertEqual(1, report.source_count)
+            with (
+                ProtocolKnowledgeRegistry(source_database) as source,
+                ProtocolKnowledgeRegistry(product_database) as product,
+            ):
+                self.assertEqual("authoritative_source", source.summary()["registry_role"])
+                self.assertEqual("product_snapshot", product.summary()["registry_role"])
+                self.assertEqual(
+                    source.summary()["registry_digest"],
+                    product.summary()["source_registry_digest"],
+                )
+                path = "protocol/test/1/specification.md"
+                self.assertEqual(
+                    source.artifact_bytes("current", path),
+                    product.artifact_bytes("current", path),
+                )
+
+            connection = sqlite3.connect(source_database)
+            try:
+                connection.execute(
+                    "UPDATE artifact SET content = ? WHERE source_id = ? AND artifact_path = ?",
+                    (b"corrupted", "current", "protocol/test/1/specification.md"),
+                )
+                connection.commit()
+            finally:
+                connection.close()
+            with self.assertRaisesRegex(
+                ProtocolKnowledgeRegistryError,
+                "artifact (byte size|digest) mismatch",
+            ):
+                publish_protocol_knowledge_registry(product_database, source_database)
 
     def _write_source(self, root: Path, specification: str) -> None:
         release_dir = root / "protocol" / "test" / "1"

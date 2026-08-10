@@ -1,5 +1,5 @@
 PRAGMA application_id = 1128681554;
-PRAGMA user_version = 1;
+PRAGMA user_version = 2;
 PRAGMA foreign_keys = ON;
 
 CREATE TABLE registry_metadata (
@@ -12,6 +12,13 @@ CREATE TABLE registry_source (
     manifest_path TEXT NOT NULL,
     manifest_digest TEXT NOT NULL,
     source_digest TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE registry_source_boundary (
+    source_id TEXT PRIMARY KEY REFERENCES registry_source(source_id) ON DELETE CASCADE,
+    role TEXT,
+    authority TEXT,
+    responsibility_boundary TEXT
 ) STRICT;
 
 CREATE TABLE protocol_family (
@@ -179,3 +186,67 @@ SELECT
     GROUP_CONCAT(source_id) AS sources
 FROM protocol_release
 GROUP BY protocol_id, version;
+
+CREATE VIEW source_overview AS
+SELECT
+    source.source_id,
+    boundary.role,
+    boundary.authority,
+    boundary.responsibility_boundary,
+    source.manifest_digest,
+    source.source_digest,
+    COUNT(DISTINCT release.release_key) AS release_count,
+    COUNT(DISTINCT artifact.artifact_id) AS artifact_count
+FROM registry_source AS source
+LEFT JOIN registry_source_boundary AS boundary ON boundary.source_id = source.source_id
+LEFT JOIN protocol_release AS release ON release.source_id = source.source_id
+LEFT JOIN artifact AS artifact ON artifact.source_id = source.source_id
+GROUP BY source.source_id, boundary.role, boundary.authority,
+    boundary.responsibility_boundary, source.manifest_digest, source.source_digest;
+
+CREATE VIEW protocol_release_overview AS
+SELECT
+    release.source_id,
+    release.protocol_id,
+    release.version,
+    release.name,
+    release.category,
+    release.lifecycle,
+    release.specification_status,
+    release.implementation_status,
+    release.runtime_adapter,
+    release.release_path,
+    release.bundle_digest,
+    COUNT(artifact.artifact_id) AS artifact_count
+FROM protocol_release AS release
+LEFT JOIN artifact ON artifact.release_key = release.release_key
+GROUP BY release.release_key;
+
+CREATE VIEW protocol_document AS
+SELECT
+    artifact.source_id,
+    release.protocol_id,
+    release.version,
+    artifact.artifact_path,
+    artifact.artifact_kind,
+    artifact.media_type,
+    artifact.content_digest,
+    artifact.text_content AS content
+FROM artifact
+LEFT JOIN protocol_release AS release ON release.release_key = artifact.release_key
+WHERE artifact.text_content IS NOT NULL;
+
+CREATE VIEW protocol_outline AS
+SELECT
+    artifact.source_id,
+    release.protocol_id,
+    release.version,
+    artifact.artifact_path,
+    section.anchor,
+    section.heading,
+    section.heading_level,
+    section.line_start,
+    section.line_end
+FROM document_section AS section
+JOIN artifact ON artifact.artifact_id = section.artifact_id
+LEFT JOIN protocol_release AS release ON release.release_key = section.release_key;

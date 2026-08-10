@@ -2,9 +2,10 @@
 
 Use this checklist when applying, not merely discussing, a protocol upgrade.
 
-Run source-editing commands from `cartridgeflow-protocols/sources/current`.
-The `protocol/...` paths below are relative to that directory. After committing
-and pushing the source repository, refresh CartridgeFlow with
+Run source commands from `cartridgeflow-protocols`. The `protocol/...` paths
+below are artifact keys inside `protocol-source.sqlite`, not committed file
+paths. Export them only to an ignored temporary workspace. After committing
+and pushing the source database, refresh CartridgeFlow with
 `python scripts/update_protocol_registry.py`.
 
 ## 1. Classify The Change
@@ -42,7 +43,7 @@ Unacceptable old-version edits:
 
 ## 3. Add Source Protocol Document
 
-For a CF-FARP release, add a complete version directory:
+For a CF-FARP release, author this complete bundle in a temporary workspace:
 
 ```text
 protocol/flow-authoring/<version>/
@@ -66,7 +67,7 @@ The document should include:
 
 ## 4. Add Machine-Readable Registry
 
-Add:
+Add this artifact to the bundle and publish the bundle transactionally:
 
 ```text
 protocol/flow-authoring/<version>/release.json
@@ -86,7 +87,7 @@ The file should include:
 
 ## 5. Update Vocabulary
 
-Update only vocabulary files that are required:
+Update only vocabulary artifacts that are required:
 
 ```text
 protocol/flow-authoring/<version>/profiles.json
@@ -133,7 +134,7 @@ Do not add implicit output-name-derived consume keys to older protocols.
 
 ## 7. Update Agent Entry Points
 
-Update:
+Update these database artifacts and project guidance:
 
 ```text
 protocol/governance/GOVERNANCE.md
@@ -163,9 +164,7 @@ Prefer small conformance tests over broad integration tests for protocol registr
 Run at minimum:
 
 ```text
-python -m json.tool protocol/flow-authoring/<version>/release.json
-python -m json.tool protocol/flow-authoring/<version>/profiles.json
-python -m json.tool protocol/flow-authoring/<version>/capabilities.json
+python ..\cartridgeflow-protocols\scripts\protocol_db.py verify
 python scripts/run_conformance.py
 ```
 

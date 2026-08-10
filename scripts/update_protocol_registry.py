@@ -19,16 +19,12 @@ if str(SOURCE_ROOT) not in sys.path:
 from core.protocol import (
     ImplementationSource,
     ProtocolKnowledgeRegistry,
-    ProtocolSource,
-    build_protocol_knowledge_registry,
+    publish_protocol_knowledge_registry,
 )
 
 
 REPOSITORY_URL = "https://github.com/Holosukiyaa/cartridgeflow-protocols.git"
-SOURCE_SUBDIRECTORIES = {
-    "current": Path("sources/current"),
-    "temp-runtime": Path("sources/temp-runtime"),
-}
+SOURCE_DATABASE_RELATIVE_PATH = Path("protocol-source.sqlite")
 RUNTIME_SOURCE_ID = "current"
 DATABASE_PATH = ROOT / "config" / "protocol" / "protocol-registry.sqlite"
 LOCK_PATH = ROOT / "config" / "protocol" / "protocol-registry.lock.json"
@@ -47,60 +43,67 @@ def main() -> int:
     repository = args.protocol_repository.resolve()
     try:
         commit, remote = _validate_source_repository(repository)
-        schema_path = repository / "registry" / "schema.sql"
+        source_database = repository / SOURCE_DATABASE_RELATIVE_PATH
+        if not source_database.is_file():
+            raise RuntimeError(
+                f"authoritative protocol database not found: {SOURCE_DATABASE_RELATIVE_PATH.as_posix()}"
+            )
+        source_database_digest = hashlib.sha256(source_database.read_bytes()).hexdigest()
         DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(
             prefix=".protocol-registry-update-", dir=DATABASE_PATH.parent
         ) as temporary:
             staging_dir = Path(temporary)
             staged_database = staging_dir / DATABASE_PATH.name
-            lock_dir = staging_dir / "line-locks"
-            report = build_protocol_knowledge_registry(
+            report = publish_protocol_knowledge_registry(
                 staged_database,
-                [
-                    ProtocolSource(source_id, repository / source_path)
-                    for source_id, source_path in SOURCE_SUBDIRECTORIES.items()
-                ],
+                source_database,
                 implementation_sources=[ImplementationSource("current", ROOT)],
-                lock_dir=lock_dir,
-                schema_path=schema_path,
             )
             with ProtocolKnowledgeRegistry(staged_database) as registry:
+                product_summary = registry.summary()
                 unexpected_blockers = [
                     item
                     for item in registry.findings(severity="blocker")
                     if item["finding_type"] != "protocol_identity_collision"
                 ]
+                source_rows = [
+                    dict(row)
+                    for row in registry.connection.execute(
+                        "SELECT source_id, manifest_digest, source_digest "
+                        "FROM registry_source ORDER BY source_id"
+                    )
+                ]
+            with ProtocolKnowledgeRegistry(source_database) as source_registry:
+                source_summary = source_registry.summary()
             if unexpected_blockers:
                 raise RuntimeError(
                     f"protocol sources contain unexpected blocker findings: "
                     f"{sorted({item['finding_type'] for item in unexpected_blockers})}"
                 )
-            line_locks = {
-                source_id: json.loads(
-                    (lock_dir / f"{source_id}.protocol-lock.json").read_text(encoding="utf-8")
-                )
-                for source_id in SOURCE_SUBDIRECTORIES
-            }
             database_digest = hashlib.sha256(staged_database.read_bytes()).hexdigest()
             lock = {
-                "schema": "cartridgeflow.product_protocol_registry_lock.v2",
+                "schema": "cartridgeflow.product_protocol_registry_lock.v3",
                 "repository": {
                     "url": remote,
                     "commit": commit,
                 },
+                "source_database": {
+                    "path": SOURCE_DATABASE_RELATIVE_PATH.as_posix(),
+                    "database_sha256": source_database_digest,
+                    "logical_digest": source_summary["registry_digest"],
+                },
                 "runtime_source_id": RUNTIME_SOURCE_ID,
                 "sources": [
                     {
-                        "source_id": source_id,
-                        "path": source_path.as_posix(),
-                        "manifest_digest": line_locks[source_id]["manifest_digest"],
-                        "source_digest": line_locks[source_id]["source_digest"],
+                        "source_id": row["source_id"],
+                        "manifest_digest": row["manifest_digest"],
+                        "source_digest": row["source_digest"],
                     }
-                    for source_id, source_path in SOURCE_SUBDIRECTORIES.items()
+                    for row in source_rows
                 ],
                 "registry": {
-                    "schema_version": "1",
+                    "schema_version": product_summary["schema_version"],
                     "logical_digest": report.registry_digest,
                     "database_sha256": database_digest,
                     "path": DATABASE_PATH.relative_to(ROOT).as_posix(),
@@ -112,7 +115,7 @@ def main() -> int:
     except (OSError, RuntimeError, ValueError) as exc:
         print(f"Protocol registry update failed: {exc}", file=sys.stderr)
         return 1
-    print(f"Protocol sources: {', '.join(SOURCE_SUBDIRECTORIES)}")
+    print(f"Protocol source database: {source_database}")
     print(f"Protocol repository: {remote}@{commit}")
     print(f"Protocol registry: {DATABASE_PATH}")
     print(f"Database SHA-256: {database_digest}")

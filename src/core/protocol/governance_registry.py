@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import sqlite3
 import tempfile
 import zlib
@@ -12,7 +13,7 @@ from pathlib import Path
 from typing import Iterable
 
 
-REGISTRY_SCHEMA_VERSION = "1"
+REGISTRY_SCHEMA_VERSION = "2"
 REGISTRY_SCHEMA_NAME = "cartridgeflow.protocol_knowledge_registry.v1"
 LOCK_SCHEMA_NAME = "cartridgeflow.protocol_line_lock.v1"
 MANIFEST_RELATIVE_PATH = Path("protocol/catalog/release_manifest.json")
@@ -33,6 +34,9 @@ class ProtocolKnowledgeRegistryError(ValueError):
 class ProtocolSource:
     source_id: str
     root: Path
+    role: str | None = None
+    authority: str | None = None
+    responsibility_boundary: str | None = None
 
     def __post_init__(self) -> None:
         if not _SOURCE_ID_RE.fullmatch(self.source_id):
@@ -139,6 +143,7 @@ def build_protocol_knowledge_registry(
     implementation_sources: Iterable[ImplementationSource] = (),
     lock_dir: str | Path | None = None,
     schema_path: str | Path = DEFAULT_SCHEMA_PATH,
+    registry_role: str = "authoritative_source",
 ) -> RegistryBuildReport:
     source_list = list(sources)
     if not source_list:
@@ -183,7 +188,14 @@ def build_protocol_knowledge_registry(
     schema = Path(schema_path).read_text(encoding="utf-8")
     temporary = _temporary_database_path(output)
     try:
-        _write_database(temporary, schema, inventories, findings, registry_digest)
+        _write_database(
+            temporary,
+            schema,
+            inventories,
+            findings,
+            registry_digest,
+            registry_role=registry_role,
+        )
         os.replace(temporary, output)
     finally:
         temporary.unlink(missing_ok=True)
@@ -211,6 +223,263 @@ def build_protocol_knowledge_registry(
         finding_counts=counts,
         lock_paths=tuple(lock_paths),
     )
+
+
+def publish_protocol_knowledge_registry(
+    output_path: str | Path,
+    source_database: str | Path,
+    *,
+    implementation_sources: Iterable[ImplementationSource] = (),
+) -> RegistryBuildReport:
+    """Publish a product registry directly from an authoritative SQLite source."""
+
+    source_path = Path(source_database).resolve()
+    output = Path(output_path).resolve()
+    if not source_path.is_file():
+        raise ProtocolKnowledgeRegistryError(
+            f"authoritative protocol database not found: {source_path}"
+        )
+
+    with ProtocolKnowledgeRegistry(source_path) as source_registry:
+        metadata = dict(
+            source_registry.connection.execute(
+                "SELECT key, value FROM registry_metadata"
+            )
+        )
+        if metadata.get("schema") != REGISTRY_SCHEMA_NAME:
+            raise ProtocolKnowledgeRegistryError(
+                "authoritative protocol database has an unknown schema"
+            )
+        if metadata.get("schema_version") != REGISTRY_SCHEMA_VERSION:
+            raise ProtocolKnowledgeRegistryError(
+                "authoritative protocol database has an unsupported schema version"
+            )
+        if metadata.get("registry_role") != "authoritative_source":
+            raise ProtocolKnowledgeRegistryError(
+                "protocol source must declare registry_role=authoritative_source"
+            )
+        if source_registry.connection.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+            raise ProtocolKnowledgeRegistryError(
+                "authoritative protocol database failed integrity_check"
+            )
+        if source_registry.connection.execute("PRAGMA foreign_key_check").fetchall():
+            raise ProtocolKnowledgeRegistryError(
+                "authoritative protocol database contains foreign-key violations"
+            )
+        source_rows = _validate_authoritative_source_registry(
+            source_registry.connection,
+            metadata,
+        )
+
+    implementations = list(implementation_sources)
+    implementation_by_id = {item.source_id: item for item in implementations}
+    if len(implementation_by_id) != len(implementations):
+        raise ProtocolKnowledgeRegistryError("implementation source ids must be unique")
+    source_ids = {str(item["source_id"]) for item in source_rows}
+    unknown = sorted(set(implementation_by_id) - source_ids)
+    if unknown:
+        raise ProtocolKnowledgeRegistryError(
+            f"implementation sources require matching protocol sources: {unknown}"
+        )
+
+    inventories = {
+        source_id: _inventory_implementation(source)
+        for source_id, source in sorted(implementation_by_id.items())
+    }
+    registry_digest = _sha256_json(
+        {
+            "schema": REGISTRY_SCHEMA_NAME,
+            "schema_version": REGISTRY_SCHEMA_VERSION,
+            "sources": [
+                {
+                    "source_id": row["source_id"],
+                    "source_digest": row["source_digest"],
+                    "implementation_digest": (
+                        inventories[row["source_id"]][4]
+                        if row["source_id"] in inventories
+                        else None
+                    ),
+                }
+                for row in source_rows
+            ],
+        }
+    )
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    temporary = _temporary_database_path(output)
+    try:
+        shutil.copyfile(source_path, temporary)
+        connection = sqlite3.connect(temporary)
+        try:
+            connection.execute("PRAGMA foreign_keys = ON")
+            connection.execute("PRAGMA journal_mode = DELETE")
+            for source_id, inventory in inventories.items():
+                _insert_implementation_inventory(connection, source_id, *inventory[:4])
+            connection.execute(
+                "INSERT OR REPLACE INTO registry_metadata(key, value) VALUES (?, ?)",
+                ("registry_role", "product_snapshot"),
+            )
+            connection.execute(
+                "INSERT OR REPLACE INTO registry_metadata(key, value) VALUES (?, ?)",
+                ("source_registry_digest", metadata["registry_digest"]),
+            )
+            connection.execute(
+                "INSERT OR REPLACE INTO registry_metadata(key, value) VALUES (?, ?)",
+                ("registry_digest", registry_digest),
+            )
+            connection.commit()
+            connection.execute("PRAGMA optimize")
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+        os.replace(temporary, output)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+    with ProtocolKnowledgeRegistry(output) as registry:
+        summary = registry.summary()
+        counts: dict[str, int] = {}
+        for finding in registry.findings():
+            severity = str(finding["severity"])
+            counts[severity] = counts.get(severity, 0) + 1
+    return RegistryBuildReport(
+        output_path=output,
+        registry_digest=registry_digest,
+        source_count=int(summary["source_count"]),
+        release_count=int(summary["release_count"]),
+        artifact_count=int(summary["artifact_count"]),
+        section_count=int(summary["section_count"]),
+        finding_counts=counts,
+        lock_paths=(),
+    )
+
+
+def _validate_authoritative_source_registry(
+    connection: sqlite3.Connection,
+    metadata: dict[str, str],
+) -> list[dict]:
+    if connection.execute("PRAGMA user_version").fetchone()[0] != int(REGISTRY_SCHEMA_VERSION):
+        raise ProtocolKnowledgeRegistryError(
+            "authoritative protocol database user_version does not match its schema metadata"
+        )
+    if connection.execute("SELECT COUNT(*) FROM implementation_manifest").fetchone()[0]:
+        raise ProtocolKnowledgeRegistryError(
+            "authoritative protocol database must not contain product implementation evidence"
+        )
+    source_count = connection.execute("SELECT COUNT(*) FROM registry_source").fetchone()[0]
+    boundary_count = connection.execute(
+        "SELECT COUNT(*) FROM registry_source_boundary"
+    ).fetchone()[0]
+    if source_count != boundary_count:
+        raise ProtocolKnowledgeRegistryError(
+            "every authoritative protocol source requires a responsibility boundary"
+        )
+
+    for artifact in connection.execute(
+        "SELECT source_id, artifact_path, media_type, byte_size, content_digest, content "
+        "FROM artifact ORDER BY source_id, artifact_path"
+    ):
+        label = f"{artifact['source_id']}:{artifact['artifact_path']}"
+        try:
+            content = _decode_stored_content(
+                bytes(artifact["content"]),
+                str(artifact["media_type"]),
+            )
+        except zlib.error as exc:
+            raise ProtocolKnowledgeRegistryError(
+                f"authoritative protocol artifact cannot be decoded: {label}"
+            ) from exc
+        if len(content) != artifact["byte_size"]:
+            raise ProtocolKnowledgeRegistryError(
+                f"authoritative protocol artifact byte size mismatch: {label}"
+            )
+        if _sha256(content) != artifact["content_digest"]:
+            raise ProtocolKnowledgeRegistryError(
+                f"authoritative protocol artifact digest mismatch: {label}"
+            )
+
+    for release in connection.execute(
+        "SELECT release_key, release_path, release_digest, bundle_digest "
+        "FROM protocol_release ORDER BY release_key"
+    ):
+        release_artifact = connection.execute(
+            "SELECT content_digest FROM artifact WHERE release_key = ? AND artifact_path = ?",
+            (release["release_key"], release["release_path"]),
+        ).fetchone()
+        if release_artifact is None or release_artifact["content_digest"] != release["release_digest"]:
+            raise ProtocolKnowledgeRegistryError(
+                f"authoritative protocol release digest mismatch: {release['release_key']}"
+            )
+        release_directory = Path(str(release["release_path"])).parent.as_posix().rstrip("/") + "/"
+        members = [
+            {
+                "path": str(item["artifact_path"]).removeprefix(release_directory),
+                "digest": item["content_digest"],
+            }
+            for item in connection.execute(
+                "SELECT artifact_path, content_digest FROM artifact "
+                "WHERE release_key = ? ORDER BY artifact_path",
+                (release["release_key"],),
+            )
+        ]
+        if _sha256_json(members) != release["bundle_digest"]:
+            raise ProtocolKnowledgeRegistryError(
+                f"authoritative protocol release bundle mismatch: {release['release_key']}"
+            )
+
+    source_rows = [
+        dict(row)
+        for row in connection.execute(
+            "SELECT source_id, manifest_path, manifest_digest, source_digest "
+            "FROM registry_source ORDER BY source_id"
+        )
+    ]
+    for source in source_rows:
+        manifest = connection.execute(
+            "SELECT content_digest FROM artifact WHERE source_id = ? AND artifact_path = ?",
+            (source["source_id"], source["manifest_path"]),
+        ).fetchone()
+        if manifest is None or manifest["content_digest"] != source["manifest_digest"]:
+            raise ProtocolKnowledgeRegistryError(
+                f"authoritative {source['source_id']} manifest digest mismatch"
+            )
+        artifacts = [
+            {"path": item["artifact_path"], "digest": item["content_digest"]}
+            for item in connection.execute(
+                "SELECT artifact_path, content_digest FROM artifact "
+                "WHERE source_id = ? AND artifact_path LIKE 'protocol/%' ORDER BY artifact_path",
+                (source["source_id"],),
+            )
+        ]
+        expected_source_digest = _sha256_json(
+            {"manifest_digest": source["manifest_digest"], "artifacts": artifacts}
+        )
+        if expected_source_digest != source["source_digest"]:
+            raise ProtocolKnowledgeRegistryError(
+                f"authoritative {source['source_id']} source digest mismatch"
+            )
+
+    expected_registry_digest = _sha256_json(
+        {
+            "schema": REGISTRY_SCHEMA_NAME,
+            "schema_version": REGISTRY_SCHEMA_VERSION,
+            "sources": [
+                {
+                    "source_id": source["source_id"],
+                    "source_digest": source["source_digest"],
+                    "implementation_digest": None,
+                }
+                for source in source_rows
+            ],
+        }
+    )
+    if metadata.get("registry_digest") != expected_registry_digest:
+        raise ProtocolKnowledgeRegistryError(
+            "authoritative protocol database logical digest mismatch"
+        )
+    return source_rows
 
 
 class ProtocolKnowledgeRegistry:
@@ -618,12 +887,55 @@ def _inventory_source(
     )
 
 
+def _inventory_implementation(
+    source: ImplementationSource,
+) -> tuple[dict, list[dict], list[dict], list[_Artifact], str]:
+    implementation, support, evidence, paths = _load_implementation_governance(source)
+    if implementation is None:
+        raise ProtocolKnowledgeRegistryError(
+            f"{source.source_id}: {IMPLEMENTATION_RELATIVE_PATH.as_posix()} not found"
+        )
+
+    artifacts: list[_Artifact] = []
+    for path in sorted(paths):
+        relative = path.relative_to(source.root).as_posix()
+        logical_content = path.read_bytes()
+        logical_text = _decode_text(path, logical_content)
+        media_type = _media_type(path)
+        content = logical_content
+        text = logical_text
+        if relative == EVIDENCE_RELATIVE_PATH.as_posix():
+            content = zlib.compress(logical_content, level=9)
+            text = None
+            media_type = f"{media_type}+zlib"
+        artifacts.append(
+            _Artifact(
+                artifact_id=f"{source.source_id}:{relative}",
+                source_id=source.source_id,
+                path=relative,
+                kind=_artifact_kind(path, None),
+                media_type=media_type,
+                content=content,
+                text=text,
+                byte_size=len(logical_content),
+                digest=_sha256(logical_content),
+                release_key=None,
+            )
+        )
+    digest = _sha256_json(
+        [{"path": item.path, "digest": item.digest} for item in artifacts]
+    )
+    return implementation, support, evidence, artifacts, digest
+
+
 def _write_database(
     path: Path,
     schema: str,
     inventories: list[_SourceInventory],
     findings: list[dict],
     registry_digest: str,
+    *,
+    registry_role: str,
 ) -> None:
     connection = sqlite3.connect(path)
     try:
@@ -636,6 +948,7 @@ def _write_database(
                 ("schema", REGISTRY_SCHEMA_NAME),
                 ("schema_version", REGISTRY_SCHEMA_VERSION),
                 ("registry_digest", registry_digest),
+                ("registry_role", registry_role),
                 ("search_engine", search_engine),
                 ("evidence_test_reference_format", "python_unittest_owner_case.v1"),
             ],
@@ -645,6 +958,15 @@ def _write_database(
             connection.execute(
                 "INSERT INTO registry_source VALUES (?, ?, ?, ?)",
                 (source_id, MANIFEST_RELATIVE_PATH.as_posix(), inventory.manifest_digest, inventory.source_digest),
+            )
+            connection.execute(
+                "INSERT INTO registry_source_boundary VALUES (?, ?, ?, ?)",
+                (
+                    source_id,
+                    inventory.source.role,
+                    inventory.source.authority,
+                    inventory.source.responsibility_boundary,
+                ),
             )
             for protocol_id, family in sorted(inventory.families.items()):
                 connection.execute(
@@ -838,6 +1160,93 @@ def _write_database(
         raise
     finally:
         connection.close()
+
+
+def _insert_implementation_inventory(
+    connection: sqlite3.Connection,
+    source_id: str,
+    implementation: dict,
+    support_items: list[dict],
+    evidence_items: list[dict],
+    artifacts: list[_Artifact],
+) -> None:
+    for artifact in artifacts:
+        if connection.execute(
+            "SELECT 1 FROM artifact WHERE artifact_id = ? OR (source_id = ? AND artifact_path = ?)",
+            (artifact.artifact_id, source_id, artifact.path),
+        ).fetchone():
+            raise ProtocolKnowledgeRegistryError(
+                f"product implementation artifact collides with protocol source: {source_id}:{artifact.path}"
+            )
+        connection.execute(
+            "INSERT INTO artifact VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                artifact.artifact_id,
+                source_id,
+                None,
+                artifact.path,
+                artifact.kind,
+                artifact.media_type,
+                artifact.byte_size,
+                artifact.digest,
+                artifact.content,
+                artifact.text,
+            ),
+        )
+        if artifact.text:
+            connection.execute(
+                "INSERT INTO artifact_fts VALUES (?, ?, ?, ?, ?)",
+                (artifact.artifact_id, source_id, None, artifact.path, artifact.text),
+            )
+
+    connection.execute(
+        "INSERT INTO implementation_manifest VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            implementation["implementation_key"],
+            source_id,
+            implementation["implementation_id"],
+            implementation.get("implementation_name"),
+            implementation["implementation_version"],
+            implementation.get("environment"),
+            implementation.get("base_protocol_id"),
+            implementation.get("base_protocol_version"),
+            implementation["artifact_id"],
+            implementation["manifest_digest"],
+        ),
+    )
+    for support in support_items:
+        connection.execute(
+            """
+            INSERT INTO implementation_support(
+                implementation_key, support_kind, target_id, target_version,
+                support_status, runtime_adapter, metadata_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                implementation["implementation_key"],
+                support["support_kind"],
+                support["target_id"],
+                support["target_version"],
+                support["support_status"],
+                support.get("runtime_adapter"),
+                _canonical_json(support.get("metadata") or {}),
+            ),
+        )
+    for evidence in evidence_items:
+        connection.execute(
+            "INSERT INTO implementation_evidence VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                evidence["evidence_key"],
+                implementation["implementation_key"],
+                evidence["evidence_id"],
+                evidence["verification"],
+                _canonical_json(evidence["implementation"]),
+                _canonical_json(evidence["positive_tests"]),
+                _canonical_json(evidence["failure_tests"]),
+                _canonical_json(evidence["details"]),
+                evidence["artifact_id"],
+            ),
+        )
 
 
 def _create_search_tables(connection: sqlite3.Connection) -> str:

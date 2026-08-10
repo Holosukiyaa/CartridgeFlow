@@ -45,11 +45,16 @@ def audit(root: Path = ROOT) -> list[str]:
 
 
 def _audit_registry_lock(registry_path: Path, lock: dict, errors: list[str]) -> None:
-    if lock.get("schema") != "cartridgeflow.product_protocol_registry_lock.v2":
+    if lock.get("schema") != "cartridgeflow.product_protocol_registry_lock.v3":
         errors.append("protocol registry lock has an unknown schema")
     if lock.get("runtime_source_id") != "current":
         errors.append("protocol registry lock must keep current as the runtime source")
     repository = lock.get("repository") if isinstance(lock.get("repository"), dict) else {}
+    source_database = (
+        lock.get("source_database")
+        if isinstance(lock.get("source_database"), dict)
+        else {}
+    )
     source_items = lock.get("sources") if isinstance(lock.get("sources"), list) else []
     source_locks = {
         str(item.get("source_id")): item
@@ -61,15 +66,19 @@ def _audit_registry_lock(registry_path: Path, lock: dict, errors: list[str]) -> 
         errors.append("protocol registry lock must name the authoritative source repository")
     if not re.fullmatch(r"[0-9a-f]{40}", str(repository.get("commit") or "")):
         errors.append("protocol registry lock requires a full Git commit SHA")
-    expected_paths = {
-        "current": "sources/current",
-        "temp-runtime": "sources/temp-runtime",
-    }
-    if set(source_locks) != set(expected_paths):
+    if source_database.get("path") != "protocol-source.sqlite":
+        errors.append("protocol registry lock must name the authoritative SQLite source")
+    if not re.fullmatch(
+        r"[0-9a-f]{64}", str(source_database.get("database_sha256") or "")
+    ):
+        errors.append("protocol registry lock requires the source database SHA-256")
+    if not re.fullmatch(
+        r"[0-9a-f]{64}", str(source_database.get("logical_digest") or "")
+    ):
+        errors.append("protocol registry lock requires the source database logical digest")
+    expected_sources = {"current", "temp-runtime"}
+    if set(source_locks) != expected_sources:
         errors.append("protocol registry lock must contain current and temp-runtime sources")
-    for source_id, expected_path in expected_paths.items():
-        if source_locks.get(source_id, {}).get("path") != expected_path:
-            errors.append(f"protocol registry lock has an invalid {source_id} source path")
 
     expected_database_digest = str(registry_lock.get("database_sha256") or "")
     actual_database_digest = hashlib.sha256(registry_path.read_bytes()).hexdigest()
@@ -83,6 +92,10 @@ def _audit_registry_lock(registry_path: Path, lock: dict, errors: list[str]) -> 
             if registry.connection.execute("PRAGMA foreign_key_check").fetchall():
                 errors.append("compiled protocol registry contains foreign-key violations")
             summary = registry.summary()
+            if summary.get("registry_role") != "product_snapshot":
+                errors.append("compiled protocol registry must be a product snapshot")
+            if summary.get("source_registry_digest") != source_database.get("logical_digest"):
+                errors.append("compiled registry does not match its authoritative source digest")
             if summary.get("schema_version") != str(registry_lock.get("schema_version")):
                 errors.append("compiled protocol registry schema version does not match its lock")
             if summary.get("registry_digest") != registry_lock.get("logical_digest"):
@@ -91,9 +104,9 @@ def _audit_registry_lock(registry_path: Path, lock: dict, errors: list[str]) -> 
                 "SELECT source_id, manifest_digest, source_digest FROM registry_source"
             ).fetchall()
             database_sources = {row["source_id"]: row for row in sources}
-            if set(database_sources) != set(expected_paths):
+            if set(database_sources) != expected_sources:
                 errors.append("product registry must contain current and temp-runtime sources")
-            for source_id in expected_paths:
+            for source_id in expected_sources:
                 row = database_sources.get(source_id)
                 source_lock = source_locks.get(source_id, {})
                 if row is not None and (

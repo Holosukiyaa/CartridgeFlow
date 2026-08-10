@@ -1,28 +1,31 @@
 {
-  "schema": "cartridgeflow.product_protocol_registry_lock.v2",
+  "schema": "cartridgeflow.product_protocol_registry_lock.v3",
   "repository": {
     "url": "https://github.com/Holosukiyaa/cartridgeflow-protocols.git",
-    "commit": "d43aff73b4d48e3dd2634460898e699614057559"
+    "commit": "8616c55a865f832982cdc4eabb1f1c5a9e5462c9"
+  },
+  "source_database": {
+    "path": "protocol-source.sqlite",
+    "database_sha256": "0884f3c005e4742d81a3f5bdde255bdc768d8bba78f2a4d31231df6a96ce2c34",
+    "logical_digest": "9482e3473b046eb488680fe936c54f71499d489d45ae45d3cd90bb4f27f3dab2"
   },
   "runtime_source_id": "current",
   "sources": [
     {
       "source_id": "current",
-      "path": "sources/current",
       "manifest_digest": "bd395aa4c8945ceaf7f06905c96aa3384481fcd1c1eed817a2dec77bceaf0bda",
       "source_digest": "907d881cd49887c7056c031498b1c0a29be46d13ddd59b818fc7b97fac2e0b18"
     },
     {
       "source_id": "temp-runtime",
-      "path": "sources/temp-runtime",
       "manifest_digest": "06aecab166538d60eee2875ceca9d2357fd96832f63b6071352f530978499ca1",
       "source_digest": "e0cc2e7cbe3523491ca544a87c3abfbdf26cd99fc12e1bc99f80aa95a94cfa59"
     }
   ],
   "registry": {
-    "schema_version": "1",
-    "logical_digest": "fcdaefe2c07e9afd93b10de17dc53a98aae6c011d32ac5528cf8162b66fa288c",
-    "database_sha256": "ea9ea272c4f4cdb6c7e89c70f0dfbe9a8a6765a3b690a079401350d15117f278",
+    "schema_version": "2",
+    "logical_digest": "334431ae1c7838fb5b51c52a5d91fa4b16653958c04b5448e8f0bdb2e090932c",
+    "database_sha256": "9551054093e74abd62abc5145fbeb7c6f0e7077d75585078974006cf5bddf726",
     "path": "config/protocol/protocol-registry.sqlite"
   }
 }

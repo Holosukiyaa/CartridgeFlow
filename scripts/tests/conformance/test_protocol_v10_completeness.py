@@ -3,15 +3,16 @@ import re
 import unittest
 from pathlib import Path
 
+from core.protocol import load_protocol_artifact_json, load_protocol_artifact_text
+
 
 ROOT = Path(__file__).resolve().parents[3]
-RELEASE_DIR = ROOT / "protocol/flow-authoring/1.0"
-DOCUMENT = RELEASE_DIR / "README.md"
+RELEASE_DIR = "flow-authoring/1.0"
+DOCUMENT = f"{RELEASE_DIR}/README.md"
 
 
 def vocabulary(version: str, field: str) -> list[dict]:
-    path = ROOT / "protocol/flow-authoring" / version / f"{field}.json"
-    return json.loads(path.read_text(encoding="utf-8"))[field]
+    return load_protocol_artifact_json(f"flow-authoring/{version}/{field}.json")[field]
 
 
 class ProtocolV10CompletenessTests(unittest.TestCase):
@@ -59,7 +60,7 @@ class ProtocolV10CompletenessTests(unittest.TestCase):
             self.assertTrue(record.get("implementation"), capability)
 
     def test_v10_documentation_is_modular_and_self_contained(self):
-        document = DOCUMENT.read_text(encoding="utf-8")
+        document = load_protocol_artifact_text(DOCUMENT)
         modules = {
             "overview.md": "协议目标",
             "package-and-resources.md": "Manifest 契约",
@@ -73,13 +74,13 @@ class ProtocolV10CompletenessTests(unittest.TestCase):
         }
         for filename, marker in modules.items():
             self.assertIn(filename, document)
-            text = (RELEASE_DIR / filename).read_text(encoding="utf-8")
+            text = load_protocol_artifact_text(f"{RELEASE_DIR}/{filename}")
             self.assertIn(marker, text)
             self.assertLess(len(text.encode("utf-8")), 40_000)
             self.assertIsNone(re.search(r"v0\\.\\d", text), filename)
 
         self.assertIn("非规范迁移资料", document)
-        migration = (RELEASE_DIR / "migration.md").read_text(encoding="utf-8")
+        migration = load_protocol_artifact_text(f"{RELEASE_DIR}/migration.md")
         self.assertIn("non-normative", migration)
 
     def test_v10_analyzer_applies_the_transparency_gate(self):

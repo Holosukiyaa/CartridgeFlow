@@ -86,8 +86,8 @@ def run_personal_runtime_demo(
 
 
 def _provision_host_contract(host: Path) -> None:
-    """Copy only the base/protocol snapshot required by the independent host."""
-    for relative in (Path("config") / "base", Path("protocol")):
+    """Copy only the base and compiled protocol snapshots required by the host."""
+    for relative in (Path("config") / "base", Path("config") / "protocol"):
         source = PROJECT_ROOT / relative
         target = host / relative
         if target.exists():

@@ -23,8 +23,7 @@ class DevFlowManager:
 
     def __init__(self, root: str | Path):
         self.root = Path(root)
-        protocol_root = self.root if (self.root / "protocol" / "catalog" / "release_manifest.json").is_file() else Path(__file__).resolve().parents[3]
-        self.release_catalog = load_protocol_release_catalog(protocol_root)
+        self.release_catalog = load_protocol_release_catalog(self.root)
         self.default_protocol = self.release_catalog.data["default_for_new_flows"]
         self.default_protocol_id = str(self.default_protocol["id"])
         self.default_protocol_version = str(self.default_protocol["version"])

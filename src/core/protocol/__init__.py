@@ -1,5 +1,20 @@
 from .base_manifest import BaseManifestError, load_base_implementation, protocol_adapter_status, supports_base_contract, supports_protocol_release, supports_subprotocol_release
 from .capability_registry import ProtocolRegistry, ProtocolRegistryError
+from .artifact_store import (
+    ProtocolArtifactStore,
+    load_protocol_artifact_json,
+    load_protocol_artifact_text,
+    load_protocol_registry_lock,
+    resolve_protocol_registry,
+)
+from .governance_registry import (
+    ImplementationSource,
+    ProtocolKnowledgeRegistry,
+    ProtocolKnowledgeRegistryError,
+    ProtocolSource,
+    RegistryBuildReport,
+    build_protocol_knowledge_registry,
+)
 from .release_catalog import ProtocolReleaseCatalog, ProtocolReleaseCatalogError, load_protocol_release_catalog
 from .features import has_protocol_feature, protocol_features
 from .certification import apply_protocol_certification_label, build_protocol_certification_report
@@ -14,12 +29,19 @@ from .tool_plan import validate_tool_plan
 __all__ = [
     "BaseManifestError",
     "CompatibilityBlockedError",
+    "ImplementationSource",
     "ProtocolRegistry",
     "ProtocolRegistryError",
+    "ProtocolArtifactStore",
+    "ProtocolKnowledgeRegistry",
+    "ProtocolKnowledgeRegistryError",
+    "ProtocolSource",
+    "RegistryBuildReport",
     "ProtocolReleaseCatalog",
     "ProtocolReleaseCatalogError",
     "apply_protocol_certification_label",
     "build_protocol_certification_report",
+    "build_protocol_knowledge_registry",
     "build_release_envelope_report",
     "build_release_archive",
     "build_compatibility_report",
@@ -34,6 +56,9 @@ __all__ = [
     "build_v09_flow_contract_report",
     "build_v10_flow_contract_report",
     "load_base_implementation",
+    "load_protocol_artifact_json",
+    "load_protocol_artifact_text",
+    "load_protocol_registry_lock",
     "load_protocol_release_catalog",
     "has_protocol_feature",
     "protocol_features",
@@ -61,4 +86,5 @@ __all__ = [
     "supports_protocol_release",
     "supports_base_contract",
     "supports_subprotocol_release",
+    "resolve_protocol_registry",
 ]

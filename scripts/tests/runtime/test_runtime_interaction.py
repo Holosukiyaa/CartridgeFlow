@@ -190,7 +190,7 @@ class RuntimeInteractionTests(unittest.TestCase):
                 ROOT / "config" / "base" / "BASE_IMPLEMENTATION.json",
                 tmp_root / "config" / "base" / "BASE_IMPLEMENTATION.json",
             )
-            shutil.copytree(ROOT / "protocol", tmp_root / "protocol")
+            shutil.copytree(ROOT / "config" / "protocol", tmp_root / "config" / "protocol")
 
             runner = CartridgeRunner(tmp_root, StubRegistry(cartridge))
             compatibility = build_compatibility_report(load_base_implementation(ROOT), cartridge["manifest"], cartridge["root_flow"], ROOT)
@@ -238,7 +238,7 @@ class RuntimeInteractionTests(unittest.TestCase):
                 ROOT / "config" / "base" / "BASE_IMPLEMENTATION.json",
                 tmp_root / "config" / "base" / "BASE_IMPLEMENTATION.json",
             )
-            shutil.copytree(ROOT / "protocol", tmp_root / "protocol")
+            shutil.copytree(ROOT / "config" / "protocol", tmp_root / "config" / "protocol")
 
             runner = CartridgeRunner(tmp_root, StubRegistry(cartridge))
             with patch("core.cartridge.runner.build_model_binding_report", return_value={"status": "ok", "items": []}):

@@ -49,17 +49,21 @@ validated executable contracts.
 
 ## Protocol Rules
 
-`protocol/catalog/release_manifest.json` is the release source of truth.
+The source of truth is the `cartridgeflow-protocols` repository pinned by
+`config/protocol/protocol-registry.lock.json`. This product consumes the
+read-only `config/protocol/protocol-registry.sqlite` federated snapshot. It
+contains `current` and `temp-runtime`; runtime APIs default to `current`, while
+the second source is governance-only unless explicitly selected.
 Creator recursive packaging uses `CF-FARP@1.7` hosted with `CF-TUNING@1.5`.
 These releases define semantic recipes, immutable complete-Flow capabilities,
 typed public ports, exact dependencies, trust scope and provenance. Generic
 Developer Flows continue to follow the catalog's default FARP version.
 
-Do not rewrite a published protocol release. A semantics-preserving release
-gets an independent version directory; a semantic change also gets an adapter,
-implementation, tests and evidence. Run the governance audit after every
-protocol change. Never add domain capabilities such as RSS to Base; ship them
-as package-owned DLC.
+Protocol edits belong in the external source repository. After committing and
+pushing them, run `python scripts/update_protocol_registry.py`; it refuses dirty
+or unpublished protocol source. Do not edit the SQLite snapshot directly.
+Never add domain capabilities such as RSS to Base; ship them as package-owned
+DLC.
 
 ## Validation
 

@@ -3,22 +3,28 @@ import re
 import unittest
 from pathlib import Path
 
-from core.protocol import ProtocolRegistry, build_compatibility_report, load_base_implementation
+from core.protocol import (
+    ProtocolRegistry,
+    build_compatibility_report,
+    load_base_implementation,
+    load_protocol_artifact_json,
+    load_protocol_artifact_text,
+)
 from core.lab.graph import FlowGraphBuilder
 
 
 ROOT = Path(__file__).resolve().parents[3]
-DOCUMENT = ROOT / "protocol/flow-authoring/0.9/specification.md"
+DOCUMENT = "protocol/flow-authoring/0.9/specification.md"
 
 
 class ProtocolV09SpecificationTests(unittest.TestCase):
     def test_registry_and_base_publish_v09_partial_support(self):
-        registry_data = json.loads((ROOT / "protocol/flow-authoring/0.9/release.json").read_text(encoding="utf-8"))
+        registry_data = load_protocol_artifact_json("flow-authoring/0.9/release.json")
         self.assertEqual("0.9", registry_data["version"])
         self.assertEqual({"id": "CF-FARP", "version": "0.8"}, registry_data["supersedes"])
         self.assertEqual("flow-authoring/0.9/capabilities.json", registry_data["capabilities_file"])
         self.assertEqual("flow-authoring/0.9/profiles.json", registry_data["profiles_file"])
-        self.assertEqual(DOCUMENT, ROOT / registry_data["document"])
+        self.assertEqual(DOCUMENT, registry_data["document"])
 
         registry = ProtocolRegistry(ROOT)
         self.assertTrue(registry.recognizes_protocol("CF-FARP", "0.9"))
@@ -70,7 +76,7 @@ class ProtocolV09SpecificationTests(unittest.TestCase):
         self.assertEqual("CF-FARP@0.9", report["flow_contract"]["protocol"])
 
     def test_v09_document_is_standalone_mcp_transparency_spec(self):
-        text = DOCUMENT.read_text(encoding="utf-8")
+        text = load_protocol_artifact_text(DOCUMENT)
         self.assertIn("协议编号：`CF-FARP-0.9`", text)
         for term in [
             "tool_transparency",
@@ -101,8 +107,8 @@ class ProtocolV09SpecificationTests(unittest.TestCase):
         self.assertEqual([], [target for target in targets if target not in heading_anchors])
 
     def test_v09_tool_transparency_vocabulary_is_registered(self):
-        capabilities = json.loads((ROOT / "protocol/flow-authoring/0.9/capabilities.json").read_text(encoding="utf-8"))
-        profiles = json.loads((ROOT / "protocol/flow-authoring/0.9/profiles.json").read_text(encoding="utf-8"))
+        capabilities = load_protocol_artifact_json("flow-authoring/0.9/capabilities.json")
+        profiles = load_protocol_artifact_json("flow-authoring/0.9/profiles.json")
         registered = {item["id"] for item in capabilities["capabilities"]}
         profile_ids = {item["id"] for item in profiles["profiles"]}
 

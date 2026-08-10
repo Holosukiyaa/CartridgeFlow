@@ -2,6 +2,11 @@
 
 Use this checklist when applying, not merely discussing, a protocol upgrade.
 
+Run source-editing commands from `cartridgeflow-protocols/sources/current`.
+The `protocol/...` paths below are relative to that directory. After committing
+and pushing the source repository, refresh CartridgeFlow with
+`python scripts/update_protocol_registry.py`.
+
 ## 1. Classify The Change
 
 Create a new protocol version if the change affects:

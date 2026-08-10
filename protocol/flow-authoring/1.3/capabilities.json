@@ -1,1 +1,0 @@
-{"schema_version":"0.1","capabilities":[{"id":"creator_safe_projection_v1","profile":"ai_recipe_authoring"},{"id":"creator_reviewed_semantic_changes_v1","profile":"ai_recipe_authoring"},{"id":"creator_source_safety_v1","profile":"ai_recipe_authoring"},{"id":"creator_generation_readiness_v1","profile":"authoring_compile_handoff"}]}

@@ -6,11 +6,17 @@ import unittest
 from copy import deepcopy
 from pathlib import Path
 
-from core.protocol import ProtocolRegistry, build_release_envelope_report, load_base_implementation, load_protocol_release_catalog
+from core.protocol import (
+    ProtocolRegistry,
+    build_release_envelope_report,
+    load_base_implementation,
+    load_protocol_artifact_text,
+    load_protocol_release_catalog,
+)
 
 
 ROOT = Path(__file__).resolve().parents[3]
-DOCUMENT = ROOT / "protocol/release-envelope/1/specification.md"
+DOCUMENT = "protocol/release-envelope/1/specification.md"
 
 
 def digest(value: bytes) -> str:
@@ -159,7 +165,7 @@ class ReleaseEnvelopeProtocolTests(unittest.TestCase):
         self.assertIn("cre_bundle_file_unlisted", {item["code"] for item in unlisted_report["findings"]})
 
     def test_protocol_document_declares_active_support_boundary(self):
-        text = DOCUMENT.read_text(encoding="utf-8")
+        text = load_protocol_artifact_text(DOCUMENT)
         self.assertIn("CF-CRE@1", text)
         self.assertIn("active/supported", text)
         self.assertIn("晋级条件", text)

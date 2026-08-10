@@ -62,7 +62,7 @@ integration; all other detectors remain enabled.
 - `src/core/`: cartridge, runtime, protocol, lab and studio logic.
 - `src/intent-studio/`: direction discovery and semantic composition.
 - `src/capability-workshop/`: executable capability design, verification and publication.
-- `protocol/`: versioned Base, Flow Authoring, Tuning and release contracts.
+- `config/protocol/`: pinned read-only federated `protocol-registry.sqlite` and its source lock, compiled from both lines in [cartridgeflow-protocols](https://github.com/Holosukiyaa/cartridgeflow-protocols).
 - `demos/capabilities/`: package-owned capability examples such as RSS.
 - `demos/runtime-developer-toolkit/`: independent package test bench.
 - `scripts/`: bootstrap, launch, verification and test tools.

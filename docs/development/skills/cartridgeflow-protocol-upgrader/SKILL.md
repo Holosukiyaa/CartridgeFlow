@@ -11,9 +11,10 @@ Use this skill to make versioned protocol changes without silently breaking exis
 
 Before editing, read:
 
-- `protocol/governance/GOVERNANCE.md`
-- The current version directory under `protocol/`
-- `protocol/catalog/release_manifest.json`
+- The product lock at `config/protocol/protocol-registry.lock.json`.
+- `sources/current/protocol/governance/GOVERNANCE.md` in the pinned `cartridgeflow-protocols` checkout.
+- The current version directory under `sources/current/protocol/`.
+- `sources/current/protocol/catalog/release_manifest.json`.
 - `config/base/BASE_IMPLEMENTATION.json`
 - `references/upgrade-checklist.md` when applying an upgrade, not merely discussing one.
 
@@ -33,13 +34,14 @@ Use an in-place documentation patch only for spelling, clarification that does n
 ## Upgrade Workflow
 
 1. Preserve existing protocol meaning. Do not rewrite v0.1 to mean v0.2.
-2. Create a complete version directory under the appropriate protocol category, for example `protocol/flow-authoring/1.1/` or `protocol/base/0.3/`.
+2. In `cartridgeflow-protocols`, create a complete version directory under `sources/current/protocol/`, for example `flow-authoring/1.1/` or `base/0.3/`.
 3. Add its machine-readable `release.json` in the same version directory.
 4. Add version-local `capabilities.json` and `profiles.json` in the same directory when the protocol declares them.
 5. Declare `runtime_adapter` and `features` in both release records. Reuse an existing adapter only when runtime semantics are unchanged; otherwise add a new adapter implementation and then declare it in `config/base/BASE_IMPLEMENTATION.json.supported_protocol_adapters` after tests support it.
-6. Update `protocol/governance/GOVERNANCE.md` so future agents see the new protocol.
+6. Update `sources/current/protocol/governance/GOVERNANCE.md` so future agents see the new protocol.
 7. Add or update tests proving the registry, docs, and base support declarations are consistent.
 8. Only apply certification labels after the relevant certification report passes.
+9. Commit and push the protocol repository, then run `python scripts/update_protocol_registry.py` in CartridgeFlow to refresh the read-only SQLite copy.
 
 ## Hard Boundaries
 

@@ -79,13 +79,13 @@ class CleanBaseHygieneTests(unittest.TestCase):
     def test_documentation_has_canonical_entry_points(self):
         expected = (
             ROOT / "docs" / "development" / "FILE_INVENTORY.md",
-            ROOT / "protocol" / "README.md",
-            ROOT / "protocol" / "governance" / "GOVERNANCE.md",
-            ROOT / "protocol" / "base" / "0.2" / "release.json",
-            ROOT / "protocol" / "flow-authoring" / "1.0" / "README.md",
+            ROOT / "config" / "protocol" / "README.md",
+            ROOT / "config" / "protocol" / "protocol-registry.lock.json",
+            ROOT / "config" / "protocol" / "protocol-registry.sqlite",
         )
 
         self.assertTrue(all(path.is_file() for path in expected))
+        self.assertFalse((ROOT / "protocol").exists())
         self.assertFalse((ROOT / "GOAL.md").exists())
         self.assertFalse((ROOT / "TODO.md").exists())
         self.assertFalse((ROOT / "TODO_TEMPLATE.md").exists())

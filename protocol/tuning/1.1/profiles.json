@@ -1,1 +1,0 @@
-{"schema_version":"1.0","profiles":[{"id":"ai_recipe_authoring","description":"Create immutable portable recipe blueprints, instances, reviewed AI change sets, and explicit freeze snapshots."},{"id":"authoring_compile_handoff","description":"Bind frozen authoring facts to deterministic CF-FARP compilation references without executing them."}]}

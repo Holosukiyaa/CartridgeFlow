@@ -3,11 +3,17 @@ import re
 import unittest
 from pathlib import Path
 
-from core.protocol import ProtocolRegistry, build_compatibility_report, load_base_implementation
+from core.protocol import (
+    ProtocolRegistry,
+    build_compatibility_report,
+    load_base_implementation,
+    load_protocol_artifact_json,
+    load_protocol_artifact_text,
+)
 
 
 ROOT = Path(__file__).resolve().parents[3]
-DOCUMENT = ROOT / "protocol/flow-authoring/0.7/specification.md"
+DOCUMENT = "protocol/flow-authoring/0.7/specification.md"
 
 
 def v07_manifest():
@@ -47,12 +53,12 @@ def v07_flow():
 
 class ProtocolV07SpecificationTests(unittest.TestCase):
     def test_registry_publishes_v07_with_passive_and_sandboxed_base_support(self):
-        registry_data = json.loads((ROOT / "protocol/flow-authoring/0.7/release.json").read_text(encoding="utf-8"))
+        registry_data = load_protocol_artifact_json("flow-authoring/0.7/release.json")
         self.assertEqual("0.7", registry_data["version"])
         self.assertEqual({"id": "CF-FARP", "version": "0.6"}, registry_data["supersedes"])
         self.assertEqual("flow-authoring/0.7/capabilities.json", registry_data["capabilities_file"])
         self.assertEqual("flow-authoring/0.7/profiles.json", registry_data["profiles_file"])
-        self.assertEqual(DOCUMENT, ROOT / registry_data["document"])
+        self.assertEqual(DOCUMENT, registry_data["document"])
 
         registry = ProtocolRegistry(ROOT)
         self.assertTrue(registry.recognizes_protocol("CF-FARP", "0.7"))
@@ -71,8 +77,8 @@ class ProtocolV07SpecificationTests(unittest.TestCase):
         self.assertEqual("supported", report["protocol"]["lifecycle"])
 
     def test_v07_is_complete_standalone_and_has_valid_toc(self):
-        text = DOCUMENT.read_text(encoding="utf-8")
-        v06 = (ROOT / "protocol/flow-authoring/0.6/specification.md").read_text(encoding="utf-8")
+        text = load_protocol_artifact_text(DOCUMENT)
+        v06 = load_protocol_artifact_text("flow-authoring/0.6/specification.md")
         self.assertGreater(len(text.splitlines()), len(v06.splitlines()))
         for section in [
             "## 6. Manifest 契约",
@@ -100,7 +106,7 @@ class ProtocolV07SpecificationTests(unittest.TestCase):
         self.assertEqual([], [target for target in targets if target not in heading_anchors])
 
     def test_v07_json_examples_and_versioned_vocabulary_are_valid(self):
-        text = DOCUMENT.read_text(encoding="utf-8")
+        text = load_protocol_artifact_text(DOCUMENT)
         json_blocks = re.findall(r"```json\n(.*?)\n```", text, re.DOTALL)
         self.assertGreaterEqual(len(json_blocks), 35)
         for index, block in enumerate(json_blocks, 1):
@@ -114,17 +120,17 @@ class ProtocolV07SpecificationTests(unittest.TestCase):
         capability_block = re.search(r"```text\n(.*?)\n```", capability_section.group(1), re.DOTALL)
         self.assertIsNotNone(capability_block)
         documented = {item.strip() for item in capability_block.group(1).splitlines() if item.strip()}
-        capabilities = json.loads((ROOT / "protocol/flow-authoring/0.7/capabilities.json").read_text(encoding="utf-8"))
+        capabilities = load_protocol_artifact_json("flow-authoring/0.7/capabilities.json")
         registered = {item["id"] for item in capabilities["capabilities"]}
         self.assertEqual(registered, documented)
 
-        profiles = json.loads((ROOT / "protocol/flow-authoring/0.7/profiles.json").read_text(encoding="utf-8"))
+        profiles = load_protocol_artifact_json("flow-authoring/0.7/profiles.json")
         profile_ids = {item["id"] for item in profiles["profiles"]}
         self.assertIn("interaction_runtime", profile_ids)
         self.assertEqual([], [item["profile"] for item in capabilities["capabilities"] if item["profile"] not in profile_ids])
 
     def test_v07_requires_asset_backed_interactions_and_static_routes(self):
-        text = DOCUMENT.read_text(encoding="utf-8")
+        text = load_protocol_artifact_text(DOCUMENT)
         for term in [
             "cartridgeflow.asset_registry.v1",
             "cartridgeflow.interaction_components.v1",
@@ -142,7 +148,7 @@ class ProtocolV07SpecificationTests(unittest.TestCase):
         self.assertIn("最终 action controls 必须由 Host 在 sandbox iframe 外", text)
 
     def test_v07_script_security_is_explicit_and_fail_closed(self):
-        text = DOCUMENT.read_text(encoding="utf-8")
+        text = load_protocol_artifact_text(DOCUMENT)
         for term in [
             "cartridgeflow.portable_dlc.v2",
             "external_hashed_only",

@@ -3,13 +3,20 @@ import unittest
 from copy import deepcopy
 from pathlib import Path
 
-from core.protocol import ProtocolRegistry, build_compatibility_report, load_base_implementation, load_protocol_release_catalog
+from core.protocol import (
+    ProtocolRegistry,
+    build_compatibility_report,
+    load_base_implementation,
+    load_protocol_artifact_json,
+    load_protocol_artifact_text,
+    load_protocol_release_catalog,
+)
 from core.protocol.flow_contract import build_v10_flow_contract_report, validate_v10_flow_contract
 
 
 ROOT = Path(__file__).resolve().parents[3]
-RELEASE_DIR = ROOT / "protocol/flow-authoring/1.0"
-DOCUMENT = RELEASE_DIR / "README.md"
+RELEASE_DIR = "flow-authoring/1.0"
+DOCUMENT = f"{RELEASE_DIR}/README.md"
 
 
 def flow(states, edges):
@@ -200,16 +207,16 @@ class ProtocolV10ExecutionPlanTests(unittest.TestCase):
         self.assertIn("v10_visible_non_executable_edge", codes(visible_edge))
 
     def test_registry_document_and_vocabulary_are_current_and_standalone(self):
-        registry_data = json.loads((RELEASE_DIR / "release.json").read_text(encoding="utf-8"))
+        registry_data = load_protocol_artifact_json(f"{RELEASE_DIR}/release.json")
         self.assertEqual("active", registry_data["status"])
         self.assertEqual("supported", registry_data["implementation_status"])
         self.assertEqual({"id": "CF-FARP", "version": "0.9"}, registry_data["supersedes"])
-        document = DOCUMENT.read_text(encoding="utf-8")
+        document = load_protocol_artifact_text(DOCUMENT)
         self.assertIn("execution-plan.md", document)
         self.assertIn("完整规范发布单元", document)
-        execution_plan = (RELEASE_DIR / "execution-plan.md").read_text(encoding="utf-8")
+        execution_plan = load_protocol_artifact_text(f"{RELEASE_DIR}/execution-plan.md")
         self.assertIn("执行计划是唯一控制事实", execution_plan)
-        capabilities = json.loads((RELEASE_DIR / "capabilities.json").read_text(encoding="utf-8"))
+        capabilities = load_protocol_artifact_json(f"{RELEASE_DIR}/capabilities.json")
         self.assertIn("execution_plan_failure_contract", {item["id"] for item in capabilities["capabilities"]})
         self.assertIn("execution_plan_runtime", {item["profile"] for item in capabilities["capabilities"]})
 

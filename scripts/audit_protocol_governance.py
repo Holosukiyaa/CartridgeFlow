@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import sys
@@ -11,21 +12,105 @@ SOURCE_ROOT = ROOT / "src"
 if str(SOURCE_ROOT) not in sys.path:
     sys.path.insert(0, str(SOURCE_ROOT))
 
-from core.protocol import load_base_implementation, load_protocol_release_catalog
+from core.protocol import (
+    ProtocolArtifactStore,
+    ProtocolKnowledgeRegistry,
+    ProtocolKnowledgeRegistryError,
+    load_base_implementation,
+    load_protocol_registry_lock,
+    load_protocol_release_catalog,
+    resolve_protocol_registry,
+)
 from core.protocol.base_manifest import supports_protocol_release, supports_subprotocol_release
 
 
 def audit(root: Path = ROOT) -> list[str]:
     errors: list[str] = []
-    catalog = load_protocol_release_catalog(root)
-    protocol_dir = root / "protocol"
-    root_files = sorted(path.name for path in protocol_dir.iterdir() if path.is_file() and path.name != "README.md")
-    if root_files:
-        errors.append(f"protocol root must only contain README.md and category directories: {root_files}")
-    for directory in ("base", "catalog", "flow-authoring", "governance", "release-envelope", "tuning"):
-        if not (protocol_dir / directory).is_dir():
-            errors.append(f"protocol/{directory}/ directory is missing")
+    root = Path(root).resolve()
+    if (root / "protocol").exists():
+        errors.append("product repository must consume the compiled registry instead of a protocol/ source directory")
 
+    try:
+        lock = load_protocol_registry_lock(root)
+        registry_path = resolve_protocol_registry(root)
+        artifacts = ProtocolArtifactStore(root)
+        catalog = load_protocol_release_catalog(root)
+    except (ProtocolKnowledgeRegistryError, ValueError) as exc:
+        return [f"compiled protocol registry is unavailable: {exc}"]
+
+    _audit_registry_lock(registry_path, lock, errors)
+    _audit_release_catalog(root, artifacts, catalog, errors)
+    _audit_product_bindings(root, catalog, errors)
+    return errors
+
+
+def _audit_registry_lock(registry_path: Path, lock: dict, errors: list[str]) -> None:
+    if lock.get("schema") != "cartridgeflow.product_protocol_registry_lock.v2":
+        errors.append("protocol registry lock has an unknown schema")
+    if lock.get("runtime_source_id") != "current":
+        errors.append("protocol registry lock must keep current as the runtime source")
+    repository = lock.get("repository") if isinstance(lock.get("repository"), dict) else {}
+    source_items = lock.get("sources") if isinstance(lock.get("sources"), list) else []
+    source_locks = {
+        str(item.get("source_id")): item
+        for item in source_items
+        if isinstance(item, dict) and item.get("source_id")
+    }
+    registry_lock = lock.get("registry") if isinstance(lock.get("registry"), dict) else {}
+    if repository.get("url") != "https://github.com/Holosukiyaa/cartridgeflow-protocols.git":
+        errors.append("protocol registry lock must name the authoritative source repository")
+    if not re.fullmatch(r"[0-9a-f]{40}", str(repository.get("commit") or "")):
+        errors.append("protocol registry lock requires a full Git commit SHA")
+    expected_paths = {
+        "current": "sources/current",
+        "temp-runtime": "sources/temp-runtime",
+    }
+    if set(source_locks) != set(expected_paths):
+        errors.append("protocol registry lock must contain current and temp-runtime sources")
+    for source_id, expected_path in expected_paths.items():
+        if source_locks.get(source_id, {}).get("path") != expected_path:
+            errors.append(f"protocol registry lock has an invalid {source_id} source path")
+
+    expected_database_digest = str(registry_lock.get("database_sha256") or "")
+    actual_database_digest = hashlib.sha256(registry_path.read_bytes()).hexdigest()
+    if actual_database_digest != expected_database_digest:
+        errors.append("compiled protocol registry SHA-256 does not match its lock")
+
+    try:
+        with ProtocolKnowledgeRegistry(registry_path) as registry:
+            if registry.connection.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+                errors.append("compiled protocol registry integrity check failed")
+            if registry.connection.execute("PRAGMA foreign_key_check").fetchall():
+                errors.append("compiled protocol registry contains foreign-key violations")
+            summary = registry.summary()
+            if summary.get("schema_version") != str(registry_lock.get("schema_version")):
+                errors.append("compiled protocol registry schema version does not match its lock")
+            if summary.get("registry_digest") != registry_lock.get("logical_digest"):
+                errors.append("compiled protocol registry logical digest does not match its lock")
+            sources = registry.connection.execute(
+                "SELECT source_id, manifest_digest, source_digest FROM registry_source"
+            ).fetchall()
+            database_sources = {row["source_id"]: row for row in sources}
+            if set(database_sources) != set(expected_paths):
+                errors.append("product registry must contain current and temp-runtime sources")
+            for source_id in expected_paths:
+                row = database_sources.get(source_id)
+                source_lock = source_locks.get(source_id, {})
+                if row is not None and (
+                    row["manifest_digest"] != source_lock.get("manifest_digest")
+                    or row["source_digest"] != source_lock.get("source_digest")
+                ):
+                    errors.append(f"compiled {source_id} source digests do not match the product lock")
+            for finding in registry.findings(severity="blocker"):
+                if finding["finding_type"] != "protocol_identity_collision":
+                    errors.append(
+                        f"compiled protocol registry {finding['finding_type']}: {finding['message']}"
+                    )
+    except (OSError, ProtocolKnowledgeRegistryError) as exc:
+        errors.append(f"compiled protocol registry cannot be audited: {exc}")
+
+
+def _audit_release_catalog(root: Path, artifacts: ProtocolArtifactStore, catalog, errors: list[str]) -> None:
     known = {(item["id"], item["version"]) for item in catalog.releases}
     published = {
         (item["id"], item["version"])
@@ -42,106 +127,68 @@ def audit(root: Path = ROOT) -> list[str]:
         label = f"{release['id']}@{release['version']}"
         if release["lifecycle"] in {"current", "supported_previous"} and not release.get("runtime_adapter"):
             errors.append(f"{label}: published releases must declare a runtime_adapter")
-        registry_path = protocol_dir / release["registry"]
-        if not registry_path.is_file():
-            errors.append(f"{label}: registry snapshot is missing: {release['registry']}")
-            continue
-        registry = _read_json(registry_path, errors)
+        registry = _artifact_json(artifacts, release["registry"], errors)
         if registry and (str(registry.get("id")), str(registry.get("version"))) != (release["id"], release["version"]):
             errors.append(f"{label}: registry snapshot identity does not match release manifest")
         for field in ("runtime_adapter", "features"):
             if field in release and registry and registry.get(field) != release[field]:
                 errors.append(f"{label}: release manifest {field} does not match registry {field}")
         for subprotocol in release.get("trusted_subprotocols") or []:
-            registry_path = protocol_dir / str(subprotocol.get("registry") or "")
             sub_label = f"{subprotocol.get('id')}@{subprotocol.get('version')}"
-            if not registry_path.is_file():
-                errors.append(f"{label}: trusted subprotocol registry is missing: {subprotocol.get('registry')}")
-                continue
-            sub_registry = _read_json(registry_path, errors)
-            if sub_registry and (str(sub_registry.get("id")), str(sub_registry.get("version"))) != (str(subprotocol.get("id")), str(subprotocol.get("version"))):
-                errors.append(f"{label}: trusted subprotocol identity does not match {sub_label}")
+            sub_registry = _artifact_json(artifacts, str(subprotocol.get("registry") or ""), errors)
             hosts = sub_registry.get("host_protocols") if sub_registry else []
-            if not any(isinstance(host, dict) and str(host.get("id")) == release["id"] and str(host.get("version")) == release["version"] for host in hosts or []):
+            if not any(
+                isinstance(host, dict)
+                and str(host.get("id")) == release["id"]
+                and str(host.get("version")) == release["version"]
+                for host in hosts or []
+            ):
                 errors.append(f"{label}: trusted subprotocol {sub_label} does not declare this host release")
         for field, registry_field in (("profiles", "profiles_file"), ("capabilities", "capabilities_file")):
             value = release.get(field)
-            if not isinstance(value, str) or not (protocol_dir / value).is_file():
+            if not isinstance(value, str) or not artifacts.exists(value):
                 errors.append(f"{label}: {field} snapshot is missing")
             elif registry and registry.get(registry_field) != value:
                 errors.append(f"{label}: release manifest {field} does not match registry {registry_field}")
         document = release.get("document")
-        if document and not (root / document).is_file():
+        if document and not artifacts.exists(document):
             errors.append(f"{label}: protocol document is missing: {document}")
         elif document and Path(document).parent != Path("protocol/flow-authoring") / release["version"]:
             errors.append(f"{label}: protocol document must live under protocol/flow-authoring/{release['version']}/")
 
-    envelope_known = {(item["id"], item["version"]) for item in catalog.release_envelopes}
     for release in catalog.release_envelopes:
         label = f"{release['id']}@{release['version']}"
-        registry_path = protocol_dir / release["registry"]
-        if not registry_path.is_file():
-            errors.append(f"{label}: registry snapshot is missing: {release['registry']}")
-            continue
-        registry = _read_json(registry_path, errors)
+        registry = _artifact_json(artifacts, release["registry"], errors)
         if registry and (str(registry.get("id")), str(registry.get("version"))) != (release["id"], release["version"]):
             errors.append(f"{label}: registry snapshot identity does not match release manifest")
         for field, registry_field in (("profiles", "profiles_file"), ("capabilities", "capabilities_file")):
             value = release.get(field)
-            if not isinstance(value, str) or not (protocol_dir / value).is_file():
+            if not isinstance(value, str) or not artifacts.exists(value):
                 errors.append(f"{label}: {field} snapshot is missing")
             elif registry and registry.get(registry_field) != value:
                 errors.append(f"{label}: release manifest {field} does not match registry {registry_field}")
-        document = release.get("document")
-        if not (root / document).is_file():
-            errors.append(f"{label}: protocol document is missing: {document}")
-        elif Path(document).parent != Path("protocol/release-envelope") / release["version"]:
-            errors.append(f"{label}: protocol document must live under protocol/release-envelope/{release['version']}/")
+        if not artifacts.exists(release["document"]):
+            errors.append(f"{label}: protocol document is missing: {release['document']}")
 
-    envelope_snapshot_keys = {
-        (data.get("id"), str(data.get("version")))
-        for release in catalog.release_envelopes
-        for data in [_read_json(protocol_dir / release["registry"], errors)]
-        if data
-    }
-    if envelope_snapshot_keys != envelope_known:
-        errors.append(f"release envelope manifest and CF-CRE snapshots differ: manifest={sorted(envelope_known)}, snapshots={sorted(envelope_snapshot_keys)}")
-
-    base_contract = catalog.data["base_contract"]
-    base_version = str(base_contract["version"])
-    base_registry = _read_json(protocol_dir / "base" / base_version / "release.json", errors)
-    base_document = base_registry.get("document") if base_registry else None
-    expected_base_document = f"protocol/base/{base_version}/specification.md"
-    if base_document != expected_base_document:
-        errors.append(f"{base_contract['id']}@{base_version} document must live under protocol/base/{base_version}/")
-    elif not (root / base_document).is_file():
-        errors.append(f"{base_contract['id']}@{base_version} document is missing")
-
-    snapshot_keys = {
-        (data.get("id"), str(data.get("version")))
-        for release in catalog.releases
-        for data in [_read_json(protocol_dir / release["registry"], errors)]
-        if data
-    }
-    if snapshot_keys != known:
-        errors.append(f"release manifest and CF-FARP snapshots differ: manifest={sorted(known)}, snapshots={sorted(snapshot_keys)}")
-
-    history = _read_json(protocol_dir / "governance" / "protocol_history.json", errors)
+    history = _artifact_json(artifacts, "governance/protocol_history.json", errors)
     legacy = {
         (item["id"], item["version"]): item.get("migration_target")
         for item in catalog.releases
         if item["lifecycle"] == "recognized_legacy"
     }
-    history_items = history.get("protocols", []) if history else []
     history_legacy = {
         (str(item.get("id")), str(item.get("version"))): item.get("migration_target")
-        for item in history_items if isinstance(item, dict)
+        for item in (history or {}).get("protocols", [])
+        if isinstance(item, dict)
     }
     if history_legacy != legacy:
-        errors.append("governance/protocol_history.json must mirror release_manifest.json recognized_legacy releases and migration targets")
-    if (protocol_dir / "protocol_history.json").exists():
-        errors.append("protocol_history.json must live under protocol/governance/")
-    _require_text(protocol_dir / "governance" / "README.md", "release_manifest.json", errors)
+        errors.append("governance protocol history must mirror recognized legacy catalog releases")
+
+    base_contract = catalog.data["base_contract"]
+    base_version = str(base_contract["version"])
+    base_registry = _artifact_json(artifacts, f"base/{base_version}/release.json", errors)
+    if base_registry and base_registry.get("document") != f"protocol/base/{base_version}/specification.md":
+        errors.append(f"{base_contract['id']}@{base_version} has an invalid document path")
 
     base = load_base_implementation(root)
     base_supported = {(str(item.get("id")), str(item.get("version"))) for item in base.get("supported_protocols", [])}
@@ -152,7 +199,7 @@ def audit(root: Path = ROOT) -> list[str]:
     default_key = (str(default["id"]), str(default["version"]))
     default_release = catalog.get(*default_key)
     if not supports_protocol_release(base, default_release):
-        errors.append(f"Base must support the default new-flow release through its adapter or legacy release declaration: {default_key[0]}@{default_key[1]}")
+        errors.append(f"Base must support default release {default_key[0]}@{default_key[1]}")
     for subprotocol in (default_release or {}).get("trusted_subprotocols") or []:
         if subprotocol.get("required") and not supports_subprotocol_release(
             base,
@@ -161,58 +208,47 @@ def audit(root: Path = ROOT) -> list[str]:
             default_key[0],
             default_key[1],
         ):
-            errors.append(f"Base must support required trusted subprotocol {subprotocol.get('id')}@{subprotocol.get('version')} for {default_key[0]}@{default_key[1]}")
+            errors.append(
+                f"Base must support required trusted subprotocol {subprotocol.get('id')}@{subprotocol.get('version')}"
+            )
 
-    _require_text(root / "src/core/protocol/capability_registry.py", "load_protocol_release_catalog", errors)
+    header = "\n".join(artifacts.read_text("governance/GOVERNANCE.md").splitlines()[:24])
+    if "CF-FARP@1.1" not in header:
+        errors.append("governance snapshot must present the CF-FARP@1.1 baseline in its header")
+
+
+def _audit_product_bindings(root: Path, catalog, errors: list[str]) -> None:
+    _require_text(root / "src/core/protocol/capability_registry.py", "ProtocolArtifactStore", errors)
     _require_text(root / "src/core/lab/dev_flow.py", "self.default_protocol_version", errors)
     _require_text(root / "src/backend/main.py", "protocol_catalog", errors)
     _require_text(root / "src/core/studio/creator_runtime_bridge.py", 'CREATOR_PACKAGE_PROTOCOL = {"id": "CF-FARP", "version": "1.6"}', errors)
     _require_text(root / "src/intent-studio/src/pages/intent-studio/IntentStudio.tsx", "packageCreatorProject", errors)
-    _require_text(protocol_dir / "governance/GOVERNANCE.md", "release_manifest.json", errors)
-    for document in [
-        "AGENT.md",
-        "protocol/README.md",
-        "protocol/governance/GOVERNANCE.md",
-    ]:
-        _require_text(root / document, "release_manifest.json", errors)
+    for document in ("AGENT.md", "README.md"):
+        _require_text(root / document, "protocol-registry", errors)
 
-    baseline_headers = {
-        "protocol/governance/GOVERNANCE.md": "CF-FARP@1.1",
-    }
-    for document, marker in baseline_headers.items():
-        header = "\n".join((root / document).read_text(encoding="utf-8").splitlines()[:24])
-        if marker not in header:
-            errors.append(f"{document} must present the v1.1 release baseline in its header")
-
-    stale_phrases = ("最新 FARP v0.8", "v0.7 是最新目标规范", "目标协议基线：`CARTRIDGEFLOW-BASE@0.2`、`CF-FARP@0.8`")
-    for path in (root / "docs").rglob("*.md"):
-        text = path.read_text(encoding="utf-8")
-        for phrase in stale_phrases:
-            if phrase in text:
-                errors.append(f"{path.relative_to(root)} still presents a stale protocol baseline: {phrase}")
-
+    known = {(item["id"], item["version"]) for item in catalog.releases}
     for path in _project_text_files(root):
         text = path.read_text(encoding="utf-8", errors="ignore")
         for version in re.findall(r"CF-FARP@(\d+\.\d+)", text):
             if ("CF-FARP", version) not in known:
                 errors.append(f"{path.relative_to(root)} references unregistered CF-FARP@{version}")
-    return errors
 
 
-def _read_json(path: Path, errors: list[str]) -> dict:
+def _artifact_json(store: ProtocolArtifactStore, path: str, errors: list[str]) -> dict:
     try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        errors.append(f"{path.relative_to(ROOT)} is not valid JSON: {exc}")
+        return store.read_json(path)
+    except (ProtocolKnowledgeRegistryError, ValueError) as exc:
+        errors.append(f"protocol artifact {path} is unavailable: {exc}")
         return {}
-    if not isinstance(value, dict):
-        errors.append(f"{path.relative_to(ROOT)} must be a JSON object")
-        return {}
-    return value
 
 
 def _require_text(path: Path, expected: str, errors: list[str]) -> None:
-    if expected not in path.read_text(encoding="utf-8"):
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        errors.append(f"{path.relative_to(ROOT)} cannot be read: {exc}")
+        return
+    if expected not in text:
         errors.append(f"{path.relative_to(ROOT)} must reference {expected}")
 
 

@@ -1128,7 +1128,7 @@ def resolve_ai_authoring_capabilities(root: str | Path) -> list[str]:
     """Resolve AI permissions from published catalog + Base trust, never client input."""
     try:
         catalog = load_protocol_release_catalog(root)
-        registry = ProtocolRegistry(root, overlay_dirs=[Path(root) / "protocol" / "tuning" / "1.2"])
+        registry = ProtocolRegistry(root)
         base = load_base_implementation(root)
     except Exception as exc:
         raise AuthoringServiceError("AI_AUTHORING_TRUST_UNAVAILABLE", "Published authoring trust facts are unavailable.", status=409) from exc

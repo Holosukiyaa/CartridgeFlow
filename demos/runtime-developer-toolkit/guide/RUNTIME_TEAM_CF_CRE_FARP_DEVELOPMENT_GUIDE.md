@@ -483,9 +483,9 @@ runtime_contract_invalid
 
 ## 10. 参考文件
 
-- `protocol/release-envelope/1/specification.md`：CF-CRE@1 正文。
-- `protocol/flow-authoring/1.0/`：CF-FARP@1.0 机器快照和执行计划规范。
-- `protocol/catalog/release_manifest.json`：协议生命周期和默认版本来源。
+- `cartridgeflow-protocols/sources/current/protocol/release-envelope/1/specification.md`：CF-CRE@1 原本。
+- `cartridgeflow-protocols/sources/current/protocol/flow-authoring/1.0/`：CF-FARP@1.0 原本。
+- `config/protocol/protocol-registry.sqlite`：本产品锁定的协议发布、生命周期和默认版本副本。
 - `config/base/BASE_IMPLEMENTATION.json`：参考 Base 的支持声明。
 - `src/core/protocol/release_builder.py`：Base 的发行包构建和检查实现。
 - `src/core/protocol/release_signing.py`：签名和本地信任实现。

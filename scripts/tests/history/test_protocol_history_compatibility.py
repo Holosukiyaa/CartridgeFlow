@@ -1,8 +1,13 @@
-import json
 import unittest
 from pathlib import Path
 
-from core.protocol import ProtocolRegistry, build_compatibility_report, build_protocol_certification_report, load_base_implementation
+from core.protocol import (
+    ProtocolRegistry,
+    build_compatibility_report,
+    build_protocol_certification_report,
+    load_base_implementation,
+    load_protocol_artifact_json,
+)
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -99,7 +104,7 @@ class ProtocolHistoryCompatibilityTests(unittest.TestCase):
         self.assertIn("compatibility_blocked", [item["code"] for item in report["findings"]])
 
     def test_v05_is_recognized_but_not_supported(self):
-        protocol = json.loads((ROOT / "protocol" / "flow-authoring" / "0.5" / "release.json").read_text(encoding="utf-8"))
+        protocol = load_protocol_artifact_json("flow-authoring/0.5/release.json", ROOT)
         registry = ProtocolRegistry(ROOT)
         supported = {(item["id"], item["version"]) for item in load_base_implementation(ROOT)["supported_protocols"]}
 

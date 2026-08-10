@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
+
+from .artifact_store import ProtocolArtifactStore
+from .governance_registry import ProtocolKnowledgeRegistryError
 
 
 class ProtocolReleaseCatalogError(ValueError):
@@ -124,13 +126,10 @@ def load_protocol_release_catalog(root: str | Path) -> ProtocolReleaseCatalog:
 
 
 def _load_release_manifest(root: Path) -> dict:
-    path = root / RELEASE_MANIFEST_PATH
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except FileNotFoundError as exc:
-        raise ProtocolReleaseCatalogError(f"{RELEASE_MANIFEST_PATH.as_posix()} not found") from exc
-    except json.JSONDecodeError as exc:
-        raise ProtocolReleaseCatalogError(f"{RELEASE_MANIFEST_PATH.as_posix()} is not valid JSON: {exc.msg}") from exc
+        data = ProtocolArtifactStore(root).read_json(RELEASE_MANIFEST_PATH)
+    except ProtocolKnowledgeRegistryError as exc:
+        raise ProtocolReleaseCatalogError(str(exc)) from exc
     if not isinstance(data, dict) or data.get("schema") != "cartridgeflow.protocol_release_manifest.v1":
         raise ProtocolReleaseCatalogError("protocol release manifest has an unknown schema")
     for field in ("base_contract", "default_for_new_flows"):

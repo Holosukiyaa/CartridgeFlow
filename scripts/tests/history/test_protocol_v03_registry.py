@@ -1,8 +1,13 @@
-import json
 import unittest
 from pathlib import Path
 
-from core.protocol import ProtocolRegistry, load_base_implementation
+from core.protocol import (
+    ProtocolArtifactStore,
+    ProtocolRegistry,
+    load_base_implementation,
+    load_protocol_artifact_json,
+    load_protocol_artifact_text,
+)
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -24,15 +29,13 @@ class ProtocolV03RegistryTest(unittest.TestCase):
         self.assertNotIn(("CF-FARP", "0.3"), supported)
 
     def test_protocol_v03_document_path_exists(self):
-        protocol = json.loads((ROOT / "protocol" / "flow-authoring" / "0.3" / "release.json").read_text(encoding="utf-8"))
-        document = ROOT / protocol["document"]
-        self.assertTrue(document.is_file(), protocol["document"])
+        protocol = load_protocol_artifact_json("flow-authoring/0.3/release.json", ROOT)
+        self.assertTrue(ProtocolArtifactStore(ROOT).exists(protocol["document"]), protocol["document"])
         self.assertEqual(protocol["supersedes"], {"id": "CF-FARP", "version": "0.2"})
 
     def test_protocol_v03_documents_interactive_decision_model(self):
-        protocol = json.loads((ROOT / "protocol" / "flow-authoring" / "0.3" / "release.json").read_text(encoding="utf-8"))
-        document = ROOT / protocol["document"]
-        text = document.read_text(encoding="utf-8")
+        protocol = load_protocol_artifact_json("flow-authoring/0.3/release.json", ROOT)
+        text = load_protocol_artifact_text(protocol["document"], ROOT)
 
         self.assertIn("## 20. AI 决策节点", text)
         self.assertIn("decision_envelope.v1", text)
@@ -40,7 +43,7 @@ class ProtocolV03RegistryTest(unittest.TestCase):
         self.assertIn("runtime_resume_after_user_input", text)
 
     def test_protocol_v03_capability_vocabulary_contains_interactive_decision_contract(self):
-        capabilities = json.loads((ROOT / "protocol" / "flow-authoring" / "0.3" / "capabilities.json").read_text(encoding="utf-8"))
+        capabilities = load_protocol_artifact_json("flow-authoring/0.3/capabilities.json", ROOT)
         ids = {
             str(item.get("id"))
             for item in capabilities.get("capabilities") or []

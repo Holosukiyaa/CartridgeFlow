@@ -140,8 +140,7 @@ class CartridgeRunner:
     def __init__(self, root: str | Path, registry):
         self.root = Path(root)
         self.registry = registry
-        protocol_root = self.root if (self.root / "protocol" / "catalog" / "release_manifest.json").is_file() else Path(__file__).resolve().parents[3]
-        self.release_catalog = load_protocol_release_catalog(protocol_root)
+        self.release_catalog = load_protocol_release_catalog(self.root)
         self.runtime_manager = RuntimeManager(self.root)
         self.workspace_host = WorkspaceHostManager()
         self.dependency_resolver = DependencyResolver()

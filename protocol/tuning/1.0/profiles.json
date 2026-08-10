@@ -1,7 +1,0 @@
-{
-  "schema_version": "1.0",
-  "profiles": [
-    {"id": "tuning_authoring", "description": "Create and validate immutable node tuning revisions."},
-    {"id": "recipe_release_runtime", "description": "Publish, activate, materialize, and trace immutable recipe releases."}
-  ]
-}

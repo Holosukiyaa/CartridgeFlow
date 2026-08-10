@@ -1,8 +1,7 @@
-import json
 import unittest
 from pathlib import Path
 
-from core.protocol import ProtocolRegistry, load_base_implementation
+from core.protocol import ProtocolRegistry, load_base_implementation, load_protocol_artifact_json
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -23,7 +22,7 @@ class ProtocolV02RegistryTest(unittest.TestCase):
         self.assertNotIn(("CF-FARP", "0.2"), supported)
 
     def test_protocol_v02_capability_vocabulary_contains_layered_process_contract(self):
-        capabilities = json.loads((ROOT / "protocol" / "flow-authoring" / "0.2" / "capabilities.json").read_text(encoding="utf-8"))
+        capabilities = load_protocol_artifact_json("flow-authoring/0.2/capabilities.json", ROOT)
         ids = {
             str(item.get("id"))
             for item in capabilities.get("capabilities") or []

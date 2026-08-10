@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import sys
 import unittest
 from pathlib import Path
@@ -9,7 +8,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "src"))
 
-from core.protocol import load_base_implementation, load_protocol_release_catalog
+from core.protocol import (
+    load_base_implementation,
+    load_protocol_artifact_json,
+    load_protocol_artifact_text,
+    load_protocol_release_catalog,
+)
 
 
 class CreatorPackageProtocolV16Tests(unittest.TestCase):
@@ -23,10 +27,10 @@ class CreatorPackageProtocolV16Tests(unittest.TestCase):
         self.assertIn(("CF-FARP", "1.6"), supported)
 
     def test_release_snapshots_define_one_atomic_package_boundary(self):
-        release_dir = ROOT / "protocol" / "flow-authoring" / "1.6"
-        registry = json.loads((release_dir / "release.json").read_text(encoding="utf-8"))
-        capabilities = json.loads((release_dir / "capabilities.json").read_text(encoding="utf-8"))
-        document = (release_dir / "README.md").read_text(encoding="utf-8")
+        release_dir = "flow-authoring/1.6"
+        registry = load_protocol_artifact_json(f"{release_dir}/release.json")
+        capabilities = load_protocol_artifact_json(f"{release_dir}/capabilities.json")
+        document = load_protocol_artifact_text(f"{release_dir}/README.md")
         self.assertEqual("1.6", registry["version"])
         self.assertIn("creator_atomic_package_boundary_v1", {item["id"] for item in capabilities["capabilities"]})
         self.assertIn("does not require a second", document)

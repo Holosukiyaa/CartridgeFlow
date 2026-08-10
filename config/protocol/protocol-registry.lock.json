@@ -1,0 +1,28 @@
+{
+  "schema": "cartridgeflow.product_protocol_registry_lock.v2",
+  "repository": {
+    "url": "https://github.com/Holosukiyaa/cartridgeflow-protocols.git",
+    "commit": "d43aff73b4d48e3dd2634460898e699614057559"
+  },
+  "runtime_source_id": "current",
+  "sources": [
+    {
+      "source_id": "current",
+      "path": "sources/current",
+      "manifest_digest": "bd395aa4c8945ceaf7f06905c96aa3384481fcd1c1eed817a2dec77bceaf0bda",
+      "source_digest": "907d881cd49887c7056c031498b1c0a29be46d13ddd59b818fc7b97fac2e0b18"
+    },
+    {
+      "source_id": "temp-runtime",
+      "path": "sources/temp-runtime",
+      "manifest_digest": "06aecab166538d60eee2875ceca9d2357fd96832f63b6071352f530978499ca1",
+      "source_digest": "e0cc2e7cbe3523491ca544a87c3abfbdf26cd99fc12e1bc99f80aa95a94cfa59"
+    }
+  ],
+  "registry": {
+    "schema_version": "1",
+    "logical_digest": "fcdaefe2c07e9afd93b10de17dc53a98aae6c011d32ac5528cf8162b66fa288c",
+    "database_sha256": "ea9ea272c4f4cdb6c7e89c70f0dfbe9a8a6765a3b690a079401350d15117f278",
+    "path": "config/protocol/protocol-registry.sqlite"
+  }
+}

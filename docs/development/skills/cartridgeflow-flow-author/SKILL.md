@@ -20,10 +20,10 @@ Read before editing:
 
 - `AGENT.md`
 - `references/authoring-checklist.md`
-- `protocol/catalog/release_manifest.json`
-- `protocol/governance/GOVERNANCE.md`
+- `config/protocol/protocol-registry.lock.json`
+- The catalog and governance artifacts through `core.protocol.ProtocolArtifactStore`
 
-Read `protocol/flow-authoring/1.1/README.md` and its listed normative modules before creating or modifying a v1 Flow or a DLC MCP tool. Read the document path named by the release catalog rather than guessing a version.
+Read the `protocol/flow-authoring/1.1/README.md` SQLite artifact and its listed normative modules before creating or modifying a v1 Flow or a DLC MCP tool. Read the document path named by the compiled release catalog rather than guessing a version.
 
 ## Workflow
 

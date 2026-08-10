@@ -107,8 +107,18 @@ class ProtocolSourceToolingTests(unittest.TestCase):
             "数据合同",
             (templates / "protocol_detail.html").read_text(encoding="utf-8"),
         )
+        self.assertIn(
+            "协议文件树",
+            (templates / "protocol_sidebar.html").read_text(encoding="utf-8"),
+        )
+        self.assertIn(
+            "knowledge-shell",
+            (templates / "protocol_shell_styles.html").read_text(encoding="utf-8"),
+        )
         plugin = launch_protocol_viewer.VIEWER_PLUGINS / "protocol_knowledge.py"
-        self.assertIn("register_routes", plugin.read_text(encoding="utf-8"))
+        plugin_text = plugin.read_text(encoding="utf-8")
+        self.assertIn("register_routes", plugin_text)
+        self.assertIn("FOUR_MAJOR_LAYERS", plugin_text)
 
     def test_existing_background_viewer_reopens_in_browser(self):
         with (

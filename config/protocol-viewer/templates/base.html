@@ -50,7 +50,7 @@
 <section class="content">{% block content %}{% endblock %}</section>
 </div>
 <footer class="ft">本机只读 · 仅监听 127.0.0.1 · 协议原本与产品快照分库展示</footer>
-{% include "_close_open_menus.html" %}
+{% block close_open_menus %}{% include "_close_open_menus.html" %}{% endblock %}
 {% for body_script in body_scripts %}<script{% if body_script.module %} type="module"{% endif %}>{{ body_script.script }}</script>{% endfor %}
 {% if select_templates %}<!-- Templates considered: {{ select_templates|join(", ") }} -->{% endif %}
 </body>

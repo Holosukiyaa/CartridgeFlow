@@ -1,0 +1,45 @@
+<aside class="protocol-directory">
+    <div class="directory-sticky">
+        <div class="directory-title"><strong>协议文件</strong><span>文件树 · 点击文件阅读</span></div>
+        <div class="source-switch" aria-label="协议线">
+            {% for source in catalog.sources %}<a href="{{ source.url }}"{% if source.active %} class="active" aria-current="page"{% endif %}>{{ source.label }}</a>{% endfor %}
+        </div>
+        <nav class="file-tree" aria-label="协议文件树">
+            {% for group in catalog.groups %}
+            <details class="tree-folder tree-major"{% if group.active %} open{% endif %}>
+                <summary><span class="tree-number">{{ group.major.number }}</span><span>{{ group.major.label }}</span></summary>
+                <div class="tree-children">
+                    {% for sublayer in group.sublayers %}
+                    <details class="tree-folder tree-sublayer"{% if sublayer.active %} open{% endif %}>
+                        <summary>{{ sublayer.layer.label }}</summary>
+                        <div class="tree-children">
+                            {% if sublayer.protocols %}
+                                {% for protocol in sublayer.protocols %}
+                                <details class="tree-folder tree-protocol"{% if protocol.active %} open{% endif %}>
+                                    <summary title="{{ protocol.name or protocol.protocol_id }}">{{ protocol.protocol_id }}</summary>
+                                    <div class="tree-children">
+                                        {% for release_node in protocol.release_nodes %}
+                                        <details class="tree-folder tree-version"{% if release_node.active %} open{% endif %}>
+                                            <summary>{{ release_node.version }}</summary>
+                                            <div class="tree-children tree-files">
+                                                {% if release_node.documents %}
+                                                    {% for document in release_node.documents %}
+                                                    <a class="tree-file{% if document.active %} active{% endif %}" href="{{ document.detail_url }}" title="{{ document.artifact_path }}"{% if document.active %} aria-current="page"{% endif %}><span>{{ document.file_name }}</span><span class="tree-file-kind">{{ document.artifact_kind }}</span></a>
+                                                    {% endfor %}
+                                                {% else %}<span class="tree-empty">无可读文件</span>{% endif %}
+                                            </div>
+                                        </details>
+                                        {% endfor %}
+                                    </div>
+                                </details>
+                                {% endfor %}
+                            {% else %}<span class="tree-empty">本线暂无协议</span>{% endif %}
+                        </div>
+                    </details>
+                    {% endfor %}
+                </div>
+            </details>
+            {% endfor %}
+        </nav>
+    </div>
+</aside>

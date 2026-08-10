@@ -15,38 +15,68 @@ from datasette_render_markdown import render_markdown
 CATEGORY_LAYERS = {
     "base": {
         "key": "foundation",
-        "label": "L0 · 基础底座",
+        "label": "基础合同",
         "description": "跨卡带的宿主安全、执行服务、存储边界与兼容性底线。",
         "order": 0,
     },
     "flow-authoring": {
         "key": "flow",
-        "label": "L1 · 可执行 Flow 与数据合同",
+        "label": "Flow 与数据合同",
         "description": "Flow 的结构、节点、端口、输入输出、Store、工具与运行时执行契约。",
         "order": 1,
     },
     "tuning": {
         "key": "tuning",
-        "label": "L1.1 · 受信语义配方",
+        "label": "受信语义配方",
         "description": "由 Flow 层承载的语义配方、能力匹配、调优版本与作者侧物化输入。",
         "order": 2,
     },
     "release-envelope": {
         "key": "release",
-        "label": "L2 · 发行与信任封装",
+        "label": "发行封装",
         "description": "发行布局、哈希、签名、安装、激活与运行时交接。",
         "order": 3,
     },
     "runtime-profiles": {
         "key": "runtime",
-        "label": "L2.1 · 运行时能力画像",
+        "label": "运行时画像",
         "description": "宿主能力声明、目标协商与 fail-closed 支持检查。",
         "order": 4,
     },
 }
+FOUR_MAJOR_LAYERS = (
+    {
+        "key": "foundation",
+        "number": "01",
+        "label": "基础与边界",
+        "description": "定义所有卡带共同遵守的宿主底线。",
+        "categories": ("base",),
+    },
+    {
+        "key": "authoring",
+        "number": "02",
+        "label": "创作与数据",
+        "description": "定义 Flow、数据合同与受信语义配方。",
+        "categories": ("flow-authoring", "tuning"),
+    },
+    {
+        "key": "release",
+        "number": "03",
+        "label": "发行与信任",
+        "description": "定义协议如何封装、验证、安装和激活。",
+        "categories": ("release-envelope",),
+    },
+    {
+        "key": "runtime",
+        "number": "04",
+        "label": "运行时适配",
+        "description": "定义宿主能力画像与运行前支持检查。",
+        "categories": ("runtime-profiles",),
+    },
+)
 DEFAULT_LAYER = {
     "key": "other",
-    "label": "其他治理材料",
+    "label": "待归类材料",
     "description": "暂未归入标准协议层的治理材料。",
     "order": 99,
 }
@@ -92,9 +122,23 @@ def _layer(category: str | None) -> dict:
     return CATEGORY_LAYERS.get(category or "", DEFAULT_LAYER)
 
 
+def _major_layer(category: str | None) -> dict:
+    for major in FOUR_MAJOR_LAYERS:
+        if category in major["categories"]:
+            return major
+    return FOUR_MAJOR_LAYERS[0]
+
+
 def _detail_url(source_id: str, protocol_id: str, version: str | None = None) -> str:
     path = f"/protocol/{quote(source_id, safe='')}/{quote(protocol_id, safe='')}"
     return f"{path}?version={quote(version, safe='')}" if version else path
+
+
+def _document_url(source_id: str, protocol_id: str, version: str, artifact_path: str) -> str:
+    return (
+        f"{_detail_url(source_id, protocol_id, version)}"
+        f"&document={quote(artifact_path, safe='')}"
+    )
 
 
 def _is_contract_artifact(artifact: dict, sections: list[dict] | None = None) -> bool:
@@ -210,6 +254,26 @@ async def _release_cards(database, source_id: str) -> list[dict]:
     by_protocol: dict[str, list[dict]] = defaultdict(list)
     for release in releases:
         by_protocol[release["protocol_id"]].append(release)
+    reader_artifacts = await _rows(
+        database,
+        "SELECT release.protocol_id, release.version, artifact.artifact_path, "
+        "artifact.artifact_kind, artifact.media_type "
+        "FROM artifact JOIN protocol_release AS release "
+        "ON release.release_key = artifact.release_key "
+        "WHERE release.source_id = :source_id AND artifact.text_content IS NOT NULL "
+        "ORDER BY release.protocol_id, release.version, artifact.artifact_path",
+        {"source_id": source_id},
+    )
+    artifacts_by_release: dict[tuple[str, str], list[dict]] = defaultdict(list)
+    for artifact in reader_artifacts:
+        artifact["file_name"] = artifact["artifact_path"].rsplit("/", 1)[-1]
+        artifact["detail_url"] = _document_url(
+            source_id,
+            artifact["protocol_id"],
+            artifact["version"],
+            artifact["artifact_path"],
+        )
+        artifacts_by_release[(artifact["protocol_id"], artifact["version"])].append(artifact)
     cards: list[dict] = []
     for family in families:
         protocol_releases = sorted(
@@ -225,12 +289,26 @@ async def _release_cards(database, source_id: str) -> list[dict]:
             source_id,
             family["protocol_id"],
         )
+        release_nodes = []
+        for item in reversed(protocol_releases):
+            release_nodes.append(
+                {
+                    **item,
+                    "detail_url": _detail_url(source_id, family["protocol_id"], item["version"]),
+                    "documents": artifacts_by_release.get(
+                        (family["protocol_id"], item["version"]),
+                        [],
+                    ),
+                }
+            )
         cards.append(
             {
                 **family,
                 "layer": layer,
+                "major_layer": _major_layer(latest["category"]),
                 "latest": latest,
                 "versions": [item["version"] for item in reversed(protocol_releases)],
+                "release_nodes": release_nodes,
                 "detail_url": _detail_url(source_id, family["protocol_id"], latest["version"]),
                 "contract_count": contract_history["artifact_count"],
                 "contract_section_count": contract_history["section_count"],
@@ -240,40 +318,137 @@ async def _release_cards(database, source_id: str) -> list[dict]:
     return sorted(cards, key=lambda value: (value["layer"]["order"], value["protocol_id"]))
 
 
-async def protocol_index(request, datasette):
-    database = datasette.get_database("protocol-source")
-    line_context = []
-    for source_id, title, description in (
-        (
-            "current",
-            "current · 正式协议线",
-            "已提交并供产品消费的协议层级。协议详情默认进入当前最新版本。",
-        ),
-        (
-            "temp-runtime",
-            "temp-runtime · 演进协议线",
-            "临时运行时协议线，单独展示，用于比较与治理，不与正式线混合。",
-        ),
-    ):
-        cards = await _release_cards(database, source_id)
-        layers: dict[str, dict] = {}
-        for card in cards:
-            layer = card["layer"]
-            layers.setdefault(
-                layer["key"],
-                {"layer": layer, "protocols": []},
-            )["protocols"].append(card)
-        line_context.append(
+def _catalog_groups(
+    cards: list[dict],
+    active_protocol_id: str | None = None,
+    active_version: str | None = None,
+    active_document: str | None = None,
+) -> list[dict]:
+    groups = []
+    known_categories = {
+        category
+        for major in FOUR_MAJOR_LAYERS
+        for category in major["categories"]
+    }
+    catalog_cards = []
+    for card in cards:
+        protocol_active = card["protocol_id"] == active_protocol_id
+        release_nodes = []
+        for release in card["release_nodes"]:
+            release_active = protocol_active and release["version"] == active_version
+            release_nodes.append(
+                {
+                    **release,
+                    "active": release_active,
+                    "documents": [
+                        {
+                            **document,
+                            "active": release_active
+                            and document["artifact_path"] == active_document,
+                        }
+                        for document in release["documents"]
+                    ],
+                }
+            )
+        catalog_cards.append(
             {
-                "source_id": source_id,
-                "title": title,
-                "description": description,
-                "layers": sorted(layers.values(), key=lambda value: value["layer"]["order"]),
+                **card,
+                "active": protocol_active,
+                "release_nodes": release_nodes,
             }
         )
+    for major in FOUR_MAJOR_LAYERS:
+        sublayers = []
+        for category in major["categories"]:
+            protocols = [
+                card
+                for card in catalog_cards
+                if card["latest"]["category"] == category
+            ]
+            sublayers.append(
+                {
+                    "layer": _layer(category),
+                    "protocols": protocols,
+                    "active": any(protocol["active"] for protocol in protocols),
+                }
+            )
+        if major["key"] == "foundation":
+            uncategorized = [
+                card
+                for card in catalog_cards
+                if card["latest"]["category"] not in known_categories
+            ]
+            if uncategorized:
+                sublayers.append(
+                    {
+                        "layer": DEFAULT_LAYER,
+                        "protocols": uncategorized,
+                        "active": any(card["active"] for card in uncategorized),
+                    }
+                )
+        groups.append(
+            {
+                "major": major,
+                "sublayers": sublayers,
+                "protocol_count": sum(len(item["protocols"]) for item in sublayers),
+                "active": any(item.get("active") for item in sublayers),
+            }
+        )
+    return groups
+
+
+async def _catalog_context(
+    database,
+    source_id: str,
+    active_protocol_id: str | None = None,
+    active_version: str | None = None,
+    active_document: str | None = None,
+) -> dict:
+    cards = await _release_cards(database, source_id)
+    return {
+        "source_id": source_id,
+        "active_protocol_id": active_protocol_id,
+        "groups": _catalog_groups(
+            cards,
+            active_protocol_id,
+            active_version,
+            active_document,
+        ),
+        "sources": (
+            {
+                "source_id": "current",
+                "label": "正式线",
+                "url": "/?source=current",
+                "active": source_id == "current",
+            },
+            {
+                "source_id": "temp-runtime",
+                "label": "演进线",
+                "url": "/?source=temp-runtime",
+                "active": source_id == "temp-runtime",
+            },
+        ),
+    }
+
+
+async def protocol_index(request, datasette):
+    database = datasette.get_database("protocol-source")
+    requested_source = request.args.get("source")
+    source_id = requested_source if requested_source in {"current", "temp-runtime"} else "current"
+    cards = await _release_cards(database, source_id)
+    preferred = next(
+        (card for card in cards if card["protocol_id"] == "CF-FARP"),
+        cards[0] if cards else None,
+    )
+    if preferred:
+        return Response.redirect(
+            preferred["detail_url"],
+            headers={"X-CartridgeFlow-Protocol-Viewer": "1"},
+        )
+    catalog = await _catalog_context(database, source_id)
     body = await datasette.render_template(
         "protocol_home.html",
-        {"lines": line_context},
+        {"catalog": catalog, "major_layers": FOUR_MAJOR_LAYERS},
         request=request,
         view_name="protocol-knowledge-home",
     )
@@ -394,6 +569,14 @@ async def protocol_detail(request, datasette):
     context = {
         "family": family,
         "layer": _layer(release["category"]),
+        "major_layer": _major_layer(release["category"]),
+        "catalog": await _catalog_context(
+            database,
+            source_id,
+            protocol_id,
+            release["version"],
+            selected_document["artifact_path"] if selected_document else None,
+        ),
         "source_id": source_id,
         "release": release,
         "releases": releases,

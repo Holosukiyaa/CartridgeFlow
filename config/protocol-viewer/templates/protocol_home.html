@@ -1,70 +1,19 @@
 {% extends "base.html" %}
 
-{% block title %}协议知识库 · 分层目录{% endblock %}
+{% block title %}协议知识库{% endblock %}
 {% block body_class %}protocol-home{% endblock %}
+{% block close_open_menus %}{% endblock %}
 
 {% block extra_head %}
 {{ super() }}
-<style>
-    .knowledge-intro { border-bottom: 1px solid var(--cf-line); padding-bottom: 26px; }
-    .knowledge-intro h1 { margin: 0 0 10px; }
-    .knowledge-intro p { color: var(--cf-muted); line-height: 1.7; margin: 0; max-width: 820px; }
-    .protocol-line { border-bottom: 1px solid var(--cf-line); padding: 30px 0 34px; }
-    .protocol-line > header { background: transparent; border: 0; padding: 0; }
-    .protocol-line > header h2 { margin: 0 0 7px; }
-    .protocol-line > header p { color: var(--cf-muted); margin: 0; }
-    .layer-band { border-top: 3px solid var(--cf-accent); margin-top: 26px; padding-top: 18px; }
-    .layer-band.layer-tuning { border-top-color: var(--cf-warm); }
-    .layer-band.layer-release, .layer-band.layer-runtime { border-top-color: #5f7280; }
-    .layer-heading { align-items: baseline; display: flex; gap: 14px; flex-wrap: wrap; }
-    .layer-heading h3 { margin: 0; }
-    .layer-heading span { color: var(--cf-muted); font-size: 13px; }
-    .layer-description { color: var(--cf-muted); line-height: 1.6; margin: 6px 0 12px; }
-    .protocol-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px 28px; }
-    .protocol-entry { border-bottom: 1px solid var(--cf-line); padding: 14px 0 13px; }
-    .protocol-entry a { color: var(--cf-ink); display: block; font-size: 17px; font-weight: 700; text-decoration: none; }
-    .protocol-entry .protocol-id { color: var(--cf-accent); font-family: ui-monospace, Consolas, monospace; font-size: 12px; font-weight: 600; margin-right: 7px; }
-    .protocol-meta { color: var(--cf-muted); font-size: 13px; line-height: 1.6; margin-top: 5px; }
-    .contract-note { color: var(--cf-warm); font-size: 13px; line-height: 1.55; margin: 5px 0 0; }
-    .line-empty { color: var(--cf-muted); padding: 20px 0; }
-    @media (max-width: 760px) { .protocol-list { grid-template-columns: 1fr; } }
-</style>
+{% include "protocol_shell_styles.html" %}
 {% endblock %}
 
 {% block content %}
-<div class="knowledge-intro">
-    <h1>协议知识库</h1>
-    <p>按协议线、层级和职责逐层进入。点击协议即可直接打开当前最新版本；版本谱系、依赖关系、数据合同和正文文档都在同一详情页内展开。</p>
+<div class="knowledge-shell">
+    {% include "protocol_sidebar.html" %}
+    <main class="protocol-reader empty-reader">
+        <div><h1>该协议线暂无协议</h1><p class="empty-note">请切换左侧协议线。</p></div>
+    </main>
 </div>
-
-{% for line in lines %}
-<section class="protocol-line" aria-labelledby="line-{{ line.source_id }}">
-    <header>
-        <h2 id="line-{{ line.source_id }}">{{ line.title }}</h2>
-        <p>{{ line.description }}</p>
-    </header>
-    {% if line.layers %}
-        {% for group in line.layers %}
-        <section class="layer-band layer-{{ group.layer.key }}" aria-labelledby="layer-{{ line.source_id }}-{{ group.layer.key }}">
-            <div class="layer-heading">
-                <h3 id="layer-{{ line.source_id }}-{{ group.layer.key }}">{{ group.layer.label }}</h3>
-                <span>{{ group.protocols|length }} 个协议族</span>
-            </div>
-            <p class="layer-description">{{ group.layer.description }}</p>
-            <div class="protocol-list">
-                {% for protocol in group.protocols %}
-                <article class="protocol-entry">
-                    <a href="{{ protocol.detail_url }}"><span class="protocol-id">{{ protocol.protocol_id }}</span>{{ protocol.name or protocol.protocol_id }}</a>
-                    <div class="protocol-meta">最新版本 {{ protocol.latest.version }} · 共 {{ protocol.versions|length }} 个版本 · {{ protocol.owner or "未指定负责人" }}</div>
-                    {% if protocol.contract_count or protocol.contract_section_count %}<p class="contract-note">数据合同归属此协议族：{{ protocol.contract_count }} 份材料 · {{ protocol.contract_section_count }} 个章节 · 分布在 {{ protocol.contract_version_count }} 个版本</p>{% endif %}
-                </article>
-                {% endfor %}
-            </div>
-        </section>
-        {% endfor %}
-    {% else %}<p class="line-empty">该协议线暂时没有已登记协议。</p>{% endif %}
-</section>
-{% endfor %}
-
-<p class="cf-advanced">其他治理数据：<a href="{{ urls.database('protocol-registry') }}/configuration_catalog">产品配置</a> · <a href="{{ urls.database('protocol-registry') }}/implementation_evidence">实现证据</a> · <a href="{{ urls.database('protocol-source') }}">原始数据表</a></p>
 {% endblock %}

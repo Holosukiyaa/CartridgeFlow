@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import configparser
 import hashlib
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -38,10 +40,62 @@ def audit(root: Path = ROOT) -> list[str]:
     except (ProtocolKnowledgeRegistryError, ValueError) as exc:
         return [f"compiled protocol registry is unavailable: {exc}"]
 
+    _audit_protocol_source_mount(root, lock, errors)
     _audit_registry_lock(registry_path, lock, errors)
     _audit_release_catalog(root, artifacts, catalog, errors)
     _audit_product_bindings(root, catalog, errors)
     return errors
+
+
+def _audit_protocol_source_mount(root: Path, lock: dict, errors: list[str]) -> None:
+    config_path = root / ".gitmodules"
+    config = configparser.ConfigParser()
+    try:
+        if not config.read(config_path, encoding="utf-8"):
+            errors.append("protocol source submodule configuration is missing")
+            return
+    except configparser.Error as exc:
+        errors.append(f"protocol source submodule configuration is invalid: {exc}")
+        return
+
+    section = 'submodule "protocol-source"'
+    expected_url = "https://github.com/Holosukiyaa/cartridgeflow-protocols.git"
+    if not config.has_section(section):
+        errors.append("protocol-source must be declared as a Git submodule")
+        return
+    if config.get(section, "path", fallback="") != "protocol-source":
+        errors.append("protocol source submodule must be mounted at protocol-source/")
+    if config.get(section, "url", fallback="") != expected_url:
+        errors.append("protocol source submodule must use the authoritative GitHub repository")
+
+    checkout = root / "protocol-source"
+    source_database = checkout / "protocol-source.sqlite"
+    if not source_database.is_file():
+        errors.append(
+            "protocol source submodule is not initialized; run 'git submodule update --init protocol-source'"
+        )
+        return
+    source_lock = lock.get("source_database") if isinstance(lock.get("source_database"), dict) else {}
+    actual_digest = hashlib.sha256(source_database.read_bytes()).hexdigest()
+    if actual_digest != source_lock.get("database_sha256"):
+        errors.append("embedded protocol source database SHA-256 does not match the product lock")
+
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(checkout), "rev-parse", "HEAD"],
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+    except OSError as exc:
+        errors.append(f"embedded protocol source commit cannot be inspected: {exc}")
+        return
+    repository = lock.get("repository") if isinstance(lock.get("repository"), dict) else {}
+    if result.returncode:
+        errors.append("embedded protocol source is not a valid Git checkout")
+    elif result.stdout.strip() != repository.get("commit"):
+        errors.append("embedded protocol source commit does not match the product lock")
 
 
 def _audit_registry_lock(registry_path: Path, lock: dict, errors: list[str]) -> None:

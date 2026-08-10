@@ -1,0 +1,3 @@
+[submodule "protocol-source"]
+	path = protocol-source
+	url = https://github.com/Holosukiyaa/cartridgeflow-protocols.git

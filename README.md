@@ -10,6 +10,7 @@ and composed recursively instead of being rejected or hard-coded into Base.
 Requires Python 3, Node.js 20.19 or later, and npm on `PATH`.
 
 ```powershell
+git submodule update --init protocol-source
 powershell -ExecutionPolicy Bypass -File scripts/bootstrap.ps1
 run.bat
 ```
@@ -62,10 +63,24 @@ integration; all other detectors remain enabled.
 - `src/core/`: cartridge, runtime, protocol, lab and studio logic.
 - `src/intent-studio/`: direction discovery and semantic composition.
 - `src/capability-workshop/`: executable capability design, verification and publication.
-- `config/protocol/`: pinned read-only `protocol-registry.sqlite`, published from the authoritative SQLite knowledge base in [cartridgeflow-protocols](https://github.com/Holosukiyaa/cartridgeflow-protocols).
+- `protocol-source/`: embedded Git submodule containing the authoritative SQLite knowledge base from [cartridgeflow-protocols](https://github.com/Holosukiyaa/cartridgeflow-protocols).
+- `config/protocol/`: pinned read-only `protocol-registry.sqlite` published from the embedded authority.
 - `demos/capabilities/`: package-owned capability examples such as RSS.
 - `demos/runtime-developer-toolkit/`: independent package test bench.
 - `scripts/`: bootstrap, launch, verification and test tools.
 
 Read `AGENT.md` for engineering boundaries and
 `PRODUCT_EXPERIENCE_ARCHITECTURE.md` for the product contract.
+
+## Protocol Library
+
+Open the authoritative protocol database in a local, read-only web interface:
+
+```powershell
+view-protocols.bat
+```
+
+The first launch creates an isolated viewer under ignored `.tools/` and installs
+its pinned Datasette dependencies. The browser binds only to `127.0.0.1:8001`.
+Use the named catalog, document reader and section search queries from the
+database page. Stop the viewer with `Ctrl+C`.

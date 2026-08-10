@@ -1,0 +1,61 @@
+{
+  "title": "CartridgeFlow Protocol Library",
+  "description": "Local read-only browser for the authoritative protocol knowledge base.",
+  "source": "cartridgeflow-protocols",
+  "source_url": "https://github.com/Holosukiyaa/cartridgeflow-protocols",
+  "plugins": {
+    "datasette-render-markdown": {
+      "patterns": [
+        "*_markdown"
+      ],
+      "extensions": [
+        "tables",
+        "fenced_code"
+      ],
+      "extra_tags": [
+        "table",
+        "thead",
+        "tbody",
+        "tr",
+        "th",
+        "td"
+      ]
+    }
+  },
+  "databases": {
+    "protocol-source": {
+      "description": "Authoritative current and temp-runtime protocol artifacts, releases, outlines and governance metadata.",
+      "queries": {
+        "protocol_catalog": {
+          "title": "Protocol catalog",
+          "description": "Browse releases. Leave source_id empty to show both protocol lines.",
+          "sql": "select source_id, protocol_id, version, name, category, lifecycle, specification_status, implementation_status, runtime_adapter, artifact_count from protocol_release_overview where (:source_id = '' or source_id = :source_id) order by source_id, protocol_id, version"
+        },
+        "read_protocol": {
+          "title": "Read protocol documents",
+          "description": "Enter a protocol id such as CF-FARP. Source, version and artifact path are optional refinements.",
+          "sql": "select source_id, protocol_id, version, artifact_path, content as content_markdown from protocol_document where protocol_id = :protocol_id and (:source_id = '' or source_id = :source_id) and (:version = '' or version = :version) and (:artifact_path = '' or artifact_path = :artifact_path) order by source_id, version, artifact_path"
+        },
+        "search_protocols": {
+          "title": "Search protocol sections",
+          "description": "Search headings and Markdown section content. Leave source_id empty to search both lines.",
+          "sql": "select section.source_id, release.protocol_id, release.version, section.artifact_path, section.heading, section.line_start, section.line_end, section.content as content_markdown from section_fts as section left join protocol_release as release on release.release_key = section.release_key where :query != '' and (:source_id = '' or section.source_id = :source_id) and (instr(lower(section.heading), lower(:query)) > 0 or instr(lower(section.content), lower(:query)) > 0) order by section.source_id, release.protocol_id, release.version, section.artifact_path, section.line_start limit 200"
+        }
+      },
+      "tables": {
+        "source_overview": {
+          "description": "Responsibility boundary and aggregate counts for each protocol line."
+        },
+        "protocol_release_overview": {
+          "description": "Queryable release catalog for both protocol lines."
+        },
+        "protocol_document": {
+          "description": "Complete protocol artifacts projected as readable text."
+        },
+        "protocol_outline": {
+          "description": "Heading-level document navigation with source line numbers."
+        }
+      }
+    }
+  }
+}

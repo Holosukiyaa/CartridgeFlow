@@ -24,6 +24,7 @@ from core.protocol import (
 
 
 REPOSITORY_URL = "https://github.com/Holosukiyaa/cartridgeflow-protocols.git"
+DEFAULT_PROTOCOL_REPOSITORY = ROOT / "protocol-source"
 SOURCE_DATABASE_RELATIVE_PATH = Path("protocol-source.sqlite")
 RUNTIME_SOURCE_ID = "current"
 DATABASE_PATH = ROOT / "config" / "protocol" / "protocol-registry.sqlite"
@@ -37,7 +38,8 @@ def main() -> int:
     parser.add_argument(
         "--protocol-repository",
         type=Path,
-        default=ROOT.parent / "cartridgeflow-protocols",
+        default=DEFAULT_PROTOCOL_REPOSITORY,
+        help="Embedded protocol source checkout (defaults to protocol-source/).",
     )
     args = parser.parse_args()
     repository = args.protocol_repository.resolve()
@@ -123,7 +125,10 @@ def main() -> int:
 
 
 def _validate_source_repository(repository: Path) -> tuple[str, str]:
-    if not (repository / ".git").is_dir():
+    if not (repository / ".git").exists():
+        hint = " Run 'git submodule update --init protocol-source' from CartridgeFlow."
+        raise RuntimeError(f"not an initialized Git protocol repository: {repository}.{hint}")
+    if _git(repository, "rev-parse", "--is-inside-work-tree").strip() != "true":
         raise RuntimeError(f"not a Git protocol repository: {repository}")
     status = _git(repository, "status", "--porcelain", "--untracked-files=all")
     if status.strip():

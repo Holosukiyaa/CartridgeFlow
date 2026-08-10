@@ -49,7 +49,7 @@ validated executable contracts.
 
 ## Protocol Rules
 
-The source of truth is `cartridgeflow-protocols/protocol-source.sqlite`, pinned
+The source of truth is `protocol-source/protocol-source.sqlite`, pinned
 by `config/protocol/protocol-registry.lock.json`. This product consumes the
 read-only `config/protocol/protocol-registry.sqlite` published snapshot. It
 contains `current` and `temp-runtime`; runtime APIs default to `current`, while
@@ -59,8 +59,9 @@ These releases define semantic recipes, immutable complete-Flow capabilities,
 typed public ports, exact dependencies, trust scope and provenance. Generic
 Developer Flows continue to follow the catalog's default FARP version.
 
-Protocol edits belong in the external source database and go through its
-`scripts/protocol_db.py` management tool. After committing and pushing them, run
+Protocol edits belong in the embedded `protocol-source` Git submodule and go
+through `protocol-source/scripts/protocol_db.py`. After committing and
+pushing them from that submodule, run
 `python scripts/update_protocol_registry.py`; it refuses dirty or unpublished
 protocol source. Do not edit the product SQLite snapshot directly.
 Never add domain capabilities such as RSS to Base; ship them as package-owned

@@ -12,14 +12,20 @@ pins the published product database SHA-256.
 Protocol originals live at:
 
 ```text
-https://github.com/Holosukiyaa/cartridgeflow-protocols
+../../protocol-source/protocol-source.sqlite
 ```
 
+`protocol-source/` is a Git submodule backed by
+https://github.com/Holosukiyaa/cartridgeflow-protocols.
+
 Do not edit this product database directly. Update the authoritative source
-database with `scripts/protocol_db.py`, verify it, commit and push it, then
+database with `protocol-source/scripts/protocol_db.py`, verify it, commit and
+push the submodule repository, then
 publish from the CartridgeFlow repository:
 
 ```powershell
 python scripts/update_protocol_registry.py
 python scripts/audit_protocol_governance.py
 ```
+
+For local read-only browsing, run `view-protocols.bat` from the repository root.

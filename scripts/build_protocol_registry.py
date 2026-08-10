@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_PROTOCOL_REPOSITORY = ROOT.parent / "cartridgeflow-protocols"
+DEFAULT_PROTOCOL_REPOSITORY = ROOT / "protocol-source"
 SOURCE_ROOT = ROOT / "src"
 if str(SOURCE_ROOT) not in sys.path:
     sys.path.insert(0, str(SOURCE_ROOT))

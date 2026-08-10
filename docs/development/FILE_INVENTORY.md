@@ -9,7 +9,7 @@ dependencies, caches and `.data/` are deliberately excluded.
 | Shared backend | `src/backend/` | `main.py`, `api_models.py` |
 | Cartridge runtime | `src/core/cartridge/` | `registry.py`, `runner.py`, `root_flow.py`, `validator.py` |
 | Technical Flow authoring | `src/core/lab/` | `dev_flow.py`, `flow_analyzer.py`, `node_executor.py` |
-| Protocol | `config/protocol/`, `src/core/protocol/` | `protocol-registry.sqlite`, `protocol-registry.lock.json`, `artifact_store.py`, `release_catalog.py`, `governance_registry.py`, `compatibility.py` |
+| Protocol | `protocol-source/`, `config/protocol/`, `config/protocol-viewer/`, `src/core/protocol/`, `scripts/` | `protocol-source.sqlite`, `protocol-registry.sqlite`, `protocol-registry.lock.json`, `datasette.json`, `requirements.txt`, `view-protocols.bat`, `launch_protocol_viewer.py`, `artifact_store.py`, `release_catalog.py`, `governance_registry.py`, `compatibility.py` |
 | Runtime | `src/core/runtime/`, `src/core/orchestration/` | `manager.py`, `execution_plan.py` |
 | Extensions | `src/core/extensions/` | `descriptor.py`, `registry.py`, `worker_client.py` |
 | Intent and capability services | `src/core/studio/`, `src/core/llm/` | `authoring_service.py`, `capability_cartridges.py`, `creator_runtime_bridge.py`, `creator_flow_skill.py`, `creator_node_skill.py` |

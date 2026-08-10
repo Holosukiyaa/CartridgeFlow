@@ -100,6 +100,7 @@ class CleanBaseHygieneTests(unittest.TestCase):
             ROOT / "docs" / "development" / "README.md",
             ROOT / "scripts" / "bootstrap.ps1",
             ROOT / "scripts" / "launch.py",
+            ROOT / "scripts" / "launch_protocol_viewer.py",
             ROOT / "scripts" / "run_conformance.py",
             ROOT / "docs" / "development" / "skills" / "cartridgeflow-protocol-upgrader" / "SKILL.md",
         )

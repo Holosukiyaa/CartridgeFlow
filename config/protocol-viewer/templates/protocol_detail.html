@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+
+{% block title %}{{ family.protocol_id }} · {{ release.version }}{% endblock %}
+{% block body_class %}protocol-detail{% endblock %}
+
+{% block extra_head %}
+{{ super() }}
+<style>
+    .detail-top { border-bottom: 1px solid var(--cf-line); padding-bottom: 24px; }
+    .detail-kicker { color: var(--cf-accent); font-family: ui-monospace, Consolas, monospace; font-size: 13px; font-weight: 700; }
+    .detail-top h1 { margin: 6px 0 8px; }
+    .detail-summary { color: var(--cf-muted); line-height: 1.7; margin: 0; max-width: 860px; }
+    .detail-grid { display: grid; grid-template-columns: minmax(0, 230px) minmax(0, 1fr); gap: 32px; padding: 28px 0; border-bottom: 1px solid var(--cf-line); }
+    .detail-facts { margin: 0; }
+    .detail-facts dt { color: var(--cf-muted); font-size: 12px; margin-top: 13px; }
+    .detail-facts dt:first-child { margin-top: 0; }
+    .detail-facts dd { margin: 3px 0 0; overflow-wrap: anywhere; }
+    .detail-facts .layer-label { color: var(--cf-accent); font-weight: 700; }
+    .detail-section { border-bottom: 1px solid var(--cf-line); padding: 28px 0; }
+    .detail-section > h2 { margin: 0 0 14px; }
+    .version-list, .relation-list, .document-list { display: grid; gap: 1px; }
+    .version-item, .relation-item, .document-item { border-bottom: 1px solid var(--cf-line); padding: 10px 0; }
+    .version-item a, .document-item a { font-weight: 700; }
+    .version-current { color: var(--cf-warm); font-size: 12px; margin-left: 7px; }
+    .relation-item { line-height: 1.6; }
+    .relation-label { color: var(--cf-accent); display: inline-block; font-size: 12px; font-weight: 700; min-width: 88px; }
+    .document-group { margin-top: 18px; }
+    .document-group:first-child { margin-top: 0; }
+    .document-group h3 { font-size: 16px; margin: 0 0 6px; }
+    .document-meta { color: var(--cf-muted); font-size: 12px; margin-left: 8px; }
+    .contract-index { display: grid; gap: 10px; }
+    .contract-history { border-bottom: 1px solid var(--cf-line); margin: 18px 0 20px; padding-bottom: 16px; }
+    .contract-history h3, .contract-current h3 { font-size: 16px; margin: 0 0 7px; }
+    .contract-history-list { display: flex; flex-wrap: wrap; gap: 8px 18px; }
+    .contract-history-item { white-space: nowrap; }
+    .contract-index details { background: #fff; border-left: 3px solid var(--cf-warm); padding: 11px 14px; }
+    .contract-index summary { cursor: pointer; font-weight: 700; }
+    .contract-path { color: var(--cf-muted); display: block; font-family: ui-monospace, Consolas, monospace; font-size: 12px; margin-top: 4px; }
+    .contract-body { line-height: 1.65; margin-top: 12px; overflow-wrap: anywhere; }
+    .document-body { background: #fff; border-top: 3px solid var(--cf-accent); margin-top: 10px; padding: 22px 24px; overflow-wrap: anywhere; }
+    .document-body pre { background: #f0f4f3; overflow-x: auto; padding: 15px; white-space: pre-wrap; }
+    .empty-note { color: var(--cf-muted); }
+    @media (max-width: 760px) {
+        .detail-grid { grid-template-columns: 1fr; gap: 18px; }
+        .document-body { padding: 16px; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="detail-top">
+    <div class="detail-kicker">{{ source_id }} / {{ family.protocol_id }}</div>
+    <h1>{{ family.name or release.name or family.protocol_id }}</h1>
+    <p class="detail-summary">{{ family.responsibility_boundary }}</p>
+</div>
+
+<div class="detail-grid">
+    <dl class="detail-facts">
+        <dt>所属层</dt><dd class="layer-label">{{ layer.label }}</dd>
+        <dt>负责人</dt><dd>{{ family.owner or "未指定" }}</dd>
+        <dt>当前查看版本</dt><dd>{{ release.version }}</dd>
+        <dt>规范状态</dt><dd>{{ release.specification_status or "未指定" }}</dd>
+        <dt>实现状态</dt><dd>{{ release.implementation_status or "未指定" }}</dd>
+        <dt>运行时适配器</dt><dd>{{ release.runtime_adapter or "未指定" }}</dd>
+    </dl>
+    <div>
+        <p class="layer-description">{{ layer.description }}</p>
+        {% if family.exclusions_json %}<p class="detail-summary">边界外：{{ family.exclusions_json|replace('[', '')|replace(']', '')|replace('"', '') }}</p>{% endif %}
+    </div>
+</div>
+
+<section class="detail-section">
+    <h2>版本谱系</h2>
+    <div class="version-list">
+        {% for item in releases %}<div class="version-item"><a href="/protocol/{{ source_id }}/{{ family.protocol_id }}?version={{ item.version|urlencode }}">{{ item.version }}</a>{% if item.version == release.version %}<span class="version-current">当前</span>{% endif %}<span class="document-meta">{{ item.name or family.name or "" }}</span></div>{% endfor %}
+    </div>
+</section>
+
+<section class="detail-section">
+    <h2>协议关系</h2>
+    {% if relations %}<div class="relation-list">{% for relation in relations %}<div class="relation-item"><span class="relation-label">{{ relation.label }}</span><a href="{{ relation.target_url }}">{{ relation.target_name }} @ {{ relation.target_version }}</a></div>{% endfor %}</div>{% else %}<p class="empty-note">此版本没有登记外部关系。</p>{% endif %}
+</section>
+
+<section class="detail-section">
+    <h2>数据合同</h2>
+    <p class="detail-summary">数据合同属于 {{ family.protocol_id }} 的 {{ layer.label }}，不是混在协议目录外的独立孤岛。这里集中列出 schema、输入输出、端口、Store、绑定、资源和合同章节。</p>
+    {% if contract_history.versions %}<div class="contract-history">
+        <h3>协议族合同谱系</h3>
+        <div class="contract-history-list">{% for item in contract_history.versions %}<div class="contract-history-item"><a href="/protocol/{{ source_id }}/{{ family.protocol_id }}?version={{ item.version|urlencode }}">{{ item.version }}</a><span class="document-meta">{{ item.artifact_count }} 份材料 · {{ item.section_count }} 个章节</span></div>{% endfor %}</div>
+    </div>{% endif %}
+    <div class="contract-current">
+    <h3>当前查看版本 {{ release.version }}</h3>
+    {% if contract_artifacts or contract_sections %}
+    <div class="contract-index">
+        {% for artifact in contract_artifacts %}<details><summary>{{ artifact.artifact_path }} <span class="document-meta">{{ artifact.artifact_kind }} · {{ artifact.byte_size }} bytes</span></summary><span class="contract-path">SHA-256 {{ artifact.content_digest }}</span></details>{% endfor %}
+        {% for section in contract_sections %}<details><summary>{{ section.heading }} <span class="document-meta">{{ section.artifact_path }} · 第 {{ section.line_start }} 行</span></summary><div class="contract-body">{{ section.rendered_content }}</div></details>{% endfor %}
+    </div>
+    {% elif contract_history.versions %}<p class="empty-note">此版本没有重复收录数据合同正文；可从上方谱系进入承载合同的版本。</p>
+    {% else %}<p class="empty-note">此协议族目前尚未登记可识别的数据合同材料。</p>{% endif %}
+    </div>
+</section>
+
+<section class="detail-section">
+    <h2>协议正文与结构化材料</h2>
+    {% if documents %}
+        {% for group_name, group_kind in [("正文文档", "markdown"), ("结构化材料", "json")] %}
+        {% set group_documents = documents|selectattr("is_json", "equalto", group_kind == "json")|list %}
+        {% if group_documents %}<div class="document-group"><h3>{{ group_name }}</h3><div class="document-list">{% for document in group_documents %}<div class="document-item"><a href="/protocol/{{ source_id }}/{{ family.protocol_id }}?version={{ release.version|urlencode }}&document={{ document.artifact_path|urlencode }}">{{ document.artifact_path }}</a><span class="document-meta">{{ document.artifact_kind }}</span></div>{% endfor %}</div></div>{% endif %}
+        {% endfor %}
+        {% if selected_document %}<div class="document-body"><h3>{{ selected_document.artifact_path }}</h3>{% if selected_document.is_json %}<pre>{{ selected_document.raw_content }}</pre>{% else %}{{ selected_document.rendered_content }}{% endif %}</div>{% endif %}
+    {% else %}<p class="empty-note">此版本没有可读文本材料。</p>{% endif %}
+</section>
+{% endblock %}

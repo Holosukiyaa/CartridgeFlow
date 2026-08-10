@@ -5,6 +5,7 @@ import json
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -57,8 +58,13 @@ class ProtocolSourceToolingTests(unittest.TestCase):
             str(launch_protocol_viewer.VIEWER_TEMPLATES),
             command[command.index("--template-dir") + 1],
         )
+        self.assertEqual(
+            str(launch_protocol_viewer.VIEWER_PLUGINS),
+            command[command.index("--plugins-dir") + 1],
+        )
         self.assertEqual("127.0.0.1", command[command.index("--host") + 1])
         self.assertEqual("8123", command[command.index("--port") + 1])
+        self.assertEqual("1", launch_protocol_viewer.viewer_environment()["PYTHONUTF8"])
 
         metadata_bytes = launch_protocol_viewer.VIEWER_CONFIG.read_bytes()
         self.assertTrue(metadata_bytes.isascii())
@@ -97,6 +103,24 @@ class ProtocolSourceToolingTests(unittest.TestCase):
         templates = launch_protocol_viewer.VIEWER_TEMPLATES
         self.assertIn("协议知识库", (templates / "index.html").read_text(encoding="utf-8"))
         self.assertIn("运行查询", (templates / "query.html").read_text(encoding="utf-8"))
+        self.assertIn(
+            "数据合同",
+            (templates / "protocol_detail.html").read_text(encoding="utf-8"),
+        )
+        plugin = launch_protocol_viewer.VIEWER_PLUGINS / "protocol_knowledge.py"
+        self.assertIn("register_routes", plugin.read_text(encoding="utf-8"))
+
+    def test_existing_background_viewer_reopens_in_browser(self):
+        with (
+            mock.patch.object(sys, "argv", ["launch_protocol_viewer.py"]),
+            mock.patch.object(launch_protocol_viewer, "viewer_is_running", return_value=True),
+            mock.patch.object(launch_protocol_viewer.webbrowser, "open") as browser_open,
+            mock.patch.object(launch_protocol_viewer, "prepare_viewer_environment") as prepare,
+        ):
+            self.assertEqual(0, launch_protocol_viewer.main())
+
+        browser_open.assert_called_once_with("http://127.0.0.1:8001/")
+        prepare.assert_not_called()
 
 
 if __name__ == "__main__":

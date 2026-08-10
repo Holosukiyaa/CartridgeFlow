@@ -12,6 +12,8 @@ import time
 import venv
 import webbrowser
 from pathlib import Path
+from urllib.error import URLError
+from urllib.request import urlopen
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,10 +22,12 @@ PRODUCT_DATABASE = ROOT / "config" / "protocol" / "protocol-registry.sqlite"
 DEFAULT_DATABASES = (SOURCE_DATABASE, PRODUCT_DATABASE)
 VIEWER_CONFIG = ROOT / "config" / "protocol-viewer" / "datasette.json"
 VIEWER_TEMPLATES = ROOT / "config" / "protocol-viewer" / "templates"
+VIEWER_PLUGINS = ROOT / "config" / "protocol-viewer" / "plugins"
 VIEWER_REQUIREMENTS = ROOT / "config" / "protocol-viewer" / "requirements.txt"
 VIEWER_ENV = ROOT / ".tools" / "protocol-viewer"
 REQUIREMENTS_MARKER = VIEWER_ENV / ".requirements.sha256"
 DEFAULT_PORT = 8001
+VIEWER_HEADER = "X-CartridgeFlow-Protocol-Viewer"
 
 
 def environment_python() -> Path:
@@ -93,6 +97,8 @@ def viewer_command(executable: Path, databases: tuple[Path, ...], port: int) -> 
             str(VIEWER_CONFIG),
             "--template-dir",
             str(VIEWER_TEMPLATES),
+            "--plugins-dir",
+            str(VIEWER_PLUGINS),
             "--host",
             "127.0.0.1",
             "--port",
@@ -102,12 +108,30 @@ def viewer_command(executable: Path, databases: tuple[Path, ...], port: int) -> 
     return command
 
 
+def viewer_environment() -> dict[str, str]:
+    environment = os.environ.copy()
+    environment["PYTHONUTF8"] = "1"
+    return environment
+
+
 def require_port_available(port: int) -> None:
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
             probe.bind(("127.0.0.1", port))
     except OSError as exc:
         raise RuntimeError(f"local port {port} is already in use") from exc
+
+
+def viewer_url(port: int) -> str:
+    return f"http://127.0.0.1:{port}/"
+
+
+def viewer_is_running(port: int) -> bool:
+    try:
+        with urlopen(viewer_url(port), timeout=0.75) as response:
+            return response.status == 200 and response.headers.get(VIEWER_HEADER) == "1"
+    except (OSError, URLError):
+        return False
 
 
 def wait_until_ready(process: subprocess.Popen[object], port: int) -> None:
@@ -148,15 +172,23 @@ def main() -> int:
                 f"knowledge database not found: {', '.join(missing)}. "
                 "Initialize protocol-source and publish the product registry first."
             )
+        url = viewer_url(args.port)
+        if not args.prepare_only and viewer_is_running(args.port):
+            print(f"Protocol knowledge base is already running: {url}")
+            if not args.no_browser:
+                webbrowser.open(url)
+            return 0
         executable = prepare_viewer_environment(install=not args.no_install)
         if args.prepare_only:
             print(f"Protocol viewer is ready: {executable}")
             return 0
         require_port_available(args.port)
-        process = subprocess.Popen(viewer_command(executable, databases, args.port))
+        process = subprocess.Popen(
+            viewer_command(executable, databases, args.port),
+            env=viewer_environment(),
+        )
         try:
             wait_until_ready(process, args.port)
-            url = f"http://127.0.0.1:{args.port}/"
             print(f"Protocol knowledge base: {url}")
             if not args.no_browser:
                 webbrowser.open(url)

@@ -3,15 +3,39 @@
 from __future__ import annotations
 
 import json
+import os
+import tempfile
+import uuid
 import zipfile
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Mapping
 
 from core.data_paths import PACKAGES_DIR
-from core.protocol.clean_distribution import CleanDistributionProjector
-from core.protocol.release_envelope import build_release_envelope_report
+from core.protocol.clean_distribution import CleanDistributionProjectionError, CleanDistributionProjector
+from core.protocol.release_builder import ReleaseBuildError, build_release_archive, inspect_release_archive
+from core.protocol.release_envelope import RELEASE_SCHEMA_V2, build_release_envelope_report
+from core.protocol.release_signing import (
+    ReleaseSigningIdentity,
+    ensure_development_signing_identity,
+    trusted_public_keys,
+)
 from core.studio.resource_resolver import resolve_cartridge_resources
+
+
+class ProductionReleaseError(ValueError):
+    """Raised when a production handoff cannot be published safely."""
+
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+
+
+_PRESENTATION_PATHS = {
+    "settings": Path("contracts/settings.contract.json"),
+    "settings_bindings": Path("settings/bindings.json"),
+    "ui": Path("contracts/ui.contract.json"),
+}
 
 
 def build_binding_descriptor(manifest: dict, resources: dict, configured_keys: set[str] | None = None) -> dict:
@@ -74,6 +98,164 @@ def release_archive_inputs(manifest: dict) -> dict:
     }
 
 
+def load_release_presentation_contracts(package_path: str | Path) -> dict[str, dict]:
+    """Load the three explicit CF-CRE@2 presentation contracts from a package."""
+    root = Path(package_path).resolve()
+    if not root.is_dir():
+        raise ProductionReleaseError("release_package_missing", "Cartridge package path was not found.")
+    result: dict[str, dict] = {}
+    for name, relative in _PRESENTATION_PATHS.items():
+        path = (root / relative).resolve()
+        if root not in path.parents or not path.is_file():
+            raise ProductionReleaseError(
+                "release_presentation_contract_missing",
+                f"CF-CRE@2 requires {relative.as_posix()}.",
+            )
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ProductionReleaseError(
+                "release_presentation_contract_invalid",
+                f"{relative.as_posix()} must be a readable UTF-8 JSON object.",
+            ) from exc
+        if not isinstance(value, dict):
+            raise ProductionReleaseError(
+                "release_presentation_contract_invalid",
+                f"{relative.as_posix()} must contain a JSON object.",
+            )
+        result[name] = value
+    return result
+
+
+def build_production_release_handoff(
+    package_path: str | Path,
+    output_file: str | Path,
+    *,
+    project_root: str | Path,
+    requested_by: str = "local-workbench",
+    target: str = "desktop-runner",
+    rollback: str = "enabled",
+    request_id: str | None = None,
+    plan_id: str | None = None,
+    requested_at: str | None = None,
+    publisher_id: str | None = None,
+    signing_identity: ReleaseSigningIdentity | None = None,
+    trusted_keys: Mapping[str, str] | None = None,
+) -> dict:
+    """Build, verify, project, and atomically publish one production handoff."""
+    source = Path(package_path).resolve()
+    output = Path(output_file).resolve()
+    root = Path(project_root).resolve()
+    manifest_path = source / "manifest.json"
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ProductionReleaseError(
+            "release_manifest_invalid",
+            "Production release requires a readable UTF-8 manifest.json object.",
+        ) from exc
+    if not isinstance(manifest, dict):
+        raise ProductionReleaseError(
+            "release_manifest_invalid",
+            "Production release manifest.json must contain an object.",
+        )
+    presentation = load_release_presentation_contracts(source)
+    inputs = release_archive_inputs(manifest)
+    actual_publisher = str(publisher_id or inputs["publisher_id"]).strip()
+    actual_requested_by = str(requested_by or "").strip()
+    actual_target = str(target or "").strip()
+    if not actual_publisher:
+        raise ProductionReleaseError("release_signing_failed", "Release publisher must not be empty.")
+    if not actual_requested_by:
+        raise ProductionReleaseError("installation_request_invalid", "Installation requester must not be empty.")
+    if not actual_target:
+        raise ProductionReleaseError("installation_request_invalid", "Installation target must not be empty.")
+
+    try:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        handle = tempfile.NamedTemporaryFile(
+            prefix=f".{output.stem}-",
+            suffix=".pending",
+            dir=output.parent,
+            delete=False,
+        )
+    except OSError as exc:
+        raise ProductionReleaseError(
+            "release_publish_failed",
+            "Production release staging file could not be created.",
+        ) from exc
+    pending = Path(handle.name)
+    handle.close()
+    try:
+        try:
+            identity = signing_identity or ensure_development_signing_identity(root, actual_publisher)
+        except (OSError, ValueError) as exc:
+            raise ProductionReleaseError("release_signing_failed", str(exc)) from exc
+        try:
+            built = build_release_archive(
+                source,
+                pending,
+                publisher_id=actual_publisher,
+                experience=inputs["experience"],
+                delivery=inputs["delivery"],
+                settings=presentation["settings"],
+                settings_bindings=presentation["settings_bindings"],
+                ui=presentation["ui"],
+                release_envelope_version=2,
+                placement=inputs["placement"],
+                required_capabilities=inputs["required_capabilities"],
+                required_permissions=inputs["required_permissions"],
+                signing_identity=identity,
+            )
+            trust = dict(trusted_keys) if trusted_keys is not None else trusted_public_keys(root)
+            inspection = inspect_release_archive(pending, trusted_keys=trust)
+        except (ReleaseBuildError, OSError, ValueError) as exc:
+            raise ProductionReleaseError("release_build_failed", str(exc)) from exc
+        protocol = str((inspection.get("report") or {}).get("protocol") or "")
+        if protocol != "CF-CRE@2" or not inspection.get("activation_allowed"):
+            raise ProductionReleaseError(
+                "release_activation_blocked",
+                "CF-CRE@2 package failed signature trust or integrity activation checks.",
+            )
+        try:
+            archive_contracts = clean_release_contracts(
+                pending,
+                trusted_keys=trust,
+                project_root=root,
+            )
+            projector = CleanDistributionProjector(root)
+            installation_request, installation_plan = projector.installation_request(
+                {
+                    "revision": 1,
+                    "package_id": str(manifest.get("id") or ""),
+                    "target": actual_target,
+                    "plan_id": str(plan_id or f"install-{uuid.uuid4().hex}"),
+                    "rollback": rollback,
+                    "request_id": str(request_id or f"request-{uuid.uuid4().hex}"),
+                    "requested_at": requested_at or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                    "requested_by": actual_requested_by,
+                }
+            )
+        except (CleanDistributionProjectionError, ValueError) as exc:
+            raise ProductionReleaseError("clean_distribution_projection_failed", str(exc)) from exc
+        try:
+            os.replace(pending, output)
+        except OSError as exc:
+            raise ProductionReleaseError("release_publish_failed", "Verified release could not be published atomically.") from exc
+        return {
+            "archive": str(output),
+            "release_id": built["release_id"],
+            "protocol": protocol,
+            "activation_allowed": True,
+            "signature": inspection.get("signature"),
+            "archive_contract_ids": [item["contract_id"] for item in archive_contracts],
+            "installation_request": installation_request,
+            "installation_plan": installation_plan,
+        }
+    finally:
+        pending.unlink(missing_ok=True)
+
+
 def release_contract_preview(manifest: dict) -> dict:
     """Validate the public CRE shape before the archive is generated."""
     inputs = release_archive_inputs(manifest)
@@ -123,7 +305,7 @@ def package_history(root: str | Path) -> list[dict]:
                 if "release.manifest.json" in archive.namelist():
                     release = json.loads(archive.read("release.manifest.json").decode("utf-8"))
                     manifest = json.loads(archive.read("payload/manifest.json").decode("utf-8"))
-                    protocol = "CF-CRE@1"
+                    protocol = "CF-CRE@2" if release.get("schema") == RELEASE_SCHEMA_V2 else "CF-CRE@1"
                     release_id = str(release.get("release_id") or "")
                     mode = "production"
                 else:

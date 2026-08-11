@@ -40,6 +40,8 @@ class CreatorRuntimeBridge:
     """Build deterministic, signed handoff artifacts from one current revision."""
 
     PUBLISHER_ID = "creator"
+    RELEASE_PROTOCOL = "CF-CRE@1"
+    DISTRIBUTION_MODE = "compatibility"
     LEGACY_FLOW_PROTOCOL = {"id": "CF-FARP", "version": "1.1"}
     TRUSTED_FLOW_PROTOCOL = {"id": "CF-FARP", "version": "1.5"}
     CREATOR_PACKAGE_PROTOCOL = {"id": "CF-FARP", "version": "1.6"}
@@ -227,7 +229,12 @@ class CreatorRuntimeBridge:
         return {
             "schema": "cartridgeflow.creator_runtime_handoff.v1",
             "status": "signed_handoff_ready",
-            "protocol": "CF-CRE@1",
+            "protocol": self.RELEASE_PROTOCOL,
+            "distribution": {
+                "mode": self.DISTRIBUTION_MODE,
+                "production_eligible": False,
+                "reason": "explicit_presentation_contracts_absent",
+            },
             "release_id": built["release_id"],
             "filename": output.name,
             "lineage": deepcopy(lineage),

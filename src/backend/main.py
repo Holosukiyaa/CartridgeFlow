@@ -141,18 +141,16 @@ from core.protocol import (
     ReleaseBuildError,
     apply_protocol_certification_label,
     build_compatibility_report,
-    build_release_archive,
     build_protocol_certification_report,
-    ensure_development_signing_identity,
     extract_release_payload,
     has_protocol_feature,
-    inspect_release_archive,
     load_protocol_release_catalog,
     load_base_implementation,
     supports_protocol_release,
     trusted_public_keys,
 )
 from core.protocol.tuning import TuningConflictError, TuningProtocolError
+from core.studio.release import ProductionReleaseError, build_production_release_handoff
 
 ensure_data_layout(ROOT)
 PRODUCT_VERSION = (ROOT / "VERSION").read_text(encoding="utf-8").strip().removeprefix("CartridgeFlow-")
@@ -1640,42 +1638,27 @@ def package_cartridge(cartridge_id: str, payload: CartridgePackagePayload | None
     out_dir = ROOT / PACKAGES_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
     if package_mode == "production":
-        from core.studio.release import release_archive_inputs
-
-        release_inputs = release_archive_inputs(cartridge.get("manifest") or {})
-        safe_publisher = _re.sub(r"[^a-zA-Z0-9._-]+", "_", str(release_inputs["publisher_id"]))
-        signing_identity = ensure_development_signing_identity(ROOT, safe_publisher)
         out_file = out_dir / f"{safe_id}-{version}.cf-cre.zip"
         try:
-            built = build_release_archive(
+            handoff = build_production_release_handoff(
                 package_path,
                 out_file,
-                publisher_id=safe_publisher,
-                experience=release_inputs["experience"],
-                delivery=release_inputs["delivery"],
-                placement=release_inputs["placement"],
-                required_capabilities=release_inputs["required_capabilities"],
-                required_permissions=release_inputs["required_permissions"],
-                signing_identity=signing_identity,
+                project_root=ROOT,
+                requested_by=(payload.requested_by if payload else "local-workbench"),
             )
-            inspection = inspect_release_archive(out_file, trusted_keys=trusted_public_keys(ROOT))
-        except ReleaseBuildError as exc:
-            raise HTTPException(status_code=400, detail={"error": "release_build_failed", "message": str(exc)}) from exc
-        if not inspection.get("activation_allowed"):
-            raise HTTPException(status_code=400, detail={
-                "error": "release_activation_blocked",
-                "message": "CF-CRE package failed signature trust or integrity activation checks.",
-                "report": inspection,
-            })
+        except ProductionReleaseError as exc:
+            raise HTTPException(status_code=400, detail={"error": exc.code, "message": str(exc)}) from exc
         return {
             "ok": True,
             "cartridge_id": cartridge_id,
             "filename": out_file.name,
             "package_mode": package_mode,
-            "protocol": "CF-CRE@1",
-            "release_id": built["release_id"],
-            "activation_allowed": inspection["activation_allowed"],
-            "signature": inspection.get("signature"),
+            "protocol": handoff["protocol"],
+            "release_id": handoff["release_id"],
+            "activation_allowed": handoff["activation_allowed"],
+            "signature": handoff["signature"],
+            "installation_request": handoff["installation_request"],
+            "installation_plan": handoff["installation_plan"],
             "url": f"/packages/{out_file.name}",
             "size": out_file.stat().st_size,
             "portability": portability,

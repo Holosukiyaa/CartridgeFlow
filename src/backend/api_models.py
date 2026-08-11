@@ -446,3 +446,4 @@ class CartridgeImportPayload(BaseModel):
 
 class CartridgePackagePayload(BaseModel):
     package_mode: str = "dev"
+    requested_by: str = "local-workbench"

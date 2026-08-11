@@ -46,11 +46,23 @@ class CreatorRuntimeHandoffTests(unittest.TestCase):
             self.assertEqual(first_bytes, archive.read_bytes())
             self.assertEqual(before, store.get("creator.session"))
             self.assertEqual("signed_handoff_ready", first["status"])
+            self.assertEqual("CF-CRE@1", first["protocol"])
+            self.assertEqual(
+                {
+                    "mode": "compatibility",
+                    "production_eligible": False,
+                    "reason": "explicit_presentation_contracts_absent",
+                },
+                first["distribution"],
+            )
             self.assertTrue(first["signature"]["verified"])
             inspection = inspect_release_archive(archive)
             self.assertTrue(inspection["report"]["ok"], inspection["report"]["findings"])
             with zipfile.ZipFile(archive) as bundle:
                 members = {name: bundle.read(name) for name in bundle.namelist()}
+            self.assertNotIn("payload/contracts/settings.contract.json", members)
+            self.assertNotIn("payload/settings/bindings.json", members)
+            self.assertNotIn("payload/contracts/ui.contract.json", members)
             root_flow = json.loads(members["payload/root.flow.json"])
             self.assertFalse(validate_execution_plan_v1_flow_contract(root_flow, protocol_id="CF-FARP", protocol_version="1.1"))
             self.assertEqual(["rel.research.draft"], [item["id"] for item in root_flow["semantic_relationships"]])

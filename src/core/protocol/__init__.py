@@ -78,6 +78,11 @@ from .clean_distribution import (
     CleanDistributionProjectionError,
     CleanDistributionProjector,
 )
+from .clean_runtime import (
+    RUNTIME_ADAPTER_ID,
+    CleanRuntimeProjectionError,
+    CleanRuntimeProjector,
+)
 
 __all__ = [
     "BaseManifestError",
@@ -178,6 +183,9 @@ __all__ = [
     "DISTRIBUTION_ADAPTER_ID",
     "CleanDistributionProjectionError",
     "CleanDistributionProjector",
+    "RUNTIME_ADAPTER_ID",
+    "CleanRuntimeProjectionError",
+    "CleanRuntimeProjector",
     "CleanProtocolAdapter",
     "assert_base_supports_clean_protocol",
     "build_clean_protocol_support_report",

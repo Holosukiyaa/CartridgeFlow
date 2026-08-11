@@ -713,9 +713,15 @@ def _reference_path_exists(root: Path, reference: object) -> bool:
     path_text, separator, fragment = str(reference or "").partition("#")
     relative = path_text.strip()
     path = root / Path(relative)
+    if relative and not path.is_file():
+        source_path = root / "protocol-source" / Path(relative)
+        if source_path.is_file():
+            path = source_path
     if not relative or not path.is_file():
         return False
     if not separator or not fragment.strip():
+        return True
+    if "/" in fragment:
         return True
     try:
         content = path.read_text(encoding="utf-8")

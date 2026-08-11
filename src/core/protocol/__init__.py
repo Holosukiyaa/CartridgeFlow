@@ -55,6 +55,19 @@ from .unified_protocol import (
     resolve_unified_protocol_adapter,
     validate_unified_contract,
 )
+from .clean_protocol import (
+    CLEAN_ADAPTERS,
+    CLEAN_CONTRACT_IDS,
+    CLEAN_GENERATION,
+    CLEAN_LAYER_CONTRACTS,
+    CLEAN_PROTOCOLS,
+    CLEAN_SOURCE_ID,
+    CleanProtocolAdapter,
+    assert_base_supports_clean_protocol,
+    build_clean_protocol_support_report,
+    resolve_clean_protocol_adapter,
+    validate_clean_contract,
+)
 
 __all__ = [
     "BaseManifestError",
@@ -143,4 +156,15 @@ __all__ = [
     "migrate_legacy_contract",
     "resolve_unified_protocol_adapter",
     "validate_unified_contract",
+    "CLEAN_ADAPTERS",
+    "CLEAN_CONTRACT_IDS",
+    "CLEAN_GENERATION",
+    "CLEAN_LAYER_CONTRACTS",
+    "CLEAN_PROTOCOLS",
+    "CLEAN_SOURCE_ID",
+    "CleanProtocolAdapter",
+    "assert_base_supports_clean_protocol",
+    "build_clean_protocol_support_report",
+    "resolve_clean_protocol_adapter",
+    "validate_clean_contract",
 ]

@@ -45,6 +45,24 @@
       "ui": {"status": "not_applicable", "entries": []},
       "notes": "The four normalized layer protocols, 28 JSON Schema contracts, 31 legacy migrations, examples, adapters and Base declarations are checked as one fail-closed generation."
     },
+    "clean_protocol_generation": {
+      "verification": "verified",
+      "implementation": [
+        "src/core/protocol/clean_protocol.py#validate_clean_contract",
+        "src/core/protocol/clean_protocol.py#build_clean_protocol_support_report",
+        "scripts/validate_clean_protocol.py"
+      ],
+      "positive_tests": [
+        "test_clean_protocol.CleanProtocolTests.test_all_contract_examples_have_executable_positive_and_failure_paths",
+        "test_clean_protocol.CleanProtocolTests.test_base_supports_the_complete_clean_generation"
+      ],
+      "failure_tests": [
+        "test_clean_protocol.CleanProtocolTests.test_missing_contract_or_adapter_fails_closed",
+        "test_clean_protocol.CleanProtocolTests.test_unknown_contract_and_cross_layer_validation_fail_closed"
+      ],
+      "ui": {"status": "not_applicable", "entries": []},
+      "notes": "The four clean-v1 layers and all 75 new JSON Schema contracts are checked directly; no old-generation migration is part of this evidence."
+    },
     "artifact_contract": {
       "verification": "verified",
       "implementation": ["src/core/cartridge/artifacts.py#ArtifactManager"],

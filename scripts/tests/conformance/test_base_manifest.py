@@ -1,7 +1,9 @@
+import copy
 import unittest
 from pathlib import Path
 
-from core.protocol import load_base_implementation
+from core.protocol import BaseManifestError, build_clean_base_candidate, load_base_implementation
+from core.protocol.base_manifest import validate_base_implementation
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -20,6 +22,16 @@ class BaseManifestConformanceTest(unittest.TestCase):
         self.assertEqual("CF-TUNING", base["supported_subprotocols"][0]["id"])
         self.assertIn("runtime_core", base["profiles"])
         self.assertIn("tool_transparency", base["profiles"])
+
+    def test_clean_candidate_is_valid_but_mixed_layers_fail_closed(self):
+        candidate = build_clean_base_candidate(ROOT)
+        self.assertEqual("clean-v1", candidate["protocol_generation"]["id"])
+        validate_base_implementation(candidate)
+
+        mixed = copy.deepcopy(candidate)
+        mixed["protocol_generation"]["layers"][0]["runtime_adapter"] = "cf.foundation.v1"
+        with self.assertRaisesRegex(BaseManifestError, "does not match clean-v1"):
+            validate_base_implementation(mixed)
 
 
 if __name__ == "__main__":

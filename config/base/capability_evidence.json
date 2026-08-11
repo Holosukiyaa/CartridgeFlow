@@ -49,19 +49,34 @@
       "verification": "verified",
       "implementation": [
         "src/core/protocol/clean_protocol.py#validate_clean_contract",
+        "src/core/protocol/clean_protocol.py#build_clean_base_candidate",
         "src/core/protocol/clean_protocol.py#build_clean_protocol_support_report",
+        "src/core/protocol/clean_foundation.py#CleanFoundationProjector",
+        "src/core/protocol/clean_authoring.py#CleanAuthoringProjector",
+        "src/core/protocol/clean_distribution.py#CleanDistributionProjector",
+        "src/core/protocol/clean_runtime.py#CleanRuntimeProjector",
         "scripts/validate_clean_protocol.py"
       ],
       "positive_tests": [
         "test_clean_protocol.CleanProtocolTests.test_all_contract_examples_have_executable_positive_and_failure_paths",
-        "test_clean_protocol.CleanProtocolTests.test_base_supports_the_complete_clean_generation"
+        "test_clean_protocol.CleanProtocolTests.test_base_supports_the_complete_clean_generation",
+        "test_clean_foundation.CleanFoundationProjectionTests.test_verified_implementation_and_v4_lock_cover_all_8_foundation_contracts",
+        "test_clean_authoring.CleanAuthoringProjectionTests.test_current_product_facts_project_to_all_35_authoring_contracts",
+        "test_clean_distribution.CleanDistributionProjectionTests.test_verified_release_and_installation_cover_all_15_distribution_contracts",
+        "test_clean_runtime.CleanRuntimeProjectionTests.test_runtime_facts_cover_all_17_contracts"
       ],
       "failure_tests": [
         "test_clean_protocol.CleanProtocolTests.test_missing_contract_or_adapter_fails_closed",
-        "test_clean_protocol.CleanProtocolTests.test_unknown_contract_and_cross_layer_validation_fail_closed"
+        "test_clean_protocol.CleanProtocolTests.test_unknown_contract_and_cross_layer_validation_fail_closed",
+        "test_clean_foundation.CleanFoundationProjectionTests.test_checked_in_v3_lock_cannot_prove_clean_v1_publication",
+        "test_clean_foundation.CleanFoundationProjectionTests.test_lock_rejects_multiple_or_wrong_authoritative_sources",
+        "test_clean_authoring.CleanAuthoringProjectionTests.test_projection_fails_instead_of_inventing_missing_public_ports",
+        "test_clean_authoring.CleanAuthoringProjectionTests.test_projection_rejects_invalid_flow_and_incomplete_composition",
+        "test_clean_distribution.CleanDistributionProjectionTests.test_invalid_archive_and_incomplete_installation_fail_closed",
+        "test_clean_runtime.CleanRuntimeProjectionTests.test_runtime_projection_rejects_unknown_state_and_empty_artifact_set"
       ],
       "ui": {"status": "not_applicable", "entries": []},
-      "notes": "The four clean-v1 layers and all 75 new JSON Schema contracts are checked directly; no old-generation migration is part of this evidence."
+      "notes": "The four clean-v1 layers and all 75 JSON Schema contracts have executable product projections and fail-closed tests. The active Base and registry lock remain unified-v1 until the authoritative source commit is published; cross-repository DR acceptance is tracked separately."
     },
     "artifact_contract": {
       "verification": "verified",

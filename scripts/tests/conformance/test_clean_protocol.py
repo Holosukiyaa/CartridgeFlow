@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import copy
 import json
 import sys
 import tempfile
@@ -15,14 +14,12 @@ if str(SOURCE_ROOT) not in sys.path:
 
 from core.protocol import (
     CLEAN_CONTRACT_IDS,
-    CLEAN_GENERATION,
-    CLEAN_PROTOCOLS,
     CLEAN_SOURCE_ID,
     DataContractError,
     ImplementationSource,
     ProtocolKnowledgeRegistry,
+    build_clean_base_candidate,
     build_clean_protocol_support_report,
-    load_base_implementation,
     publish_protocol_knowledge_registry,
     resolve_clean_protocol_adapter,
     validate_clean_contract,
@@ -47,7 +44,7 @@ class CleanProtocolTests(unittest.TestCase):
     def test_base_supports_the_complete_clean_generation(self):
         report = build_clean_protocol_support_report(
             ROOT,
-            base=self._clean_base(),
+            base=build_clean_base_candidate(ROOT),
             registry_path=self.registry,
         )
         self.assertTrue(report["ok"], report["findings"])
@@ -89,7 +86,7 @@ class CleanProtocolTests(unittest.TestCase):
                 )
 
     def test_missing_contract_or_adapter_fails_closed(self):
-        base = self._clean_base()
+        base = build_clean_base_candidate(ROOT)
         base["supported_data_contracts"] = base["supported_data_contracts"][:-1]
         base["supported_protocol_adapters"] = [
             item
@@ -117,44 +114,3 @@ class CleanProtocolTests(unittest.TestCase):
                 {},
                 registry_path=self.registry,
             )
-
-    @staticmethod
-    def _clean_base() -> dict:
-        base = copy.deepcopy(load_base_implementation(ROOT))
-        base["protocol_generation"] = {
-            "id": CLEAN_GENERATION,
-            "source_id": CLEAN_SOURCE_ID,
-            "layers": [
-                {
-                    "layer": layer,
-                    "id": protocol_id,
-                    "version": version,
-                    "runtime_adapter": adapter_id,
-                }
-                for layer, protocol_id, version, adapter_id in CLEAN_PROTOCOLS
-            ],
-        }
-        base["supported_data_contracts"] = [
-            {
-                "id": contract_id,
-                "version": "1.0.0",
-                "status": "supported",
-                "evidence": "clean_protocol_generation",
-            }
-            for contract_id in CLEAN_CONTRACT_IDS
-        ]
-        old_clean_adapters = {
-            "cf.foundation.v1",
-            "cf.authoring.v1",
-            "cf.distribution.v1",
-            "cf.runtime.v1",
-        }
-        base["supported_protocol_adapters"] = [
-            item
-            for item in base["supported_protocol_adapters"]
-            if item.get("id") not in old_clean_adapters
-        ] + [
-            {"id": adapter_id, "status": "supported"}
-            for _layer, _protocol_id, _version, adapter_id in CLEAN_PROTOCOLS
-        ]
-        return base

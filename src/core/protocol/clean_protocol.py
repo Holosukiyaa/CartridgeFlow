@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -7,7 +8,7 @@ from typing import Any
 
 from jsonschema import Draft202012Validator
 
-from .base_manifest import load_base_implementation
+from .base_manifest import load_base_implementation, validate_base_implementation
 from .data_contracts import (
     DataContractError,
     DataContractRegistry,
@@ -162,6 +163,55 @@ def resolve_clean_protocol_adapter(adapter_id: str) -> CleanProtocolAdapter:
         ) from exc
 
 
+def build_clean_base_candidate(
+    root: str | Path,
+    *,
+    base: dict | None = None,
+) -> dict:
+    """Build a validated clean-v1 Base candidate without changing the active manifest."""
+    project_root = Path(root).resolve()
+    candidate = copy.deepcopy(base if base is not None else load_base_implementation(project_root))
+    candidate["protocol_generation"] = {
+        "id": CLEAN_GENERATION,
+        "source_id": CLEAN_SOURCE_ID,
+        "layers": [
+            {
+                "layer": layer,
+                "id": protocol_id,
+                "version": version,
+                "runtime_adapter": adapter_id,
+            }
+            for layer, protocol_id, version, adapter_id in CLEAN_PROTOCOLS
+        ],
+    }
+    candidate["supported_data_contracts"] = [
+        {
+            "id": contract_id,
+            "version": CLEAN_CONTRACT_VERSION,
+            "status": "supported",
+            "evidence": "clean_protocol_generation",
+        }
+        for contract_id in CLEAN_CONTRACT_IDS
+    ]
+    replaced_adapters = {
+        "cf.foundation.v1",
+        "cf.authoring.v1",
+        "cf.distribution.v1",
+        "cf.runtime.v1",
+        *(adapter_id for _layer, _protocol_id, _version, adapter_id in CLEAN_PROTOCOLS),
+    }
+    candidate["supported_protocol_adapters"] = [
+        item
+        for item in candidate.get("supported_protocol_adapters") or []
+        if isinstance(item, dict) and item.get("id") not in replaced_adapters
+    ] + [
+        {"id": adapter_id, "status": "supported"}
+        for _layer, _protocol_id, _version, adapter_id in CLEAN_PROTOCOLS
+    ]
+    validate_base_implementation(candidate)
+    return candidate
+
+
 def validate_clean_contract(
     contract_id: str,
     value: Any,
@@ -278,13 +328,22 @@ def build_clean_protocol_support_report(
         _audit_contract_examples(registry, contract_rows, findings)
 
     generation = base_data.get("protocol_generation")
+    expected_layers = [
+        {
+            "layer": layer,
+            "id": protocol_id,
+            "version": version,
+            "runtime_adapter": adapter_id,
+        }
+        for layer, protocol_id, version, adapter_id in CLEAN_PROTOCOLS
+    ]
     if not isinstance(generation, dict) or (
-        generation.get("id"), generation.get("source_id")
-    ) != (CLEAN_GENERATION, CLEAN_SOURCE_ID):
+        generation.get("id"), generation.get("source_id"), generation.get("layers")
+    ) != (CLEAN_GENERATION, CLEAN_SOURCE_ID, expected_layers):
         _finding(
             findings,
             "base_clean_generation_missing",
-            "Base does not select clean-v1 from the authoritative source",
+            "Base does not select the exact clean-v1 layers from the authoritative source",
         )
     supported_protocols = {
         (str(item.get("id") or ""), str(item.get("version") or ""))

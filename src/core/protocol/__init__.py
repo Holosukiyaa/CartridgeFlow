@@ -64,6 +64,7 @@ from .clean_protocol import (
     CLEAN_SOURCE_ID,
     CleanProtocolAdapter,
     assert_base_supports_clean_protocol,
+    build_clean_base_candidate,
     build_clean_protocol_support_report,
     resolve_clean_protocol_adapter,
     validate_clean_contract,
@@ -82,6 +83,11 @@ from .clean_runtime import (
     RUNTIME_ADAPTER_ID,
     CleanRuntimeProjectionError,
     CleanRuntimeProjector,
+)
+from .clean_foundation import (
+    FOUNDATION_ADAPTER_ID,
+    CleanFoundationProjectionError,
+    CleanFoundationProjector,
 )
 
 __all__ = [
@@ -186,8 +192,12 @@ __all__ = [
     "RUNTIME_ADAPTER_ID",
     "CleanRuntimeProjectionError",
     "CleanRuntimeProjector",
+    "FOUNDATION_ADAPTER_ID",
+    "CleanFoundationProjectionError",
+    "CleanFoundationProjector",
     "CleanProtocolAdapter",
     "assert_base_supports_clean_protocol",
+    "build_clean_base_candidate",
     "build_clean_protocol_support_report",
     "resolve_clean_protocol_adapter",
     "validate_clean_contract",

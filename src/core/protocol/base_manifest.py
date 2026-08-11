@@ -12,6 +12,20 @@ class BaseManifestError(ValueError):
 BASE_IMPLEMENTATION_PATH = Path("config/base/BASE_IMPLEMENTATION.json")
 _ADAPTER_STATUSES = {"partial", "supported"}
 _SEMVER = re.compile(r"^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$")
+_PROTOCOL_GENERATIONS = {
+    ("unified-v1", "unified"): {
+        1: ("CF-FOUNDATION", "1.0.0", "cf.foundation.v1"),
+        2: ("CF-AUTHORING", "1.0.0", "cf.authoring.v1"),
+        3: ("CF-DISTRIBUTION", "1.0.0", "cf.distribution.v1"),
+        4: ("CF-RUNTIME", "1.0.0", "cf.runtime.v1"),
+    },
+    ("clean-v1", "cartridgeflow-authoritative"): {
+        1: ("CF-FOUNDATION", "1.0.0", "cartridgeflow.foundation.v1"),
+        2: ("CF-AUTHORING", "1.0.0", "cartridgeflow.authoring.v1"),
+        3: ("CF-DISTRIBUTION", "1.0.0", "cartridgeflow.distribution.v1"),
+        4: ("CF-RUNTIME", "1.0.0", "cartridgeflow.runtime.v1"),
+    },
+}
 
 
 def load_base_implementation(root: str | Path) -> dict:
@@ -47,19 +61,18 @@ def validate_base_implementation(data: dict) -> None:
     if data.get("schema_version") == "0.3":
         if not isinstance(generation, dict):
             raise BaseManifestError("base.protocol_generation is required")
-        if generation.get("id") != "unified-v1" or generation.get("source_id") != "unified":
+        generation_identity = (
+            str(generation.get("id") or ""),
+            str(generation.get("source_id") or ""),
+        )
+        expected_layers = _PROTOCOL_GENERATIONS.get(generation_identity)
+        if expected_layers is None:
             raise BaseManifestError(
-                "base.protocol_generation must select unified-v1 from source unified"
+                "base.protocol_generation must select an approved generation and source"
             )
         layers = generation.get("layers")
         if not isinstance(layers, list) or len(layers) != 4:
             raise BaseManifestError("base.protocol_generation.layers must contain four layers")
-        expected_layers = {
-            1: ("CF-FOUNDATION", "1.0.0", "cf.foundation.v1"),
-            2: ("CF-AUTHORING", "1.0.0", "cf.authoring.v1"),
-            3: ("CF-DISTRIBUTION", "1.0.0", "cf.distribution.v1"),
-            4: ("CF-RUNTIME", "1.0.0", "cf.runtime.v1"),
-        }
         actual_layers: dict[int, tuple[str, str, str]] = {}
         for index, layer in enumerate(layers):
             if not isinstance(layer, dict) or not isinstance(layer.get("layer"), int):
@@ -77,7 +90,7 @@ def validate_base_implementation(data: dict) -> None:
             actual_layers[number] = identity
         if actual_layers != expected_layers:
             raise BaseManifestError(
-                "base.protocol_generation.layers does not match the unified-v1 architecture"
+                f"base.protocol_generation.layers does not match {generation_identity[0]}"
             )
     supported_base_contracts = data.get("supported_base_contracts", [])
     if data.get("schema_version") == "0.3" and not isinstance(supported_base_contracts, list):

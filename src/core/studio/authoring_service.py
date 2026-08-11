@@ -33,6 +33,7 @@ from core.protocol.capability_cartridges import (
     validate_values_for_node,
     capability_compatible_with_recipe_node,
 )
+from core.protocol.clean_authoring import CleanAuthoringProjector
 from core.llm.authoring import AuthoringProposalError, build_authoring_messages, parse_authoring_proposal
 
 SERVICE_AUTHORING_OPERATIONS = frozenset(_OPERATIONS)
@@ -445,6 +446,19 @@ class AuthoringSessionStore:
     def get(self, session_id: str) -> dict:
         with self._lock:
             return self._read(self._path(session_id))
+
+    def clean_intent_contracts(
+        self,
+        session_id: str,
+        *,
+        registry_path: str | Path | None = None,
+        project_root: str | Path | None = None,
+    ) -> list[dict]:
+        """Expose the current session through the detachable clean-v1 Intent adapter."""
+        return CleanAuthoringProjector(
+            project_root,
+            registry_path=registry_path,
+        ).intent_session(self.get(session_id))
 
     def get_by_project_id(self, project_id: str) -> dict:
         with self._lock:

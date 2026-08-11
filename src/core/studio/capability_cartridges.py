@@ -11,6 +11,7 @@ from core.protocol.capability_cartridges import (
     creator_capability_projection,
     validate_capability_release,
 )
+from core.protocol.clean_authoring import CleanAuthoringProjector
 from core.protocol.tuning import canonical_digest
 from core.studio.authoring_service import AuthoringServiceError
 
@@ -75,6 +76,47 @@ class CapabilityCartridgeStore:
             if release is None:
                 raise AuthoringServiceError("CAPABILITY_RELEASE_REVISION_UNKNOWN", "Capability release revision was not found.", status=404)
             return deepcopy(release)
+
+    def clean_authoring_contracts(
+        self,
+        capability_id: str,
+        revision: int | None = None,
+        *,
+        permissions: list[str] | None = None,
+        visibility: str = "public",
+        registry_path: str | Path | None = None,
+        project_root: str | Path | None = None,
+    ) -> list[dict]:
+        """Expose one trusted release through clean-v1 Capability/Flow/Presentation."""
+        release = self.get(capability_id, revision)
+        projector = CleanAuthoringProjector(project_root, registry_path=registry_path)
+        result = projector.capability_release(release, permissions=permissions)
+        implementation = release.get("implementation")
+        if isinstance(implementation, dict) and implementation.get("kind") == "flow":
+            source = implementation.get("source") if isinstance(implementation.get("source"), dict) else {}
+            result.extend(
+                projector.flow(
+                    implementation.get("root_flow"),
+                    flow_id=str(source.get("flow_id") or release["id"]),
+                    revision=release["revision"],
+                )
+            )
+        creator = release.get("creator") if isinstance(release.get("creator"), dict) else {}
+        fields = [
+            str(item.get("id") or "")
+            for item in creator.get("editable_fields") or []
+            if isinstance(item, dict) and item.get("id")
+        ]
+        if fields:
+            result.extend(
+                projector.presentation(
+                    settings_id=release["id"],
+                    fields=fields,
+                    visibility=visibility,
+                    revision=release["revision"],
+                )
+            )
+        return result
 
     def latest_revision(self, capability_id: str) -> int:
         with self._lock:

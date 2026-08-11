@@ -68,6 +68,11 @@ from .clean_protocol import (
     resolve_clean_protocol_adapter,
     validate_clean_contract,
 )
+from .clean_authoring import (
+    AUTHORING_ADAPTER_ID,
+    CleanAuthoringProjectionError,
+    CleanAuthoringProjector,
+)
 
 __all__ = [
     "BaseManifestError",
@@ -162,6 +167,9 @@ __all__ = [
     "CLEAN_LAYER_CONTRACTS",
     "CLEAN_PROTOCOLS",
     "CLEAN_SOURCE_ID",
+    "AUTHORING_ADAPTER_ID",
+    "CleanAuthoringProjectionError",
+    "CleanAuthoringProjector",
     "CleanProtocolAdapter",
     "assert_base_supports_clean_protocol",
     "build_clean_protocol_support_report",

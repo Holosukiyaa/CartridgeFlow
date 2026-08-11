@@ -73,6 +73,11 @@ from .clean_authoring import (
     CleanAuthoringProjectionError,
     CleanAuthoringProjector,
 )
+from .clean_distribution import (
+    DISTRIBUTION_ADAPTER_ID,
+    CleanDistributionProjectionError,
+    CleanDistributionProjector,
+)
 
 __all__ = [
     "BaseManifestError",
@@ -170,6 +175,9 @@ __all__ = [
     "AUTHORING_ADAPTER_ID",
     "CleanAuthoringProjectionError",
     "CleanAuthoringProjector",
+    "DISTRIBUTION_ADAPTER_ID",
+    "CleanDistributionProjectionError",
+    "CleanDistributionProjector",
     "CleanProtocolAdapter",
     "assert_base_supports_clean_protocol",
     "build_clean_protocol_support_report",

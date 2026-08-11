@@ -6,8 +6,10 @@ import json
 import zipfile
 from datetime import datetime
 from pathlib import Path
+from typing import Mapping
 
 from core.data_paths import PACKAGES_DIR
+from core.protocol.clean_distribution import CleanDistributionProjector
 from core.protocol.release_envelope import build_release_envelope_report
 from core.studio.resource_resolver import resolve_cartridge_resources
 
@@ -147,6 +149,27 @@ def package_history(root: str | Path) -> list[dict]:
             "release_id": release_id,
         })
     return sorted(result, key=lambda item: item["modified_at"], reverse=True)
+
+
+def clean_release_contracts(
+    archive_file: str | Path,
+    *,
+    trusted_keys: Mapping[str, str] | None = None,
+    scope: str = "workspace",
+    delivery_mode: str = "download",
+    registry_path: str | Path | None = None,
+    project_root: str | Path | None = None,
+) -> list[dict]:
+    """Expose a built archive through the detachable clean-v1 Distribution adapter."""
+    return CleanDistributionProjector(
+        project_root,
+        registry_path=registry_path,
+    ).archive(
+        archive_file,
+        trusted_keys=trusted_keys,
+        scope=scope,
+        delivery_mode=delivery_mode,
+    )
 
 
 def _public_input_type(value: object) -> str:

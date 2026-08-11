@@ -16,7 +16,7 @@ from .base_manifest import load_base_implementation
 from .governance_registry import ProtocolKnowledgeRegistry, ProtocolKnowledgeRegistryError
 
 
-ACTIVE_CONTRACT_LIFECYCLES = ("active", "legacy-active")
+ACTIVE_CONTRACT_LIFECYCLES = ("published", "active", "legacy-active")
 EVIDENCE_RELATIVE_PATH = Path("config/base/capability_evidence.json")
 
 
@@ -59,7 +59,8 @@ class DataContractRegistry:
         self.path = Path(registry_path).resolve() if registry_path is not None else resolve_protocol_registry(self.root)
 
     def releases(self, *, active_only: bool = True) -> list[dict]:
-        where = "WHERE contract.lifecycle IN (?, ?)" if active_only else ""
+        placeholders = ", ".join("?" for _ in ACTIVE_CONTRACT_LIFECYCLES)
+        where = f"WHERE contract.lifecycle IN ({placeholders})" if active_only else ""
         parameters = ACTIVE_CONTRACT_LIFECYCLES if active_only else ()
         with ProtocolKnowledgeRegistry(self.path) as registry:
             rows = registry.connection.execute(

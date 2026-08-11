@@ -26,7 +26,7 @@ from core.protocol import (
 REPOSITORY_URL = "https://github.com/Holosukiyaa/cartridgeflow-protocols.git"
 DEFAULT_PROTOCOL_REPOSITORY = ROOT / "protocol-source"
 SOURCE_DATABASE_RELATIVE_PATH = Path("protocol-source.sqlite")
-RUNTIME_SOURCE_ID = "current"
+RUNTIME_SOURCE_ID = "cartridgeflow-authoritative"
 DATABASE_PATH = ROOT / "config" / "protocol" / "protocol-registry.sqlite"
 LOCK_PATH = ROOT / "config" / "protocol" / "protocol-registry.lock.json"
 
@@ -60,7 +60,7 @@ def main() -> int:
             report = publish_protocol_knowledge_registry(
                 staged_database,
                 source_database,
-                implementation_sources=[ImplementationSource("current", ROOT)],
+                implementation_sources=[ImplementationSource(RUNTIME_SOURCE_ID, ROOT)],
             )
             with ProtocolKnowledgeRegistry(staged_database) as registry:
                 product_summary = registry.summary()
@@ -85,7 +85,7 @@ def main() -> int:
                 )
             database_digest = hashlib.sha256(staged_database.read_bytes()).hexdigest()
             lock = {
-                "schema": "cartridgeflow.product_protocol_registry_lock.v3",
+                "schema": "cartridgeflow.product_protocol_registry_lock.v4",
                 "repository": {
                     "url": remote,
                     "commit": commit,

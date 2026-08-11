@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "src"))
 
 from core.protocol import (
+    ImplementationSource,
     ProtocolKnowledgeRegistry,
     ProtocolKnowledgeRegistryError,
     ProtocolSource,
@@ -23,6 +24,73 @@ from core.protocol import (
 
 
 class ProtocolKnowledgeRegistryTests(unittest.TestCase):
+    def test_clean_v4_source_publishes_as_single_source_product_snapshot(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            target = Path(temporary) / "protocol-registry.sqlite"
+            source = ROOT / "protocol-source" / "protocol-source.sqlite"
+
+            report = publish_protocol_knowledge_registry(
+                target,
+                source,
+                implementation_sources=[
+                    ImplementationSource("cartridgeflow-authoritative", ROOT)
+                ],
+            )
+
+            self.assertEqual(1, report.source_count)
+            self.assertEqual(4, report.release_count)
+            with ProtocolKnowledgeRegistry(target) as registry:
+                summary = registry.summary()
+                self.assertEqual("4", summary["schema_version"])
+                self.assertEqual("clean-v1", summary["generation"])
+                self.assertEqual("product_snapshot", summary["registry_role"])
+                self.assertEqual(75, summary["contract_release_count"])
+                self.assertEqual(
+                    ["cartridgeflow-authoritative"],
+                    [
+                        row[0]
+                        for row in registry.connection.execute(
+                            "SELECT source_id FROM registry_source ORDER BY source_id"
+                        )
+                    ],
+                )
+                self.assertTrue(registry.search("Flow"))
+                implementations = {
+                    row[0]
+                    for row in registry.connection.execute(
+                        "SELECT implementation_id FROM implementation_manifest"
+                    )
+                }
+                self.assertEqual(
+                    {"protocol-source", "cartridgeflow.reference-dev"},
+                    implementations,
+                )
+
+    def test_clean_v4_publication_rejects_artifact_tampering(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "protocol-source.sqlite"
+            source.write_bytes(
+                (ROOT / "protocol-source" / "protocol-source.sqlite").read_bytes()
+            )
+            connection = sqlite3.connect(source)
+            connection.execute(
+                "UPDATE artifact SET content = ? WHERE artifact_id = ("
+                "SELECT artifact_id FROM artifact ORDER BY artifact_id LIMIT 1)",
+                (b"tampered",),
+            )
+            connection.commit()
+            connection.close()
+
+            with self.assertRaisesRegex(
+                ProtocolKnowledgeRegistryError,
+                "artifact digest mismatch",
+            ):
+                publish_protocol_knowledge_registry(
+                    root / "product.sqlite",
+                    source,
+                )
+
     def test_product_uses_queryable_read_only_registry_from_pinned_source(self):
         target = resolve_protocol_registry(ROOT)
         lock = load_protocol_registry_lock(ROOT)

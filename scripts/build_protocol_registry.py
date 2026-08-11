@@ -7,6 +7,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_PROTOCOL_REPOSITORY = ROOT / "protocol-source"
+CLEAN_PROTOCOL_SOURCE_ID = "cartridgeflow-authoritative"
 SOURCE_ROOT = ROOT / "src"
 if str(SOURCE_ROOT) not in sys.path:
     sys.path.insert(0, str(SOURCE_ROOT))
@@ -86,7 +87,7 @@ def main() -> int:
     args = parser.parse_args()
     implementation_sources = args.implementation_source
     if implementation_sources is None and args.source is None:
-        implementation_sources = [ImplementationSource("current", ROOT)]
+        implementation_sources = [ImplementationSource(CLEAN_PROTOCOL_SOURCE_ID, ROOT)]
     try:
         if args.source:
             report = build_protocol_knowledge_registry(

@@ -15,6 +15,10 @@ from typing import Iterable
 
 REGISTRY_SCHEMA_VERSION = "3"
 REGISTRY_SCHEMA_NAME = "cartridgeflow.protocol_knowledge_registry.v1"
+CLEAN_REGISTRY_SCHEMA_VERSION = "4"
+CLEAN_REGISTRY_SCHEMA_NAME = "cartridgeflow.protocol_knowledge_registry"
+CLEAN_PROTOCOL_SOURCE_ID = "cartridgeflow-authoritative"
+CLEAN_PROTOCOL_GENERATION = "clean-v1"
 LOCK_SCHEMA_NAME = "cartridgeflow.protocol_line_lock.v1"
 MANIFEST_RELATIVE_PATH = Path("protocol/catalog/release_manifest.json")
 FAMILY_METADATA_RELATIVE_PATH = Path("protocol/governance/protocol_families.json")
@@ -264,6 +268,27 @@ def publish_protocol_knowledge_registry(
             f"authoritative protocol database not found: {source_path}"
         )
 
+    connection = sqlite3.connect(f"{source_path.as_uri()}?mode=ro", uri=True)
+    try:
+        source_metadata = dict(
+            connection.execute("SELECT key, value FROM registry_metadata")
+        )
+    except sqlite3.Error as exc:
+        raise ProtocolKnowledgeRegistryError(
+            "authoritative protocol database metadata cannot be read"
+        ) from exc
+    finally:
+        connection.close()
+    if (
+        source_metadata.get("schema") == CLEAN_REGISTRY_SCHEMA_NAME
+        and source_metadata.get("schema_version") == CLEAN_REGISTRY_SCHEMA_VERSION
+    ):
+        return _publish_clean_protocol_knowledge_registry(
+            output,
+            source_path,
+            implementation_sources=implementation_sources,
+        )
+
     with ProtocolKnowledgeRegistry(source_path) as source_registry:
         metadata = dict(
             source_registry.connection.execute(
@@ -380,6 +405,205 @@ def publish_protocol_knowledge_registry(
         finding_counts=counts,
         lock_paths=(),
     )
+
+
+def _publish_clean_protocol_knowledge_registry(
+    output: Path,
+    source_path: Path,
+    *,
+    implementation_sources: Iterable[ImplementationSource],
+) -> RegistryBuildReport:
+    with ProtocolKnowledgeRegistry(source_path) as source_registry:
+        metadata = dict(
+            source_registry.connection.execute(
+                "SELECT key, value FROM registry_metadata"
+            )
+        )
+        _validate_clean_authoritative_source_registry(
+            source_registry.connection, metadata
+        )
+        source_rows = [
+            dict(row)
+            for row in source_registry.connection.execute(
+                "SELECT source_id, manifest_digest, source_digest "
+                "FROM registry_source ORDER BY source_id"
+            )
+        ]
+
+    implementations = list(implementation_sources)
+    implementation_by_id = {item.source_id: item for item in implementations}
+    if len(implementation_by_id) != len(implementations):
+        raise ProtocolKnowledgeRegistryError("implementation source ids must be unique")
+    source_ids = {str(item["source_id"]) for item in source_rows}
+    unknown = sorted(set(implementation_by_id) - source_ids)
+    if unknown:
+        raise ProtocolKnowledgeRegistryError(
+            f"implementation sources require matching protocol sources: {unknown}"
+        )
+    inventories = {
+        source_id: _inventory_implementation(source)
+        for source_id, source in sorted(implementation_by_id.items())
+    }
+    product_digest = _sha256_json(
+        {
+            "schema": CLEAN_REGISTRY_SCHEMA_NAME,
+            "schema_version": CLEAN_REGISTRY_SCHEMA_VERSION,
+            "source_registry_digest": metadata["registry_digest"],
+            "implementations": [
+                {
+                    "source_id": source_id,
+                    "implementation_digest": inventory[4],
+                }
+                for source_id, inventory in sorted(inventories.items())
+            ],
+        }
+    )
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    temporary = _temporary_database_path(output)
+    try:
+        shutil.copyfile(source_path, temporary)
+        connection = sqlite3.connect(temporary)
+        try:
+            connection.execute("PRAGMA foreign_keys = ON")
+            connection.execute("PRAGMA journal_mode = DELETE")
+            for source_id, inventory in inventories.items():
+                _insert_implementation_inventory(connection, source_id, *inventory[:4])
+            _materialize_browseable_compressed_artifacts(connection)
+            connection.executemany(
+                "INSERT OR REPLACE INTO registry_metadata(key, value) VALUES (?, ?)",
+                (
+                    ("registry_role", "product_snapshot"),
+                    ("source_registry_digest", metadata["registry_digest"]),
+                    ("registry_digest", product_digest),
+                    ("search_engine", "like"),
+                ),
+            )
+            connection.commit()
+            connection.execute("PRAGMA optimize")
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+        os.replace(temporary, output)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+    with ProtocolKnowledgeRegistry(output) as registry:
+        summary = registry.summary()
+        counts: dict[str, int] = {}
+        for finding in registry.findings():
+            severity = str(finding["severity"])
+            counts[severity] = counts.get(severity, 0) + 1
+    return RegistryBuildReport(
+        output_path=output,
+        registry_digest=product_digest,
+        source_count=int(summary["source_count"]),
+        release_count=int(summary["release_count"]),
+        artifact_count=int(summary["artifact_count"]),
+        section_count=int(summary["section_count"]),
+        finding_counts=counts,
+        lock_paths=(),
+    )
+
+
+def _validate_clean_authoritative_source_registry(
+    connection: sqlite3.Connection,
+    metadata: dict[str, str],
+) -> None:
+    connection.row_factory = sqlite3.Row
+    if metadata.get("schema") != CLEAN_REGISTRY_SCHEMA_NAME:
+        raise ProtocolKnowledgeRegistryError(
+            "authoritative protocol database has an unknown schema"
+        )
+    if metadata.get("schema_version") != CLEAN_REGISTRY_SCHEMA_VERSION:
+        raise ProtocolKnowledgeRegistryError(
+            "authoritative protocol database has an unsupported schema version"
+        )
+    if metadata.get("registry_role") != "authoritative_source":
+        raise ProtocolKnowledgeRegistryError(
+            "protocol source must declare registry_role=authoritative_source"
+        )
+    if metadata.get("generation") != CLEAN_PROTOCOL_GENERATION:
+        raise ProtocolKnowledgeRegistryError(
+            f"protocol source must declare generation={CLEAN_PROTOCOL_GENERATION}"
+        )
+    if connection.execute("PRAGMA user_version").fetchone()[0] != 4:
+        raise ProtocolKnowledgeRegistryError(
+            "authoritative protocol database user_version does not match its schema metadata"
+        )
+    if connection.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+        raise ProtocolKnowledgeRegistryError(
+            "authoritative protocol database failed integrity_check"
+        )
+    if connection.execute("PRAGMA foreign_key_check").fetchall():
+        raise ProtocolKnowledgeRegistryError(
+            "authoritative protocol database contains foreign-key violations"
+        )
+    sources = connection.execute(
+        "SELECT source_id, generation, status FROM registry_source"
+    ).fetchall()
+    if len(sources) != 1 or tuple(sources[0]) != (
+        CLEAN_PROTOCOL_SOURCE_ID,
+        CLEAN_PROTOCOL_GENERATION,
+        "authoritative",
+    ):
+        raise ProtocolKnowledgeRegistryError(
+            "clean protocol source must contain exactly one authoritative source"
+        )
+    releases = connection.execute(
+        "SELECT protocol_id, version, lifecycle FROM protocol_release "
+        "ORDER BY protocol_id"
+    ).fetchall()
+    expected_protocols = {
+        "CF-FOUNDATION",
+        "CF-AUTHORING",
+        "CF-DISTRIBUTION",
+        "CF-RUNTIME",
+    }
+    if (
+        {str(row["protocol_id"]) for row in releases} != expected_protocols
+        or any(row["version"] != "1.0.0" or row["lifecycle"] != "published" for row in releases)
+    ):
+        raise ProtocolKnowledgeRegistryError(
+            "clean protocol source must publish exactly the four 1.0.0 layer releases"
+        )
+    contracts = connection.execute(
+        "SELECT COUNT(*) FROM data_contract_release "
+        "WHERE generation = ? AND lifecycle = 'published'",
+        (CLEAN_PROTOCOL_GENERATION,),
+    ).fetchone()[0]
+    if contracts != 75:
+        raise ProtocolKnowledgeRegistryError(
+            "clean protocol source must contain exactly 75 published contracts"
+        )
+    incomplete = connection.execute(
+        "SELECT contract_release_key FROM contract_coverage WHERE "
+        "schema_count != 1 OR valid_example_count != 1 OR invalid_example_count != 1 "
+        "OR binding_count < 1 OR rule_count < 1 OR usage_count < 2 OR evidence_count != 1 "
+        "LIMIT 1"
+    ).fetchone()
+    if incomplete:
+        raise ProtocolKnowledgeRegistryError(
+            f"clean protocol contract coverage is incomplete: {incomplete[0]}"
+        )
+    for artifact in connection.execute(
+        "SELECT artifact_id, media_type, byte_size, content_digest, content "
+        "FROM artifact ORDER BY artifact_id"
+    ):
+        try:
+            content = _decode_stored_content(
+                bytes(artifact["content"]), str(artifact["media_type"])
+            )
+        except zlib.error as exc:
+            raise ProtocolKnowledgeRegistryError(
+                f"authoritative protocol artifact cannot be decoded: {artifact['artifact_id']}"
+            ) from exc
+        if len(content) != artifact["byte_size"] or _sha256(content) != artifact["content_digest"]:
+            raise ProtocolKnowledgeRegistryError(
+                f"authoritative protocol artifact digest mismatch: {artifact['artifact_id']}"
+            )
 
 
 def _validate_authoritative_source_registry(
@@ -1290,10 +1514,13 @@ def _insert_implementation_inventory(
             ),
         )
         if artifact.text:
-            connection.execute(
-                "INSERT INTO artifact_fts VALUES (?, ?, ?, ?, ?)",
-                (artifact.artifact_id, source_id, None, artifact.path, artifact.text),
-            )
+            if connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE name = 'artifact_fts'"
+            ).fetchone():
+                connection.execute(
+                    "INSERT INTO artifact_fts VALUES (?, ?, ?, ?, ?)",
+                    (artifact.artifact_id, source_id, None, artifact.path, artifact.text),
+                )
             for section in _markdown_sections(artifact):
                 connection.execute(
                     "INSERT INTO document_section VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -1323,21 +1550,42 @@ def _insert_implementation_inventory(
                     ),
                 )
 
-    connection.execute(
-        "INSERT INTO implementation_manifest VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (
-            implementation["implementation_key"],
-            source_id,
-            implementation["implementation_id"],
-            implementation.get("implementation_name"),
-            implementation["implementation_version"],
-            implementation.get("environment"),
-            implementation.get("base_protocol_id"),
-            implementation.get("base_protocol_version"),
-            implementation["artifact_id"],
-            implementation["manifest_digest"],
-        ),
-    )
+    manifest_columns = {
+        str(row[1]) for row in connection.execute("PRAGMA table_info(implementation_manifest)")
+    }
+    if "base_protocol_id" in manifest_columns:
+        connection.execute(
+            "INSERT INTO implementation_manifest VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                implementation["implementation_key"],
+                source_id,
+                implementation["implementation_id"],
+                implementation.get("implementation_name"),
+                implementation["implementation_version"],
+                implementation.get("environment"),
+                implementation.get("base_protocol_id"),
+                implementation.get("base_protocol_version"),
+                implementation["artifact_id"],
+                implementation["manifest_digest"],
+            ),
+        )
+    else:
+        connection.execute(
+            "INSERT INTO implementation_manifest ("
+            "implementation_key, source_id, implementation_id, implementation_name, "
+            "implementation_version, environment, artifact_id, manifest_digest"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                implementation["implementation_key"],
+                source_id,
+                implementation["implementation_id"],
+                implementation.get("implementation_name"),
+                implementation["implementation_version"],
+                implementation.get("environment"),
+                implementation["artifact_id"],
+                implementation["manifest_digest"],
+            ),
+        )
     for support in support_items:
         connection.execute(
             """
@@ -1387,10 +1635,13 @@ def _materialize_browseable_compressed_artifacts(connection: sqlite3.Connection)
             "UPDATE artifact SET text_content = ? WHERE artifact_id = ?",
             (logical_text, artifact_id),
         )
-        connection.execute(
-            "INSERT INTO artifact_fts VALUES (?, ?, ?, ?, ?)",
-            (artifact_id, source_id, release_key, artifact_path, logical_text),
-        )
+        if connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE name = 'artifact_fts'"
+        ).fetchone():
+            connection.execute(
+                "INSERT INTO artifact_fts VALUES (?, ?, ?, ?, ?)",
+                (artifact_id, source_id, release_key, artifact_path, logical_text),
+            )
 
 
 def _create_search_tables(connection: sqlite3.Connection) -> str:

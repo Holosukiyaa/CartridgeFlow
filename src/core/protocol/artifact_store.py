@@ -26,9 +26,9 @@ def resolve_protocol_registry(root: str | Path | None = None) -> Path:
 
 
 class ProtocolArtifactStore:
-    def __init__(self, root: str | Path | None = None, source_id: str = DEFAULT_SOURCE_ID):
+    def __init__(self, root: str | Path | None = None, source_id: str | None = None):
         self.path = resolve_protocol_registry(root)
-        self.source_id = source_id
+        self.source_id = source_id or _locked_runtime_source_id(root)
 
     def exists(self, artifact_path: str | Path) -> bool:
         with ProtocolKnowledgeRegistry(self.path) as registry:
@@ -54,7 +54,7 @@ class ProtocolArtifactStore:
 def load_protocol_artifact_text(
     artifact_path: str | Path,
     root: str | Path | None = None,
-    source_id: str = DEFAULT_SOURCE_ID,
+    source_id: str | None = None,
 ) -> str:
     return ProtocolArtifactStore(root, source_id).read_text(artifact_path)
 
@@ -62,7 +62,7 @@ def load_protocol_artifact_text(
 def load_protocol_artifact_json(
     artifact_path: str | Path,
     root: str | Path | None = None,
-    source_id: str = DEFAULT_SOURCE_ID,
+    source_id: str | None = None,
 ) -> dict:
     return ProtocolArtifactStore(root, source_id).read_json(artifact_path)
 
@@ -80,6 +80,15 @@ def load_protocol_registry_lock(root: str | Path | None = None) -> dict:
         ) from exc
     if not isinstance(value, dict):
         raise ProtocolKnowledgeRegistryError("protocol registry lock must be a JSON object")
+    return value
+
+
+def _locked_runtime_source_id(root: str | Path | None = None) -> str:
+    value = load_protocol_registry_lock(root).get("runtime_source_id")
+    if not isinstance(value, str) or not value.strip():
+        raise ProtocolKnowledgeRegistryError(
+            "protocol registry lock must declare runtime_source_id"
+        )
     return value
 
 

@@ -15,7 +15,6 @@ DISTRIBUTION_ADAPTER_ID = "cartridgeflow.distribution.v1"
 _PACKAGE_KINDS = ("manifest", "content-entry", "dependency-lock", "entrypoint")
 _INTEGRITY_KINDS = ("manifest", "signature-payload", "verification")
 _TRUST_KINDS = ("publisher", "signature", "decision")
-_INSTALLATION_KINDS = ("request", "plan", "result")
 _EXPOSURE_KINDS = ("experience", "delivery")
 
 
@@ -168,34 +167,35 @@ class CleanDistributionProjector:
 
     def installation(self, fact: dict) -> list[dict]:
         """Build the explicit Workbench-to-DR install request, plan, and observed result."""
+        return [*self.installation_request(fact), self.installation_result(fact)]
+
+    def installation_request(self, fact: dict) -> list[dict]:
+        """Project install intent before Desktop Runner has changed any state."""
         fact = _mapping(fact, "installation fact")
-        common = {
-            "revision": _revision(fact.get("revision", 1)),
-            "package_id": _text(fact.get("package_id"), "installation package id"),
-            "target": _text(fact.get("target"), "installation target"),
-            "plan_id": _text(fact.get("plan_id"), "installation plan id"),
-            "rollback": str(fact.get("rollback") or ""),
+        common = _installation_common(fact)
+        request = {
+            **common,
+            "kind": "request",
+            "request_id": _text(fact.get("request_id"), "installation request id"),
+            "requested_at": _text(fact.get("requested_at"), "installation request time"),
+            "requested_by": _text(fact.get("requested_by"), "installation requester"),
         }
-        result = []
-        for kind in _INSTALLATION_KINDS:
-            payload = {**common, "kind": kind}
-            if kind == "request":
-                payload.update(
-                    {
-                        "request_id": _text(fact.get("request_id"), "installation request id"),
-                        "requested_at": _text(fact.get("requested_at"), "installation request time"),
-                        "requested_by": _text(fact.get("requested_by"), "installation requester"),
-                    }
-                )
-            elif kind == "result":
-                payload.update(
-                    {
-                        "status": str(fact.get("status") or ""),
-                        "message": _text(fact.get("message"), "installation result message"),
-                    }
-                )
-            result.append(self._envelope(f"cartridgeflow.installation.{kind}", payload))
-        return result
+        plan = {**common, "kind": "plan"}
+        return [
+            self._envelope("cartridgeflow.installation.request", request),
+            self._envelope("cartridgeflow.installation.plan", plan),
+        ]
+
+    def installation_result(self, fact: dict) -> dict:
+        """Project an observed Desktop Runner outcome after installation was attempted."""
+        fact = _mapping(fact, "installation fact")
+        payload = {
+            **_installation_common(fact),
+            "kind": "result",
+            "status": str(fact.get("status") or ""),
+            "message": _text(fact.get("message"), "installation result message"),
+        }
+        return self._envelope("cartridgeflow.installation.result", payload)
 
     def _envelope(self, contract_id: str, payload: dict) -> dict:
         envelope = {
@@ -236,6 +236,16 @@ def _public_setting_ids(public_contracts: dict) -> list[str]:
             }
         )
     return []
+
+
+def _installation_common(fact: dict) -> dict:
+    return {
+        "revision": _revision(fact.get("revision", 1)),
+        "package_id": _text(fact.get("package_id"), "installation package id"),
+        "target": _text(fact.get("target"), "installation target"),
+        "plan_id": _text(fact.get("plan_id"), "installation plan id"),
+        "rollback": str(fact.get("rollback") or ""),
+    }
 
 
 def _mapping(value: Any, label: str) -> dict:

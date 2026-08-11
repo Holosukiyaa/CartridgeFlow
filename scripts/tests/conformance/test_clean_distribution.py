@@ -144,6 +144,23 @@ class CleanDistributionProjectionTests(unittest.TestCase):
                 }
             )
 
+    def test_install_intent_does_not_require_an_invented_result(self):
+        envelopes = self.projector.installation_request(
+            {
+                "package_id": "dev.clean-release",
+                "target": "desktop-runner",
+                "plan_id": "install-001",
+                "rollback": "enabled",
+                "request_id": "request-001",
+                "requested_at": "2030-01-01T00:00:00Z",
+                "requested_by": "operator",
+            }
+        )
+        self.assertEqual(
+            ["cartridgeflow.installation.request", "cartridgeflow.installation.plan"],
+            [item["contract_id"] for item in envelopes],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

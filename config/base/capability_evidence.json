@@ -24,6 +24,27 @@
       "ui": {"status": "not_applicable", "entries": []},
       "notes": "Exact contract releases, source definitions, validator references, implementation evidence, and positive/failure tests are checked fail-closed."
     },
+    "unified_protocol_generation": {
+      "verification": "verified",
+      "implementation": [
+        "src/core/protocol/unified_protocol.py#validate_unified_contract",
+        "src/core/protocol/unified_protocol.py#migrate_legacy_contract",
+        "src/core/protocol/unified_protocol.py#build_unified_protocol_support_report",
+        "src/core/protocol/base_manifest.py#validate_base_implementation",
+        "scripts/validate_unified_protocol.py"
+      ],
+      "positive_tests": [
+        "test_unified_protocol.UnifiedProtocolTests.test_base_supports_the_complete_unified_generation",
+        "test_unified_protocol.UnifiedProtocolTests.test_all_contract_examples_have_executable_positive_and_failure_paths",
+        "test_unified_protocol.UnifiedProtocolTests.test_every_legacy_contract_has_an_executable_migration"
+      ],
+      "failure_tests": [
+        "test_unified_protocol.UnifiedProtocolTests.test_missing_layer_contract_or_adapter_fails_closed",
+        "test_unified_protocol.UnifiedProtocolTests.test_unknown_contract_and_migration_fail_closed"
+      ],
+      "ui": {"status": "not_applicable", "entries": []},
+      "notes": "The four normalized layer protocols, 28 JSON Schema contracts, 31 legacy migrations, examples, adapters and Base declarations are checked as one fail-closed generation."
+    },
     "artifact_contract": {
       "verification": "verified",
       "implementation": ["src/core/cartridge/artifacts.py#ArtifactManager"],

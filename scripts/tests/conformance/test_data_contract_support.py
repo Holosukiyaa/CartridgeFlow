@@ -13,6 +13,7 @@ from core.protocol import (
     DataContractValidationError,
     ProtocolKnowledgeRegistry,
     build_data_contract_support_report,
+    build_host_compatibility_contract,
     build_runtime_profile_compatibility_report,
     apply_cartridge_settings,
     load_base_implementation,
@@ -31,9 +32,9 @@ class DataContractSupportTests(unittest.TestCase):
         report = build_data_contract_support_report(ROOT)
 
         self.assertTrue(report["ok"], report["findings"])
-        self.assertEqual(31, report["summary"]["active_releases"])
-        self.assertEqual(31, report["summary"]["declared_releases"])
-        self.assertEqual(31, report["summary"]["supported_releases"])
+        self.assertEqual(28, report["summary"]["active_releases"])
+        self.assertEqual(28, report["summary"]["declared_releases"])
+        self.assertEqual(28, report["summary"]["supported_releases"])
         self.assertEqual({"supported"}, {item["status"] for item in report["items"]})
 
     def test_missing_support_or_failure_evidence_fails_closed(self):
@@ -43,7 +44,7 @@ class DataContractSupportTests(unittest.TestCase):
         self.assertIn("data_contract_support_missing", {item["code"] for item in report["findings"]})
 
         evidence = json.loads(EVIDENCE_PATH.read_text(encoding="utf-8"))
-        evidence["evidence_sets"]["data_contract_governance"]["failure_tests"] = []
+        evidence["evidence_sets"]["unified_protocol_generation"]["failure_tests"] = []
         report = build_data_contract_support_report(ROOT, evidence=evidence)
         self.assertIn("data_contract_failure_test_missing", {item["code"] for item in report["findings"]})
 
@@ -169,6 +170,56 @@ class DataContractSupportTests(unittest.TestCase):
         self.assertTrue(report["ok"], report["findings"])
         self.assertEqual({"id": "CF-DRP", "version": "1.0"}, report["target"])
 
+    def test_runtime_profile_accepts_unified_target_and_authoring_protocol(self):
+        manifest = {
+            "runtime_contract": {
+                "protocol": "CF-AUTHORING",
+                "protocol_version": "1.0.0",
+                "target": {
+                    "schema": "cartridgeflow.host.target.v1",
+                    "protocol": "CF-RUNTIME@1.0.0",
+                    "state_types": ["process", "terminal"],
+                },
+            },
+            "llm_recipe": {"roles": [{"wire_api": "chat_completions"}]},
+        }
+        flow = {
+            "protocol": {"id": "CF-AUTHORING", "version": "1.0.0"},
+            "states": {
+                "generate": {
+                    "type": "process",
+                    "action": "llm_prompt",
+                    "inputs": {"brief": {"binding": {"source": "run_input"}}},
+                },
+                "done": {"type": "terminal"},
+            },
+            "execution_plan": {
+                "edges": [
+                    {"kind": "sequence", "from": "generate", "to": "done"}
+                ]
+            },
+        }
+
+        report = build_runtime_profile_compatibility_report(
+            manifest,
+            flow,
+            {"mode": "none"},
+            root=ROOT,
+        )
+        public_report = build_host_compatibility_contract(report)
+
+        self.assertTrue(report["ok"], report["findings"])
+        self.assertEqual({"id": "CF-RUNTIME", "version": "1.0.0"}, report["target"])
+        self.assertIs(
+            public_report,
+            validate_data_contract_instance(
+                "cartridgeflow.host.compatibility",
+                "1.0.0",
+                public_report,
+                root=ROOT,
+            ),
+        )
+
     def test_runtime_profile_rejects_target_and_derived_capability_mismatches(self):
         missing = build_runtime_profile_compatibility_report(
             {"runtime_contract": {"protocol": "CF-FARP", "protocol_version": "1.1"}},
@@ -183,6 +234,25 @@ class DataContractSupportTests(unittest.TestCase):
             root=ROOT,
         )
         self.assertEqual({"cre_runtime_target_invalid"}, {item["code"] for item in invalid["findings"]})
+
+        ambiguous = build_runtime_profile_compatibility_report(
+            {
+                "runtime_contract": {
+                    "target": {
+                        "schema": "cartridgeflow.host.target.v1",
+                        "protocol": "CF-RUNTIME@1.0.0",
+                        "state_types": [],
+                    },
+                    "target_runtimes": [{"id": "CF-DRP", "version": "1.0"}],
+                }
+            },
+            {},
+            root=ROOT,
+        )
+        self.assertEqual(
+            {"cre_runtime_target_invalid"},
+            {item["code"] for item in ambiguous["findings"]},
+        )
 
         manifest = {
             "runtime_contract": {

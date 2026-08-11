@@ -19,7 +19,9 @@ from core.protocol import (
     ProtocolArtifactStore,
     ProtocolKnowledgeRegistry,
     ProtocolKnowledgeRegistryError,
+    UNIFIED_PROTOCOLS,
     build_data_contract_support_report,
+    build_unified_protocol_support_report,
     load_base_implementation,
     load_protocol_registry_lock,
     load_protocol_release_catalog,
@@ -54,6 +56,15 @@ def audit(root: Path = ROOT) -> list[str]:
         errors.extend(
             f"data contract support {item['code']}: {item['message']}"
             for item in support_report["findings"]
+        )
+    try:
+        unified_report = build_unified_protocol_support_report(root)
+    except (DataContractError, ProtocolKnowledgeRegistryError, OSError, ValueError) as exc:
+        errors.append(f"unified protocol support cannot be audited: {exc}")
+    else:
+        errors.extend(
+            f"unified protocol support {item['code']}: {item['message']}"
+            for item in unified_report["findings"]
         )
     return errors
 
@@ -141,9 +152,9 @@ def _audit_registry_lock(registry_path: Path, lock: dict, errors: list[str]) -> 
         r"[0-9a-f]{64}", str(source_database.get("logical_digest") or "")
     ):
         errors.append("protocol registry lock requires the source database logical digest")
-    expected_sources = {"current", "temp-runtime"}
+    expected_sources = {"current", "temp-runtime", "unified"}
     if set(source_locks) != expected_sources:
-        errors.append("protocol registry lock must contain current and temp-runtime sources")
+        errors.append("protocol registry lock must contain unified and both legacy sources")
 
     expected_database_digest = str(registry_lock.get("database_sha256") or "")
     actual_database_digest = hashlib.sha256(registry_path.read_bytes()).hexdigest()
@@ -170,7 +181,7 @@ def _audit_registry_lock(registry_path: Path, lock: dict, errors: list[str]) -> 
             ).fetchall()
             database_sources = {row["source_id"]: row for row in sources}
             if set(database_sources) != expected_sources:
-                errors.append("product registry must contain current and temp-runtime sources")
+                errors.append("product registry must contain unified and both legacy sources")
             for source_id in expected_sources:
                 row = database_sources.get(source_id)
                 source_lock = source_locks.get(source_id, {})
@@ -200,6 +211,7 @@ def _audit_release_catalog(root: Path, artifacts: ProtocolArtifactStore, catalog
         for item in catalog.release_envelopes
         if item.get("implementation_status") in {"partial", "supported"}
     )
+    published.update((protocol_id, version) for _layer, protocol_id, version, _adapter in UNIFIED_PROTOCOLS)
 
     for release in catalog.releases:
         label = f"{release['id']}@{release['version']}"

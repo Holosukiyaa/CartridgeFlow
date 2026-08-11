@@ -31,7 +31,7 @@ class ProtocolKnowledgeRegistryTests(unittest.TestCase):
         self.assertEqual(40, len(lock["repository"]["commit"]))
         self.assertEqual("protocol-source.sqlite", lock["source_database"]["path"])
         self.assertEqual(
-            {"current", "temp-runtime"},
+            {"current", "temp-runtime", "unified"},
             {item["source_id"] for item in lock["sources"]},
         )
 
@@ -43,15 +43,15 @@ class ProtocolKnowledgeRegistryTests(unittest.TestCase):
                 lock["source_database"]["logical_digest"],
                 summary["source_registry_digest"],
             )
-            self.assertEqual(2, summary["source_count"])
+            self.assertEqual(3, summary["source_count"])
             self.assertGreater(summary["release_count"], 40)
             self.assertGreater(summary["artifact_count"], summary["release_count"])
             self.assertGreater(summary["section_count"], 3000)
             self.assertEqual(1, summary["implementation_count"])
             self.assertGreater(summary["evidence_count"], 10)
-            self.assertEqual(30, summary["contract_family_count"])
-            self.assertEqual(31, summary["contract_release_count"])
-            self.assertEqual(31, summary["contract_rule_count"])
+            self.assertEqual(58, summary["contract_family_count"])
+            self.assertEqual(59, summary["contract_release_count"])
+            self.assertEqual(59, summary["contract_rule_count"])
             self.assertGreater(summary["finding_count"], 0)
             self.assertEqual(
                 {"protocol_identity_collision"},
@@ -59,12 +59,17 @@ class ProtocolKnowledgeRegistryTests(unittest.TestCase):
             )
             release = registry.get_release("current", "CF-FARP", "1.1")
             self.assertIsNotNone(release)
-            self.assertEqual("current", release["lifecycle"])
+            self.assertEqual("archived", release["lifecycle"])
             self.assertIsNotNone(
                 registry.get_release("temp-runtime", "CF-FARP", "1.1")
             )
+            self.assertEqual(
+                "active",
+                registry.get_release("unified", "CF-AUTHORING", "1.0.0")["lifecycle"],
+            )
             self.assertTrue(registry.search("CartridgeFlow", source_id="current"))
             self.assertTrue(registry.search("CartridgeFlow", source_id="temp-runtime"))
+            self.assertTrue(registry.search("Flow", source_id="unified"))
             governed_config_paths = {
                 row["artifact_path"]
                 for row in registry.connection.execute(
@@ -100,6 +105,16 @@ class ProtocolKnowledgeRegistryTests(unittest.TestCase):
             self.assertEqual(
                 (2, "意图与能力", "1.0.0", "json_schema", "CF-FARP", "1.1", 2),
                 tuple(settings_contract),
+            )
+            unified_settings = registry.connection.execute(
+                "SELECT layer, domain, version, lifecycle, generation, definition_kind, "
+                "owner_protocol_id, owner_protocol_version, example_count "
+                "FROM data_contract_overview "
+                "WHERE contract_id = 'cartridgeflow.authoring.settings'"
+            ).fetchone()
+            self.assertEqual(
+                (2, "展示与设置", "1.0.0", "active", "next", "json_schema", "CF-AUTHORING", "1.0.0", 2),
+                tuple(unified_settings),
             )
             self.assertGreater(
                 registry.connection.execute(

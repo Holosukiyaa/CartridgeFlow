@@ -24,7 +24,7 @@
         <dl class="contract-facts">
             <dt>负责方</dt><dd>{{ contract.owner }}</dd>
             <dt>用途</dt><dd>{{ contract.purpose }}</dd>
-            <dt>状态</dt><dd>现行旧体系 · 等待新合同替代</dd>
+            <dt>状态</dt><dd>{{ contract.status_label }}</dd>
             <dt>可见性</dt><dd>{{ {'public': '公开', 'internal': '内部', 'mixed': '混合'}[contract.visibility] }}</dd>
             <dt>定义来源</dt><dd>{{ contract.source_id }} / {{ contract.owner_protocol_id }}@{{ contract.owner_protocol_version }} / {{ contract.definition_path }}{% if contract.definition_heading %} / {{ contract.definition_heading }}{% endif %}</dd>
             <dt>兼容策略</dt><dd>{{ contract.compatibility_policy }}</dd>

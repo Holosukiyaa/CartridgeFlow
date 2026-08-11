@@ -13,12 +13,18 @@ from datasette_render_markdown import render_markdown
 
 
 FOUR_MAJOR_LAYERS = (
-    {"number": "01", "label": "基础与边界"},
+    {"number": "01", "label": "治理与基座"},
     {"number": "02", "label": "创作与数据"},
     {"number": "03", "label": "发行与信任"},
-    {"number": "04", "label": "运行与证明"},
+    {"number": "04", "label": "运行与交付"},
 )
-SOURCE_LABELS = {"current": "正式线", "temp-runtime": "演进线"}
+SOURCE_LABELS = {"unified": "统一协议", "current": "正式线档案", "temp-runtime": "演进线档案"}
+UNIFIED_PROTOCOL_ORDER = {
+    "CF-FOUNDATION": 1,
+    "CF-AUTHORING": 2,
+    "CF-DISTRIBUTION": 3,
+    "CF-RUNTIME": 4,
+}
 VERSION_RE = re.compile(r"\d+")
 DOCUMENT_PRIORITY = ("readme.md", "overview.md", "specification.md")
 
@@ -79,6 +85,7 @@ async def _contract_tree(database, active_id: str | None, active_version: str | 
         "family.domain_order, family.sort_order, release.version "
         "FROM data_contract_family AS family "
         "JOIN data_contract_release AS release ON release.contract_id = family.contract_id "
+        "WHERE release.lifecycle = 'active' "
         "ORDER BY family.layer, family.domain_order, family.domain, family.sort_order, "
         "family.contract_id, release.version",
     )
@@ -136,7 +143,7 @@ async def _protocol_tree(
 ) -> list[dict]:
     releases = await _rows(
         database,
-        "SELECT source_id, protocol_id, version FROM protocol_release "
+        "SELECT source_id, protocol_id, version FROM protocol_release WHERE lifecycle = 'active' "
         "ORDER BY source_id, protocol_id, version",
     )
     artifacts = await _rows(
@@ -145,6 +152,7 @@ async def _protocol_tree(
         "artifact.artifact_path FROM artifact "
         "JOIN protocol_release AS release ON release.release_key = artifact.release_key "
         "WHERE artifact.text_content IS NOT NULL "
+        "AND artifact.artifact_kind IN ('release', 'specification') "
         "ORDER BY release.source_id, release.protocol_id, release.version, artifact.artifact_path",
     )
     documents: dict[tuple[str, str, str], list[str]] = defaultdict(list)
@@ -175,9 +183,14 @@ async def _protocol_tree(
             }
         )
     sources = []
-    for source_id in ("current", "temp-runtime"):
+    for source_id in ("unified", "current", "temp-runtime"):
+        if not grouped[source_id]:
+            continue
         protocols = []
-        for protocol_id, versions in sorted(grouped[source_id].items()):
+        for protocol_id, versions in sorted(
+            grouped[source_id].items(),
+            key=lambda item: (UNIFIED_PROTOCOL_ORDER.get(item[0], 99), item[0]),
+        ):
             versions.sort(key=lambda item: _version_key(item["version"]), reverse=True)
             protocols.append(
                 {
@@ -227,7 +240,9 @@ async def protocol_index(request, datasette):
         database,
         "SELECT release.contract_id, release.version FROM data_contract_release AS release "
         "JOIN data_contract_family AS family ON family.contract_id = release.contract_id "
-        "ORDER BY family.layer, family.domain_order, family.sort_order, release.version LIMIT 1",
+        "WHERE release.lifecycle = 'active' "
+        "ORDER BY CASE release.generation WHEN 'next' THEN 0 ELSE 1 END, "
+        "family.layer, family.domain_order, family.sort_order, release.version LIMIT 1",
     )
     if row:
         return Response.redirect(
@@ -270,6 +285,11 @@ async def contract_detail(request, datasette):
     selected["definition_is_json"] = is_json
     selected["definition_rendered"] = (
         None if is_json else render_markdown(definition_text, extensions=["tables", "fenced_code"])
+    )
+    selected["status_label"] = (
+        "统一协议 · 活动合同"
+        if selected["generation"] == "next" and selected["lifecycle"] == "active"
+        else "旧协议档案"
     )
     rules = await _rows(
         database,

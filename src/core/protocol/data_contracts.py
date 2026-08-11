@@ -388,27 +388,82 @@ def build_runtime_profile_compatibility_report(
         "findings": [],
     }
     runtime = manifest.get("runtime_contract") if isinstance(manifest.get("runtime_contract"), dict) else {}
-    if "target_runtimes" not in runtime:
-        if require_target:
-            _runtime_finding(report, "cre_runtime_target_missing", "runtime_contract.target_runtimes must declare the selected Host profile", "payload/manifest.json.runtime_contract.target_runtimes")
-        return report
-    targets = runtime.get("target_runtimes")
-    try:
-        validate_data_contract_instance(
-            "cartridgeflow.runtime.target",
-            "1.0.0",
-            targets,
-            root=root,
-            registry_path=registry_path,
+    has_unified_target = "target" in runtime
+    has_legacy_targets = "target_runtimes" in runtime
+    if has_unified_target and has_legacy_targets:
+        _runtime_finding(
+            report,
+            "cre_runtime_target_invalid",
+            "runtime_contract must declare either target or target_runtimes, not both",
+            "payload/manifest.json.runtime_contract",
         )
-    except DataContractError as exc:
-        _runtime_finding(report, "cre_runtime_target_invalid", str(exc), "payload/manifest.json.runtime_contract.target_runtimes")
         return report
-    expected = {"id": str(profile.get("id") or ""), "version": str(profile.get("version") or "")}
-    if expected not in targets:
-        _runtime_finding(report, "cre_runtime_target_unknown", f"cartridge does not target {expected['id']}@{expected['version']}", "payload/manifest.json.runtime_contract.target_runtimes")
+    if has_unified_target:
+        target = runtime.get("target")
+        try:
+            validate_data_contract_instance(
+                "cartridgeflow.host.target",
+                "1.0.0",
+                target,
+                root=root,
+                registry_path=registry_path,
+            )
+        except DataContractError as exc:
+            _runtime_finding(
+                report,
+                "cre_runtime_target_invalid",
+                str(exc),
+                "payload/manifest.json.runtime_contract.target",
+            )
+            return report
+        expected_protocol = "CF-RUNTIME@1.0.0"
+        if target.get("protocol") != expected_protocol:
+            _runtime_finding(
+                report,
+                "cre_runtime_target_unknown",
+                f"cartridge does not target {expected_protocol}",
+                "payload/manifest.json.runtime_contract.target.protocol",
+            )
+            return report
+        unsupported_target_types = sorted(
+            set(target.get("state_types") or []) - set(profile.get("state_types") or [])
+        )
+        if unsupported_target_types:
+            _runtime_finding(
+                report,
+                "cre_runtime_state_type_unsupported",
+                f"runtime target requires unsupported state types: {unsupported_target_types}",
+                "payload/manifest.json.runtime_contract.target.state_types",
+            )
+        expected = {"id": "CF-RUNTIME", "version": "1.0.0"}
+        report["target"] = expected
+    elif not has_legacy_targets:
+        if require_target:
+            _runtime_finding(
+                report,
+                "cre_runtime_target_missing",
+                "runtime_contract must declare target or target_runtimes",
+                "payload/manifest.json.runtime_contract",
+            )
         return report
-    report["target"] = expected
+    else:
+        targets = runtime.get("target_runtimes")
+        try:
+            validate_data_contract_instance(
+                "cartridgeflow.runtime.target",
+                "1.0.0",
+                targets,
+                root=root,
+                registry_path=registry_path,
+            )
+        except DataContractError as exc:
+            _runtime_finding(report, "cre_runtime_target_invalid", str(exc), "payload/manifest.json.runtime_contract.target_runtimes")
+            return report
+        expected = {"id": str(profile.get("id") or ""), "version": str(profile.get("version") or "")}
+        if expected not in targets:
+            _runtime_finding(report, "cre_runtime_target_unknown", f"cartridge does not target {expected['id']}@{expected['version']}", "payload/manifest.json.runtime_contract.target_runtimes")
+            return report
+        report["target"] = expected
 
     flow_protocol = flow.get("protocol") if isinstance(flow.get("protocol"), dict) else {}
     protocol_id = str(flow_protocol.get("id") or runtime.get("protocol") or "")
@@ -419,6 +474,7 @@ def build_runtime_profile_compatibility_report(
         if isinstance(item, dict)
         for version in item.get("versions") or []
     }
+    supported_protocols.add(("CF-AUTHORING", "1.0.0"))
     if (protocol_id, protocol_version) not in supported_protocols:
         _runtime_finding(report, "cre_runtime_flow_protocol_unsupported", f"{expected['id']}@{expected['version']} does not support {protocol_id}@{protocol_version}", "payload/root.flow.json.protocol")
 

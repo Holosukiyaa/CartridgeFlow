@@ -39,6 +39,22 @@ from .data_contracts import (
     validate_cartridge_presentation_contracts,
     validate_cartridge_settings_values,
 )
+from .unified_protocol import (
+    LEGACY_TO_UNIFIED,
+    UNIFIED_CONTRACT_IDS,
+    UNIFIED_GENERATION,
+    UNIFIED_LAYER_CONTRACTS,
+    UNIFIED_PROTOCOLS,
+    UnifiedProtocolAdapter,
+    assert_base_supports_unified_protocol,
+    build_foundation_compatibility_contract,
+    build_foundation_implementation_contract,
+    build_host_compatibility_contract,
+    build_unified_protocol_support_report,
+    migrate_legacy_contract,
+    resolve_unified_protocol_adapter,
+    validate_unified_contract,
+)
 
 __all__ = [
     "BaseManifestError",
@@ -113,4 +129,18 @@ __all__ = [
     "supports_subprotocol_release",
     "assert_base_supports_data_contracts",
     "resolve_protocol_registry",
+    "LEGACY_TO_UNIFIED",
+    "UNIFIED_CONTRACT_IDS",
+    "UNIFIED_GENERATION",
+    "UNIFIED_LAYER_CONTRACTS",
+    "UNIFIED_PROTOCOLS",
+    "UnifiedProtocolAdapter",
+    "assert_base_supports_unified_protocol",
+    "build_foundation_compatibility_contract",
+    "build_foundation_implementation_contract",
+    "build_host_compatibility_contract",
+    "build_unified_protocol_support_report",
+    "migrate_legacy_contract",
+    "resolve_unified_protocol_adapter",
+    "validate_unified_contract",
 ]

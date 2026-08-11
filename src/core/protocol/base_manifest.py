@@ -43,6 +43,42 @@ def validate_base_implementation(data: dict) -> None:
             raise BaseManifestError("base.base_contract.id is required")
         if not isinstance(base_contract.get("version"), str) or not base_contract.get("version").strip():
             raise BaseManifestError("base.base_contract.version is required")
+    generation = data.get("protocol_generation")
+    if data.get("schema_version") == "0.3":
+        if not isinstance(generation, dict):
+            raise BaseManifestError("base.protocol_generation is required")
+        if generation.get("id") != "unified-v1" or generation.get("source_id") != "unified":
+            raise BaseManifestError(
+                "base.protocol_generation must select unified-v1 from source unified"
+            )
+        layers = generation.get("layers")
+        if not isinstance(layers, list) or len(layers) != 4:
+            raise BaseManifestError("base.protocol_generation.layers must contain four layers")
+        expected_layers = {
+            1: ("CF-FOUNDATION", "1.0.0", "cf.foundation.v1"),
+            2: ("CF-AUTHORING", "1.0.0", "cf.authoring.v1"),
+            3: ("CF-DISTRIBUTION", "1.0.0", "cf.distribution.v1"),
+            4: ("CF-RUNTIME", "1.0.0", "cf.runtime.v1"),
+        }
+        actual_layers: dict[int, tuple[str, str, str]] = {}
+        for index, layer in enumerate(layers):
+            if not isinstance(layer, dict) or not isinstance(layer.get("layer"), int):
+                raise BaseManifestError(
+                    f"base.protocol_generation.layers[{index}] must declare an integer layer"
+                )
+            number = layer["layer"]
+            identity = (
+                str(layer.get("id") or ""),
+                str(layer.get("version") or ""),
+                str(layer.get("runtime_adapter") or ""),
+            )
+            if number in actual_layers:
+                raise BaseManifestError(f"base.protocol_generation duplicates layer {number}")
+            actual_layers[number] = identity
+        if actual_layers != expected_layers:
+            raise BaseManifestError(
+                "base.protocol_generation.layers does not match the unified-v1 architecture"
+            )
     supported_base_contracts = data.get("supported_base_contracts", [])
     if data.get("schema_version") == "0.3" and not isinstance(supported_base_contracts, list):
         raise BaseManifestError("base.supported_base_contracts must be an array")

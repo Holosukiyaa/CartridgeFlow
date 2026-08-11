@@ -26,6 +26,10 @@ class CreatorPackageProtocolV16Tests(unittest.TestCase):
         supported = {(item["id"], item["version"]) for item in load_base_implementation(ROOT)["supported_protocols"]}
         self.assertIn(("CF-FARP", "1.6"), supported)
 
+    @unittest.skipIf(
+        load_base_implementation(ROOT)["protocol_generation"]["id"] == "clean-v1",
+        "CF-FARP@1.6 source snapshots are historical after the clean-v1 cutover",
+    )
     def test_release_snapshots_define_one_atomic_package_boundary(self):
         release_dir = "flow-authoring/1.6"
         registry = load_protocol_artifact_json(f"{release_dir}/release.json")

@@ -16,6 +16,10 @@ ROOT = Path(__file__).resolve().parents[3]
 DOCUMENT = "protocol/flow-authoring/0.8/specification.md"
 
 
+@unittest.skipIf(
+    load_base_implementation(ROOT)["protocol_generation"]["id"] == "clean-v1",
+    "CF-FARP@0.8 source snapshots are historical after the clean-v1 cutover",
+)
 class ProtocolV08SpecificationTests(unittest.TestCase):
     def test_registry_and_base_publish_v08_support(self):
         registry_data = load_protocol_artifact_json("flow-authoring/0.8/release.json")

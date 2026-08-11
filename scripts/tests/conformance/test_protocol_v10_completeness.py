@@ -3,7 +3,11 @@ import re
 import unittest
 from pathlib import Path
 
-from core.protocol import load_protocol_artifact_json, load_protocol_artifact_text
+from core.protocol import (
+    load_base_implementation,
+    load_protocol_artifact_json,
+    load_protocol_artifact_text,
+)
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -16,11 +20,19 @@ def vocabulary(version: str, field: str) -> list[dict]:
 
 
 class ProtocolV10CompletenessTests(unittest.TestCase):
+    @unittest.skipIf(
+        load_base_implementation(ROOT)["protocol_generation"]["id"] == "clean-v1",
+        "CF-FARP@1.0 source snapshots are historical after the clean-v1 cutover",
+    )
     def test_v10_profiles_are_declared_by_this_release(self):
         current = {item["id"] for item in vocabulary("1.0", "profiles")}
 
         self.assertTrue({"runtime_core", "flow_analysis", "tool_transparency"}.issubset(current))
 
+    @unittest.skipIf(
+        load_base_implementation(ROOT)["protocol_generation"]["id"] == "clean-v1",
+        "CF-FARP@1.0 source snapshots are historical after the clean-v1 cutover",
+    )
     def test_v10_capabilities_are_declared_by_this_release(self):
         current = {item["id"] for item in vocabulary("1.0", "capabilities")}
         required_v10 = {
@@ -45,6 +57,10 @@ class ProtocolV10CompletenessTests(unittest.TestCase):
 
         self.assertFalse(required_v10 - current)
 
+    @unittest.skipIf(
+        load_base_implementation(ROOT)["protocol_generation"]["id"] == "clean-v1",
+        "CF-FARP@1.0 source snapshots are historical after the clean-v1 cutover",
+    )
     def test_every_base_declared_v10_capability_has_evidence(self):
         base = json.loads((ROOT / "config/base/BASE_IMPLEMENTATION.json").read_text(encoding="utf-8"))
         evidence = json.loads((ROOT / "config/base/capability_evidence.json").read_text(encoding="utf-8"))
@@ -59,6 +75,10 @@ class ProtocolV10CompletenessTests(unittest.TestCase):
             self.assertIsInstance(record, dict, capability)
             self.assertTrue(record.get("implementation"), capability)
 
+    @unittest.skipIf(
+        load_base_implementation(ROOT)["protocol_generation"]["id"] == "clean-v1",
+        "CF-FARP@1.0 source snapshots are historical after the clean-v1 cutover",
+    )
     def test_v10_documentation_is_modular_and_self_contained(self):
         document = load_protocol_artifact_text(DOCUMENT)
         modules = {

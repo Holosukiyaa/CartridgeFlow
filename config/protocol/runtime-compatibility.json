@@ -1,0 +1,1078 @@
+{
+  "schema": "cartridgeflow.runtime_protocol_catalog.v1",
+  "release_manifest": {
+    "schema": "cartridgeflow.runtime_protocol_release_manifest.v1",
+    "base_contract": {
+      "id": "CARTRIDGEFLOW-BASE",
+      "version": "0.3"
+    },
+    "default_for_new_flows": {
+      "id": "CF-FARP",
+      "version": "1.1"
+    },
+    "releases": [
+      {
+        "id": "CF-FARP",
+        "version": "0.1",
+        "lifecycle": "recognized_legacy",
+        "migration_target": {
+          "id": "CF-FARP",
+          "version": "0.6"
+        }
+      },
+      {
+        "id": "CF-FARP",
+        "version": "0.2",
+        "lifecycle": "recognized_legacy",
+        "migration_target": {
+          "id": "CF-FARP",
+          "version": "0.6"
+        }
+      },
+      {
+        "id": "CF-FARP",
+        "version": "0.3",
+        "lifecycle": "recognized_legacy",
+        "migration_target": {
+          "id": "CF-FARP",
+          "version": "0.6"
+        }
+      },
+      {
+        "id": "CF-FARP",
+        "version": "0.4",
+        "lifecycle": "recognized_legacy",
+        "migration_target": {
+          "id": "CF-FARP",
+          "version": "0.6"
+        }
+      },
+      {
+        "id": "CF-FARP",
+        "version": "0.5",
+        "lifecycle": "recognized_legacy",
+        "migration_target": {
+          "id": "CF-FARP",
+          "version": "0.6"
+        }
+      },
+      {
+        "id": "CF-FARP",
+        "version": "0.6",
+        "lifecycle": "supported_previous",
+        "runtime_adapter": "cf-farp.standard-flow.v06",
+        "features": [
+          "base_contract",
+          "portable_dlc"
+        ]
+      },
+      {
+        "id": "CF-FARP",
+        "version": "0.7",
+        "lifecycle": "supported_previous",
+        "runtime_adapter": "cf-farp.standard-flow.v07",
+        "features": [
+          "base_contract",
+          "portable_dlc",
+          "asset_registry",
+          "optional_dlc_backend"
+        ]
+      },
+      {
+        "id": "CF-FARP",
+        "version": "0.8",
+        "lifecycle": "supported_previous",
+        "runtime_adapter": "cf-farp.typed-control.v08",
+        "features": [
+          "base_contract",
+          "portable_dlc",
+          "asset_registry",
+          "typed_control_edges",
+          "flow_analysis"
+        ]
+      },
+      {
+        "id": "CF-FARP",
+        "version": "0.9",
+        "lifecycle": "supported_previous",
+        "migration_target": {
+          "id": "CF-FARP",
+          "version": "1.0"
+        },
+        "runtime_adapter": "cf-farp.typed-control.v09",
+        "features": [
+          "base_contract",
+          "portable_dlc",
+          "asset_registry",
+          "typed_control_edges",
+          "flow_analysis",
+          "tool_transparency",
+          "resource_catalog_v2",
+          "optional_dlc_backend"
+        ]
+      },
+      {
+        "id": "CF-FARP",
+        "version": "1.0",
+        "lifecycle": "supported_previous",
+        "status": "active",
+        "implementation_status": "supported",
+        "runtime_adapter": "cf-farp.execution-plan.v1",
+        "features": [
+          "base_contract",
+          "asset_registry",
+          "execution_plan",
+          "flow_analysis",
+          "portable_dlc",
+          "tool_transparency"
+        ]
+      },
+      {
+        "id": "CF-FARP",
+        "version": "1.1",
+        "lifecycle": "current",
+        "status": "active",
+        "implementation_status": "supported",
+        "runtime_adapter": "cf-farp.execution-plan.v1",
+        "features": [
+          "base_contract",
+          "asset_registry",
+          "execution_plan",
+          "flow_analysis",
+          "portable_dlc",
+          "tool_transparency",
+          "trusted_tuning_subprotocol",
+          "recipe_versioning"
+        ],
+        "trusted_subprotocols": [
+          {
+            "id": "CF-TUNING",
+            "version": "1.0",
+            "binding": "authoring_tuning",
+            "required": true
+          }
+        ]
+      },
+      {
+        "id": "CF-FARP",
+        "version": "1.2",
+        "lifecycle": "supported_previous",
+        "status": "active",
+        "implementation_status": "supported",
+        "runtime_adapter": "cf-farp.execution-plan.v1",
+        "features": [
+          "base_contract",
+          "asset_registry",
+          "execution_plan",
+          "flow_analysis",
+          "portable_dlc",
+          "tool_transparency",
+          "trusted_tuning_subprotocol",
+          "recipe_versioning",
+          "ai_authoring_contract"
+        ],
+        "trusted_subprotocols": [
+          {
+            "id": "CF-TUNING",
+            "version": "1.1",
+            "binding": "ai_authoring_contract",
+            "required": true
+          }
+        ]
+      },
+      {
+        "id": "CF-FARP",
+        "version": "1.3",
+        "lifecycle": "supported_previous",
+        "status": "active",
+        "implementation_status": "supported",
+        "runtime_adapter": "cf-farp.execution-plan.v1",
+        "features": [
+          "base_contract",
+          "asset_registry",
+          "execution_plan",
+          "flow_analysis",
+          "portable_dlc",
+          "tool_transparency",
+          "trusted_tuning_subprotocol",
+          "recipe_versioning",
+          "ai_authoring_contract",
+          "creator_service_contract"
+        ],
+        "trusted_subprotocols": [
+          {
+            "id": "CF-TUNING",
+            "version": "1.2",
+            "binding": "creator_service_contract",
+            "required": true
+          }
+        ]
+      },
+      {
+        "id": "CF-FARP",
+        "version": "1.4",
+        "lifecycle": "supported_previous",
+        "status": "active",
+        "implementation_status": "supported",
+        "runtime_adapter": "cf-farp.template-mapping.v1",
+        "features": [
+          "base_contract",
+          "asset_registry",
+          "execution_plan",
+          "flow_analysis",
+          "portable_dlc",
+          "tool_transparency",
+          "trusted_tuning_subprotocol",
+          "recipe_versioning",
+          "creator_template_mapping"
+        ],
+        "trusted_subprotocols": [
+          {
+            "id": "CF-TUNING",
+            "version": "1.3",
+            "binding": "creator_template_mapping",
+            "required": true
+          }
+        ]
+      },
+      {
+        "id": "CF-FARP",
+        "version": "1.5",
+        "lifecycle": "supported_previous",
+        "status": "active",
+        "implementation_status": "supported",
+        "runtime_adapter": "cf-farp.trusted-node-mapping.v1",
+        "features": [
+          "base_contract",
+          "asset_registry",
+          "execution_plan",
+          "flow_analysis",
+          "portable_dlc",
+          "tool_transparency",
+          "trusted_tuning_subprotocol",
+          "recipe_versioning",
+          "trusted_node_dynamic_recipe",
+          "developer_materialization_confirmation"
+        ],
+        "trusted_subprotocols": [
+          {
+            "id": "CF-TUNING",
+            "version": "1.4",
+            "binding": "trusted_node_dynamic_recipe",
+            "required": true
+          }
+        ]
+      },
+      {
+        "id": "CF-FARP",
+        "version": "1.6",
+        "lifecycle": "supported_previous",
+        "status": "active",
+        "implementation_status": "supported",
+        "runtime_adapter": "cf-farp.execution-plan.v1",
+        "features": [
+          "base_contract",
+          "asset_registry",
+          "execution_plan",
+          "flow_analysis",
+          "portable_dlc",
+          "tool_transparency",
+          "trusted_node_package_boundary",
+          "atomic_signed_package"
+        ]
+      },
+      {
+        "id": "CF-FARP",
+        "version": "1.7",
+        "lifecycle": "supported_previous",
+        "status": "active",
+        "implementation_status": "supported",
+        "runtime_adapter": "cf-farp.execution-plan.v1",
+        "features": [
+          "base_contract",
+          "asset_registry",
+          "execution_plan",
+          "flow_analysis",
+          "portable_dlc",
+          "optional_dlc_backend",
+          "tool_transparency",
+          "recursive_capability_materialization",
+          "capability_dependency_provenance",
+          "atomic_signed_package"
+        ],
+        "trusted_subprotocols": [
+          {
+            "id": "CF-TUNING",
+            "version": "1.5",
+            "binding": "recursive_capability_materialization",
+            "required": true
+          }
+        ]
+      }
+    ],
+    "release_envelopes": {
+      "default_for_new_releases": {
+        "id": "CF-CRE",
+        "version": "1"
+      },
+      "releases": [
+        {
+          "id": "CF-CRE",
+          "version": "1",
+          "lifecycle": "active",
+          "implementation_status": "supported",
+          "runtime_adapter": "cf-cre.release-envelope.v1",
+          "features": [
+            "release_archive",
+            "signature_verification",
+            "trusted_install",
+            "activation",
+            "runtime_handoff"
+          ]
+        }
+      ]
+    }
+  },
+  "vocabularies": {
+    "profiles": [
+      "ai_recipe_authoring",
+      "authoring_compile_handoff",
+      "capability_dependency_provenance",
+      "capability_namespace_expansion",
+      "creator_capability_gaps",
+      "creator_package_boundary",
+      "creator_template_mapping",
+      "dev_authoring",
+      "dynamic_creator_recipes",
+      "dynamic_decision_runtime",
+      "execution_plan_runtime",
+      "flow_analysis",
+      "interaction_runtime",
+      "interactive_decision_runtime",
+      "node_scoped_authoring",
+      "portable_dlc_runtime",
+      "production_runtime",
+      "recipe_release_runtime",
+      "recursive_capability_package_boundary",
+      "release_envelope_runtime",
+      "release_envelope_validation",
+      "runtime_core",
+      "shelf_runner",
+      "testbench_core",
+      "tool_transparency",
+      "trusted_mapping_snapshot",
+      "trusted_node_recipe_mapping",
+      "trusted_node_registry",
+      "tuning_authoring"
+    ],
+    "capabilities": [
+      "ai_change_set_review_v1",
+      "analysis_report_freshness_guard",
+      "artifact_collect",
+      "artifact_invalidation",
+      "artifact_preview",
+      "artifact_provenance",
+      "artifact_revision",
+      "authoring_api_contract",
+      "authoring_model_scope_isolation",
+      "basic_node_execution",
+      "branch_data_availability_analysis",
+      "builtin_tool_call",
+      "capability_dependency_cycle_guard_v1",
+      "capability_dependency_provenance_v1",
+      "capability_namespace_expansion_v1",
+      "capability_package_file_namespace_v1",
+      "capability_public_io_binding_v1",
+      "capability_trust_scope_guard_v1",
+      "cartridge_portability_report",
+      "cartridge_protocol_overlay",
+      "cartridge_scoped_tool_registry",
+      "checkpoint_persistence",
+      "compatibility_report",
+      "compound_tool_operation_graph",
+      "creator_atomic_package_boundary_v1",
+      "creator_capability_gap_v1",
+      "creator_generation_readiness_v1",
+      "creator_node_scoped_changes_v1",
+      "creator_reviewed_semantic_changes_v1",
+      "creator_safe_projection_v1",
+      "creator_source_safety_v1",
+      "data_chain_diagnostics",
+      "dataflow_static_analysis",
+      "decision_consume_contract",
+      "decision_consume_projection",
+      "decision_envelope_v1",
+      "decision_envelope_validate",
+      "decision_process",
+      "delivery_primary_output_guard",
+      "delivery_readiness_check",
+      "derived_engineering_relations",
+      "deterministic_compile_reference_v1",
+      "developer_materialization_confirmation_v1",
+      "developer_recipe_template_v1",
+      "dlc_absence_verification",
+      "dlc_activation_lifecycle",
+      "dlc_artifact_retention_policy",
+      "dlc_integrity_hash",
+      "dlc_resource_ownership",
+      "dlc_uninstall_cleanup",
+      "dlc_worker_json_rpc",
+      "dynamic_creator_recipe_v1",
+      "executable_topology_filter",
+      "execution_plan_batch_contract",
+      "execution_plan_cancellation",
+      "execution_plan_compile",
+      "execution_plan_failure_contract",
+      "execution_plan_fork_contract",
+      "execution_plan_join_all_contract",
+      "execution_plan_join_any_contract",
+      "execution_plan_join_keyed_contract",
+      "execution_plan_join_runtime",
+      "execution_plan_loop_contract",
+      "execution_plan_sequence_contract",
+      "execution_plan_source_digest_guard",
+      "execution_plan_static_conformance",
+      "execution_plan_token_ledger",
+      "execution_plan_v1_authoring",
+      "execution_plan_wait_contract",
+      "execution_plan_wait_resume",
+      "explicit_fallback_policy",
+      "explicit_input_binding",
+      "explicit_node_model_binding",
+      "fallback_visibility_contract",
+      "finding_contract_v1",
+      "flow_analysis_report_v1",
+      "flow_analysis_target_gates",
+      "flow_resource_catalog_v1",
+      "flow_source_digest",
+      "frontend_dlc_sandbox",
+      "gate_process",
+      "host_capability_broker",
+      "interaction_component_registry",
+      "interaction_host_capability_guard",
+      "interaction_host_channel",
+      "interaction_named_action_routes",
+      "interaction_network_guard",
+      "interaction_node",
+      "interaction_process_isolation",
+      "interaction_script_csp",
+      "isolated_dlc_worker",
+      "llm_live_mode",
+      "llm_mock_mode",
+      "llm_offline_fallback",
+      "local_resource_binding",
+      "manifest_load",
+      "manifest_validate",
+      "mapped_creator_compile_candidate_v1",
+      "mcp_execute_process",
+      "mcp_graph_authoring_operations",
+      "mcp_node_file_identity",
+      "mcp_node_source_format_v1",
+      "mcp_read_process",
+      "mcp_source_digest_guard",
+      "mcp_source_model_v1",
+      "mcp_source_static_parse",
+      "model_recipe_binding",
+      "multi_input_node",
+      "node_display_name",
+      "node_resource_binding_preflight",
+      "normalized_topology_projection",
+      "opaque_tool_visibility_guard",
+      "optional_input",
+      "package_asset_registry",
+      "package_owned_code",
+      "passive_html_safety",
+      "paused_waiting_user_status",
+      "pending_interaction_record",
+      "pending_interaction_record_v2",
+      "policy_static_analysis",
+      "portable_dlc_descriptor",
+      "portable_dlc_descriptor_v3",
+      "portable_dlc_validate",
+      "probe_run",
+      "process_effect_contract",
+      "process_executor_contract",
+      "process_mcp_readonly_binding",
+      "process_node_kind_parse",
+      "progressive_freeze_snapshot_v1",
+      "protocol_display_mapping",
+      "recipe_blueprint_immutable_v1",
+      "recipe_instance_revision_v1",
+      "recipe_node_binding_v1",
+      "recipe_release_activate",
+      "recipe_release_rollback",
+      "recipe_release_snapshot_v1",
+      "recursive_capability_materialization_v1",
+      "release_envelope_activation_v1",
+      "release_envelope_archive_reader_v1",
+      "release_envelope_builder_v1",
+      "release_envelope_digest_validation_v1",
+      "release_envelope_hash_manifest_v1",
+      "release_envelope_parse_v1",
+      "release_envelope_path_safety_v1",
+      "release_envelope_public_contract_v1",
+      "release_envelope_signature_metadata_v1",
+      "release_envelope_signature_verify_v1",
+      "release_envelope_trust_store_v1",
+      "release_envelope_trusted_install_v1",
+      "remote_call_process",
+      "remote_tool_call",
+      "resource_dependency_analysis",
+      "resource_origin_tracking",
+      "resource_preflight",
+      "retrieval_process",
+      "root_flow_execution",
+      "run_recipe_provenance",
+      "runtime_checkpoint_resume",
+      "runtime_contract_parse",
+      "runtime_error_envelope_v1",
+      "runtime_input_node",
+      "runtime_restart",
+      "runtime_resume_after_user_input",
+      "runtime_retry_policy",
+      "runtime_rollback",
+      "runtime_state_machine",
+      "runtime_user_input_request",
+      "safe_autofix_contract",
+      "sandboxed_interaction_component",
+      "semantic_runtime_lineage_v1",
+      "side_effect_replay_guard",
+      "silent_model_fallback_guard",
+      "source_reference_redaction_v1",
+      "stable_asset_reference",
+      "structure_analysis",
+      "structured_io_contract",
+      "testbench_run",
+      "tool_plan_emit",
+      "tool_plan_tool_binding",
+      "tool_plan_validate",
+      "tool_resource_catalog_v2",
+      "tool_source_provenance",
+      "tool_stage_trace_v1",
+      "transfer_process",
+      "trusted_node_preset_v1",
+      "trusted_node_recipe_materialization_v1",
+      "trusted_node_registry_v1",
+      "trusted_subprotocol_registry",
+      "tuning_materialize",
+      "tuning_node_head",
+      "tuning_repository_v1",
+      "tuning_revision_validate",
+      "typed_control_edges",
+      "unified_process_node",
+      "worker_lifecycle_supervision"
+    ],
+    "tool_packs": [
+      "builtin.filesystem",
+      "builtin.media",
+      "remote.rss"
+    ]
+  },
+  "data_contracts": [
+    {
+      "id": "cartridgeflow.capability.settings",
+      "version": "1.0.0",
+      "definition_kind": "json_schema",
+      "definition": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "https://cartridgeflow.local/schemas/cartridge-settings.v1.schema.json",
+        "title": "CartridgeFlow Cartridge Settings Contract v1",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schema",
+          "storage_scope",
+          "fields"
+        ],
+        "properties": {
+          "schema": {
+            "const": "cartridgeflow.cartridge_settings.v1"
+          },
+          "storage_scope": {
+            "const": "cartridge"
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "label",
+                "type"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+                },
+                "label": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "description": {
+                  "type": "string"
+                },
+                "type": {
+                  "enum": [
+                    "string",
+                    "number",
+                    "integer",
+                    "boolean",
+                    "enum",
+                    "file",
+                    "object",
+                    "array"
+                  ]
+                },
+                "required": {
+                  "type": "boolean"
+                },
+                "sensitive": {
+                  "type": "boolean"
+                },
+                "requires_restart": {
+                  "type": "boolean"
+                },
+                "default": {},
+                "options": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "value",
+                      "label"
+                    ],
+                    "properties": {
+                      "value": {
+                        "type": [
+                          "string",
+                          "number"
+                        ]
+                      },
+                      "label": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    }
+                  }
+                },
+                "validation": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "minimum": {
+                      "type": "number"
+                    },
+                    "maximum": {
+                      "type": "number"
+                    },
+                    "min_length": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "max_length": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "pattern": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "examples": {
+        "invalid": {
+          "schema": "cartridgeflow.cartridge_settings.v1",
+          "storage_scope": "cartridge",
+          "fields": [
+            {
+              "id": "internal_prompt",
+              "label": "系统提示词",
+              "type": "string",
+              "node_id": "generate_brief",
+              "system_prompt": "不得出现在公开设置合同中"
+            }
+          ]
+        },
+        "valid": {
+          "schema": "cartridgeflow.cartridge_settings.v1",
+          "storage_scope": "cartridge",
+          "fields": [
+            {
+              "id": "brief_length",
+              "label": "简报长度",
+              "description": "控制最终简报的详细程度。",
+              "type": "enum",
+              "default": "normal",
+              "options": [
+                {
+                  "value": "short",
+                  "label": "精简"
+                },
+                {
+                  "value": "normal",
+                  "label": "标准"
+                },
+                {
+                  "value": "long",
+                  "label": "详细"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "cartridgeflow.capability.settings-binding",
+      "version": "1.0.0",
+      "definition_kind": "json_schema",
+      "definition": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "https://cartridgeflow.local/schemas/cartridge-settings-bindings.v1.schema.json",
+        "title": "CartridgeFlow Cartridge Settings Bindings v1",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schema",
+          "bindings"
+        ],
+        "properties": {
+          "schema": {
+            "const": "cartridgeflow.cartridge_settings_bindings.v1"
+          },
+          "bindings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "setting_id",
+                "target"
+              ],
+              "properties": {
+                "setting_id": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+                },
+                "target": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "kind",
+                    "node_id",
+                    "param"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "const": "process_param"
+                    },
+                    "node_id": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+                    },
+                    "param": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "examples": {
+        "valid": {
+          "schema": "cartridgeflow.cartridge_settings_bindings.v1",
+          "bindings": [
+            {
+              "setting_id": "brief_length",
+              "target": {
+                "kind": "process_param",
+                "node_id": "generate_brief",
+                "param": "length"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "cartridgeflow.capability.ui",
+      "version": "1.0.0",
+      "definition_kind": "json_schema",
+      "definition": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "https://cartridgeflow.local/schemas/cartridge-ui.v1.schema.json",
+        "title": "CartridgeFlow Cartridge UI Contract v1",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schema",
+          "mode",
+          "host_capabilities"
+        ],
+        "properties": {
+          "schema": {
+            "const": "cartridgeflow.cartridge_ui.v1"
+          },
+          "mode": {
+            "enum": [
+              "none",
+              "passive",
+              "sandboxed"
+            ]
+          },
+          "component_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+          },
+          "host_capabilities": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "enum": [
+                "artifact.read",
+                "run.create",
+                "run.result.read",
+                "run.status.read",
+                "settings.read",
+                "settings.write"
+              ]
+            }
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "mode": {
+                  "const": "none"
+                }
+              }
+            },
+            "then": {
+              "not": {
+                "required": [
+                  "component_id"
+                ]
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "mode": {
+                  "enum": [
+                    "passive",
+                    "sandboxed"
+                  ]
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "component_id"
+              ]
+            }
+          }
+        ]
+      },
+      "examples": {
+        "valid": {
+          "schema": "cartridgeflow.cartridge_ui.v1",
+          "mode": "none",
+          "host_capabilities": []
+        }
+      }
+    },
+    {
+      "id": "cartridgeflow.host.compatibility",
+      "version": "1.0.0",
+      "definition_kind": "json_schema",
+      "definition": {
+        "type": "object",
+        "required": [
+          "schema",
+          "status",
+          "findings"
+        ],
+        "properties": {
+          "schema": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "findings": {
+            "type": "array",
+            "items": {}
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "urn:cartridgeflow.host.compatibility:1.0.0",
+        "title": "运行兼容性报告 1.0.0",
+        "description": "记录 runtime target 与 host profile 的确定比较结论。"
+      },
+      "examples": {
+        "invalid": {},
+        "valid": {
+          "schema": "cartridgeflow.host.compatibility.v1",
+          "status": "compatible",
+          "findings": []
+        }
+      }
+    },
+    {
+      "id": "cartridgeflow.host.target",
+      "version": "1.0.0",
+      "definition_kind": "json_schema",
+      "definition": {
+        "type": "object",
+        "required": [
+          "schema",
+          "protocol",
+          "state_types"
+        ],
+        "properties": {
+          "schema": {
+            "type": "string"
+          },
+          "protocol": {
+            "type": "string"
+          },
+          "state_types": {
+            "type": "array",
+            "items": {}
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "urn:cartridgeflow.host.target:1.0.0",
+        "title": "运行目标合同 1.0.0",
+        "description": "声明发行物要求的运行协议、状态类型和能力限制。"
+      },
+      "examples": {
+        "invalid": {},
+        "valid": {
+          "schema": "cartridgeflow.host.target.v1",
+          "protocol": "CF-RUNTIME@1.0.0",
+          "state_types": [
+            "process"
+          ]
+        }
+      }
+    },
+    {
+      "id": "cartridgeflow.runtime.host-profile",
+      "version": "1.0.0",
+      "definition_kind": "machine_contract",
+      "definition": {
+        "schema": "cartridgeflow.host_runtime_profile.v1",
+        "id": "CF-DRP",
+        "version": "1.0",
+        "host_id": "cartridgeflow.desktop-runner",
+        "release_envelopes": [
+          {
+            "id": "CF-CRE",
+            "versions": [
+              "1",
+              "2"
+            ]
+          }
+        ],
+        "flow_protocols": [
+          {
+            "id": "CF-FARP",
+            "versions": [
+              "1.0",
+              "1.1"
+            ]
+          }
+        ],
+        "ui_modes": [
+          "none",
+          "passive"
+        ],
+        "state_types": [
+          "control",
+          "system",
+          "terminal",
+          "process"
+        ],
+        "process_actions": [
+          "collect_inputs",
+          "llm_prompt",
+          "pass_result",
+          "confirm_checkpoint",
+          "tool_call"
+        ],
+        "edge_kinds": [
+          "sequence",
+          "failure"
+        ],
+        "binding_sources": [
+          "run_input",
+          "store",
+          "node_output",
+          "constant"
+        ],
+        "tool_transports": [
+          "cartridge_dlc",
+          "mcp",
+          "remote_api",
+          "plugin"
+        ],
+        "model_wire_apis": [
+          "chat_completions"
+        ],
+        "limits": {
+          "max_sequence_out_degree": 1,
+          "allow_cycles": false,
+          "allow_parallel": false
+        }
+      }
+    },
+    {
+      "id": "cartridgeflow.runtime.target",
+      "version": "1.0.0",
+      "definition_kind": "json_schema",
+      "definition": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "https://cartridgeflow.local/protocol/runtime-profiles/dr/1.0/target.schema.json",
+        "title": "CartridgeFlow runtime target declaration",
+        "type": "array",
+        "minItems": 1,
+        "uniqueItems": true,
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "version"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32
+            }
+          }
+        }
+      }
+    }
+  ]
+}

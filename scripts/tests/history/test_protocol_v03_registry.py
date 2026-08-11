@@ -11,6 +11,7 @@ from core.protocol import (
 
 
 ROOT = Path(__file__).resolve().parents[3]
+CLEAN_V1_ACTIVE = load_base_implementation(ROOT)["protocol_generation"]["id"] == "clean-v1"
 
 
 class ProtocolV03RegistryTest(unittest.TestCase):
@@ -28,11 +29,13 @@ class ProtocolV03RegistryTest(unittest.TestCase):
         }
         self.assertNotIn(("CF-FARP", "0.3"), supported)
 
+    @unittest.skipIf(CLEAN_V1_ACTIVE, "CF-FARP@0.3 source snapshot requires an explicit historical registry")
     def test_protocol_v03_document_path_exists(self):
         protocol = load_protocol_artifact_json("flow-authoring/0.3/release.json", ROOT)
         self.assertTrue(ProtocolArtifactStore(ROOT).exists(protocol["document"]), protocol["document"])
         self.assertEqual(protocol["supersedes"], {"id": "CF-FARP", "version": "0.2"})
 
+    @unittest.skipIf(CLEAN_V1_ACTIVE, "CF-FARP@0.3 source snapshot requires an explicit historical registry")
     def test_protocol_v03_documents_interactive_decision_model(self):
         protocol = load_protocol_artifact_json("flow-authoring/0.3/release.json", ROOT)
         text = load_protocol_artifact_text(protocol["document"], ROOT)
@@ -42,6 +45,7 @@ class ProtocolV03RegistryTest(unittest.TestCase):
         self.assertIn("paused_waiting_user", text)
         self.assertIn("runtime_resume_after_user_input", text)
 
+    @unittest.skipIf(CLEAN_V1_ACTIVE, "CF-FARP@0.3 source snapshot requires an explicit historical registry")
     def test_protocol_v03_capability_vocabulary_contains_interactive_decision_contract(self):
         capabilities = load_protocol_artifact_json("flow-authoring/0.3/capabilities.json", ROOT)
         ids = {

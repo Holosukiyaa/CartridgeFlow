@@ -11,6 +11,7 @@ from core.protocol import (
 
 
 ROOT = Path(__file__).resolve().parents[3]
+CLEAN_V1_ACTIVE = load_base_implementation(ROOT)["protocol_generation"]["id"] == "clean-v1"
 
 
 def v02_manifest():
@@ -103,6 +104,7 @@ class ProtocolHistoryCompatibilityTests(unittest.TestCase):
         self.assertFalse(report["ok"])
         self.assertIn("compatibility_blocked", [item["code"] for item in report["findings"]])
 
+    @unittest.skipIf(CLEAN_V1_ACTIVE, "CF-FARP@0.5 source snapshot requires an explicit historical registry")
     def test_v05_is_recognized_but_not_supported(self):
         protocol = load_protocol_artifact_json("flow-authoring/0.5/release.json", ROOT)
         registry = ProtocolRegistry(ROOT)

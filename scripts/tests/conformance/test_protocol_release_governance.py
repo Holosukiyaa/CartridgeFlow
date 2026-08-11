@@ -10,10 +10,39 @@ sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ROOT / "src"))
 
 from audit_protocol_governance import audit
-from core.protocol import ProtocolRegistry, load_protocol_release_catalog
+from core.protocol import (
+    ProtocolRegistry,
+    load_protocol_release_catalog,
+    load_runtime_protocol_catalog,
+)
 
 
 class ProtocolReleaseGovernanceTests(unittest.TestCase):
+    def test_runtime_compatibility_catalog_is_product_owned_and_minimal(self):
+        runtime = load_runtime_protocol_catalog(ROOT)
+        self.assertEqual(
+            {
+                "cartridgeflow.capability.settings",
+                "cartridgeflow.capability.settings-binding",
+                "cartridgeflow.capability.ui",
+                "cartridgeflow.host.compatibility",
+                "cartridgeflow.host.target",
+                "cartridgeflow.runtime.target",
+                "cartridgeflow.runtime.host-profile",
+            },
+            {item["id"] for item in runtime["data_contracts"]},
+        )
+        serialized_manifest = str(runtime["release_manifest"])
+        for governance_field in ("'registry':", "'document':"):
+            self.assertNotIn(governance_field, serialized_manifest)
+        bindings = {
+            (release["id"], release["version"]): tuple(
+                item["binding"] for item in release.get("trusted_subprotocols", [])
+            )
+            for release in runtime["release_manifest"]["releases"]
+        }
+        self.assertEqual(("creator_service_contract",), bindings[("CF-FARP", "1.3")])
+
     def test_release_catalog_drives_current_and_legacy_lifecycle(self):
         catalog = load_protocol_release_catalog(ROOT)
         self.assertEqual({"id": "CF-FARP", "version": "1.1"}, catalog.data["default_for_new_flows"])

@@ -1,36 +1,35 @@
 {
-  "schema": "cartridgeflow.product_protocol_registry_lock.v3",
+  "schema": "cartridgeflow.product_protocol_registry_lock.v4",
+  "generation": "clean-v1",
   "repository": {
     "url": "https://github.com/Holosukiyaa/cartridgeflow-protocols.git",
-    "commit": "f20decff6d6d8399844c45d91dec7b46a1f5d41b"
+    "commit": "fc083104fd35e4797155ea17cfbd5c50c1ccc5af"
   },
   "source_database": {
     "path": "protocol-source.sqlite",
-    "database_sha256": "36e4eb9a5e2b5e78bb80405cfd216e892c92bd48e0e057203c280e9297b124db",
-    "logical_digest": "9b5f81c2528885fbc8fe2764306a89b86328166ab3b9fa43da8f9fda9cba16c5"
+    "database_sha256": "f66e17dc3ed65f553b0ba2d1a34b7810a765cdbbcd93037ab5ea02537632ff77",
+    "logical_digest": "c58720a1d0c3ce74fcca8b12b1dafb8184bb5f9d9b507fbc373e95a5ac725276"
   },
-  "runtime_source_id": "current",
+  "runtime_source_id": "cartridgeflow-authoritative",
+  "runtime_catalog": {
+    "path": "config/protocol/runtime-compatibility.json",
+    "sha256": "a18ee6469b62b68b782ea84a362a7ad22921054009556451cb138c873dc4741d"
+  },
+  "base": {
+    "path": "config/base/BASE_IMPLEMENTATION.json",
+    "manifest_sha256": "2d387e8aa89125f8060a64711e0e746d3d3ec03c56b17cf16f74270b0711c73a"
+  },
   "sources": [
     {
-      "source_id": "current",
-      "manifest_digest": "bd395aa4c8945ceaf7f06905c96aa3384481fcd1c1eed817a2dec77bceaf0bda",
-      "source_digest": "907d881cd49887c7056c031498b1c0a29be46d13ddd59b818fc7b97fac2e0b18"
-    },
-    {
-      "source_id": "temp-runtime",
-      "manifest_digest": "06aecab166538d60eee2875ceca9d2357fd96832f63b6071352f530978499ca1",
-      "source_digest": "e0cc2e7cbe3523491ca544a87c3abfbdf26cd99fc12e1bc99f80aa95a94cfa59"
-    },
-    {
-      "source_id": "unified",
-      "manifest_digest": "f781fb633b96e82839c7f39e88b3d35ac08f5d679a4c15c2528f97682116f6db",
-      "source_digest": "528daa7f8a643891ff9ed70f41e25f408d0a319a501a237c686cde8067fb7f47"
+      "source_id": "cartridgeflow-authoritative",
+      "manifest_digest": "901579762c5f72b5d4ddb3446f8a72e823df5eb6cf06db26806048c199dbd2eb",
+      "source_digest": "14a0463fc734f46e4201faa3358fa9a79c83b0cb4718b642972d8fab7785368b"
     }
   ],
   "registry": {
-    "schema_version": "3",
-    "logical_digest": "bc11b2a858634dc3127952c3b3084a95002c164b08fbaf5992c19c211205471a",
-    "database_sha256": "1c3b127fe182832c9c4dbacab07fa8ab9c5a6b1c9f52ec7731db6a0afb77e230",
+    "schema_version": "4",
+    "logical_digest": "69c55b0b31dfbca93fcbfad85d7ca9eeffeb06eccbe5d25762bd2ccbd5f2a63a",
+    "database_sha256": "e08099b71b5792dc8fad3555f4414bee4eff2c0a86861ec3bc7ff125da81dc22",
     "path": "config/protocol/protocol-registry.sqlite"
   }
 }

@@ -11,6 +11,7 @@ from core.protocol import (
 
 
 ROOT = Path(__file__).resolve().parents[3]
+CLEAN_V1_ACTIVE = load_base_implementation(ROOT)["protocol_generation"]["id"] == "clean-v1"
 
 
 class ProtocolV04RegistryTest(unittest.TestCase):
@@ -28,11 +29,13 @@ class ProtocolV04RegistryTest(unittest.TestCase):
         }
         self.assertNotIn(("CF-FARP", "0.4"), supported)
 
+    @unittest.skipIf(CLEAN_V1_ACTIVE, "CF-FARP@0.4 source snapshot requires an explicit historical registry")
     def test_protocol_v04_document_path_exists(self):
         protocol = load_protocol_artifact_json("flow-authoring/0.4/release.json", ROOT)
         self.assertTrue(ProtocolArtifactStore(ROOT).exists(protocol["document"]), protocol["document"])
         self.assertEqual(protocol["supersedes"], {"id": "CF-FARP", "version": "0.3"})
 
+    @unittest.skipIf(CLEAN_V1_ACTIVE, "CF-FARP@0.4 source snapshot requires an explicit historical registry")
     def test_protocol_v04_documents_explicit_decision_consume(self):
         protocol = load_protocol_artifact_json("flow-authoring/0.4/release.json", ROOT)
         text = load_protocol_artifact_text(protocol["document"], ROOT)
@@ -41,6 +44,7 @@ class ProtocolV04RegistryTest(unittest.TestCase):
         self.assertIn("decision_consume_projection", text)
         self.assertIn("禁止通过隐式命名生成消费 key", text)
 
+    @unittest.skipIf(CLEAN_V1_ACTIVE, "CF-FARP@0.4 source snapshot requires an explicit historical registry")
     def test_protocol_v04_is_complete_standalone_protocol_text(self):
         protocol = load_protocol_artifact_json("flow-authoring/0.4/release.json", ROOT)
         text = load_protocol_artifact_text(protocol["document"], ROOT)
@@ -67,6 +71,7 @@ class ProtocolV04RegistryTest(unittest.TestCase):
 
         self.assertIn("不再是 v0.3 的增量补丁", text)
 
+    @unittest.skipIf(CLEAN_V1_ACTIVE, "CF-FARP@0.4 source snapshot requires an explicit historical registry")
     def test_protocol_v04_capability_vocabulary_contains_consume_contract(self):
         capabilities = load_protocol_artifact_json("flow-authoring/0.4/capabilities.json", ROOT)
         ids = {

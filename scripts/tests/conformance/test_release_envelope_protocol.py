@@ -164,6 +164,10 @@ class ReleaseEnvelopeProtocolTests(unittest.TestCase):
         unlisted_report = build_release_envelope_report(release, experience, delivery, bundle_files=unlisted)
         self.assertIn("cre_bundle_file_unlisted", {item["code"] for item in unlisted_report["findings"]})
 
+    @unittest.skipIf(
+        load_base_implementation(ROOT)["protocol_generation"]["id"] == "clean-v1",
+        "CF-CRE@1 source snapshots are historical after the clean-v1 cutover",
+    )
     def test_protocol_document_declares_active_support_boundary(self):
         text = load_protocol_artifact_text(DOCUMENT)
         self.assertIn("CF-CRE@1", text)

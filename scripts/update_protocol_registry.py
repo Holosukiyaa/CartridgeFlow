@@ -17,9 +17,19 @@ if str(SOURCE_ROOT) not in sys.path:
     sys.path.insert(0, str(SOURCE_ROOT))
 
 from core.protocol import (
+    CLEAN_GENERATION,
+    RUNTIME_CATALOG_RELATIVE_PATH,
     ImplementationSource,
     ProtocolKnowledgeRegistry,
+    build_clean_base_candidate,
+    build_clean_protocol_support_report,
+    load_runtime_protocol_catalog,
     publish_protocol_knowledge_registry,
+)
+from core.protocol.base_manifest import BASE_IMPLEMENTATION_PATH
+from core.protocol.governance_registry import (
+    EVIDENCE_RELATIVE_PATH,
+    IMPLEMENTATION_KNOWLEDGE_RELATIVE_PATHS,
 )
 
 
@@ -29,6 +39,8 @@ SOURCE_DATABASE_RELATIVE_PATH = Path("protocol-source.sqlite")
 RUNTIME_SOURCE_ID = "cartridgeflow-authoritative"
 DATABASE_PATH = ROOT / "config" / "protocol" / "protocol-registry.sqlite"
 LOCK_PATH = ROOT / "config" / "protocol" / "protocol-registry.lock.json"
+BASE_PATH = ROOT / BASE_IMPLEMENTATION_PATH
+RUNTIME_CATALOG_PATH = ROOT / RUNTIME_CATALOG_RELATIVE_PATH
 
 
 def main() -> int:
@@ -51,24 +63,27 @@ def main() -> int:
                 f"authoritative protocol database not found: {SOURCE_DATABASE_RELATIVE_PATH.as_posix()}"
             )
         source_database_digest = hashlib.sha256(source_database.read_bytes()).hexdigest()
+        load_runtime_protocol_catalog(ROOT)
+        runtime_catalog_digest = hashlib.sha256(RUNTIME_CATALOG_PATH.read_bytes()).hexdigest()
+        clean_base = build_clean_base_candidate(ROOT)
         DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(
             prefix=".protocol-registry-update-", dir=DATABASE_PATH.parent
         ) as temporary:
             staging_dir = Path(temporary)
             staged_database = staging_dir / DATABASE_PATH.name
+            staged_base = staging_dir / BASE_PATH.name
+            _write_json_atomic(staged_base, clean_base)
+            implementation_root = staging_dir / "implementation"
+            _stage_implementation_source(implementation_root, clean_base)
             report = publish_protocol_knowledge_registry(
                 staged_database,
                 source_database,
-                implementation_sources=[ImplementationSource(RUNTIME_SOURCE_ID, ROOT)],
+                implementation_sources=[ImplementationSource(RUNTIME_SOURCE_ID, implementation_root)],
             )
             with ProtocolKnowledgeRegistry(staged_database) as registry:
                 product_summary = registry.summary()
-                unexpected_blockers = [
-                    item
-                    for item in registry.findings(severity="blocker")
-                    if item["finding_type"] != "protocol_identity_collision"
-                ]
+                unexpected_blockers = registry.findings(severity="blocker")
                 source_rows = [
                     dict(row)
                     for row in registry.connection.execute(
@@ -84,8 +99,10 @@ def main() -> int:
                     f"{sorted({item['finding_type'] for item in unexpected_blockers})}"
                 )
             database_digest = hashlib.sha256(staged_database.read_bytes()).hexdigest()
+            base_digest = hashlib.sha256(staged_base.read_bytes()).hexdigest()
             lock = {
                 "schema": "cartridgeflow.product_protocol_registry_lock.v4",
+                "generation": CLEAN_GENERATION,
                 "repository": {
                     "url": remote,
                     "commit": commit,
@@ -96,6 +113,14 @@ def main() -> int:
                     "logical_digest": source_summary["registry_digest"],
                 },
                 "runtime_source_id": RUNTIME_SOURCE_ID,
+                "runtime_catalog": {
+                    "path": RUNTIME_CATALOG_RELATIVE_PATH.as_posix(),
+                    "sha256": runtime_catalog_digest,
+                },
+                "base": {
+                    "path": BASE_IMPLEMENTATION_PATH.as_posix(),
+                    "manifest_sha256": base_digest,
+                },
                 "sources": [
                     {
                         "source_id": row["source_id"],
@@ -111,15 +136,29 @@ def main() -> int:
                     "path": DATABASE_PATH.relative_to(ROOT).as_posix(),
                 },
             }
+            support_report = build_clean_protocol_support_report(
+                ROOT,
+                base=clean_base,
+                registry_path=staged_database,
+            )
+            if not support_report["ok"]:
+                raise RuntimeError(
+                    "staged clean-v1 bundle does not conform: "
+                    + "; ".join(
+                        f"{item['code']}: {item['message']}"
+                        for item in support_report["findings"]
+                    )
+                )
             staged_lock = staging_dir / LOCK_PATH.name
             _write_json_atomic(staged_lock, lock)
-            _replace_registry_bundle(staged_database, staged_lock, staging_dir)
+            _replace_registry_bundle(staged_database, staged_lock, staged_base, staging_dir)
     except (OSError, RuntimeError, ValueError) as exc:
         print(f"Protocol registry update failed: {exc}", file=sys.stderr)
         return 1
     print(f"Protocol source database: {source_database}")
     print(f"Protocol repository: {remote}@{commit}")
     print(f"Protocol registry: {DATABASE_PATH}")
+    print(f"Base generation: {CLEAN_GENERATION}")
     print(f"Database SHA-256: {database_digest}")
     return 0
 
@@ -179,26 +218,55 @@ def _write_json_atomic(path: Path, value: dict) -> None:
         temporary.unlink(missing_ok=True)
 
 
-def _replace_registry_bundle(staged_database: Path, staged_lock: Path, staging_dir: Path) -> None:
-    database_backup = staging_dir / "previous-registry.sqlite"
-    lock_backup = staging_dir / "previous-registry.lock.json"
-    if DATABASE_PATH.is_file():
-        shutil.copy2(DATABASE_PATH, database_backup)
-    if LOCK_PATH.is_file():
-        shutil.copy2(LOCK_PATH, lock_backup)
+def _stage_implementation_source(staged_root: Path, clean_base: dict) -> None:
+    _write_json_atomic(staged_root / BASE_IMPLEMENTATION_PATH, clean_base)
+    for relative in (EVIDENCE_RELATIVE_PATH, *IMPLEMENTATION_KNOWLEDGE_RELATIVE_PATHS):
+        source = ROOT / relative
+        if not source.is_file():
+            continue
+        target = staged_root / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+
+
+def _replace_registry_bundle(
+    staged_database: Path,
+    staged_lock: Path,
+    staged_base: Path,
+    staging_dir: Path,
+) -> None:
+    replacements = (
+        (staged_database, DATABASE_PATH, staging_dir / "previous-registry.sqlite"),
+        (staged_base, BASE_PATH, staging_dir / "previous-base.json"),
+        (staged_lock, LOCK_PATH, staging_dir / "previous-registry.lock.json"),
+    )
+    for _staged, target, backup in replacements:
+        if target.is_file():
+            shutil.copy2(target, backup)
+    completed: list[tuple[Path, Path, Path]] = []
     try:
-        os.replace(staged_database, DATABASE_PATH)
-        os.replace(staged_lock, LOCK_PATH)
-    except OSError:
-        if database_backup.is_file():
-            os.replace(database_backup, DATABASE_PATH)
-        else:
-            DATABASE_PATH.unlink(missing_ok=True)
-        if lock_backup.is_file():
-            os.replace(lock_backup, LOCK_PATH)
-        else:
-            LOCK_PATH.unlink(missing_ok=True)
-        raise
+        for staged, target, backup in replacements:
+            os.replace(staged, target)
+            completed.append((staged, target, backup))
+    except OSError as exc:
+        rollback_errors: list[str] = []
+        for _staged, target, backup in reversed(completed):
+            if backup.is_file():
+                try:
+                    os.replace(backup, target)
+                except OSError as rollback_exc:
+                    rollback_errors.append(f"{target}: {rollback_exc}")
+            else:
+                target.unlink(missing_ok=True)
+        detail = (
+            f"; rollback also failed for {rollback_errors}"
+            if rollback_errors
+            else ""
+        )
+        raise RuntimeError(
+            "protocol bundle replacement failed; close processes reading the Registry "
+            f"and retry: {exc}{detail}"
+        ) from exc
 
 
 if __name__ == "__main__":

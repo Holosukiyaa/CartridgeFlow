@@ -1,6 +1,6 @@
 # CartridgeFlow 外置协议卡片治理 TODO
 
-> 状态：责任路由 P0 与 clean-v1 四层产品投影已完成，产品完整验收当前被“权威协议源提交尚未发布、正式 Registry/Base 尚未重锁”这一真实门禁阻断。当前治理实现在兄弟目录 `../CartridgeFlow-governance`，本文件记录验收范围和剩余缺口。
+> 状态：责任路由 P0、clean-v1 四层产品投影、权威协议源发布和正式 Registry/Base v4 切换均已完成。当前治理实现在兄弟目录 `../CartridgeFlow-governance`，本文件记录最终验收范围。
 >
 > 本文件取代此前“用一套四层总协议覆盖整个项目，再让全部产品实现和检测服从该协议”的治理计划。旧计划中的 worker 顺序、全项目协议覆盖率、统一协议数据库、产品只读协议副本和协议树浏览器不再是执行目标。
 >
@@ -14,7 +14,7 @@
 - [x] 停止以“四层、固定模块数、固定合同数、规则覆盖率 100%”作为整个项目的完成标准。
 - [x] 停止继续执行旧 `MENTOR_WORKERS.md` 中的 worker-001 至 worker-010 链路。
 - [x] 停止把协议浏览器继续扩建为全项目协议树浏览器。
-- [x] 当前 `protocol-source`、产品只读协议库和协议重建草稿只作为待评估材料保留，本阶段不继续扩张，也不立即删除。
+- [x] 旧产品只读协议库和协议重建草稿不再扩张；`protocol-source` 只发布真正的跨边界 clean-v1 产品合同。
 - [x] 当前正在进行的协议重建产物不得自动成为产品实现前置条件；必须重新判断其中哪些是真正的跨边界产品合同。
 
 ## 二、新治理目标
@@ -352,17 +352,17 @@ Intent Studio 和 Capability Workshop 已依据独立源码目录、构建与测
 - [x] 为 Knowledge 的审核关键事实增加受限自动检测、冲突诊断、保守回退和失败测试；未结构化正文不伪称可自动判真。
 - [x] 为 CF-CRE@2 非空被动 UI 投影和工具资源解析增加真实边界场景。
 - [x] 建立治理仓库可审阅 Git 基线，并通过 `knowledge_sync_event` 把 AI、原因、源码锚和实际 changed paths 关联进 Ledger。
-- [ ] 等新协议工作完成后重新锁定产品协议源；当前数据库摘要和提交与产品锁不一致，完整验收必须保持失败。
+- [x] 新协议完成后已发布 `release/clean-v1`，产品锁精确绑定源提交和数据库摘要，摘要或提交不一致时完整验收仍会失败关闭。
 
 ## 十九、clean-v1 协议落地状态（2026-08-11）
 
 - [x] Registry v4 支持单一权威源、四层发布和 75 个 `1.0.0` JSON Schema 合同，禁止旧代际迁移行混入 clean-v1。
 - [x] Foundation、Authoring、Distribution、Runtime 四层均有可拆卸产品投影器、正向测试和失败关闭测试。
-- [x] Base 校验器同时严格识别当前 unified-v1 与 clean-v1 候选；`build_clean_base_candidate` 生成候选但不覆盖正式清单。
-- [x] Foundation 只接受单一 `cartridgeflow-authoritative` 来源的 v4 产品锁；当前 v3 锁不能证明 clean-v1 已发布。
+- [x] Base 校验器严格识别 clean-v1 正式清单；`build_clean_base_candidate` 负责生成候选，原子切换器完成预检后才覆盖正式清单。
+- [x] Foundation 只接受单一 `cartridgeflow-authoritative` 来源的 v4 产品锁；旧 v3 锁会被 clean-v1 Foundation 拒绝。
 - [x] Workbench 的真实 CF-CRE@2 发行物可投影 clean 安装 request/plan，安装 result 只能由实际 DR 尝试产生。
 - [x] DR 在状态变化前严格解码 clean 请求、复验归档、核对 package ID，再物化和激活；成功与失败结果保持 plan 身份。
 - [x] 跨仓场景验证 Python 生产者与 Go 消费者的 clean 安装等价性，并证明篡改失败不改变活动卡带。
 - [x] DR 暴露实际可持久化的 17 个 Runtime 合同子集，不为缺失 `expires_at` 的 pending interaction 虚构合同。
 - [x] Knowledge 卡已更新为当前事实，9/9 来源锚为 current，变化原因保存在独立 Ledger 而非卡片正文。
-- [ ] 发布权威协议源提交，生成正式 v4 Registry 锁并切换正式 clean Base；在此之前产品 floor 和 complete 必须失败。
+- [x] 权威协议源提交已发布到 `release/clean-v1`，正式 v4 Registry 锁和 clean Base 已原子切换；运行兼容目录由同一锁独立固定。

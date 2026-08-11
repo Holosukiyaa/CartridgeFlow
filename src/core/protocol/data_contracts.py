@@ -14,6 +14,7 @@ from jsonschema import Draft202012Validator
 from .artifact_store import resolve_protocol_registry
 from .base_manifest import load_base_implementation
 from .governance_registry import ProtocolKnowledgeRegistry, ProtocolKnowledgeRegistryError
+from .runtime_catalog import find_runtime_data_contract
 
 
 ACTIVE_CONTRACT_LIFECYCLES = ("published", "active", "legacy-active")
@@ -151,9 +152,31 @@ def validate_data_contract_instance(
     *,
     root: str | Path | None = None,
     registry_path: str | Path | None = None,
+    use_runtime_compatibility: bool = True,
 ) -> Any:
     """Validate a value against one exact registered JSON Schema release."""
-    schema = DataContractRegistry(root, registry_path=registry_path).schema(contract_id, version)
+    project_root = Path(root).resolve() if root is not None else Path(__file__).resolve().parents[3]
+    runtime_contract = (
+        find_runtime_data_contract(project_root, contract_id, version)
+        if use_runtime_compatibility
+        else None
+    )
+    if runtime_contract is not None:
+        if runtime_contract["definition_kind"] != "json_schema":
+            raise DataContractError(
+                "data_contract_schema_unavailable",
+                f"runtime data contract is not JSON Schema-backed: {contract_id}@{version}",
+            )
+        schema = runtime_contract["definition"]
+        try:
+            Draft202012Validator.check_schema(schema)
+        except Exception as exc:
+            raise DataContractError(
+                "data_contract_schema_invalid",
+                f"runtime JSON Schema is invalid: {contract_id}@{version}: {exc}",
+            ) from exc
+    else:
+        schema = DataContractRegistry(project_root, registry_path=registry_path).schema(contract_id, version)
     errors = sorted(
         Draft202012Validator(schema).iter_errors(value),
         key=lambda item: (list(item.absolute_path), item.message),
@@ -370,13 +393,16 @@ def build_runtime_profile_compatibility_report(
 ) -> dict:
     """Derive CF-DRP compatibility from signed payload facts, never from capability claims."""
     if profile is None:
-        profile_text = DataContractRegistry(root, registry_path=registry_path).definition_text(
-            "cartridgeflow.runtime.host-profile", "1.0.0"
+        project_root = Path(root).resolve() if root is not None else Path(__file__).resolve().parents[3]
+        record = find_runtime_data_contract(
+            project_root, "cartridgeflow.runtime.host-profile", "1.0.0"
         )
-        try:
-            profile = json.loads(profile_text)
-        except json.JSONDecodeError as exc:
-            raise DataContractError("runtime_profile_invalid", f"registered runtime profile is invalid: {exc}") from exc
+        if record is None or record.get("definition_kind") != "machine_contract":
+            raise DataContractError(
+                "runtime_profile_invalid",
+                "runtime compatibility catalog does not publish the host profile",
+            )
+        profile = copy.deepcopy(record["definition"])
     if not isinstance(profile, dict) or profile.get("schema") != "cartridgeflow.host_runtime_profile.v1":
         raise DataContractError("runtime_profile_invalid", "registered runtime profile has an invalid schema")
 

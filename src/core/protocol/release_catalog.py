@@ -2,15 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .artifact_store import ProtocolArtifactStore
-from .governance_registry import ProtocolKnowledgeRegistryError
+from .runtime_catalog import load_runtime_protocol_catalog
 
 
 class ProtocolReleaseCatalogError(ValueError):
     pass
 
 
-RELEASE_MANIFEST_PATH = Path("protocol/catalog/release_manifest.json")
 _LIFECYCLES = {"current", "supported_previous", "recognized_legacy"}
 _RELEASE_ENVELOPE_LIFECYCLES = {"draft", "active", "supported_previous"}
 _ADAPTER_STATUSES = {"partial", "supported"}
@@ -127,10 +125,10 @@ def load_protocol_release_catalog(root: str | Path) -> ProtocolReleaseCatalog:
 
 def _load_release_manifest(root: Path) -> dict:
     try:
-        data = ProtocolArtifactStore(root).read_json(RELEASE_MANIFEST_PATH)
-    except ProtocolKnowledgeRegistryError as exc:
+        data = load_runtime_protocol_catalog(root)["release_manifest"]
+    except ValueError as exc:
         raise ProtocolReleaseCatalogError(str(exc)) from exc
-    if not isinstance(data, dict) or data.get("schema") != "cartridgeflow.protocol_release_manifest.v1":
+    if not isinstance(data, dict) or data.get("schema") != "cartridgeflow.runtime_protocol_release_manifest.v1":
         raise ProtocolReleaseCatalogError("protocol release manifest has an unknown schema")
     for field in ("base_contract", "default_for_new_flows"):
         value = data.get(field)
@@ -154,8 +152,6 @@ def _load_release_manifest(root: Path) -> dict:
             raise ProtocolReleaseCatalogError(f"protocol release manifest releases[{index}].status is invalid")
         if "implementation_status" in item and item.get("implementation_status") not in _ADAPTER_STATUSES:
             raise ProtocolReleaseCatalogError(f"protocol release manifest releases[{index}].implementation_status is invalid")
-        if not isinstance(item.get("registry"), str) or not item["registry"]:
-            raise ProtocolReleaseCatalogError(f"protocol release manifest releases[{index}].registry is required")
         adapter = item.get("runtime_adapter")
         if adapter is not None and (not isinstance(adapter, str) or not adapter.strip()):
             raise ProtocolReleaseCatalogError(f"protocol release manifest releases[{index}].runtime_adapter must be a non-empty string")
@@ -175,9 +171,11 @@ def _load_release_manifest(root: Path) -> dict:
             if sub_key in trusted_seen:
                 raise ProtocolReleaseCatalogError(f"protocol release manifest releases[{index}] duplicates trusted subprotocol {sub_key[0]}@{sub_key[1]}")
             trusted_seen.add(sub_key)
-            for field in ("registry", "binding"):
-                if not isinstance(subprotocol.get(field), str) or not subprotocol[field].strip():
-                    raise ProtocolReleaseCatalogError(f"protocol release manifest releases[{index}].trusted_subprotocols[{sub_index}].{field} is required")
+            required = subprotocol.get("required")
+            if required is not None and not isinstance(required, bool):
+                raise ProtocolReleaseCatalogError(
+                    f"protocol release manifest releases[{index}].trusted_subprotocols[{sub_index}].required must be boolean"
+                )
         if item["lifecycle"] == "recognized_legacy":
             target = item.get("migration_target")
             if not isinstance(target, dict) or not target.get("id") or not target.get("version"):
@@ -217,9 +215,6 @@ def _validate_release_envelopes(data: dict) -> None:
             raise ProtocolReleaseCatalogError(f"release_envelopes.releases[{index}].lifecycle is invalid")
         if item.get("implementation_status") not in {"validation_only", "partial", "supported"}:
             raise ProtocolReleaseCatalogError(f"release_envelopes.releases[{index}].implementation_status is invalid")
-        for field in ("registry", "profiles", "capabilities", "document"):
-            if not isinstance(item.get(field), str) or not item[field]:
-                raise ProtocolReleaseCatalogError(f"release_envelopes.releases[{index}].{field} is required")
         adapter = item.get("runtime_adapter")
         if adapter is not None and (not isinstance(adapter, str) or not adapter.strip()):
             raise ProtocolReleaseCatalogError(f"release_envelopes.releases[{index}].runtime_adapter must be a non-empty string")

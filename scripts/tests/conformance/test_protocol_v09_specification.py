@@ -18,6 +18,10 @@ DOCUMENT = "protocol/flow-authoring/0.9/specification.md"
 
 
 class ProtocolV09SpecificationTests(unittest.TestCase):
+    @unittest.skipIf(
+        load_base_implementation(ROOT)["protocol_generation"]["id"] == "clean-v1",
+        "CF-FARP@0.9 source snapshots are historical after the clean-v1 cutover",
+    )
     def test_registry_and_base_publish_v09_partial_support(self):
         registry_data = load_protocol_artifact_json("flow-authoring/0.9/release.json")
         self.assertEqual("0.9", registry_data["version"])
@@ -75,6 +79,10 @@ class ProtocolV09SpecificationTests(unittest.TestCase):
         self.assertEqual("supported", report["protocol"]["lifecycle"])
         self.assertEqual("CF-FARP@0.9", report["flow_contract"]["protocol"])
 
+    @unittest.skipIf(
+        load_base_implementation(ROOT)["protocol_generation"]["id"] == "clean-v1",
+        "CF-FARP@0.9 source snapshots are historical after the clean-v1 cutover",
+    )
     def test_v09_document_is_standalone_mcp_transparency_spec(self):
         text = load_protocol_artifact_text(DOCUMENT)
         self.assertIn("协议编号：`CF-FARP-0.9`", text)
@@ -106,6 +114,10 @@ class ProtocolV09SpecificationTests(unittest.TestCase):
         self.assertEqual(22, len(targets))
         self.assertEqual([], [target for target in targets if target not in heading_anchors])
 
+    @unittest.skipIf(
+        load_base_implementation(ROOT)["protocol_generation"]["id"] == "clean-v1",
+        "CF-FARP@0.9 source snapshots are historical after the clean-v1 cutover",
+    )
     def test_v09_tool_transparency_vocabulary_is_registered(self):
         capabilities = load_protocol_artifact_json("flow-authoring/0.9/capabilities.json")
         profiles = load_protocol_artifact_json("flow-authoring/0.9/profiles.json")

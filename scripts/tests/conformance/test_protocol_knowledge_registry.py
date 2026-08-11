@@ -94,6 +94,31 @@ class ProtocolKnowledgeRegistryTests(unittest.TestCase):
     def test_product_uses_queryable_read_only_registry_from_pinned_source(self):
         target = resolve_protocol_registry(ROOT)
         lock = load_protocol_registry_lock(ROOT)
+        if lock.get("schema") == "cartridgeflow.product_protocol_registry_lock.v4":
+            self.assertEqual("clean-v1", lock["generation"])
+            self.assertEqual("cartridgeflow-authoritative", lock["runtime_source_id"])
+            self.assertEqual(
+                {"cartridgeflow-authoritative"},
+                {item["source_id"] for item in lock["sources"]},
+            )
+            with ProtocolKnowledgeRegistry(target) as registry:
+                summary = registry.summary()
+                self.assertEqual("4", summary["schema_version"])
+                self.assertEqual("clean-v1", summary["generation"])
+                self.assertEqual("product_snapshot", summary["registry_role"])
+                self.assertEqual(1, summary["source_count"])
+                self.assertEqual(4, summary["release_count"])
+                self.assertEqual(75, summary["contract_release_count"])
+                self.assertEqual(0, summary["finding_count"])
+                release = registry.get_release(
+                    "cartridgeflow-authoritative", "CF-AUTHORING", "1.0.0"
+                )
+                self.assertEqual("published", release["lifecycle"])
+                with self.assertRaises(sqlite3.OperationalError):
+                    registry.connection.execute(
+                        "INSERT INTO registry_metadata(key, value) VALUES ('forbidden', 'write')"
+                    )
+            return
         self.assertEqual("cartridgeflow.product_protocol_registry_lock.v3", lock["schema"])
         self.assertEqual("current", lock["runtime_source_id"])
         self.assertEqual(40, len(lock["repository"]["commit"]))

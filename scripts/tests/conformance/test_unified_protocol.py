@@ -32,6 +32,11 @@ from core.protocol import (
 )
 
 
+@unittest.skipIf(
+    TEST_REGISTRY is None
+    and load_base_implementation(ROOT)["protocol_generation"]["id"] == "clean-v1",
+    "unified-v1 conformance requires an explicit historical registry after clean-v1",
+)
 class UnifiedProtocolTests(unittest.TestCase):
     def test_base_supports_the_complete_unified_generation(self):
         report = build_unified_protocol_support_report(ROOT, registry_path=TEST_REGISTRY)

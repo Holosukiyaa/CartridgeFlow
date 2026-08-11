@@ -12,6 +12,7 @@ from core.protocol import (
     load_base_implementation,
     load_protocol_artifact_json,
     load_protocol_artifact_text,
+    supports_base_contract,
 )
 from scripts.tests.fixtures.portable_dlc import PortableDlcFixture
 
@@ -83,14 +84,18 @@ def v06_flow(states=None):
 class ProtocolV06ContractTest(unittest.TestCase):
     def test_base_and_runtime_protocols_are_registered_as_separate_contracts(self):
         registry = ProtocolRegistry(ROOT)
-        self.assertTrue(registry.supports_protocol("CARTRIDGEFLOW-BASE", "0.2"))
         self.assertTrue(registry.supports_protocol("CF-FARP", "0.6"))
 
         base = load_base_implementation(ROOT)
+        self.assertTrue(supports_base_contract(base, "CARTRIDGEFLOW-BASE", "0.2"))
         self.assertEqual({"id": "CARTRIDGEFLOW-BASE", "version": "0.3"}, base["base_contract"])
         self.assertIn({"id": "CARTRIDGEFLOW-BASE", "version": "0.2", "status": "supported_previous"}, base["supported_base_contracts"])
         self.assertIn(("CF-FARP", "0.6"), {(item["id"], item["version"]) for item in base["supported_protocols"]})
 
+    @unittest.skipIf(
+        load_base_implementation(ROOT)["protocol_generation"]["id"] == "clean-v1",
+        "CF-FARP@0.6 source snapshots are historical after the clean-v1 cutover",
+    )
     def test_v06_documents_are_complete_standalone_protocols(self):
         base_registry = load_protocol_artifact_json("base/0.2/release.json")
         farp_registry = load_protocol_artifact_json("flow-authoring/0.6/release.json")
@@ -125,6 +130,10 @@ class ProtocolV06ContractTest(unittest.TestCase):
         for term in ["Manifest", "Root Flow", "Decision Envelope", "Tool Plan", "Artifact", "Delivery", "Worker", "兼容性报告", "认证"]:
             self.assertIn(term, farp_text)
 
+    @unittest.skipIf(
+        load_base_implementation(ROOT)["protocol_generation"]["id"] == "clean-v1",
+        "CF-FARP@0.6 source snapshots are historical after the clean-v1 cutover",
+    )
     def test_v06_table_of_contents_targets_real_sections(self):
         text = load_protocol_artifact_text("flow-authoring/0.6/specification.md")
         headings = re.findall(r"^## (.+)$", text, re.MULTILINE)
@@ -141,6 +150,10 @@ class ProtocolV06ContractTest(unittest.TestCase):
         self.assertEqual(40, len(targets))
         self.assertEqual([], [target for target in targets if target not in heading_anchors])
 
+    @unittest.skipIf(
+        load_base_implementation(ROOT)["protocol_generation"]["id"] == "clean-v1",
+        "CF-FARP@0.6 source snapshots are historical after the clean-v1 cutover",
+    )
     def test_v06_json_examples_and_capability_vocabulary_are_machine_valid(self):
         text = load_protocol_artifact_text("flow-authoring/0.6/specification.md")
         json_blocks = re.findall(r"```json\n(.*?)\n```", text, re.DOTALL)

@@ -17,6 +17,13 @@ from .governance_registry import (
     publish_protocol_knowledge_registry,
 )
 from .release_catalog import ProtocolReleaseCatalog, ProtocolReleaseCatalogError, load_protocol_release_catalog
+from .runtime_catalog import (
+    RUNTIME_CATALOG_RELATIVE_PATH,
+    RuntimeProtocolCatalogError,
+    find_runtime_data_contract,
+    load_runtime_protocol_catalog,
+    runtime_protocol_catalog_digest,
+)
 from .features import has_protocol_feature, protocol_features
 from .certification import apply_protocol_certification_label, build_protocol_certification_report
 from .compatibility import CompatibilityBlockedError, build_compatibility_report
@@ -107,6 +114,8 @@ __all__ = [
     "RegistryBuildReport",
     "ProtocolReleaseCatalog",
     "ProtocolReleaseCatalogError",
+    "RuntimeProtocolCatalogError",
+    "find_runtime_data_contract",
     "apply_protocol_certification_label",
     "apply_cartridge_settings",
     "build_protocol_certification_report",
@@ -132,6 +141,7 @@ __all__ = [
     "load_protocol_artifact_text",
     "load_protocol_registry_lock",
     "load_protocol_release_catalog",
+    "load_runtime_protocol_catalog",
     "has_protocol_feature",
     "protocol_features",
     "protocol_adapter_status",
@@ -163,6 +173,8 @@ __all__ = [
     "supports_subprotocol_release",
     "assert_base_supports_data_contracts",
     "resolve_protocol_registry",
+    "runtime_protocol_catalog_digest",
+    "RUNTIME_CATALOG_RELATIVE_PATH",
     "LEGACY_TO_UNIFIED",
     "UNIFIED_CONTRACT_IDS",
     "UNIFIED_GENERATION",

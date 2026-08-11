@@ -87,7 +87,7 @@ class CleanBaseHygieneTests(unittest.TestCase):
         self.assertTrue(all(path.is_file() for path in expected))
         self.assertFalse((ROOT / "protocol").exists())
         self.assertFalse((ROOT / "GOAL.md").exists())
-        self.assertFalse((ROOT / "TODO.md").exists())
+        self.assertNotIn("TODO.md", {path.name for path in ROOT.iterdir()})
         self.assertFalse((ROOT / "TODO_TEMPLATE.md").exists())
         self.assertFalse((ROOT / "CHANGELOG.md").exists())
         self.assertFalse((ROOT / ".env.example").exists())

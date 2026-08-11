@@ -168,6 +168,7 @@ def validate_unified_contract(
         value,
         root=root,
         registry_path=registry_path,
+        use_runtime_compatibility=False,
     )
 
 

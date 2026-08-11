@@ -51,6 +51,10 @@ def v07_flow():
     }
 
 
+@unittest.skipIf(
+    load_base_implementation(ROOT)["protocol_generation"]["id"] == "clean-v1",
+    "CF-FARP@0.7 source snapshots are historical after the clean-v1 cutover",
+)
 class ProtocolV07SpecificationTests(unittest.TestCase):
     def test_registry_publishes_v07_with_passive_and_sandboxed_base_support(self):
         registry_data = load_protocol_artifact_json("flow-authoring/0.7/release.json")

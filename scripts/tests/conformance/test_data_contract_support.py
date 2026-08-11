@@ -15,6 +15,7 @@ from core.protocol import (
     build_data_contract_support_report,
     build_host_compatibility_contract,
     build_runtime_profile_compatibility_report,
+    find_runtime_data_contract,
     apply_cartridge_settings,
     load_base_implementation,
     resolve_protocol_registry,
@@ -32,9 +33,11 @@ class DataContractSupportTests(unittest.TestCase):
         report = build_data_contract_support_report(ROOT)
 
         self.assertTrue(report["ok"], report["findings"])
-        self.assertEqual(28, report["summary"]["active_releases"])
-        self.assertEqual(28, report["summary"]["declared_releases"])
-        self.assertEqual(28, report["summary"]["supported_releases"])
+        generation = load_base_implementation(ROOT)["protocol_generation"]["id"]
+        expected = 75 if generation == "clean-v1" else 28
+        self.assertEqual(expected, report["summary"]["active_releases"])
+        self.assertEqual(expected, report["summary"]["declared_releases"])
+        self.assertEqual(expected, report["summary"]["supported_releases"])
         self.assertEqual({"supported"}, {item["status"] for item in report["items"]})
 
     def test_missing_support_or_failure_evidence_fails_closed(self):
@@ -44,7 +47,8 @@ class DataContractSupportTests(unittest.TestCase):
         self.assertIn("data_contract_support_missing", {item["code"] for item in report["findings"]})
 
         evidence = json.loads(EVIDENCE_PATH.read_text(encoding="utf-8"))
-        evidence["evidence_sets"]["unified_protocol_generation"]["failure_tests"] = []
+        evidence_id = str(load_base_implementation(ROOT)["supported_data_contracts"][0]["evidence"])
+        evidence["evidence_sets"][evidence_id]["failure_tests"] = []
         report = build_data_contract_support_report(ROOT, evidence=evidence)
         self.assertIn("data_contract_failure_test_missing", {item["code"] for item in report["findings"]})
 
@@ -309,11 +313,11 @@ class DataContractSupportTests(unittest.TestCase):
         with self.assertRaises(DataContractError) as raised:
             registry.schema("cartridgeflow.capability.settings", "9.0.0")
         self.assertEqual("data_contract_release_unknown", raised.exception.code)
-        with self.assertRaises(DataContractError) as raised:
-            registry.schema("cartridgeflow.flow.root", "1.0.0")
-        self.assertEqual("data_contract_schema_unavailable", raised.exception.code)
 
     def _example(self, contract_id: str, kind: str) -> dict:
+        runtime_contract = find_runtime_data_contract(ROOT, contract_id, "1.0.0")
+        if runtime_contract is not None and kind in runtime_contract.get("examples", {}):
+            return copy.deepcopy(runtime_contract["examples"][kind])
         with ProtocolKnowledgeRegistry(resolve_protocol_registry(ROOT)) as registry:
             row = registry.connection.execute(
                 """

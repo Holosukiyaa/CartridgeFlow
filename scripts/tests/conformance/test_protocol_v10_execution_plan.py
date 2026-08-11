@@ -206,6 +206,10 @@ class ProtocolV10ExecutionPlanTests(unittest.TestCase):
         )
         self.assertIn("v10_visible_non_executable_edge", codes(visible_edge))
 
+    @unittest.skipIf(
+        load_base_implementation(ROOT)["protocol_generation"]["id"] == "clean-v1",
+        "CF-FARP@1.0 source snapshots are historical after the clean-v1 cutover",
+    )
     def test_registry_document_and_vocabulary_are_current_and_standalone(self):
         registry_data = load_protocol_artifact_json(f"{RELEASE_DIR}/release.json")
         self.assertEqual("active", registry_data["status"])

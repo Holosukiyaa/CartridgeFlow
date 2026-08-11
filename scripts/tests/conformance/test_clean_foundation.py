@@ -65,9 +65,8 @@ class CleanFoundationProjectionTests(unittest.TestCase):
         self.assertEqual(expected, {item["contract_id"] for item in envelopes})
 
     def test_checked_in_v3_lock_cannot_prove_clean_v1_publication(self):
-        lock = json.loads(
-            (ROOT / "config" / "protocol" / "protocol-registry.lock.json").read_text(encoding="utf-8")
-        )
+        lock = self._v4_lock()
+        lock["schema"] = "cartridgeflow.product_protocol_registry_lock.v3"
         with self.assertRaises(CleanFoundationProjectionError) as error:
             self.projector.publication_lock(lock)
         self.assertEqual("clean_foundation_lock_generation_invalid", error.exception.code)

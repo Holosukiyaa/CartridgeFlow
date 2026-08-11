@@ -5,6 +5,7 @@ from core.protocol import ProtocolRegistry, load_base_implementation, load_proto
 
 
 ROOT = Path(__file__).resolve().parents[3]
+CLEAN_V1_ACTIVE = load_base_implementation(ROOT)["protocol_generation"]["id"] == "clean-v1"
 
 
 class ProtocolV02RegistryTest(unittest.TestCase):
@@ -21,6 +22,7 @@ class ProtocolV02RegistryTest(unittest.TestCase):
         }
         self.assertNotIn(("CF-FARP", "0.2"), supported)
 
+    @unittest.skipIf(CLEAN_V1_ACTIVE, "CF-FARP@0.2 source snapshot requires an explicit historical registry")
     def test_protocol_v02_capability_vocabulary_contains_layered_process_contract(self):
         capabilities = load_protocol_artifact_json("flow-authoring/0.2/capabilities.json", ROOT)
         ids = {

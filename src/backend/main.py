@@ -36,6 +36,7 @@ from backend.api_models import (
     CreatorRecomposeAcceptPayload,
     CreatorPackagePayload,
     CreatorNodeRefinementPayload,
+    CreatorExperienceMappingPayload,
     DeveloperMaterializationPayload,
     TrustedNodePresetPayload,
     TrustedNodeActivationPayload,
@@ -3049,6 +3050,23 @@ def resolve_creator_capabilities(session_id: str, payload: AuthoringReadinessPay
 def reject_creator_capability(session_id: str, node_id: str, payload: AuthoringReadinessPayload):
     try:
         return {"creator": authoring_sessions.reject_capability(session_id, node_id, expected_revision=payload.expected_revision)}
+    except AuthoringServiceError as exc:
+        _authoring_error(exc)
+
+
+@app.put("/api/creator/authoring-sessions/{session_id}/nodes/{node_id}/experience")
+def set_creator_experience_mapping(session_id: str, node_id: str, payload: CreatorExperienceMappingPayload):
+    try:
+        creator = authoring_sessions.set_experience_mapping(
+            session_id,
+            node_id,
+            payload.slot_id,
+            payload.component_id,
+            payload.field_sources,
+            expected_revision=payload.expected_revision,
+            expected_experience_revision=payload.expected_experience_revision,
+        )
+        return {"creator": creator}
     except AuthoringServiceError as exc:
         _authoring_error(exc)
 

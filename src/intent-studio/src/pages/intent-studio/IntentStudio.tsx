@@ -50,6 +50,7 @@ import {
   rejectCreatorCapability,
   rejectCreatorProposal,
   resolveCreatorCapabilities,
+  setCreatorExperience,
   type CreatorPackage,
   type CreatorPossibility,
   type CreatorProjection,
@@ -96,6 +97,94 @@ function FieldEditor({ node, values, onChange, disabled }: {
       return <label key={field.id}><span>{field.label}{field.required ? ' *' : ''}</span><input disabled={disabled} type={field.value_type === 'number' ? 'number' : 'text'} value={String(value)} onChange={(event) => onChange({ ...values, [field.id]: field.value_type === 'number' ? Number(event.currentTarget.value) : event.currentTarget.value })} /></label>
     })}
   </div>
+}
+
+function ExperienceEditor({ creator, node, disabled, onChange, onBusy }: {
+  creator: CreatorProjection
+  node: CreatorRecipeNode
+  disabled: boolean
+  onChange: (creator: CreatorProjection) => void
+  onBusy: (busy: boolean) => void
+}) {
+  const experience = node.experience
+  const [drafts, setDrafts] = useState<Record<string, { componentId: string; fieldSources: Record<string, string> }>>(() =>
+    Object.fromEntries((experience?.slots || []).map((slot) => [slot.id, {
+      componentId: slot.selected_component_id,
+      fieldSources: { ...slot.field_sources },
+    }])),
+  )
+  if (!experience || experience.status !== 'available') return null
+
+  const chooseComponent = (slotId: string, componentId: string) => {
+    const slot = experience.slots.find((item) => item.id === slotId)
+    const component = slot?.components.find((item) => item.id === componentId)
+    const fieldSources: Record<string, string> = {}
+    component?.fields.forEach((field) => {
+      const current = drafts[slotId]?.fieldSources[field.id]
+      const first = field.compatible_source_ids[0]
+      if (current && field.compatible_source_ids.includes(current)) fieldSources[field.id] = current
+      else if (first) fieldSources[field.id] = first
+    })
+    setDrafts((value) => ({ ...value, [slotId]: { componentId, fieldSources } }))
+  }
+  const save = async (slotId: string) => {
+    const draft = drafts[slotId]
+    if (!draft) return
+    onBusy(true)
+    try {
+      const result = await setCreatorExperience(creator.session_id, node.id, {
+        expected_revision: creator.revision,
+        expected_experience_revision: creator.experience_revision || 0,
+        slot_id: slotId,
+        component_id: draft.componentId,
+        field_sources: draft.fieldSources,
+      })
+      onChange(result.creator)
+      showToast({ title: '呈现方式已保存', description: '打包后会在运行台按这个方式显示。', type: 'success' })
+    } catch (error) {
+      showToast({ title: '呈现方式没有保存', description: friendlyError(error, 'node'), type: 'error' })
+    } finally { onBusy(false) }
+  }
+
+  return <section className="creator-experience">
+    <header><Settings /><div><strong>运行时呈现</strong><span>选择用户在运行台看到的样子</span></div></header>
+    {experience.slots.map((slot) => {
+      const draft = drafts[slot.id] || { componentId: slot.selected_component_id, fieldSources: slot.field_sources }
+      const component = slot.components.find((item) => item.id === draft.componentId)
+      const complete = !!component && component.available && component.fields.every((field) => !field.required || !!draft.fieldSources[field.id])
+      const dirty = draft.componentId !== slot.selected_component_id || JSON.stringify(draft.fieldSources) !== JSON.stringify(slot.field_sources)
+      return <div className="creator-experience-slot" key={slot.id}>
+        <div className="creator-experience-title"><strong>{slot.label}</strong><span>{slot.status === 'configured' && !dirty ? '已配置' : '待保存'}</span></div>
+        <div className="creator-component-options" role="radiogroup" aria-label={`${slot.label}呈现方式`}>
+          {slot.components.map((item) => <button
+            type="button"
+            role="radio"
+            aria-checked={draft.componentId === item.id}
+            className={draft.componentId === item.id ? 'is-selected' : ''}
+            disabled={disabled || !item.available}
+            key={item.id}
+            onClick={() => chooseComponent(slot.id, item.id)}
+          ><span><strong>{item.label}</strong><small>{item.description}</small></span>{draft.componentId === item.id && <Check />}</button>)}
+        </div>
+        {component && <>
+          <div className="creator-component-preview">
+            <iframe title={`${component.label}预览`} sandbox="" srcDoc={component.preview_html} />
+          </div>
+          {!!component.fields.length && <div className="creator-field-mapping">
+            {component.fields.map((field) => <label key={field.id}><span>{field.label}</span><select
+              value={draft.fieldSources[field.id] || ''}
+              disabled={disabled}
+              onChange={(event) => setDrafts((value) => ({ ...value, [slot.id]: {
+                ...draft,
+                fieldSources: { ...draft.fieldSources, [field.id]: event.currentTarget.value },
+              } }))}
+            ><option value="">选择数据</option>{slot.sources.filter((source) => field.compatible_source_ids.includes(source.id)).map((source) => <option key={source.id} value={source.id}>{source.label}</option>)}</select></label>)}
+          </div>}
+        </>}
+        <button type="button" className="secondary-button creator-experience-save" disabled={disabled || !dirty || !complete} onClick={() => void save(slot.id)}><Check />保存呈现方式</button>
+      </div>
+    })}
+  </section>
 }
 
 function proposalValue(value: unknown) {
@@ -283,6 +372,7 @@ function NodeEditor({ creator, node, busy, onCreatorChange, onClose, onModelRequ
       <section className="creator-node-goal"><header><Target /><strong>目标</strong></header><p>{node.description}</p></section>
       {unresolved && <section className="creator-capability-gap"><div><strong>存在能力缺口，影响节点能力完整性</strong><p>{node.resolution?.needed_capability}</p></div><a href={`/capabilities?goal=${encodeURIComponent(node.resolution?.needed_capability || node.description)}&projectId=${encodeURIComponent(creator.project_id)}&nodeId=${encodeURIComponent(node.id)}`}><Wrench />进入能力工坊</a><small>发布可信能力后，回到这里会在原节点上重新匹配。</small></section>}
       {!unresolved && node.resolution?.capability && <section className="creator-capability-source"><ShieldCheck /><div><strong>{node.resolution.capability.label}</strong><span>{node.resolution.capability.trust_scope === 'workspace' ? '当前工作区可信' : node.resolution.capability.trust_scope === 'organization' ? '组织可信' : '系统可信'} · v{node.resolution.capability.revision}</span></div><button className="secondary-button" type="button" disabled={isBusy} onClick={() => void rejectCapability()}><X />不适合当前节点</button></section>}
+      {!unresolved && <ExperienceEditor creator={creator} node={node} disabled={isBusy} onChange={onCreatorChange} onBusy={setWorking} />}
       {!proposal && <>
         <FieldEditor node={node} values={values} onChange={setValues} disabled={isBusy} />
         <details className="creator-source-discovery"><summary><Globe2 />查找并审核资料来源</summary>
@@ -633,7 +723,7 @@ export function IntentStudio({ projectId }: { projectId: string }) {
       </section>
 
       <aside className="creator-inspector">
-        {workspaceMode === 'compose' && creator && selectedNode && !recipePreview ? <NodeEditor key={`${selectedNode.id}:${creator.revision}`} creator={creator} node={selectedNode} busy={busy} onCreatorChange={saveCreator} onClose={() => setSelectedId('')} onModelRequired={() => requestModelConnection('node')} /> : <div className="creator-inspector-empty"><Workflow /><strong>{workspaceMode === 'discover' ? '方向探索' : '选择一个步骤'}</strong><p>{workspaceMode === 'discover' ? '比较候选方向后进入方案编排。' : '在画布或项目大纲中选择节点，审核目标、业务参数和能力来源。'}</p></div>}
+        {workspaceMode === 'compose' && creator && selectedNode && !recipePreview ? <NodeEditor key={`${selectedNode.id}:${creator.revision}:${creator.experience_revision}`} creator={creator} node={selectedNode} busy={busy} onCreatorChange={saveCreator} onClose={() => setSelectedId('')} onModelRequired={() => requestModelConnection('node')} /> : <div className="creator-inspector-empty"><Workflow /><strong>{workspaceMode === 'discover' ? '方向探索' : '选择一个步骤'}</strong><p>{workspaceMode === 'discover' ? '比较候选方向后进入方案编排。' : '在画布或项目大纲中选择节点，审核目标、业务参数和能力来源。'}</p></div>}
       </aside>
     </div>
 

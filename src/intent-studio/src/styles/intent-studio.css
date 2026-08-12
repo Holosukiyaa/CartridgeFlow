@@ -208,6 +208,27 @@ button:focus-visible, a:focus-visible, textarea:focus-visible, input:focus-visib
 .creator-capability-source > svg { color: var(--intent-success); }
 .creator-capability-source div { display: grid; gap: 2px; }
 .creator-capability-source span { color: var(--intent-muted); font-size: 10px; }
+.creator-experience { display: grid; gap: 12px; }
+.creator-experience > header { display: flex; align-items: center; gap: 8px; }
+.creator-experience > header svg { width: 16px; height: 16px; color: #53666e; }
+.creator-experience > header div { display: grid; gap: 2px; }
+.creator-experience > header span { color: var(--intent-muted); font-size: 10px; }
+.creator-experience-slot { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--intent-line); background: #f8faf9; border-radius: 5px; }
+.creator-experience-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.creator-experience-title > span { color: var(--intent-success); font-size: 10px; }
+.creator-component-options { display: grid; gap: 6px; }
+.creator-component-options > button { display: flex; min-height: 54px; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 10px; border: 1px solid var(--intent-line); background: #fff; color: var(--intent-text); text-align: left; }
+.creator-component-options > button:hover:not(:disabled) { border-color: #9eaaa5; }
+.creator-component-options > button.is-selected { border-color: var(--intent-accent); box-shadow: inset 3px 0 0 var(--intent-accent); }
+.creator-component-options > button > span { display: grid; gap: 3px; }
+.creator-component-options > button small { color: var(--intent-muted); font-size: 10px; font-weight: 400; }
+.creator-component-options > button svg { width: 15px; height: 15px; flex: 0 0 auto; color: var(--intent-accent-dark); }
+.creator-component-preview { height: 150px; overflow: hidden; border: 1px solid var(--intent-line); background: #fff; }
+.creator-component-preview iframe { width: 100%; height: 100%; border: 0; background: #fff; }
+.creator-field-mapping { display: grid; gap: 8px; }
+.creator-field-mapping label { display: grid; grid-template-columns: minmax(70px, .8fr) minmax(0, 1.2fr); align-items: center; gap: 8px; color: #596971; font-size: 10px; }
+.creator-field-mapping select { width: 100%; min-width: 0; height: 32px; padding: 0 8px; border: 1px solid var(--intent-line-strong); background: #fff; color: var(--intent-text); }
+.creator-experience-save { justify-self: end; }
 .creator-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .creator-fields::before { content: "业务参数"; grid-column: 1 / -1; color: #34444b; font-size: 12px; font-weight: 750; }
 .creator-fields label > span, .creator-ai-refine label > span, .creator-source-query label > span { display: block; margin-bottom: 5px; color: #6d7c83; font-size: 10px; font-weight: 700; }

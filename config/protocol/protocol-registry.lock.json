@@ -13,7 +13,7 @@
   "runtime_source_id": "cartridgeflow-authoritative",
   "runtime_catalog": {
     "path": "config/protocol/runtime-compatibility.json",
-    "sha256": "a18ee6469b62b68b782ea84a362a7ad22921054009556451cb138c873dc4741d"
+    "sha256": "f9ca443748ac1434158009a0f54989b520ba58130d08c0286fc75a29e16d34a6"
   },
   "base": {
     "path": "config/base/BASE_IMPLEMENTATION.json",
@@ -28,8 +28,8 @@
   ],
   "registry": {
     "schema_version": "4",
-    "logical_digest": "b6ef9b042b527bedd1f8dbdf281469de5a80794ec44b1c720d12cef478ffe644",
-    "database_sha256": "92a73bffe64a4c4b5a383867d2888ebefe3aa158a8145814569e2e89cf59d8cf",
+    "logical_digest": "83e10a4968d625c8fab20e35688840d86cf178c0ad0f5dba6345b48df622552f",
+    "database_sha256": "2b57b039e80569a4c20a96c7af45f381dcab514fb80f059255f8b40d428866d3",
     "path": "config/protocol/protocol-registry.sqlite"
   }
 }

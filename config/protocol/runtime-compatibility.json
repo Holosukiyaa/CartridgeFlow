@@ -978,7 +978,11 @@
       "definition": {
         "schema": "cartridgeflow.host_runtime_profile.v1",
         "id": "CF-DRP",
-        "version": "1.0",
+        "version": "1.1",
+        "compatible_target_versions": [
+          "1.0",
+          "1.1"
+        ],
         "host_id": "cartridgeflow.desktop-runner",
         "release_envelopes": [
           {
@@ -994,7 +998,8 @@
             "id": "CF-FARP",
             "versions": [
               "1.0",
-              "1.1"
+              "1.1",
+              "1.7"
             ]
           }
         ],
@@ -1013,7 +1018,8 @@
           "llm_prompt",
           "pass_result",
           "confirm_checkpoint",
-          "tool_call"
+          "tool_call",
+          "render_interaction"
         ],
         "edge_kinds": [
           "sequence",

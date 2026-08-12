@@ -486,11 +486,22 @@ def build_runtime_profile_compatibility_report(
         except DataContractError as exc:
             _runtime_finding(report, "cre_runtime_target_invalid", str(exc), "payload/manifest.json.runtime_contract.target_runtimes")
             return report
-        expected = {"id": str(profile.get("id") or ""), "version": str(profile.get("version") or "")}
-        if expected not in targets:
-            _runtime_finding(report, "cre_runtime_target_unknown", f"cartridge does not target {expected['id']}@{expected['version']}", "payload/manifest.json.runtime_contract.target_runtimes")
+        profile_id = str(profile.get("id") or "")
+        compatible_versions = [str(item) for item in profile.get("compatible_target_versions") or [profile.get("version")]]
+        matched = next(
+            (
+                {"id": profile_id, "version": version}
+                for version in reversed(compatible_versions)
+                if {"id": profile_id, "version": version} in targets
+            ),
+            None,
+        )
+        expected = {"id": profile_id, "version": str(profile.get("version") or "")}
+        if matched is None:
+            supported = ", ".join(f"{profile_id}@{version}" for version in compatible_versions)
+            _runtime_finding(report, "cre_runtime_target_unknown", f"cartridge does not target a compatible runtime ({supported})", "payload/manifest.json.runtime_contract.target_runtimes")
             return report
-        report["target"] = expected
+        report["target"] = matched
 
     flow_protocol = flow.get("protocol") if isinstance(flow.get("protocol"), dict) else {}
     protocol_id = str(flow_protocol.get("id") or runtime.get("protocol") or "")

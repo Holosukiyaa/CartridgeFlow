@@ -189,6 +189,20 @@ export const rejectCreatorCapability = (sessionId: string, nodeId: string, expec
     method: 'POST', body: JSON.stringify({ expected_revision: expectedRevision }),
   })
 
+export const setCreatorExperience = (
+  sessionId: string,
+  nodeId: string,
+  body: {
+    expected_revision: number
+    expected_experience_revision: number
+    slot_id: string
+    component_id: string
+    field_sources: Record<string, string>
+  },
+) => api<{ creator: CreatorProjection }>(`${sessionRoute(sessionId)}/nodes/${encodeURIComponent(nodeId)}/experience`, {
+  method: 'PUT', body: JSON.stringify(body),
+})
+
 export const packageCreatorProject = (sessionId: string, expectedRevision: number) =>
   api<CreatorPackage>(`${sessionRoute(sessionId)}/package`, {
     method: 'POST', body: JSON.stringify({ expected_revision: expectedRevision }), timeoutMs: 90_000,

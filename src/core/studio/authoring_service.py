@@ -39,6 +39,150 @@ from core.llm.authoring import AuthoringProposalError, build_authoring_messages,
 SERVICE_AUTHORING_OPERATIONS = frozenset(_OPERATIONS)
 
 
+def _schemas_compatible(left: object, right: object) -> bool:
+    if not isinstance(left, dict) or not isinstance(right, dict):
+        return False
+    left_type, right_type = left.get("type"), right.get("type")
+    return not left_type or not right_type or left_type == right_type
+
+
+def _release_json_file(release: dict, relative: object) -> dict | None:
+    implementation = release.get("implementation") if isinstance(release.get("implementation"), dict) else {}
+    files = implementation.get("files") if isinstance(implementation.get("files"), dict) else {}
+    raw = files.get(str(relative or "").replace("\\", "/"))
+    if not isinstance(raw, str):
+        return None
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def _component_schema(component: dict, asset_by_id: dict[str, dict], release: dict) -> dict | None:
+    value = component.get("input_schema")
+    if isinstance(value, dict):
+        return deepcopy(value)
+    reference = str(value or "")
+    asset = asset_by_id.get(reference.removeprefix("asset:")) if reference.startswith("asset:") else None
+    return _release_json_file(release, (asset or {}).get("path"))
+
+
+def _experience_projection(release: dict, selected: dict | None = None) -> dict:
+    """Project passive display choices without exposing package paths or store keys."""
+    implementation = release.get("implementation") if isinstance(release.get("implementation"), dict) else {}
+    manifest = implementation.get("manifest") if isinstance(implementation.get("manifest"), dict) else {}
+    flow = implementation.get("root_flow") if isinstance(implementation.get("root_flow"), dict) else {}
+    assets_doc = _release_json_file(release, manifest.get("asset_registry")) or {}
+    components_doc = _release_json_file(release, manifest.get("interaction_components")) or {}
+    assets = {
+        str(item.get("id")): item
+        for item in assets_doc.get("assets") or []
+        if isinstance(item, dict) and item.get("id")
+    }
+    components = {
+        str(item.get("id")): item
+        for item in components_doc.get("components") or []
+        if isinstance(item, dict) and item.get("id")
+    }
+    files = implementation.get("files") if isinstance(implementation.get("files"), dict) else {}
+    ports = [*((release.get("interface") or {}).get("inputs") or []), *((release.get("interface") or {}).get("outputs") or [])]
+    port_by_store = {
+        str(item.get("store_key")): item
+        for item in ports
+        if isinstance(item, dict) and item.get("store_key")
+    }
+    selection = selected if isinstance(selected, dict) else {}
+    slots = []
+    for state_id, state in sorted((flow.get("states") or {}).items()):
+        if (
+            not isinstance(state, dict)
+            or state.get("type") != "process"
+            or state.get("kind") != "interaction"
+            or state.get("interaction_mode") != "display"
+        ):
+            continue
+        original_component = components.get(str(state.get("component_ref") or ""))
+        original_schema = _component_schema(original_component or {}, assets, release) or {}
+        original_properties = original_schema.get("properties") if isinstance(original_schema.get("properties"), dict) else {}
+        sources = []
+        for source_id, reference in sorted((state.get("input_binding") or {}).items()):
+            reference = str(reference or "")
+            if not reference.startswith("store:"):
+                continue
+            store_key = reference.removeprefix("store:")
+            port = port_by_store.get(store_key) or {}
+            schema = port.get("schema") if isinstance(port.get("schema"), dict) else original_properties.get(source_id, {})
+            sources.append({
+                "id": str(source_id),
+                "label": str(port.get("label") or source_id).strip(),
+                "schema": deepcopy(schema) if isinstance(schema, dict) else {},
+            })
+        projected_components = []
+        for component_id, component in sorted(components.items()):
+            if component.get("runtime") != "passive" or "display" not in (component.get("supported_modes") or []):
+                continue
+            schema = _component_schema(component, assets, release)
+            if not isinstance(schema, dict) or schema.get("type") not in {None, "object"}:
+                continue
+            properties = schema.get("properties") if isinstance(schema.get("properties"), dict) else {}
+            required = {str(item) for item in schema.get("required") or []}
+            fields = []
+            available = True
+            for field_id, field_schema in sorted(properties.items()):
+                compatible = [item["id"] for item in sources if _schemas_compatible(item["schema"], field_schema)]
+                if field_id in required and not compatible:
+                    available = False
+                fields.append({
+                    "id": str(field_id),
+                    "label": str((field_schema or {}).get("title") or field_id),
+                    "required": field_id in required,
+                    "schema": deepcopy(field_schema) if isinstance(field_schema, dict) else {},
+                    "compatible_source_ids": compatible,
+                })
+            entry = component.get("entry") if isinstance(component.get("entry"), dict) else {}
+            asset = assets.get(str(entry.get("ref") or "").removeprefix("asset:"))
+            preview_html = files.get(str((asset or {}).get("path") or ""), "")
+            projected_components.append({
+                "id": component_id,
+                "label": str(component.get("label") or component_id),
+                "description": str(component.get("description") or "由能力卡带提供"),
+                "available": available,
+                "fields": fields,
+                "preview_html": preview_html if isinstance(preview_html, str) else "",
+            })
+        slot_selection = selection.get(state_id) if isinstance(selection.get(state_id), dict) else {}
+        selected_component_id = str(slot_selection.get("component_id") or state.get("component_ref") or "")
+        selected_component = next((item for item in projected_components if item["id"] == selected_component_id), None)
+        field_sources = deepcopy(slot_selection.get("field_sources") or {})
+        if not field_sources and selected_component_id == state.get("component_ref"):
+            field_sources = {
+                field["id"]: field["id"]
+                for field in (selected_component or {}).get("fields") or []
+                if field["id"] in {item["id"] for item in sources}
+            }
+        source_by_id = {item["id"]: item for item in sources}
+        complete = bool(selected_component and selected_component.get("available"))
+        for field in (selected_component or {}).get("fields") or []:
+            source_id = field_sources.get(field["id"])
+            if field["required"] and source_id not in field["compatible_source_ids"]:
+                complete = False
+            if source_id is not None and source_id not in source_by_id:
+                complete = False
+        slots.append({
+            "id": str(state_id),
+            "label": str(state.get("display_name") or state.get("title") or "运行结果"),
+            "selected_component_id": selected_component_id,
+            "field_sources": field_sources,
+            "components": projected_components,
+            "sources": sources,
+            "status": "configured" if complete else "configuration_required",
+        })
+    if not slots:
+        return {"status": "unavailable", "reason": "当前能力没有可切换的展示位置", "slots": []}
+    return {"status": "available", "slots": slots}
+
+
 class AuthoringServiceError(ValueError):
     """Stable authoring-service error, suitable for creator and developer APIs."""
 
@@ -153,6 +297,8 @@ class AuthoringSessionStore:
             state["capability_publications"] = deepcopy(publications)
             state["capability_reviews"] = {}
             state["capability_rejections"] = {}
+            state["experience_mappings"] = {}
+            state["experience_revision"] = int(state.get("experience_revision") or 0) + 1
             state["resolution_revision"] = int(state.get("resolution_revision") or 0) + 1
             state["proposals"] = {}
             state["freezes"] = []
@@ -232,6 +378,11 @@ class AuthoringSessionStore:
             state["instances"][instance["id"]] = instance
             state["semantic_recipe"] = next_recipe
             state["capability_publications"] = publications
+            mappings = state.setdefault("experience_mappings", {})
+            for node_id in resolved:
+                mappings.pop(node_id, None)
+            if resolved:
+                state["experience_revision"] = int(state.get("experience_revision") or 0) + 1
             state["resolution_revision"] = int(state.get("resolution_revision") or 0) + 1
             state["proposals"] = {}
             self._write(self._path(session_id), state)
@@ -692,6 +843,63 @@ class AuthoringSessionStore:
             self._write(self._path(session_id), state)
             return snapshot
 
+    def set_experience_mapping(
+        self,
+        session_id: str,
+        node_id: str,
+        slot_id: str,
+        component_id: str,
+        field_sources: dict[str, str],
+        *,
+        expected_revision: int,
+        expected_experience_revision: int,
+    ) -> dict:
+        """Select one cartridge-owned passive view using business-safe source ids."""
+        with self._lock:
+            state = self.get(session_id)
+            self._require_revision(state, expected_revision)
+            if not isinstance(state.get("semantic_recipe"), dict):
+                raise AuthoringServiceError(
+                    "AUTHORING_EXPERIENCE_UNAVAILABLE",
+                    "This project does not use semantic capability cartridges.",
+                    status=409,
+                )
+            actual_experience_revision = int(state.get("experience_revision") or 0)
+            if expected_experience_revision != actual_experience_revision:
+                raise AuthoringServiceError(
+                    "AUTHORING_EXPERIENCE_REVISION_CONFLICT",
+                    "The presentation choice changed in another view. Reload before saving.",
+                    status=409,
+                )
+            publication = (state.get("capability_publications") or {}).get(node_id)
+            if not isinstance(publication, dict):
+                raise AuthoringServiceError("AUTHORING_STEP_UNKNOWN", "The target Creator node was not found.", status=404)
+            current = deepcopy((state.get("experience_mappings") or {}).get(node_id) or {})
+            projection = _experience_projection(publication, current)
+            slot = next((item for item in projection["slots"] if item["id"] == slot_id), None)
+            component = next((item for item in (slot or {}).get("components") or [] if item["id"] == component_id), None)
+            source_ids = {item["id"] for item in (slot or {}).get("sources") or []}
+            fields = {item["id"]: item for item in (component or {}).get("fields") or []}
+            submitted = field_sources if isinstance(field_sources, dict) else {}
+            valid = bool(slot and component and component.get("available") and set(submitted) <= set(fields))
+            for field_id, field in fields.items():
+                source_id = submitted.get(field_id)
+                if field["required"] and source_id not in field["compatible_source_ids"]:
+                    valid = False
+                if source_id is not None and (source_id not in source_ids or source_id not in field["compatible_source_ids"]):
+                    valid = False
+            if not valid:
+                raise AuthoringServiceError(
+                    "AUTHORING_EXPERIENCE_MAPPING_INVALID",
+                    "The selected component cannot be fully mapped to data available at this step.",
+                    status=409,
+                )
+            current[slot_id] = {"component_id": component_id, "field_sources": deepcopy(submitted)}
+            state.setdefault("experience_mappings", {})[node_id] = current
+            state["experience_revision"] = actual_experience_revision + 1
+            self._write(self._path(session_id), state)
+            return self.creator_projection(state)
+
     def confirm_materialization(self, session_id: str, *, expected_revision: int, author: str, summary: str) -> dict:
         """Record Developer approval of one exact frozen trusted-recipe candidate."""
         with self._lock:
@@ -740,8 +948,18 @@ class AuthoringSessionStore:
                 "design_checks": checks, "generation_readiness": AuthoringSessionStore.generation_readiness(state, checks)}
         if state.get("semantic_recipe"):
             semantic = semantic_recipe_projection(state["semantic_recipe"], state.get("capability_publications") or {}, head["bindings"])
+            publications = state.get("capability_publications") or {}
+            mappings = state.get("experience_mappings") or {}
+            for node in semantic["nodes"]:
+                publication = publications.get(node["id"])
+                node["experience"] = (
+                    _experience_projection(publication, mappings.get(node["id"]))
+                    if isinstance(publication, dict)
+                    else {"status": "unavailable", "reason": "请先补齐能力", "slots": []}
+                )
             projection["semantic_recipe"] = semantic
             projection["trusted_recipe"] = semantic
+            projection["experience_revision"] = int(state.get("experience_revision") or 0)
             projection["capability_resolution"] = {
                 "resolved": sum(1 for node in semantic["nodes"] if node["resolution"]["status"] == "resolved"),
                 "unresolved": sum(1 for node in semantic["nodes"] if node["resolution"]["status"] == "unresolved"),
@@ -874,6 +1092,17 @@ class AuthoringSessionStore:
                     findings.append({"code": "DESIGN_CAPABILITY_UNRESOLVED", "severity": "blocked", "step_id": step["id"], "message": "This semantic node still needs a trusted capability cartridge."})
                 elif reviews.get(step["id"]) != publication.get("digest"):
                     findings.append({"code": "DESIGN_CAPABILITY_REVIEW_REQUIRED", "severity": "blocked", "step_id": step["id"], "message": "The resolved capability source has not been reviewed for this node."})
+                else:
+                    experience = _experience_projection(publication, (state.get("experience_mappings") or {}).get(step["id"]))
+                    for slot in experience.get("slots") or []:
+                        if slot.get("status") != "configured":
+                            findings.append({
+                                "code": "DESIGN_EXPERIENCE_MAPPING_REQUIRED",
+                                "severity": "blocked",
+                                "step_id": step["id"],
+                                "slot_id": slot.get("id"),
+                                "message": "Choose how this step is shown and map every required field.",
+                            })
         for step in head["blueprint"]["steps"]:
             if step["id"] not in frozen:
                 findings.append({"code": "DESIGN_STEP_UNFROZEN", "severity": "blocked", "step_id": step["id"], "message": "This design step is not frozen."})
@@ -901,6 +1130,7 @@ class AuthoringSessionStore:
                 node_id: {key: publication[key] for key in ("id", "revision", "digest", "trust_scope")}
                 for node_id, publication in sorted((state.get("capability_publications") or {}).items())
             })
+            candidate["experience_mapping_digest"] = canonical_digest(state.get("experience_mappings") or {})
         return candidate
 
     @staticmethod

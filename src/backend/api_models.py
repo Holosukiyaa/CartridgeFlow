@@ -188,6 +188,14 @@ class CreatorNodeRefinementPayload(BaseModel):
     summary: str = "AI-assisted trusted node refinement"
 
 
+class CreatorExperienceMappingPayload(BaseModel):
+    expected_revision: int = Field(ge=1)
+    expected_experience_revision: int = Field(ge=0)
+    slot_id: str = Field(min_length=1, max_length=120)
+    component_id: str = Field(min_length=1, max_length=200)
+    field_sources: dict[str, str] = Field(default_factory=dict)
+
+
 class DeveloperMaterializationPayload(BaseModel):
     expected_revision: int
     author: str = "developer"

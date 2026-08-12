@@ -17,6 +17,8 @@ import tempfile
 from core.protocol.flow_contract import validate_execution_plan_v1_flow_contract
 from core.protocol.release_builder import ReleaseBuildError, build_release_archive, inspect_release_archive
 from core.protocol.release_signing import ensure_development_signing_identity, trusted_public_keys
+from core.cartridge.presentation import default_settings_bindings, default_settings_contract, default_ui_contract
+from core.cartridge.assets import validate_passive_html
 from core.protocol.tuning import canonical_digest
 from core.studio.authoring_service import AuthoringServiceError, AuthoringSessionStore
 from core.studio.release import release_archive_inputs
@@ -145,6 +147,8 @@ class CreatorRuntimeBridge:
             ]
         else:
             expanded_publications = {}
+        assets = self._combined_interaction_assets(expanded_publications)
+        formal_release = bool(package_boundary and assets["components"]["components"])
         root_flow = self._root_flow(
             instance,
             lineage,
@@ -154,6 +158,8 @@ class CreatorRuntimeBridge:
             trusted_presets=state.get("trusted_presets") or [],
             semantic_recipe=state.get("semantic_recipe"),
             capability_publications=capability_publications,
+            experience_mappings=state.get("experience_mappings") or {},
+            component_ids=assets["component_ids"],
         )
         findings = validate_execution_plan_v1_flow_contract(
             root_flow,
@@ -168,6 +174,14 @@ class CreatorRuntimeBridge:
             )
 
         manifest = self._manifest(actual_candidate, lineage, flow_protocol, mappings or {}, expanded_publications)
+        if assets["components"]["components"]:
+            manifest["interaction_components"] = "assets/components.json"
+        if formal_release:
+            manifest["runtime_contract"]["target_runtimes"] = [{"id": "CF-DRP", "version": "1.1"}]
+            manifest["presentation"] = {
+                "settings": {"contract": "contracts/settings.contract.json", "bindings": "settings/bindings.json"},
+                "ui": {"contract": "contracts/ui.contract.json"},
+            }
         combined_dlc = self._combined_dlc_descriptor(expanded_publications, manifest["id"])
         if combined_dlc:
             manifest["portable_dlc"] = {"protocol": "CF-FARP@1.7", "descriptor": "dlc/descriptor.json"}
@@ -181,8 +195,22 @@ class CreatorRuntimeBridge:
             self._write_json(source / "root.flow.json", root_flow)
             self._write_json(
                 source / "assets" / "registry.json",
-                {"schema": "cartridgeflow.asset_registry.v1", "assets": []},
+                assets["registry"],
             )
+            if assets["components"]["components"]:
+                self._write_json(source / "assets" / "components.json", assets["components"])
+            for relative, content in sorted(assets["files"].items()):
+                target = source / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(content, encoding="utf-8", newline="")
+            settings = settings_bindings = ui = None
+            if formal_release:
+                settings = default_settings_contract()
+                settings_bindings = default_settings_bindings()
+                ui = default_ui_contract()
+                self._write_json(source / "contracts" / "settings.contract.json", settings)
+                self._write_json(source / "settings" / "bindings.json", settings_bindings)
+                self._write_json(source / "contracts" / "ui.contract.json", ui)
             if combined_dlc:
                 self._write_json(source / "dlc" / "descriptor.json", combined_dlc)
             for publication in expanded_publications.values():
@@ -214,6 +242,10 @@ class CreatorRuntimeBridge:
                     required_capabilities=release_inputs["required_capabilities"],
                     required_permissions=release_inputs["required_permissions"],
                     signing_identity=identity,
+                    settings=settings,
+                    settings_bindings=settings_bindings,
+                    ui=ui,
+                    release_envelope_version=2 if formal_release else 1,
                 )
                 inspection = inspect_release_archive(pending, trusted_keys=trusted_public_keys(self.root))
                 if not inspection.get("activation_allowed"):
@@ -229,11 +261,11 @@ class CreatorRuntimeBridge:
         return {
             "schema": "cartridgeflow.creator_runtime_handoff.v1",
             "status": "signed_handoff_ready",
-            "protocol": self.RELEASE_PROTOCOL,
+            "protocol": "CF-CRE@2" if formal_release else self.RELEASE_PROTOCOL,
             "distribution": {
-                "mode": self.DISTRIBUTION_MODE,
-                "production_eligible": False,
-                "reason": "explicit_presentation_contracts_absent",
+                "mode": "formal" if formal_release else self.DISTRIBUTION_MODE,
+                "production_eligible": formal_release,
+                "reason": "verified_presentation_contracts" if formal_release else "explicit_presentation_contracts_absent",
             },
             "release_id": built["release_id"],
             "filename": output.name,
@@ -308,9 +340,14 @@ class CreatorRuntimeBridge:
         self, instance: dict, lineage: dict, flow_protocol: dict, mappings: dict, *,
         trusted_recipe: dict | None, trusted_presets: list[dict],
         semantic_recipe: dict | None = None, capability_publications: dict[str, dict] | None = None,
+        experience_mappings: dict[str, dict] | None = None,
+        component_ids: dict[str, str] | None = None,
     ) -> dict:
         if semantic_recipe:
-            return self._recursive_root_flow(instance, lineage, flow_protocol, semantic_recipe, capability_publications or {})
+            return self._recursive_root_flow(
+                instance, lineage, flow_protocol, semantic_recipe, capability_publications or {},
+                experience_mappings or {}, component_ids or {},
+            )
         steps = sorted(instance["blueprint"]["steps"], key=lambda item: item["id"])
         relationships = sorted(instance["blueprint"].get("relations", []), key=lambda item: item["id"])
         order = self._topological_order(steps, relationships)
@@ -373,7 +410,10 @@ class CreatorRuntimeBridge:
             "creator_lineage": deepcopy(lineage),
         }
 
-    def _recursive_root_flow(self, instance: dict, lineage: dict, flow_protocol: dict, semantic_recipe: dict, publications: dict[str, dict]) -> dict:
+    def _recursive_root_flow(
+        self, instance: dict, lineage: dict, flow_protocol: dict, semantic_recipe: dict,
+        publications: dict[str, dict], experience_mappings: dict[str, dict], component_ids: dict[str, str],
+    ) -> dict:
         steps = sorted(instance["blueprint"]["steps"], key=lambda item: item["id"])
         relationships = sorted(instance["blueprint"].get("relations", []), key=lambda item: item["id"])
         order = self._topological_order(steps, relationships, semantic=True)
@@ -448,6 +488,8 @@ class CreatorRuntimeBridge:
                 else:
                     child_states, child_edges, entry, exit_id, outputs = self._inline_flow_release(
                         release, suffix, values, upstream,
+                        experience_mapping=experience_mappings.get(step_id, {}) if release["digest"] == publication["digest"] else {},
+                        component_ids=component_ids,
                     )
                     for state_id, state in child_states.items():
                         if state_id in states:
@@ -578,7 +620,10 @@ class CreatorRuntimeBridge:
         visit(release)
         return expanded
 
-    def _inline_flow_release(self, release: dict, instance_id: str, values: dict, upstream: dict[str, dict]) -> tuple[dict, list[dict], str, str, dict[str, dict]]:
+    def _inline_flow_release(
+        self, release: dict, instance_id: str, values: dict, upstream: dict[str, dict], *,
+        experience_mapping: dict[str, dict] | None = None, component_ids: dict[str, str] | None = None,
+    ) -> tuple[dict, list[dict], str, str, dict[str, dict]]:
         implementation = release["implementation"]
         root_flow = deepcopy(implementation["root_flow"])
         for field_id, path in implementation.get("creator_bindings", {}).items():
@@ -628,8 +673,28 @@ class CreatorRuntimeBridge:
         file_paths = set((implementation.get("files") or {}).keys())
         normalized_states: dict[str, dict] = {}
         ref = {key: release[key] for key in ("id", "revision", "digest", "trust_scope")}
+        experience_mapping = experience_mapping if isinstance(experience_mapping, dict) else {}
+        component_ids = component_ids or {}
         for state_id, raw_state in states.items():
             state = self._rewrite_flow_value(deepcopy(raw_state), id_map, store_map, prefix, file_prefix, file_paths)
+            if isinstance(raw_state, dict) and raw_state.get("kind") == "interaction":
+                selected = experience_mapping.get(state_id) if isinstance(experience_mapping.get(state_id), dict) else {}
+                original_component = str(raw_state.get("component_ref") or "")
+                component_id = str(selected.get("component_id") or original_component)
+                namespaced = component_ids.get(f"{release['id']}@{release['revision']}:{component_id}")
+                if not namespaced:
+                    raise CreatorRuntimeBridgeError(
+                        "CREATOR_HANDOFF_COMPONENT_MISSING",
+                        f"Capability interaction component is unavailable: {component_id}.",
+                    )
+                state["component_ref"] = namespaced
+                if selected:
+                    rewritten_sources = state.get("input_binding") if isinstance(state.get("input_binding"), dict) else {}
+                    state["input_binding"] = {
+                        str(field_id): rewritten_sources[str(source_id)]
+                        for field_id, source_id in sorted((selected.get("field_sources") or {}).items())
+                        if str(source_id) in rewritten_sources
+                    }
             if state_id == success_exit:
                 state = {"type": "control", "title": f"{release['creator']['label']} exit", "locked": True}
             state["capability_release"] = deepcopy(ref)
@@ -709,6 +774,116 @@ class CreatorRuntimeBridge:
             return {key: cls._rewrite_package_paths(item, prefix, file_paths) for key, item in value.items()}
         if isinstance(value, str) and value.replace("\\", "/") in file_paths:
             return prefix + value.replace("\\", "/")
+        return value
+
+    @classmethod
+    def _combined_interaction_assets(cls, publications: dict[str, dict]) -> dict:
+        assets: list[dict] = []
+        components: list[dict] = []
+        files: dict[str, str] = {}
+        component_ids: dict[str, str] = {}
+        for release_key, release in sorted(publications.items()):
+            implementation = release.get("implementation") if isinstance(release.get("implementation"), dict) else {}
+            if implementation.get("kind") != "flow":
+                continue
+            manifest = implementation.get("manifest") if isinstance(implementation.get("manifest"), dict) else {}
+            source_files = implementation.get("files") if isinstance(implementation.get("files"), dict) else {}
+            registry_path = str(manifest.get("asset_registry") or "").replace("\\", "/")
+            components_path = str(manifest.get("interaction_components") or "").replace("\\", "/")
+            if not registry_path and not components_path:
+                continue
+            try:
+                registry = json.loads(source_files.get(registry_path, ""))
+                component_registry = json.loads(source_files.get(components_path, ""))
+            except json.JSONDecodeError as exc:
+                raise CreatorRuntimeBridgeError(
+                    "CREATOR_HANDOFF_COMPONENT_REGISTRY_INVALID",
+                    f"Capability {release_key} carries an invalid component registry.",
+                ) from exc
+            if (
+                not isinstance(registry, dict)
+                or registry.get("schema") != "cartridgeflow.asset_registry.v1"
+                or not isinstance(registry.get("assets"), list)
+                or not isinstance(component_registry, dict)
+                or component_registry.get("schema") != "cartridgeflow.interaction_components.v1"
+                or not isinstance(component_registry.get("components"), list)
+            ):
+                raise CreatorRuntimeBridgeError(
+                    "CREATOR_HANDOFF_COMPONENT_REGISTRY_INVALID",
+                    f"Capability {release_key} component registries are incomplete.",
+                )
+            namespace = f"cap.{release['id']}.r{release['revision']}"
+            asset_id_map = {
+                str(item.get("id")): f"{namespace}.{item.get('id')}"
+                for item in registry["assets"]
+                if isinstance(item, dict) and item.get("id")
+            }
+            source_asset_by_id = {
+                str(item.get("id")): item
+                for item in registry["assets"]
+                if isinstance(item, dict) and item.get("id")
+            }
+            for source_id, source_asset in sorted(source_asset_by_id.items()):
+                source_path = str(source_asset.get("path") or "").replace("\\", "/")
+                content = source_files.get(source_path)
+                if not isinstance(content, str):
+                    raise CreatorRuntimeBridgeError(
+                        "CREATOR_HANDOFF_COMPONENT_ASSET_MISSING",
+                        f"Capability {release_key} component asset is missing: {source_path}.",
+                    )
+                raw = content.encode("utf-8")
+                declared_digest = str(source_asset.get("sha256") or "").removeprefix("sha256:").lower()
+                if declared_digest != hashlib.sha256(raw).hexdigest() or source_asset.get("size") != len(raw):
+                    raise CreatorRuntimeBridgeError(
+                        "CREATOR_HANDOFF_COMPONENT_ASSET_INVALID",
+                        f"Capability {release_key} component asset integrity is invalid: {source_path}.",
+                    )
+                for original_id, mapped_id in asset_id_map.items():
+                    content = content.replace(f"asset:{original_id}", f"asset:{mapped_id}")
+                if source_asset.get("kind") == "interaction_template":
+                    validate_passive_html(content)
+                destination = f"assets/capabilities/{release['id']}/{release['revision']}/{source_path}"
+                rewritten_raw = content.encode("utf-8")
+                assets.append({
+                    **deepcopy(source_asset),
+                    "id": asset_id_map[source_id],
+                    "path": destination,
+                    "sha256": hashlib.sha256(rewritten_raw).hexdigest(),
+                    "size": len(rewritten_raw),
+                })
+                files[destination] = content
+            for raw_component in component_registry["components"]:
+                if not isinstance(raw_component, dict):
+                    continue
+                component_id = str(raw_component.get("id") or "")
+                if (
+                    not component_id
+                    or raw_component.get("runtime") != "passive"
+                    or "display" not in (raw_component.get("supported_modes") or [])
+                ):
+                    continue
+                namespaced_id = f"{namespace}.{component_id}"
+                component_ids[f"{release['id']}@{release['revision']}:{component_id}"] = namespaced_id
+                component = deepcopy(raw_component)
+                component["id"] = namespaced_id
+                component = cls._rewrite_asset_references(component, asset_id_map)
+                components.append(component)
+        return {
+            "registry": {"schema": "cartridgeflow.asset_registry.v1", "assets": assets},
+            "components": {"schema": "cartridgeflow.interaction_components.v1", "components": components},
+            "files": files,
+            "component_ids": component_ids,
+        }
+
+    @classmethod
+    def _rewrite_asset_references(cls, value: object, asset_id_map: dict[str, str]) -> object:
+        if isinstance(value, list):
+            return [cls._rewrite_asset_references(item, asset_id_map) for item in value]
+        if isinstance(value, dict):
+            return {key: cls._rewrite_asset_references(item, asset_id_map) for key, item in value.items()}
+        if isinstance(value, str) and value.startswith("asset:"):
+            source_id = value.removeprefix("asset:")
+            return f"asset:{asset_id_map.get(source_id, source_id)}"
         return value
 
     @classmethod

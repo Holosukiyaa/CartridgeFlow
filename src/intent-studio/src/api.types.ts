@@ -25,6 +25,31 @@ export interface CreatorRecipeNode {
       description: string
     }
   }
+  experience?: {
+    status: 'available' | 'unavailable'
+    reason?: string
+    slots: Array<{
+      id: string
+      label: string
+      status: 'configured' | 'configuration_required'
+      selected_component_id: string
+      field_sources: Record<string, string>
+      sources: Array<{ id: string; label: string; schema: Record<string, unknown> }>
+      components: Array<{
+        id: string
+        label: string
+        description: string
+        available: boolean
+        preview_html: string
+        fields: Array<{
+          id: string
+          label: string
+          required: boolean
+          compatible_source_ids: string[]
+        }>
+      }>
+    }>
+  }
 }
 
 export interface CreatorProposal {
@@ -39,6 +64,7 @@ export interface CreatorProjection {
   project_name?: string
   session_id: string
   revision: number
+  experience_revision?: number
   intent: string
   trusted_recipe: {
     id: string

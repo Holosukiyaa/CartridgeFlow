@@ -151,6 +151,7 @@ from core.protocol import (
 )
 from core.protocol.tuning import TuningConflictError, TuningProtocolError
 from core.studio.release import ProductionReleaseError, build_production_release_handoff
+from core.cartridge.presentation import default_ui_contract, without_node_settings
 
 ensure_data_layout(ROOT)
 PRODUCT_VERSION = (ROOT / "VERSION").read_text(encoding="utf-8").strip().removeprefix("CartridgeFlow-")
@@ -4221,6 +4222,31 @@ def _apply_manifest_contracts(
     return True
 
 
+def _ensure_presentation_manifest(files: dict) -> bool:
+    """Declare the signed v1 presentation files when authoring them on an older dev Flow."""
+    import json as _json
+    manifest = _json.loads(files.get("manifest") or "{}")
+    expected = {
+        "settings": {
+            "contract": "contracts/settings.contract.json",
+            "bindings": "settings/bindings.json",
+        },
+        "ui": {"contract": "contracts/ui.contract.json"},
+    }
+    changed = manifest.get("presentation") != expected
+    if changed:
+        manifest["presentation"] = expected
+    runtime_contract = manifest.get("runtime_contract") if isinstance(manifest.get("runtime_contract"), dict) else {}
+    targets = runtime_contract.get("target_runtimes") if isinstance(runtime_contract.get("target_runtimes"), list) else []
+    if not any(isinstance(item, dict) and item.get("id") == "CF-DRP" and item.get("version") == "1.0" for item in targets):
+        runtime_contract["target_runtimes"] = [*targets, {"id": "CF-DRP", "version": "1.0"}]
+        manifest["runtime_contract"] = runtime_contract
+        changed = True
+    if changed:
+        files["manifest"] = _json.dumps(manifest, ensure_ascii=False, indent=2)
+    return changed
+
+
 @app.post("/api/lab/flows/{cartridge_id}/nodes")
 def create_lab_flow_node(cartridge_id: str, payload: NodeCreatePayload):
     try:
@@ -4557,7 +4583,23 @@ def delete_lab_flow_node(cartridge_id: str, node_id: str, payload: NodeDeletePay
     _sync_flow_edges_from_next(root_flow, branch_edges)
 
     files["root_flow"] = _json.dumps(root_flow, ensure_ascii=False, indent=2)
-    dev_flow_manager.save_file(cartridge_id, "root_flow", files["root_flow"])
+    changed_files = {"root_flow": files["root_flow"]}
+    if str(files.get("settings_contract") or "").strip() and str(files.get("settings_bindings") or "").strip():
+        try:
+            settings, bindings = without_node_settings(
+                _json.loads(files["settings_contract"]),
+                _json.loads(files["settings_bindings"]),
+                node_id,
+            )
+        except _json.JSONDecodeError as exc:
+            raise HTTPException(status_code=400, detail=f"设置合同不是合法 JSON: {exc.msg}") from exc
+        files["settings_contract"] = _json.dumps(settings, ensure_ascii=False, indent=2)
+        files["settings_bindings"] = _json.dumps(bindings, ensure_ascii=False, indent=2)
+        changed_files.update({
+            "settings_contract": files["settings_contract"],
+            "settings_bindings": files["settings_bindings"],
+        })
+    dev_flow_manager.save_files(cartridge_id, changed_files)
     flow_protocol = root_flow.get("protocol") if isinstance(root_flow.get("protocol"), dict) else {}
     if has_protocol_feature(str(flow_protocol.get("id") or ""), str(flow_protocol.get("version") or ""), "recipe_versioning"):
         dev_flow_manager.tuning.retire_node_head(cartridge_id, node_id)
@@ -4590,6 +4632,11 @@ def update_lab_flow_node(cartridge_id: str, node_id: str, payload: NodeUpdatePay
 
     state = states[node_id]
     manifest_changed = _apply_manifest_contracts(files, payload, state)
+    presentation_keys = {"settings_contract", "settings_bindings", "ui_contract"}
+    if presentation_keys & set(payload.files):
+        if not str(files.get("ui_contract") or "").strip():
+            files["ui_contract"] = _json.dumps(default_ui_contract(), ensure_ascii=False, indent=2)
+        manifest_changed = _ensure_presentation_manifest(files) or manifest_changed
     _apply_node_update_payload(state, payload)
     _ensure_typed_node_contracts(root_flow, state)
     if _is_typed_root_flow(root_flow):
@@ -4601,9 +4648,17 @@ def update_lab_flow_node(cartridge_id: str, node_id: str, payload: NodeUpdatePay
     validation = dev_flow_manager.validate_files(cartridge_id, files)
     graph = flow_graph_builder.build(dev_flow_manager.preview_graph(cartridge_id, files))
     if validation.get("valid"):
-        dev_flow_manager.save_file(cartridge_id, "root_flow", files["root_flow"])
+        changed_files = {"root_flow": files["root_flow"]}
+        changed_files.update({
+            key: files[key]
+            for key in presentation_keys & set(payload.files)
+            if key in files
+        })
+        if presentation_keys & set(payload.files):
+            changed_files["ui_contract"] = files["ui_contract"]
         if manifest_changed:
-            dev_flow_manager.save_file(cartridge_id, "manifest", files["manifest"])
+            changed_files["manifest"] = files["manifest"]
+        dev_flow_manager.save_files(cartridge_id, changed_files)
     return {
         "status": "node_updated",
         "node_id": node_id,

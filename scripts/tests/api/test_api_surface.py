@@ -550,6 +550,108 @@ class ApiSurfaceTests(unittest.TestCase):
                 self.assertEqual("result", transfer_state["params"]["output"])
                 self.assertEqual("result", transfer_state["outputs"]["result"]["target"]["key"])
 
+    def test_node_settings_contract_is_persisted_atomically_through_http(self):
+        with tempfile.TemporaryDirectory() as directory:
+            manager = DevFlowManager(Path(directory))
+            flow_id = "dev.node-settings"
+            manager.create_flow(flow_id, "节点设置")
+            editable = {"id": flow_id, "editable": True}
+            settings = {
+                "schema": "cartridgeflow.cartridge_settings.v1",
+                "storage_scope": "cartridge",
+                "fields": [{
+                    "id": "generate.length",
+                    "label": "简报长度",
+                    "type": "enum",
+                    "default": "normal",
+                    "options": [{"value": "short", "label": "精简"}, {"value": "normal", "label": "标准"}],
+                }],
+            }
+            bindings = {
+                "schema": "cartridgeflow.cartridge_settings_bindings.v1",
+                "bindings": [{
+                    "setting_id": "generate.length",
+                    "target": {"kind": "process_param", "node_id": "generate", "param": "length"},
+                }],
+            }
+            with patch.object(backend_main, "dev_flow_manager", manager), patch.object(
+                backend_main.registry, "get_cartridge", return_value=editable,
+            ):
+                created = self.client.post(f"/api/lab/flows/{flow_id}/nodes", json={
+                    "template_id": "runtime", "node_id": "generate", "title": "生成简报", "after_node_id": "start",
+                })
+                self.assertEqual(200, created.status_code, created.text)
+                saved = self.client.put(f"/api/lab/flows/{flow_id}/nodes/generate", json={
+                    "params": {"input": "input", "output": "result", "length": "normal"},
+                    "files": {
+                        "settings_contract": json.dumps(settings, ensure_ascii=False),
+                        "settings_bindings": json.dumps(bindings, ensure_ascii=False),
+                    },
+                })
+                self.assertEqual(200, saved.status_code, saved.text)
+                self.assertTrue(saved.json()["validation"]["valid"], saved.text)
+
+                persisted = manager.read_files(flow_id)
+                self.assertEqual("generate.length", json.loads(persisted["settings_contract"])["fields"][0]["id"])
+                self.assertEqual("generate", json.loads(persisted["settings_bindings"])["bindings"][0]["target"]["node_id"])
+                self.assertEqual("none", json.loads(persisted["ui_contract"])["mode"])
+
+                before = dict(persisted)
+                rejected = self.client.put(f"/api/lab/flows/{flow_id}/nodes/generate", json={
+                    "params": {"input": "input", "output": "result", "length": "normal"},
+                    "files": {
+                        "settings_contract": json.dumps({**settings, "schema": "cartridgeflow.cartridge_settings.v2"}),
+                        "settings_bindings": json.dumps(bindings),
+                    },
+                })
+                self.assertEqual(200, rejected.status_code, rejected.text)
+                self.assertFalse(rejected.json()["validation"]["valid"])
+                self.assertEqual(before, manager.read_files(flow_id))
+
+    def test_node_settings_upgrade_an_older_flow_without_presentation_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            manager = DevFlowManager(Path(directory))
+            flow_id = "dev.legacy-settings"
+            created = manager.create_flow(flow_id, "旧卡带设置")
+            package = Path(created["path"])
+            manifest = json.loads((package / "manifest.json").read_text(encoding="utf-8"))
+            manifest.pop("presentation")
+            manifest["runtime_contract"].pop("target_runtimes")
+            (package / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+            (package / "contracts" / "settings.contract.json").unlink()
+            (package / "contracts" / "ui.contract.json").unlink()
+            (package / "settings" / "bindings.json").unlink()
+            editable = {"id": flow_id, "editable": True}
+            with patch.object(backend_main, "dev_flow_manager", manager), patch.object(
+                backend_main.registry, "get_cartridge", return_value=editable,
+            ):
+                created_node = self.client.post(f"/api/lab/flows/{flow_id}/nodes", json={
+                    "template_id": "runtime", "node_id": "generate", "title": "生成", "after_node_id": "start",
+                })
+                self.assertEqual(200, created_node.status_code, created_node.text)
+                saved = self.client.put(f"/api/lab/flows/{flow_id}/nodes/generate", json={
+                    "params": {"enabled": True},
+                    "files": {
+                        "settings_contract": json.dumps({
+                            "schema": "cartridgeflow.cartridge_settings.v1", "storage_scope": "cartridge",
+                            "fields": [{"id": "generate.enabled", "label": "启用", "type": "boolean", "default": True}],
+                        }, ensure_ascii=False),
+                        "settings_bindings": json.dumps({
+                            "schema": "cartridgeflow.cartridge_settings_bindings.v1",
+                            "bindings": [{
+                                "setting_id": "generate.enabled",
+                                "target": {"kind": "process_param", "node_id": "generate", "param": "enabled"},
+                            }],
+                        }),
+                    },
+                })
+                self.assertEqual(200, saved.status_code, saved.text)
+                self.assertTrue(saved.json()["validation"]["valid"], saved.text)
+
+            persisted = manager.read_files(flow_id)
+            self.assertIn("contracts/settings.contract.json", persisted["manifest"])
+            self.assertIn("cartridgeflow.cartridge_ui.v1", persisted["ui_contract"])
+
     def test_creator_proposal_projection_keeps_reviewable_values(self):
         projected = AuthoringSessionStore.proposal_projection({
             "id": "proposal.review",

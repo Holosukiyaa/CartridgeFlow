@@ -14,6 +14,8 @@ import {
 import '@xyflow/react/dist/style.css'
 import { capabilityApi } from './api'
 import { type AnyRecord } from './model'
+import { CartridgeSettingsEditor } from './CartridgeSettingsEditor'
+import { buildNodePresentationFiles, nodeSettingDrafts, type NodeSettingDraft, type PresentationFiles } from './settingsPresentation'
 import './styles.css'
 
 const array = (value: unknown) => Array.isArray(value) ? value as AnyRecord[] : []
@@ -148,8 +150,8 @@ function Graph({ flowId, graph, selected, onSelect, onReload }: {
   </section>
 }
 
-function CapabilityNodeEditor({ flowId, node, tools, manifestInputs, onSaved, onClose }: {
-  flowId: string; node: AnyRecord; tools: AnyRecord[]; manifestInputs: AnyRecord[]; onSaved: () => Promise<void>; onClose: () => void
+function CapabilityNodeEditor({ flowId, node, tools, manifestInputs, files, onSaved, onClose }: {
+  flowId: string; node: AnyRecord; tools: AnyRecord[]; manifestInputs: AnyRecord[]; files: PresentationFiles; onSaved: () => Promise<void>; onClose: () => void
 }) {
   const [title, setTitle] = useState(String(node.title || node.label || node.id || ''))
   const [endpoint, setEndpoint] = useState(String(node.endpoint || ''))
@@ -161,6 +163,8 @@ function CapabilityNodeEditor({ flowId, node, tools, manifestInputs, onSaved, on
   const [working, setWorking] = useState(false)
   const [error, setError] = useState('')
   const [editorTab, setEditorTab] = useState<'config' | 'contract' | 'run'>('config')
+  const initialSettings = useMemo(() => nodeSettingDrafts(files, String(node.id), object(node.params)), [files, node])
+  const [settingDrafts, setSettingDrafts] = useState<NodeSettingDraft[]>(initialSettings.drafts)
 
   useEffect(() => {
     setTitle(String(node.title || node.label || node.id || ''))
@@ -170,7 +174,9 @@ function CapabilityNodeEditor({ flowId, node, tools, manifestInputs, onSaved, on
     setOutputs(pretty(object(node.outputs)))
     setAllowedTools(array(node.allowed_tools).map(String))
     setFlowInputs(pretty(manifestInputs))
-  }, [node, manifestInputs])
+    const nextSettings = nodeSettingDrafts(files, String(node.id), object(node.params))
+    setSettingDrafts(nextSettings.drafts)
+  }, [node, manifestInputs, files])
 
   const parseObject = (label: string, value: string) => {
     const parsed = JSON.parse(value)
@@ -185,13 +191,20 @@ function CapabilityNodeEditor({ flowId, node, tools, manifestInputs, onSaved, on
       const parsedOutputs = parseObject('输出端口', outputs)
       const parsedFlowInputs = JSON.parse(flowInputs)
       if (!Array.isArray(parsedFlowInputs)) throw new Error('Flow 输入必须是 JSON 数组。')
-      await capabilityApi.updateNode(flowId, String(node.id), {
+      const presentationFiles = buildNodePresentationFiles(files, String(node.id), parsedParams, settingDrafts)
+      const result = await capabilityApi.updateNode(flowId, String(node.id), {
         title, display_name: title, endpoint: endpoint.trim() || null,
         params: parsedParams, inputs: parsedInputs, outputs: parsedOutputs,
         allowed_tools: allowedTools,
         mcp_binding: allowedTools.length ? { allowed_tools: allowedTools } : null,
         manifest_inputs: parsedFlowInputs,
+        files: presentationFiles,
       })
+      if (object(result.validation).valid !== true) {
+        const finding = array(object(result.validation).findings)[0]
+        const validationErrors = Array.isArray(object(result.validation).errors) ? object(result.validation).errors as unknown[] : []
+        throw new Error(String(finding?.message || validationErrors[0] || '节点或运行设置没有通过校验。'))
+      }
       await onSaved()
     } catch (reason) { setError(reason instanceof Error ? reason.message : '节点保存失败。') } finally { setWorking(false) }
   }
@@ -215,7 +228,16 @@ function CapabilityNodeEditor({ flowId, node, tools, manifestInputs, onSaved, on
         <fieldset className="tool-binding"><legend>允许调用的工具</legend>{tools.length === 0 ? <p>先在“工具与资源”中声明可调用接口。</p> : tools.map((tool) => <label key={String(tool.id)}><input type="checkbox" checked={allowedTools.includes(String(tool.id))} onChange={(event) => setAllowedTools((current) => event.currentTarget.checked ? [...current, String(tool.id)] : current.filter((id) => id !== String(tool.id)))} /><span>{String(tool.name || tool.id)}</span></label>)}</fieldset>
       </>}
       {editorTab === 'contract' && <div className="contract-json-fields"><label><span>能力运行输入 JSON</span><textarea value={flowInputs} onChange={(event) => setFlowInputs(event.currentTarget.value)} spellCheck={false} /></label><label><span>输入端口 JSON</span><textarea value={inputs} onChange={(event) => setInputs(event.currentTarget.value)} spellCheck={false} /></label><label><span>输出端口 JSON</span><textarea value={outputs} onChange={(event) => setOutputs(event.currentTarget.value)} spellCheck={false} /></label></div>}
-      {editorTab === 'run' && <div className="run-config"><label><span>执行参数 JSON</span><textarea value={params} onChange={(event) => setParams(event.currentTarget.value)} spellCheck={false} /></label><p>运行参数只影响当前节点实现，公开契约由“契约”标签维护。</p></div>}
+      {editorTab === 'run' && <div className="run-config"><label><span>执行参数 JSON</span><textarea value={params} onChange={(event) => {
+        const value = event.currentTarget.value
+        setParams(value)
+        try {
+          const parsed = parseObject('执行参数', value)
+          const currentByParam = new Map(settingDrafts.map((item) => [item.param, item]))
+          const next = nodeSettingDrafts(files, String(node.id), parsed).drafts.map((item) => currentByParam.get(item.param) || item)
+          setSettingDrafts(next)
+        } catch { /* Save reports malformed JSON; keep the last valid setting selection. */ }
+      }} spellCheck={false} /></label><p>选择要交给卡带使用者调整的参数；控件随 CF-CRE@2 进入 Desktop Runner。</p><CartridgeSettingsEditor drafts={settingDrafts} params={(() => { try { return parseObject('执行参数', params) } catch { return {} } })()} errors={initialSettings.errors} onChange={setSettingDrafts} /></div>}
       {error && <p className="error"><CircleAlert />{error}</p>}
     </div>
     <div className="editor-actions"><button id="capability-node-save" type="button" onClick={() => void save()} disabled={working}><Save />保存节点</button><button className="danger" type="button" onClick={() => void remove()} disabled={working} title="删除节点"><Trash2 /></button></div>
@@ -495,6 +517,7 @@ function Workshop() {
   const [flows, setFlows] = useState<AnyRecord[]>([])
   const [flowId, setFlowId] = useState(query.get('flowId') || '')
   const [detail, setDetail] = useState<AnyRecord>({})
+  const [flowFiles, setFlowFiles] = useState<PresentationFiles>({})
   const [validation, setValidation] = useState<AnyRecord>({ valid: false })
   const [selected, setSelected] = useState('')
   const [capabilities, setCapabilities] = useState<AnyRecord[]>([])
@@ -528,6 +551,7 @@ function Workshop() {
       ])
       const mergedDetail = withExecutionEdges(nextDetail, nextFiles)
       setDetail(mergedDetail); setValidation(nextValidation)
+      setFlowFiles(object(nextFiles.files))
       setTools(array(nextTools.mcp_tools)); setResourceCatalog(nextResources); setVerificationToken('')
       const nodes = array(object(mergedDetail.graph).nodes)
       setSelected((current) => nodes.some((node) => String(node.id) === current) ? current : String(nodes.find((node) => node.type === 'process')?.id || nodes[0]?.id || ''))
@@ -588,7 +612,7 @@ function Workshop() {
         </aside>
 
         <section className={`workshop-stage is-${workspaceTab}`}>
-          {workspaceTab === 'design' && <div className="workshop-body"><Graph flowId={flowId} graph={graph} selected={selected} onSelect={setSelected} onReload={() => load(flowId)} />{selectedNode ? <CapabilityNodeEditor key={`${flowId}:${selected}`} flowId={flowId} node={selectedNode} tools={tools} manifestInputs={array(cartridge.inputs)} onSaved={() => load(flowId)} onClose={() => setSelected('')} /> : <aside className="node-editor boundary-editor"><div className="boundary-copy"><GitBranch /><p>选择一个节点后在这里配置实现、契约和运行参数。</p></div></aside>}</div>}
+          {workspaceTab === 'design' && <div className="workshop-body"><Graph flowId={flowId} graph={graph} selected={selected} onSelect={setSelected} onReload={() => load(flowId)} />{selectedNode ? <CapabilityNodeEditor key={`${flowId}:${selected}`} flowId={flowId} node={selectedNode} tools={tools} manifestInputs={array(cartridge.inputs)} files={flowFiles} onSaved={() => load(flowId)} onClose={() => setSelected('')} /> : <aside className="node-editor boundary-editor"><div className="boundary-copy"><GitBranch /><p>选择一个节点后在这里配置实现、契约和运行参数。</p></div></aside>}</div>}
           {workspaceTab === 'verify' && <div className="phase-workspace verification-workspace"><header><div><span>运行验证</span><h2>用真实成功与失败路径证明能力边界</h2></div><small>{verificationToken ? <><CheckCircle2 />运行证据已登记</> : '需要 2 个互补用例'}</small></header><VerificationPanel flowId={flowId} onVerified={setVerificationToken} /></div>}
           {workspaceTab === 'publish' && <div className="phase-workspace publish-workspace"><PublishPanel flowId={flowId} flowName={String(cartridge.name || flowId)} goal={creatorGoal} projectId={projectId} nodeId={targetNodeId} verificationToken={verificationToken} validation={validation} capabilities={capabilities} onPublished={loadRegistry} /><details className="workbench-panel capability-registry"><summary><Boxes />已发布能力与版本</summary>{capabilityEntries.length === 0 ? <p>还没有发布过能力。</p> : capabilityEntries.map((entry) => <div key={String(entry.id)}><span><strong>{String(object(entry.current).creator ? object(object(entry.current).creator).label : entry.id)}</strong><small>{String(entry.id)} · {String(entry.status)} · {array(entry.revisions).length || 1} 个版本</small></span><button type="button" onClick={async () => { await capabilityApi.activateCapability(String(entry.id), entry.status !== 'active'); await loadRegistry() }}><Power />{entry.status === 'active' ? '停用' : '启用'}</button></div>)}</details></div>}
         </section>

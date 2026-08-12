@@ -165,6 +165,38 @@ input:focus-visible, textarea:focus-visible, select:focus-visible, button:focus-
 .tool-binding p, .run-config p { margin: 0; color: var(--workshop-muted); font-size: 9px; line-height: 1.5; }
 .contract-json-fields, .run-config { display: grid; gap: 12px; }
 .contract-json-fields textarea { min-height: 106px; }
+.node-settings { display: grid; gap: 8px; padding-top: 4px; border-top: 1px solid var(--workshop-line); }
+.node-settings > header, .settings-preview > header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.node-settings > header > div { display: flex; align-items: center; gap: 6px; }
+.node-settings > header svg { width: 14px; color: var(--workshop-accent); }
+.node-settings > header strong, .settings-preview > header strong { font-size: 10px; }
+.node-settings > header small, .settings-preview > header span { color: var(--workshop-muted); font-size: 8px; }
+.settings-empty, .settings-contract-error { margin: 0; padding: 8px; font-size: 9px; line-height: 1.5; }
+.settings-empty { color: var(--workshop-muted); background: #f7fafb; border: 1px solid var(--workshop-line); }
+.settings-contract-error { color: #8f3025; background: #fff2ef; border: 1px solid #e4b8af; }
+.node-setting-row { border: 1px solid var(--workshop-line); }
+.node-setting-row.is-exposed { border-color: #9bc9b4; }
+.setting-exposure { min-height: 38px; display: flex; align-items: center; gap: 8px; padding: 7px 9px; background: #f7fafb; }
+.setting-exposure > input, .setting-flags input, .settings-preview-toggle input { width: 14px; min-height: 14px; }
+.setting-exposure > span { min-width: 0; display: flex; align-items: baseline; gap: 7px; }
+.setting-exposure strong { overflow-wrap: anywhere; font-size: 9px; }
+.setting-exposure small { color: var(--workshop-muted); font-size: 8px; }
+.setting-definition { display: grid; grid-template-columns: minmax(0, 1fr) 108px; gap: 8px; padding: 9px; border-top: 1px solid var(--workshop-line); }
+.setting-description, .setting-options, .setting-flags { grid-column: 1 / -1; }
+.setting-definition label > span { margin-bottom: 4px; font-size: 8px; }
+.setting-definition input, .setting-definition select { min-height: 30px; }
+.setting-definition textarea { min-height: 68px; }
+.setting-flags { display: flex; gap: 14px; }
+.setting-flags label { display: flex; align-items: center; gap: 6px; color: #596970; font-size: 9px; }
+.settings-preview { display: grid; gap: 10px; margin-top: 3px; padding: 10px; background: #f7fafb; border: 1px solid #b9c8ce; }
+.settings-preview > header { padding-bottom: 8px; border-bottom: 1px solid var(--workshop-line); }
+.settings-preview-field { display: grid; gap: 6px; }
+.settings-preview-field > span { display: grid; gap: 2px; }
+.settings-preview-field > span strong { font-size: 9px; }
+.settings-preview-field > span small { color: var(--workshop-muted); font-size: 8px; line-height: 1.4; }
+.settings-preview-field textarea { min-height: 64px; }
+.settings-preview-toggle { display: flex; align-items: center; gap: 8px; }
+.settings-preview-toggle span { margin: 0; font-size: 9px; font-weight: 500; }
 .editor-actions { display: flex; gap: 7px; padding: 10px 16px; border-top: 1px solid var(--workshop-line); }
 .editor-actions > button:first-child { flex: 1; }
 .editor-actions .danger { width: 36px; padding: 0; color: #ab4034; background: #fff; border-color: #e4bbb5; }

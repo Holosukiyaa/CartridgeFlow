@@ -1,14 +1,16 @@
 import json
 import re
 import shutil
+import tempfile
 from html import escape
 from pathlib import Path
 
 from core.cartridge.assets import ASSET_SCHEMA, COMPONENT_SCHEMA, sha256_bytes
+from core.cartridge.presentation import default_settings_bindings, default_settings_contract, default_ui_contract
 from core.cartridge.validator import ManifestValidator
 from core.cartridge.validator import ManifestValidationError
 from core.data_paths import DEV_CARTRIDGES_DIR
-from core.protocol import load_protocol_release_catalog
+from core.protocol import DataContractError, load_protocol_release_catalog, validate_cartridge_presentation_contracts
 from core.studio.tuning_repository import TuningRepositoryStore
 
 
@@ -19,6 +21,9 @@ class DevFlowManager:
         "welcome": "assets/welcome.md",
         "asset_registry": "assets/registry.json",
         "interaction_components": "assets/components.json",
+        "settings_contract": "contracts/settings.contract.json",
+        "settings_bindings": "settings/bindings.json",
+        "ui_contract": "contracts/ui.contract.json",
     }
 
     def __init__(self, root: str | Path):
@@ -40,6 +45,8 @@ class DevFlowManager:
         if path.exists():
             raise FileExistsError(f"Dev flow already exists: {flow_id}")
         (path / "assets").mkdir(parents=True, exist_ok=True)
+        (path / "contracts").mkdir(parents=True, exist_ok=True)
+        (path / "settings").mkdir(parents=True, exist_ok=True)
         welcome_markdown = f"# {name}\n\n这是一个开发中的 Flow。"
         welcome_html = (
             "<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">"
@@ -69,6 +76,9 @@ class DevFlowManager:
                 "host_capabilities": [],
             }],
         })
+        self._write_json(path / "contracts" / "settings.contract.json", default_settings_contract())
+        self._write_json(path / "settings" / "bindings.json", default_settings_bindings())
+        self._write_json(path / "contracts" / "ui.contract.json", default_ui_contract())
         manifest = self._manifest_template(flow_id, name, description)
         root_flow = self._root_flow_template(flow_id, name)
         self._write_json(path / "manifest.json", manifest)
@@ -110,10 +120,78 @@ class DevFlowManager:
                 self.tuning.reconcile_node_heads(flow_id, parsed_content)
         return {"file_type": file_type, "saved": True}
 
+    def save_files(self, flow_id: str, files: dict[str, str]) -> dict:
+        """Validate related authoring files together and roll back a partial commit."""
+        if not isinstance(files, dict) or not files:
+            raise ValueError("files must contain at least one authoring file")
+        unknown = sorted(set(files) - set(self.FILES))
+        if unknown:
+            raise ValueError("Unsupported file types: " + ", ".join(unknown))
+        if any(not isinstance(content, str) for content in files.values()):
+            raise ValueError("authoring file content must be a string")
+
+        path = self._flow_path(flow_id)
+        with tempfile.TemporaryDirectory(prefix="cartridgeflow-flow-save-", dir=path.parent) as temp_dir:
+            staged = Path(temp_dir) / "package"
+            shutil.copytree(path, staged)
+            for file_type, content in files.items():
+                target = staged / self.FILES[file_type]
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(content, encoding="utf-8")
+            manifest = json.loads((staged / self.FILES["manifest"]).read_text(encoding="utf-8"))
+            root_flow = json.loads((staged / self.FILES["root_flow"]).read_text(encoding="utf-8"))
+            self.validator.validate_package(staged, manifest)
+            errors: list[str] = []
+            warnings: list[str] = []
+            self._validate_root_flow(root_flow, errors, warnings)
+            self._validate_presentation(staged, manifest, root_flow, errors)
+            if errors:
+                raise ValueError("; ".join(errors))
+
+        originals: dict[Path, bytes | None] = {}
+        try:
+            for file_type, content in files.items():
+                target = path / self.FILES[file_type]
+                originals[target] = target.read_bytes() if target.exists() else None
+                target.parent.mkdir(parents=True, exist_ok=True)
+                temp_target = target.with_suffix(target.suffix + ".tmp")
+                temp_target.write_text(content, encoding="utf-8")
+                temp_target.replace(target)
+            if "root_flow" in files:
+                root_flow = json.loads(files["root_flow"])
+                protocol = root_flow.get("protocol") if isinstance(root_flow.get("protocol"), dict) else {}
+                if self._has_feature(protocol, "recipe_versioning"):
+                    self.tuning.reconcile_node_heads(flow_id, root_flow)
+        except Exception:
+            for target, original in originals.items():
+                if original is None:
+                    target.unlink(missing_ok=True)
+                else:
+                    target.write_bytes(original)
+            raise
+        return {"saved": True, "file_types": sorted(files)}
+
     def validate_files(self, flow_id: str, files: dict | None = None) -> dict:
         path = self._flow_path(flow_id)
         current = self.read_files(flow_id)
         current.update(files or {})
+        with tempfile.TemporaryDirectory(prefix="cartridgeflow-flow-validate-", dir=path.parent) as temp_dir:
+            staged = Path(temp_dir) / "package"
+            shutil.copytree(path, staged)
+            for file_type, content in current.items():
+                if file_type not in self.FILES or not isinstance(content, str):
+                    continue
+                target = staged / self.FILES[file_type]
+                if not content:
+                    target.unlink(missing_ok=True)
+                    continue
+                if target.exists() and target.read_text(encoding="utf-8") == content:
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(content, encoding="utf-8")
+            return self._validate_files_at(staged, current)
+
+    def _validate_files_at(self, path: Path, current: dict) -> dict:
         errors = []
         warnings = []
         manifest = self._parse_json_file("manifest", current.get("manifest", ""), errors)
@@ -135,12 +213,50 @@ class DevFlowManager:
                             warnings.append(f"isolated node: {finding.get('node')} - {finding.get('detail')}")
                 except Exception as e:
                     warnings.append(f"flow structure analysis skipped: {e}")
+        if manifest and root_flow:
+            self._validate_presentation(path, manifest, root_flow, errors, files=current)
         return {
             "valid": not errors,
             "errors": errors,
             "warnings": warnings,
             "summary": "校验通过" if not errors else f"发现 {len(errors)} 个错误",
         }
+
+    def _validate_presentation(
+        self,
+        path: Path,
+        manifest: dict,
+        root_flow: dict,
+        errors: list[str],
+        *,
+        files: dict[str, str] | None = None,
+    ) -> None:
+        presentation = manifest.get("presentation")
+        supplied = files or {}
+        has_documents = any(str(supplied.get(key) or "").strip() for key in ("settings_contract", "settings_bindings", "ui_contract"))
+        if presentation is None and not has_documents:
+            return
+        try:
+            settings = json.loads(supplied.get("settings_contract") or (path / self.FILES["settings_contract"]).read_text(encoding="utf-8"))
+            bindings = json.loads(supplied.get("settings_bindings") or (path / self.FILES["settings_bindings"]).read_text(encoding="utf-8"))
+            ui = json.loads(supplied.get("ui_contract") or (path / self.FILES["ui_contract"]).read_text(encoding="utf-8"))
+            components_value = json.loads(supplied.get("interaction_components") or (path / self.FILES["interaction_components"]).read_text(encoding="utf-8"))
+            component_by_id = {
+                str(item.get("id")): item
+                for item in components_value.get("components") or []
+                if isinstance(item, dict) and item.get("id")
+            }
+            validate_cartridge_presentation_contracts(
+                settings,
+                bindings,
+                ui,
+                root_flow,
+                component_by_id=component_by_id,
+                root=self.root,
+            )
+        except (DataContractError, OSError, UnicodeError, json.JSONDecodeError, TypeError, AttributeError) as exc:
+            code = getattr(exc, "code", "presentation_contract_invalid")
+            errors.append(f"{code}: {exc}")
 
     def preview_graph(self, flow_id: str, files: dict | None = None) -> dict:
         current = self.read_files(flow_id)
@@ -252,10 +368,18 @@ class DevFlowManager:
             "root_flow": {"entry": "root.flow.json", "mode": "lifecycle", "required": True},
             "asset_registry": "assets/registry.json",
             "interaction_components": "assets/components.json",
+            "presentation": {
+                "settings": {
+                    "contract": "contracts/settings.contract.json",
+                    "bindings": "settings/bindings.json",
+                },
+                "ui": {"contract": "contracts/ui.contract.json"},
+            },
             "base_contract": dict(self.base_contract),
             "runtime_contract": {
                 "protocol": self.default_protocol_id,
                 "protocol_version": self.default_protocol_version,
+                "target_runtimes": [{"id": "CF-DRP", "version": "1.0"}],
                 "required_profiles": ["runtime_core", "flow_analysis", "tool_transparency", "execution_plan_runtime", "dynamic_decision_runtime", "interactive_decision_runtime", "interaction_runtime", "tuning_authoring", "recipe_release_runtime"],
                 "recommended_profiles": ["testbench_core", "dev_authoring"],
                 "required_capabilities": [

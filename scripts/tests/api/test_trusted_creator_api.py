@@ -120,6 +120,7 @@ class TrustedCreatorApiTests(unittest.TestCase):
         root = json.loads(self.client.get("/api/lab/flows/dev.insert-node/files").json()["files"]["root_flow"])
         self.assertIn({"id": "start_fetch", "kind": "sequence", "from": "start", "to": "fetch"}, root["execution_plan"]["edges"])
         self.assertIn("fetch_failed", root["states"])
+        self.assertEqual("failed", root["states"]["fetch_failed"]["terminal_status"])
 
     def test_developer_can_scaffold_and_edit_package_owned_dlc(self):
         created = self.client.post("/api/lab/flows", json={
@@ -323,6 +324,90 @@ class TrustedCreatorApiTests(unittest.TestCase):
         self.assertEqual(409, response.status_code, response.text)
         self.assertEqual(0, self.capabilities.latest_revision("workspace.atomic-capability"))
         self.assertFalse(json.loads(evidence_path.read_text(encoding="utf-8"))["consumed"])
+
+    def test_presentation_evidence_reports_typed_field_and_producer(self):
+        created = self.client.post("/api/lab/flows", json={
+            "flow_id": "dev.presentation-proof", "name": "Presentation proof", "description": "test",
+        })
+        self.assertEqual(200, created.status_code, created.text)
+        display = self.client.post("/api/lab/flows/dev.presentation-proof/nodes", json={
+            "template_id": "interaction", "node_id": "display", "title": "Display", "after_node_id": "start",
+        })
+        self.assertEqual(200, display.status_code, display.text)
+        component = self.client.put("/api/lab/flows/dev.presentation-proof/display-components/topic.panel", json={
+            "label": "Topic panel", "description": "Typed runtime data", "template_id": "summary",
+            "target_node_id": "display",
+            "fields": [{"id": "topic", "label": "Topic", "type": "text", "required": True, "source": "store:input_data.topic"}],
+        })
+        self.assertEqual(200, component.status_code, component.text)
+        snapshot = backend_main._capability_flow_snapshot("dev.presentation-proof")
+        snapshot["root_flow"]["states"]["collect"] = {
+            "type": "process", "kind": "input", "executor": "user", "effect": "writes_store",
+            "action": "collect_inputs", "inputs": {},
+            "outputs": {"input_data": {"schema": {"type": "object"}, "target": {"type": "store", "key": "input_data"}}},
+            "params": {"fields": ["topic"]},
+        }
+        event = {
+            "state": "display",
+            "data": {
+                "action": "render_interaction",
+                "presentation": {"component_id": "topic.panel", "component_version": "1.0.0", "entry_sha256": "a" * 64, "bindings": {"topic": 42}},
+            },
+        }
+        with patch.object(backend_main.runner, "get_events", return_value=[event]):
+            with self.assertRaises(AuthoringServiceError) as caught:
+                backend_main._presentation_runtime_evidence("dev.presentation-proof", snapshot, {"run_id": "run_success"})
+        self.assertEqual("CAPABILITY_EVIDENCE_PRESENTATION_TYPE_INVALID", caught.exception.code)
+        self.assertIn("display", str(caught.exception))
+        self.assertIn("collect", str(caught.exception))
+
+        event["data"]["presentation"]["bindings"]["topic"] = "AI"
+        with patch.object(backend_main.runner, "get_events", return_value=[event]):
+            checks = backend_main._presentation_runtime_evidence("dev.presentation-proof", snapshot, {"run_id": "run_success"})
+        self.assertEqual("collect", checks[0]["fields"][0]["producer_node_id"])
+
+    def test_verified_production_release_requires_current_evidence_and_frozen_recipe(self):
+        created = self.client.post("/api/lab/flows", json={
+            "flow_id": "dev.verified-release", "name": "Verified release", "description": "test",
+        })
+        self.assertEqual(200, created.status_code, created.text)
+        promoted = self.client.post("/api/developer/flows/dev.verified-release/production-candidate")
+        self.assertEqual(200, promoted.status_code, promoted.text)
+        snapshot = backend_main._capability_flow_snapshot("dev.verified-release")
+        token = "verify_test_production_release"
+        backend_main._atomic_json(self.verifications / f"{token}.json", {
+            "schema": "cartridgeflow.capability_runtime_evidence.v2",
+            "token": token,
+            "flow_id": "dev.verified-release",
+            "source_digest": snapshot["source_digest"],
+            "success_run": {"run_id": "run_success", "status": "completed"},
+            "failure_run": {"run_id": "run_failure", "status": "failed", "error_code": "INPUT_REQUIRED"},
+            "presentation_checks": [],
+            "consumed": False,
+        })
+        recipe = self.client.post("/api/lab/flows/dev.verified-release/tuning/releases", json={
+            "author": "test", "message": "Freeze verified release",
+        })
+        self.assertEqual(200, recipe.status_code, recipe.text)
+        with patch.object(backend_main, "package_cartridge", return_value={
+            "ok": True, "protocol": "CF-CRE@2", "release_id": "release-test", "activation_allowed": True,
+        }):
+            packaged = self.client.post("/api/developer/flows/dev.verified-release/production-release", json={
+                "verification_token": token,
+            })
+        self.assertEqual(200, packaged.status_code, packaged.text)
+        self.assertEqual(token, packaged.json()["runtime_evidence"]["token"])
+        self.assertEqual(recipe.json()["release"]["id"], packaged.json()["recipe_release"]["id"])
+
+        files = self.dev_flows.read_files("dev.verified-release")
+        manifest = json.loads(files["manifest"])
+        manifest["description"] = "changed after evidence"
+        self.dev_flows.save_file("dev.verified-release", "manifest", json.dumps(manifest))
+        stale = self.client.post("/api/developer/flows/dev.verified-release/production-release", json={
+            "verification_token": token,
+        })
+        self.assertEqual(409, stale.status_code, stale.text)
+        self.assertEqual("CAPABILITY_RUNTIME_EVIDENCE_STALE", stale.json()["detail"]["code"])
 
     def test_developer_can_check_trusted_node_readiness_before_publish(self):
         created = self.client.post("/api/lab/flows", json={

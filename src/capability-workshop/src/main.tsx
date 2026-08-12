@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client'
 import dagre from '@dagrejs/dagre'
 import {
   ArrowLeft, Bell, Bot, Box, Boxes, Check, CheckCircle2, ChevronDown, CircleAlert, CircleHelp,
-  Database, FilePlus2, GitBranch, PackageCheck, Play, Plug, Plus, Power, RefreshCw,
+  Database, Download, ExternalLink, FilePlus2, GitBranch, PackageCheck, Play, Plug, Plus, Power, RefreshCw,
   Save, Search, ShieldCheck, Trash2, User, Wrench, X,
 } from 'lucide-react'
 import {
@@ -12,10 +12,11 @@ import {
   type Connection, type Edge, type EdgeChange, type Node, type NodeChange,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { capabilityApi } from './api'
+import { capabilityApi, publicApiUrl } from './api'
 import { type AnyRecord } from './model'
 import { CartridgeSettingsEditor } from './CartridgeSettingsEditor'
 import { DisplayComponentWorkshop } from './DisplayComponentWorkshop'
+import { buildVerificationCases, isCurrentVerification, runDiagnosis, updateVerificationInput } from './verificationExperience'
 import { buildNodePresentationFiles, nodeSettingDrafts, type NodeSettingDraft, type PresentationFiles } from './settingsPresentation'
 import './styles.css'
 
@@ -403,18 +404,48 @@ function DlcPanel({ flowId, onChanged }: { flowId: string; onChanged: () => Prom
   </details>
 }
 
-function VerificationPanel({ flowId, onVerified }: { flowId: string; onVerified: (token: string) => void }) {
-  const [successInputs, setSuccessInputs] = useState('{}')
-  const [failureInputs, setFailureInputs] = useState('{}')
+function VerificationInputFields({ inputs, values, disabledField, onChange }: {
+  inputs: AnyRecord[]; values: AnyRecord; disabledField?: string; onChange: (next: AnyRecord) => void
+}) {
+  if (!inputs.length) return <p className="verification-empty"><CircleAlert />当前 Flow 没有声明运行输入，无法自动构造安全失败用例。</p>
+  return <div className="verification-inputs">{inputs.map((input) => {
+    const id = String(input.id || '')
+    const type = String(input.type || 'text')
+    const disabled = id === disabledField
+    const value = values[id]
+    return <label key={id}><span>{String(input.label || id)}{input.required ? <b>必填</b> : null}</span>
+      {type === 'boolean' || type === 'checkbox'
+        ? <input type="checkbox" checked={Boolean(value)} disabled={disabled} onChange={(event) => onChange(updateVerificationInput(values, input, event.currentTarget.checked))} />
+        : type === 'select'
+          ? <select value={String(value ?? '')} disabled={disabled} onChange={(event) => onChange(updateVerificationInput(values, input, event.currentTarget.value))}>{array(input.options).map((option) => <option key={String(option.value)} value={String(option.value)}>{String(option.label || option.value)}</option>)}</select>
+          : type === 'textarea' || type === 'array' || type === 'string_list' || type === 'object'
+            ? <textarea value={type === 'object' ? pretty(value ?? {}) : Array.isArray(value) ? value.join('\n') : String(value ?? '')} disabled={disabled} onChange={(event) => onChange(updateVerificationInput(values, input, event.currentTarget.value))} />
+            : <input type={type === 'number' || type === 'integer' ? 'number' : 'text'} value={String(value ?? '')} disabled={disabled} onChange={(event) => onChange(updateVerificationInput(values, input, event.currentTarget.value))} />}
+    </label>
+  })}</div>
+}
+
+function RunOutcome({ run }: { run: AnyRecord }) {
+  const diagnosis = runDiagnosis(run)
+  return <div className={`verification-outcome is-${diagnosis.tone}`}><span>{diagnosis.title}</span>{diagnosis.detail && <small>{diagnosis.detail}</small>}</div>
+}
+
+function VerificationPanel({ flowId, inputs, verification, deliveryLevel, onVerified, onPromoted }: {
+  flowId: string; inputs: AnyRecord[]; verification: AnyRecord; deliveryLevel: string; onVerified: (value: AnyRecord) => void; onPromoted: () => Promise<void>
+}) {
+  const initial = useMemo(() => buildVerificationCases(inputs), [inputs])
+  const [successInputs, setSuccessInputs] = useState<AnyRecord>(initial.success)
+  const [failureInputs, setFailureInputs] = useState<AnyRecord>(initial.failure)
   const [successRun, setSuccessRun] = useState<AnyRecord>({})
   const [failureRun, setFailureRun] = useState<AnyRecord>({})
   const [working, setWorking] = useState('')
   const [error, setError] = useState('')
+  const productionCandidate = deliveryLevel === 'production'
+  useEffect(() => { setSuccessInputs(initial.success); setFailureInputs(initial.failure); setSuccessRun({}); setFailureRun({}); setError('') }, [flowId, initial])
   const runCase = async (kind: 'success' | 'failure') => {
-    setWorking(kind); setError(''); onVerified('')
+    setWorking(kind); setError('')
     try {
-      const inputs = JSON.parse(kind === 'success' ? successInputs : failureInputs) as AnyRecord
-      const started = await capabilityApi.testRun(flowId, inputs)
+      const started = await capabilityApi.testRun(flowId, kind === 'success' ? successInputs : failureInputs)
       const completed = await waitForRun(String(object(started.run).run_id))
       if (kind === 'success') setSuccessRun(completed); else setFailureRun(completed)
     } catch (reason) { setError(reason instanceof Error ? reason.message : '运行失败。') } finally { setWorking('') }
@@ -423,12 +454,42 @@ function VerificationPanel({ flowId, onVerified }: { flowId: string; onVerified:
     setWorking('register'); setError('')
     try {
       const result = await capabilityApi.verifyCapability(flowId, { success_run_id: String(successRun.run_id), failure_run_id: String(failureRun.run_id) })
-      onVerified(String(object(result.verification).token))
+      onVerified({ status: 'current', verification: object(result.verification), current_source_digest: object(result.verification).source_digest })
     } catch (reason) { setError(reason instanceof Error ? reason.message : '运行证据登记失败。') } finally { setWorking('') }
   }
-  return <section className="workbench-panel verification-panel"><header><div><Play /><span>真实运行证据</span></div><small>可信版本必须同时证明正常结果和安全失败</small></header>
-    <div className="verification-cases"><label><span>成功用例输入 JSON</span><textarea value={successInputs} onChange={(event) => setSuccessInputs(event.currentTarget.value)} /><button type="button" disabled={Boolean(working)} onClick={() => void runCase('success')}><Play />运行成功用例</button><small className={successRun.status === 'completed' ? 'success' : ''}>{successRun.run_id ? `${String(successRun.status)} · ${String(successRun.run_id)}` : '尚未运行'}</small></label><label><span>失败用例输入 JSON</span><textarea value={failureInputs} onChange={(event) => setFailureInputs(event.currentTarget.value)} /><button type="button" disabled={Boolean(working)} onClick={() => void runCase('failure')}><CircleAlert />运行失败用例</button><small className={failureRun.status === 'failed' ? 'success' : ''}>{failureRun.run_id ? `${String(failureRun.status)} · ${String(failureRun.run_id)}` : '尚未运行'}</small></label></div>
+  const promote = async () => {
+    setWorking('promote'); setError('')
+    try { await capabilityApi.productionCandidate(flowId); await onPromoted() }
+    catch (reason) { setError(reason instanceof Error ? reason.message : '无法进入生产验收。') }
+    finally { setWorking('') }
+  }
+  const evidence = object(verification.verification)
+  return <section className="workbench-panel verification-panel"><header><div><Play /><span>真实运行证据</span></div><small className={isCurrentVerification(verification) ? 'ready' : ''}>{isCurrentVerification(verification) ? '当前源码已有证明' : '成功与安全失败缺一不可'}</small></header>
+    {!productionCandidate && <div className="production-candidate"><PackageCheck /><div><strong>开发级 Flow</strong><small>生产证明必须在正式发布意图之后生成</small></div><button type="button" disabled={Boolean(working)} onClick={() => void promote()}>进入生产验收</button></div>}
+    <div className="verification-cases"><section><header><strong>成功路径</strong><small>使用真实类型和当前组件</small></header><VerificationInputFields inputs={inputs} values={successInputs} onChange={setSuccessInputs} /><button type="button" disabled={Boolean(working) || !productionCandidate} onClick={() => void runCase('success')}><Play />运行成功路径</button><RunOutcome run={successRun} /></section><section><header><strong>安全失败</strong><small>{initial.failureField ? `主动省略：${String(initial.failureField.label || initial.failureField.id)}` : '缺少可省略的必填输入'}</small></header><VerificationInputFields inputs={inputs} values={failureInputs} disabledField={String(initial.failureField?.id || '')} onChange={setFailureInputs} /><button type="button" disabled={Boolean(working) || !productionCandidate || !initial.failureField} onClick={() => void runCase('failure')}><CircleAlert />运行安全失败</button><RunOutcome run={failureRun} /></section></div>
     <button type="button" disabled={Boolean(working) || successRun.status !== 'completed' || failureRun.status !== 'failed'} onClick={() => void register()}><ShieldCheck />登记为当前源码证据</button>
+    {isCurrentVerification(verification) && <div className="verification-proof"><ShieldCheck /><div><strong>{String(evidence.source_digest || '').slice(0, 16)}</strong><small>{String(evidence.created_at || '')} · {String(object(evidence.success_run).run_id || '')} / {String(object(evidence.failure_run).run_id || '')}</small></div><span>{array(evidence.presentation_checks).length} 个展示组件</span></div>}
+    {array(evidence.presentation_checks).map((check) => <div className="presentation-proof" key={String(check.node_id)}><strong>{String(check.node_id)} · {String(check.component_id)}</strong><span>{array(check.fields).map((field) => `${String(field.field_id)}←${String(field.producer_node_id || field.store_key || '绑定')}`).join(' · ') || '组件已真实呈现'}</span></div>)}
+    {error && <p className="error"><CircleAlert />{error}</p>}
+  </section>
+}
+
+function ReleasePanel({ flowId, verification }: { flowId: string; verification: AnyRecord }) {
+  const [working, setWorking] = useState('')
+  const [error, setError] = useState('')
+  const [result, setResult] = useState<AnyRecord>({})
+  const evidence = object(verification.verification)
+  const release = async () => {
+    setWorking('recipe'); setError(''); setResult({})
+    try {
+      await capabilityApi.freezeRecipe(flowId)
+      setWorking('package')
+      setResult(await capabilityApi.packageVerifiedRelease(flowId, String(evidence.token)))
+    } catch (reason) { setError(reason instanceof Error ? reason.message : '签名交付包生成失败。') } finally { setWorking('') }
+  }
+  return <section className="publish-panel release-panel"><header><div><PackageCheck /><span>生产交付</span></div><small>{result.release_id ? 'CF-CRE@2 已签名' : isCurrentVerification(verification) ? '运行证明已就绪' : '等待当前源码证明'}</small></header>
+    <div className="release-stages"><span className={isCurrentVerification(verification) ? 'is-ready' : ''}><b>1</b>运行证明</span><span className={working === 'recipe' || working === 'package' || result.release_id ? 'is-ready' : ''}><b>2</b>冻结配方</span><span className={result.release_id ? 'is-ready' : ''}><b>3</b>签名交付</span></div>
+    {result.release_id ? <div className="release-result"><dl><div><dt>协议</dt><dd>{String(result.protocol)}</dd></div><div><dt>发布 ID</dt><dd>{String(result.release_id)}</dd></div><div><dt>文件</dt><dd>{String(result.filename)}</dd></div><div><dt>大小</dt><dd>{Math.ceil(Number(result.size || 0) / 1024)} KB</dd></div></dl><div><a className="primary-button-link" href={publicApiUrl(String(result.url))} download><Download />下载签名包</a><a href="http://127.0.0.1:18990/" target="_blank" rel="noreferrer"><ExternalLink />打开 Desktop Runner</a></div></div> : <button type="button" disabled={Boolean(working) || !isCurrentVerification(verification)} onClick={() => void release()}><PackageCheck />{working === 'recipe' ? '正在冻结配方' : working === 'package' ? '正在签名打包' : '生成生产交付包'}</button>}
     {error && <p className="error"><CircleAlert />{error}</p>}
   </section>
 }
@@ -526,7 +587,7 @@ function Workshop() {
   const [tools, setTools] = useState<AnyRecord[]>([])
   const [resourceCatalog, setResourceCatalog] = useState<AnyRecord>({ tools: [] })
   const [components, setComponents] = useState<AnyRecord[]>([])
-  const [verificationToken, setVerificationToken] = useState('')
+  const [verification, setVerification] = useState<AnyRecord>({ status: 'missing' })
   const [error, setError] = useState('')
   const [newName, setNewName] = useState(creatorGoal || '新的能力卡带')
   const [workspaceTab, setWorkspaceTab] = useState<'design' | 'experience' | 'verify' | 'publish'>('design')
@@ -548,13 +609,13 @@ function Workshop() {
     if (!id) return
     setError('')
     try {
-      const [nextDetail, nextFiles, nextValidation, nextTools, nextResources, nextAssets] = await Promise.all([
-        capabilityApi.flow(id), capabilityApi.files(id), capabilityApi.capabilityReadiness(id), capabilityApi.mcpTools(id), capabilityApi.resources(id), capabilityApi.assets(id),
+      const [nextDetail, nextFiles, nextValidation, nextTools, nextResources, nextAssets, nextVerification] = await Promise.all([
+        capabilityApi.flow(id), capabilityApi.files(id), capabilityApi.capabilityReadiness(id), capabilityApi.mcpTools(id), capabilityApi.resources(id), capabilityApi.assets(id), capabilityApi.currentVerification(id),
       ])
       const mergedDetail = withExecutionEdges(nextDetail, nextFiles)
       setDetail(mergedDetail); setValidation(nextValidation)
       setFlowFiles(object(nextFiles.files))
-      setTools(array(nextTools.mcp_tools)); setResourceCatalog(nextResources); setComponents(array(nextAssets.components)); setVerificationToken('')
+      setTools(array(nextTools.mcp_tools)); setResourceCatalog(nextResources); setComponents(array(nextAssets.components)); setVerification(nextVerification)
       const nodes = array(object(mergedDetail.graph).nodes)
       setSelected((current) => nodes.some((node) => String(node.id) === current) ? current : String(nodes.find((node) => node.type === 'process')?.id || nodes[0]?.id || ''))
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Flow 读取失败。') }
@@ -583,6 +644,7 @@ function Workshop() {
   const graph = object(detail.graph)
   const nodes = array(graph.nodes)
   const selectedNode = nodes.find((node) => String(node.id) === selected)
+  const verificationToken = isCurrentVerification(verification) ? String(object(verification.verification).token || '') : ''
   const cartridge = object(detail.cartridge)
   const filteredCapabilities = capabilities.filter((item) => `${String(item.id)} ${String(object(item.creator).label || '')}`.toLowerCase().includes(capabilitySearch.toLowerCase()))
   const findingCount = array(validation.findings).length
@@ -617,8 +679,8 @@ function Workshop() {
         <section className={`workshop-stage is-${workspaceTab}`}>
           {workspaceTab === 'design' && <div className="workshop-body"><Graph flowId={flowId} graph={graph} selected={selected} onSelect={setSelected} onReload={() => load(flowId)} />{selectedNode ? <CapabilityNodeEditor key={`${flowId}:${selected}`} flowId={flowId} node={selectedNode} tools={tools} manifestInputs={array(cartridge.inputs)} files={flowFiles} onSaved={() => load(flowId)} onClose={() => setSelected('')} /> : <aside className="node-editor boundary-editor"><div className="boundary-copy"><GitBranch /><p>选择一个节点后在这里配置实现、契约和运行参数。</p></div></aside>}</div>}
           {workspaceTab === 'experience' && <DisplayComponentWorkshop flowId={flowId} graph={graph} manifestInputs={array(cartridge.inputs)} components={components} onCreateDisplayNode={() => addNode('interaction')} onSaved={() => load(flowId)} />}
-          {workspaceTab === 'verify' && <div className="phase-workspace verification-workspace"><header><div><span>运行验证</span><h2>用真实成功与失败路径证明能力边界</h2></div><small>{verificationToken ? <><CheckCircle2 />运行证据已登记</> : '需要 2 个互补用例'}</small></header><VerificationPanel flowId={flowId} onVerified={setVerificationToken} /></div>}
-          {workspaceTab === 'publish' && <div className="phase-workspace publish-workspace"><PublishPanel flowId={flowId} flowName={String(cartridge.name || flowId)} goal={creatorGoal} projectId={projectId} nodeId={targetNodeId} verificationToken={verificationToken} validation={validation} capabilities={capabilities} onPublished={loadRegistry} /><details className="workbench-panel capability-registry"><summary><Boxes />已发布能力与版本</summary>{capabilityEntries.length === 0 ? <p>还没有发布过能力。</p> : capabilityEntries.map((entry) => <div key={String(entry.id)}><span><strong>{String(object(entry.current).creator ? object(object(entry.current).creator).label : entry.id)}</strong><small>{String(entry.id)} · {String(entry.status)} · {array(entry.revisions).length || 1} 个版本</small></span><button type="button" onClick={async () => { await capabilityApi.activateCapability(String(entry.id), entry.status !== 'active'); await loadRegistry() }}><Power />{entry.status === 'active' ? '停用' : '启用'}</button></div>)}</details></div>}
+          {workspaceTab === 'verify' && <div className="phase-workspace verification-workspace"><header><div><span>运行验证</span><h2>用真实成功与失败路径证明能力边界</h2></div><small>{verificationToken ? <><CheckCircle2 />运行证据已登记</> : verification.status === 'stale' ? '源码变化，证明已失效' : '需要 2 个互补用例'}</small></header><VerificationPanel flowId={flowId} inputs={array(cartridge.inputs)} verification={verification} deliveryLevel={String(object(cartridge.delivery_readiness).level || 'dev')} onVerified={setVerification} onPromoted={() => load(flowId)} /></div>}
+          {workspaceTab === 'publish' && <div className="phase-workspace publish-workspace"><div className="publish-primary"><ReleasePanel flowId={flowId} verification={verification} /><PublishPanel flowId={flowId} flowName={String(cartridge.name || flowId)} goal={creatorGoal} projectId={projectId} nodeId={targetNodeId} verificationToken={verificationToken} validation={validation} capabilities={capabilities} onPublished={loadRegistry} /></div><details className="workbench-panel capability-registry"><summary><Boxes />已发布能力与版本</summary>{capabilityEntries.length === 0 ? <p>还没有发布过能力。</p> : capabilityEntries.map((entry) => <div key={String(entry.id)}><span><strong>{String(object(entry.current).creator ? object(object(entry.current).creator).label : entry.id)}</strong><small>{String(entry.id)} · {String(entry.status)} · {array(entry.revisions).length || 1} 个版本</small></span><button type="button" onClick={async () => { await capabilityApi.activateCapability(String(entry.id), entry.status !== 'active'); await loadRegistry() }}><Power />{entry.status === 'active' ? '停用' : '启用'}</button></div>)}</details></div>}
         </section>
       </div>
 

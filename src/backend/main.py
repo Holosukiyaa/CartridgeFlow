@@ -42,6 +42,7 @@ from backend.api_models import (
     TrustedNodeActivationPayload,
     CapabilityCartridgePublishPayload,
     CapabilityVerificationPayload,
+    VerifiedProductionReleasePayload,
     CreatorProjectRenamePayload,
     CreatorSourceInspectPayload,
     TrustedNodePublishFromFlowPayload,
@@ -106,7 +107,7 @@ from core.protocol.capability_cartridges import (
     validate_flow_capability_boundary,
     legacy_node_capability,
 )
-from core.protocol.tuning import canonical_digest
+from core.protocol.tuning import canonical_digest, flow_source_digest
 from core.cartridge.validator import ManifestValidationError
 from core.data_paths import (
     CARTRIDGE_DATA_DIR,
@@ -2269,11 +2270,15 @@ def _capability_flow_snapshot(flow_id: str) -> dict:
     manifest = cartridge.get("manifest") if isinstance(cartridge.get("manifest"), dict) else {}
     root_flow = cartridge.get("root_flow") if isinstance(cartridge.get("root_flow"), dict) else {}
     source_path = dev_flow_manager._flow_path(flow_id)
+    tuning_contract = manifest.get("tuning_contract") if isinstance(manifest.get("tuning_contract"), dict) else {}
+    release_entry = str(tuning_contract.get("release_entry") or "").replace("\\", "/").strip()
     source_files: dict[str, str] = {}
     for path in sorted(source_path.rglob("*")):
         if not path.is_file() or path.name in {"manifest.json", "root.flow.json"} or ".tuning" in path.parts:
             continue
         relative = path.relative_to(source_path).as_posix()
+        if release_entry and relative == release_entry:
+            continue
         if path.is_symlink():
             raise AuthoringServiceError(
                 "CAPABILITY_SOURCE_FILE_UNSUPPORTED",
@@ -2315,6 +2320,224 @@ def _safe_evidence_path(root: Path, value: str) -> Path:
     if not normalized or Path(normalized).name != normalized or not re.fullmatch(r"[A-Za-z0-9_.-]+", normalized):
         raise AuthoringServiceError("CAPABILITY_EVIDENCE_ID_INVALID", "Capability evidence id is invalid.")
     return root / f"{normalized}.json"
+
+
+def _json_schema_type_matches(value, expected: str) -> bool:
+    if expected == "null":
+        return value is None
+    if expected == "boolean":
+        return isinstance(value, bool)
+    if expected == "integer":
+        return isinstance(value, int) and not isinstance(value, bool)
+    if expected == "number":
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    if expected == "string":
+        return isinstance(value, str)
+    if expected == "array":
+        return isinstance(value, list)
+    if expected == "object":
+        return isinstance(value, dict)
+    return True
+
+
+def _json_value_type(value) -> str:
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, int):
+        return "integer"
+    if isinstance(value, float):
+        return "number"
+    if isinstance(value, str):
+        return "string"
+    if isinstance(value, list):
+        return "array"
+    if isinstance(value, dict):
+        return "object"
+    return type(value).__name__
+
+
+def _component_input_schema(component: dict, bundle: dict) -> dict:
+    schema = component.get("input_schema")
+    if isinstance(schema, dict):
+        return schema
+    reference = str(schema or "")
+    if not reference.startswith("asset:"):
+        return {"type": "object", "properties": {}}
+    asset = (bundle.get("asset_by_id") or {}).get(reference.removeprefix("asset:")) or {}
+    content = asset.get("content")
+    try:
+        parsed = json.loads(str(content or "{}"))
+    except json.JSONDecodeError:
+        return {"type": "object", "properties": {}}
+    return parsed if isinstance(parsed, dict) else {"type": "object", "properties": {}}
+
+
+def _store_producers(root_flow: dict) -> dict[str, str]:
+    producers: dict[str, str] = {}
+    states = root_flow.get("states") if isinstance(root_flow.get("states"), dict) else {}
+    for node_id, state in states.items():
+        if not isinstance(state, dict):
+            continue
+        params = state.get("params") if isinstance(state.get("params"), dict) else {}
+        preset = params.get("preset_config") if isinstance(params.get("preset_config"), dict) else {}
+        outputs = state.get("outputs") if isinstance(state.get("outputs"), dict) else {}
+        candidates = [
+            state.get("output"), params.get("output"), params.get("save_to"),
+            preset.get("output_name"), preset.get("to"),
+        ]
+        for output in outputs.values():
+            if isinstance(output, dict):
+                target = output.get("target") if isinstance(output.get("target"), dict) else {}
+                if target.get("type") == "store":
+                    candidates.append(target.get("key"))
+            else:
+                candidates.append(output)
+        for candidate in candidates:
+            key = str(candidate or "").removeprefix("store:").strip()
+            if key:
+                producers.setdefault(key, str(node_id))
+    return producers
+
+
+def _producer_for_store_key(store_key: str, producers: dict[str, str], manifest: dict) -> str:
+    if store_key in producers:
+        return producers[store_key]
+    prefixes = [key for key in producers if store_key.startswith(f"{key}.")]
+    if prefixes:
+        return producers[max(prefixes, key=len)]
+    input_ids = {str(item.get("id") or "") for item in manifest.get("inputs") or [] if isinstance(item, dict)}
+    return "运行输入" if store_key in input_ids else ""
+
+
+def _presentation_runtime_evidence(flow_id: str, snapshot: dict, success_run: dict) -> list[dict]:
+    """Prove that every display node rendered its declared component with typed live data."""
+    root_flow = snapshot["root_flow"]
+    states = root_flow.get("states") if isinstance(root_flow.get("states"), dict) else {}
+    display_nodes = {
+        str(node_id): state for node_id, state in states.items()
+        if isinstance(state, dict)
+        and state.get("type") == "process"
+        and state.get("kind") == "interaction"
+        and str(state.get("interaction_mode") or "display") == "display"
+    }
+    if not display_nodes:
+        return []
+    package_path = dev_flow_manager._flow_path(flow_id)
+    bundle = load_asset_bundle(package_path, snapshot["manifest"], include_content=True)
+    presentations = {}
+    for event in runner.get_events(str(success_run.get("run_id") or "")):
+        data = event.get("data") if isinstance(event.get("data"), dict) else {}
+        presentation = data.get("presentation") if isinstance(data.get("presentation"), dict) else None
+        if data.get("action") == "render_interaction" and presentation is not None:
+            presentations[str(event.get("state") or "")] = presentation
+    producers = _store_producers(root_flow)
+    checks = []
+    for node_id, state in display_nodes.items():
+        presentation = presentations.get(node_id)
+        component_id = str(state.get("component_ref") or "")
+        if presentation is None or str(presentation.get("component_id") or "") != component_id:
+            raise AuthoringServiceError(
+                "CAPABILITY_EVIDENCE_PRESENTATION_MISSING",
+                f"展示节点 {node_id} 没有在成功运行中生成组件 {component_id}。",
+                status=409,
+            )
+        component = (bundle.get("component_by_id") or {}).get(component_id) or {}
+        schema = _component_input_schema(component, bundle)
+        properties = schema.get("properties") if isinstance(schema.get("properties"), dict) else {}
+        required = {str(item) for item in schema.get("required") or []}
+        bindings = presentation.get("bindings") if isinstance(presentation.get("bindings"), dict) else {}
+        declared = state.get("input_binding") if isinstance(state.get("input_binding"), dict) else {}
+        fields = []
+        for field_id, field_schema in properties.items():
+            field_schema = field_schema if isinstance(field_schema, dict) else {}
+            expected = str(field_schema.get("type") or "")
+            reference = str(declared.get(field_id) or "")
+            store_key = reference.removeprefix("store:") if reference.startswith("store:") else ""
+            producer = _producer_for_store_key(store_key, producers, snapshot["manifest"])
+            value = bindings.get(field_id)
+            missing = value in (None, "", [], {})
+            type_ok = not expected or missing or _json_schema_type_matches(value, expected)
+            status = "missing" if missing else "ok" if type_ok else "type_mismatch"
+            fields.append({
+                "field_id": str(field_id),
+                "expected_type": expected or "any",
+                "actual_type": _json_value_type(value),
+                "required": str(field_id) in required,
+                "status": status,
+                "binding": reference,
+                "store_key": store_key,
+                "producer_node_id": producer,
+            })
+            if missing and str(field_id) in required:
+                owner = producer or "未找到生产节点"
+                raise AuthoringServiceError(
+                    "CAPABILITY_EVIDENCE_PRESENTATION_FIELD_MISSING",
+                    f"展示节点 {node_id} 的字段 {field_id} 没有数据；绑定 {reference or '未配置'}，责任来源 {owner}。",
+                    status=409,
+                )
+            if not type_ok:
+                owner = producer or "未找到生产节点"
+                raise AuthoringServiceError(
+                    "CAPABILITY_EVIDENCE_PRESENTATION_TYPE_INVALID",
+                    f"展示节点 {node_id} 的字段 {field_id} 需要 {expected}，实际为 {_json_value_type(value)}；责任来源 {owner}。",
+                    status=409,
+                )
+        checks.append({
+            "node_id": node_id,
+            "component_id": component_id,
+            "component_version": presentation.get("component_version"),
+            "entry_sha256": presentation.get("entry_sha256"),
+            "status": "passed",
+            "fields": fields,
+        })
+    return checks
+
+
+def _current_runtime_evidence(flow_id: str, snapshot: dict | None = None) -> dict:
+    snapshot = snapshot or _capability_flow_snapshot(flow_id)
+    entries = []
+    for path in capability_verification_dir.glob("*.json"):
+        try:
+            item = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(item, dict) and item.get("flow_id") == flow_id:
+            entries.append(item)
+    entries.sort(key=lambda item: str(item.get("created_at") or ""), reverse=True)
+    current = next((item for item in entries if item.get("source_digest") == snapshot["source_digest"]), None)
+    latest = current or (entries[0] if entries else None)
+    return {
+        "status": "current" if current else "stale" if latest else "missing",
+        "verification": current or latest,
+        "current_source_digest": snapshot["source_digest"],
+    }
+
+
+def _require_current_runtime_evidence(flow_id: str, token: str) -> tuple[dict, dict]:
+    snapshot = _capability_flow_snapshot(flow_id)
+    evidence_path = _safe_evidence_path(capability_verification_dir, token)
+    if not evidence_path.is_file():
+        raise AuthoringServiceError(
+            "CAPABILITY_RUNTIME_EVIDENCE_REQUIRED",
+            "当前版本没有可用的真实运行证明。",
+            status=409,
+        )
+    evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+    if evidence.get("flow_id") != flow_id or evidence.get("source_digest") != snapshot["source_digest"]:
+        raise AuthoringServiceError(
+            "CAPABILITY_RUNTIME_EVIDENCE_STALE",
+            "Flow 在证明生成后发生了变化，请重新运行成功与安全失败用例。",
+            status=409,
+        )
+    if (evidence.get("success_run") or {}).get("status") != "completed" or (evidence.get("failure_run") or {}).get("status") != "failed":
+        raise AuthoringServiceError(
+            "CAPABILITY_RUNTIME_EVIDENCE_INVALID",
+            "运行证明没有同时包含完成的成功路径和结构化安全失败路径。",
+            status=409,
+        )
+    return snapshot, evidence
 
 
 @app.post("/api/developer/flows/{flow_id}/capability-verifications")
@@ -2371,6 +2594,7 @@ def verify_developer_flow_capability(flow_id: str, payload: CapabilityVerificati
             str(key) for key, value in store.items()
             if key != "local_resources" and value not in (None, "", [], {})
         ) if isinstance(store, dict) else []
+        presentation_checks = _presentation_runtime_evidence(flow_id, snapshot, success)
         if not isinstance(failure.get("error"), dict) or not failure["error"].get("code"):
             raise AuthoringServiceError(
                 "CAPABILITY_EVIDENCE_FAILURE_UNSTRUCTURED",
@@ -2379,7 +2603,7 @@ def verify_developer_flow_capability(flow_id: str, payload: CapabilityVerificati
             )
         token = f"verify_{uuid.uuid4().hex}"
         evidence = {
-            "schema": "cartridgeflow.capability_runtime_evidence.v1",
+            "schema": "cartridgeflow.capability_runtime_evidence.v2",
             "token": token,
             "flow_id": flow_id,
             "source_digest": snapshot["source_digest"],
@@ -2390,6 +2614,7 @@ def verify_developer_flow_capability(flow_id: str, payload: CapabilityVerificati
                 "error_code": failure["error"]["code"],
             },
             "observed_store_keys": observed_store_keys,
+            "presentation_checks": presentation_checks,
             "created_at": datetime.now().isoformat(timespec="seconds"),
             "consumed": False,
         }
@@ -2397,6 +2622,57 @@ def verify_developer_flow_capability(flow_id: str, payload: CapabilityVerificati
         return {"verification": evidence}
     except FileNotFoundError as exc:
         _authoring_error(AuthoringServiceError("CAPABILITY_EVIDENCE_RUN_UNKNOWN", str(exc), status=404))
+    except AuthoringServiceError as exc:
+        _authoring_error(exc)
+
+
+@app.get("/api/developer/flows/{flow_id}/capability-verifications/current")
+def get_current_developer_flow_capability_verification(flow_id: str):
+    try:
+        return _current_runtime_evidence(flow_id)
+    except FileNotFoundError as exc:
+        _authoring_error(AuthoringServiceError("CAPABILITY_SOURCE_FLOW_UNKNOWN", str(exc), status=404))
+    except AuthoringServiceError as exc:
+        _authoring_error(exc)
+
+
+@app.post("/api/developer/flows/{flow_id}/production-release")
+def package_verified_developer_flow(flow_id: str, payload: VerifiedProductionReleasePayload):
+    """Build a signed CF-CRE package only when its editable source has current runtime evidence."""
+    try:
+        snapshot, evidence = _require_current_runtime_evidence(flow_id, payload.verification_token)
+        raw_flow = json.loads(dev_flow_manager.read_files(flow_id)["root_flow"] or "{}")
+        repository = dev_flow_manager.tuning.load(flow_id, raw_flow)
+        active_id = str(repository.get("active_release_id") or "")
+        active = next((item for item in repository.get("releases") or [] if item.get("id") == active_id), None)
+        if not active or active.get("flow_digest") != flow_source_digest(raw_flow):
+            raise AuthoringServiceError(
+                "VERIFIED_RELEASE_RECIPE_STALE",
+                "当前配方还没有冻结为与 Flow 一致的发布版本。",
+                status=409,
+            )
+        result = package_cartridge(
+            flow_id,
+            CartridgePackagePayload(package_mode="production", requested_by=payload.requested_by),
+        )
+        return {
+            **result,
+            "runtime_evidence": {
+                "token": evidence["token"],
+                "source_digest": snapshot["source_digest"],
+                "success_run_id": (evidence.get("success_run") or {}).get("run_id"),
+                "failure_run_id": (evidence.get("failure_run") or {}).get("run_id"),
+                "presentation_checks": evidence.get("presentation_checks") or [],
+            },
+            "recipe_release": {
+                "id": active.get("id"),
+                "digest": active.get("digest"),
+            },
+        }
+    except FileNotFoundError as exc:
+        _authoring_error(AuthoringServiceError("CAPABILITY_SOURCE_FLOW_UNKNOWN", str(exc), status=404))
+    except (json.JSONDecodeError, TuningProtocolError) as exc:
+        _authoring_error(AuthoringServiceError("VERIFIED_RELEASE_RECIPE_INVALID", str(exc), status=409))
     except AuthoringServiceError as exc:
         _authoring_error(exc)
 
@@ -2443,6 +2719,51 @@ def get_developer_flow_capability_readiness(flow_id: str):
         }
     except FileNotFoundError as exc:
         _authoring_error(AuthoringServiceError("CAPABILITY_SOURCE_FLOW_UNKNOWN", str(exc), status=404))
+    except AuthoringServiceError as exc:
+        _authoring_error(exc)
+
+
+@app.post("/api/developer/flows/{flow_id}/production-candidate")
+def promote_developer_flow_to_production_candidate(flow_id: str):
+    """Declare production intent before runtime evidence is collected."""
+    try:
+        cartridge = registry.get_cartridge(flow_id)
+        if not cartridge.get("editable"):
+            raise AuthoringServiceError("PRODUCTION_CANDIDATE_READ_ONLY", "Only editable Developer flows can become production candidates.", status=403)
+        validation = dev_flow_manager.validate_files(flow_id)
+        if not validation.get("valid"):
+            raise AuthoringServiceError(
+                "PRODUCTION_CANDIDATE_VALIDATION_BLOCKED",
+                "; ".join(validation.get("errors") or ["Flow validation failed."]),
+                status=409,
+            )
+        report, manifest, files = _certification_for_files(flow_id, {})
+        if not report.get("ok"):
+            raise AuthoringServiceError(
+                "PRODUCTION_CANDIDATE_CERTIFICATION_BLOCKED",
+                "当前 Flow 尚未通过正式协议认证。",
+                status=409,
+            )
+        next_manifest = apply_protocol_certification_label(manifest, report)
+        readiness = next_manifest.get("delivery_readiness") if isinstance(next_manifest.get("delivery_readiness"), dict) else {}
+        next_manifest["delivery_readiness"] = {
+            **readiness,
+            "level": "production",
+            "certification_target": report.get("protocol", {}).get("required") or readiness.get("certification_target"),
+            "notes": "Production candidate declared in Capability Workshop; runtime evidence is required after this change.",
+        }
+        files["manifest"] = json.dumps(next_manifest, ensure_ascii=False, indent=2)
+        dev_flow_manager.save_file(flow_id, "manifest", files["manifest"])
+        return {
+            "status": "production_candidate",
+            "cartridge_id": flow_id,
+            "delivery_readiness": next_manifest["delivery_readiness"],
+            "certification": {"ok": report.get("ok"), "label": report.get("label")},
+        }
+    except FileNotFoundError as exc:
+        _authoring_error(AuthoringServiceError("CAPABILITY_SOURCE_FLOW_UNKNOWN", str(exc), status=404))
+    except (BaseManifestError, ValueError) as exc:
+        _authoring_error(AuthoringServiceError("PRODUCTION_CANDIDATE_INVALID", str(exc), status=409))
     except AuthoringServiceError as exc:
         _authoring_error(exc)
 
@@ -4521,7 +4842,13 @@ def create_lab_flow_node(cartridge_id: str, payload: NodeCreatePayload):
         if new_state.get("type") == "process":
             failed_id = f"{node_id}_failed"
             if failed_id not in states:
-                states[failed_id] = {"type": "terminal", "title": f"{new_state.get('title') or node_id}失败结束", "display_name": "失败结束", "locked": True}
+                states[failed_id] = {
+                    "type": "terminal",
+                    "title": f"{new_state.get('title') or node_id}失败结束",
+                    "display_name": "失败结束",
+                    "terminal_status": "failed",
+                    "locked": True,
+                }
             edges.append({
                 "id": f"{node_id}_failure",
                 "kind": "failure",
@@ -4885,7 +5212,7 @@ def get_lab_flow_runs(cartridge_id: str):
 
 
 class LabTestRunCreate(BaseModel):
-    inputs: dict[str, str] | None = None
+    inputs: dict[str, object] | None = None
     probe_range: dict | None = None
 
 
@@ -4933,7 +5260,7 @@ def create_lab_flow_test_run(cartridge_id: str, payload: LabTestRunCreate | None
         if input_id in user_inputs:
             inputs[input_id] = user_inputs[input_id]
         elif item.get("default") not in (None, ""):
-            inputs[input_id] = str(item.get("default"))
+            inputs[input_id] = item.get("default")
         elif item.get("type") == "select":
             options = item.get("options") or [{"value": "feature"}]
             inputs[input_id] = options[0].get("value", "feature") if options else "feature"

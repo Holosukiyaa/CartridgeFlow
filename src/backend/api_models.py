@@ -173,6 +173,11 @@ class CapabilityVerificationPayload(BaseModel):
     failure_run_id: str = Field(min_length=1, max_length=120)
 
 
+class VerifiedProductionReleasePayload(BaseModel):
+    verification_token: str = Field(min_length=16, max_length=200)
+    requested_by: str = Field(default="capability-workshop", min_length=1, max_length=120)
+
+
 class CreatorProjectRenamePayload(BaseModel):
     name: str = Field(min_length=1, max_length=200)
 

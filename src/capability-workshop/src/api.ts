@@ -1,6 +1,7 @@
 import { redact, type AnyRecord } from './model'
 
-const base = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
+const base = (import.meta.env?.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
+export const publicApiUrl = (path: string) => `${base}${path}`
 export class ApiError extends Error { constructor(public status: number, message: string) { super(message) } }
 
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -16,10 +17,20 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!response.ok) {
     const body = await response.text()
     let message: unknown = body
-    try { message = JSON.stringify(redact(JSON.parse(body))) } catch { message = redact(body) }
+    try {
+      const parsed = redact(JSON.parse(body)) as AnyRecord
+      const detail = parsed.detail
+      message = typeof detail === 'string'
+        ? detail
+        : detail && typeof detail === 'object'
+          ? String((detail as AnyRecord).message || (detail as AnyRecord).error || JSON.stringify(detail))
+          : JSON.stringify(parsed)
+    } catch { message = redact(body) }
     throw new ApiError(response.status, String(message || `HTTP ${response.status}`))
   }
-  return redact(await response.json()) as T
+  // Redaction belongs at display/log boundaries. Mutating a successful payload here
+  // destroys contract values such as runtime verification tokens.
+  return await response.json() as T
 }
 
 export const capabilityApi = {
@@ -61,6 +72,11 @@ export const capabilityApi = {
   testRun: (id: string, inputs: AnyRecord) => request<AnyRecord>(`/api/lab/flows/${encodeURIComponent(id)}/test-run`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ inputs }) }),
   run: (runId: string) => request<AnyRecord>(`/api/cartridge-runs/${encodeURIComponent(runId)}`),
   verifyCapability: (id: string, body: { success_run_id: string; failure_run_id: string }) => request<AnyRecord>(`/api/developer/flows/${encodeURIComponent(id)}/capability-verifications`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+  currentVerification: (id: string) => request<AnyRecord>(`/api/developer/flows/${encodeURIComponent(id)}/capability-verifications/current`),
+  productionCandidate: (id: string) => request<AnyRecord>(`/api/developer/flows/${encodeURIComponent(id)}/production-candidate`, { method: 'POST' }),
+  tuning: (id: string) => request<AnyRecord>(`/api/lab/flows/${encodeURIComponent(id)}/tuning`),
+  freezeRecipe: (id: string) => request<AnyRecord>(`/api/lab/flows/${encodeURIComponent(id)}/tuning/releases`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ author: 'capability-workshop', message: '冻结当前配方用于签名交付' }) }),
+  packageVerifiedRelease: (id: string, verificationToken: string) => request<AnyRecord>(`/api/developer/flows/${encodeURIComponent(id)}/production-release`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ verification_token: verificationToken, requested_by: 'capability-workshop' }) }),
   publishCapability: (id: string, body: AnyRecord) => request<AnyRecord>(`/api/developer/flows/${encodeURIComponent(id)}/capability-cartridges`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
   activateCapability: (id: string, active: boolean, revision?: number) => request<AnyRecord>(`/api/developer/capability-cartridges/${encodeURIComponent(id)}/activation`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ active, revision }) }),
 }

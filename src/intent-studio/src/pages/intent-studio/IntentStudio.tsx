@@ -370,7 +370,7 @@ function NodeEditor({ creator, node, busy, onCreatorChange, onClose, onModelRequ
     </header>
     <div className="creator-node-editor-body">
       <section className="creator-node-goal"><header><Target /><strong>目标</strong></header><p>{node.description}</p></section>
-      {unresolved && <section className="creator-capability-gap"><div><strong>存在能力缺口，影响节点能力完整性</strong><p>{node.resolution?.needed_capability}</p></div><a href={`/capabilities?goal=${encodeURIComponent(node.resolution?.needed_capability || node.description)}&projectId=${encodeURIComponent(creator.project_id)}&nodeId=${encodeURIComponent(node.id)}`}><Wrench />进入能力工坊</a><small>发布可信能力后，回到这里会在原节点上重新匹配。</small></section>}
+      {unresolved && <section className="creator-capability-gap"><div><span>这个步骤需要一种新的做法</span><strong>{node.resolution?.needed_capability || node.description}</strong><p>你的原始目标会留在这里。进入下一层完成内部流程后，新能力会自动回到这个步骤。</p></div><a href={`/capabilities?goal=${encodeURIComponent(node.resolution?.needed_capability || node.description)}&projectId=${encodeURIComponent(creator.project_id)}&nodeId=${encodeURIComponent(node.id)}&nodeLabel=${encodeURIComponent(node.label)}`}><Wrench />深入制作这个能力</a></section>}
       {!unresolved && node.resolution?.capability && <section className="creator-capability-source"><ShieldCheck /><div><strong>{node.resolution.capability.label}</strong><span>{node.resolution.capability.trust_scope === 'workspace' ? '当前工作区可信' : node.resolution.capability.trust_scope === 'organization' ? '组织可信' : '系统可信'} · v{node.resolution.capability.revision}</span></div><button className="secondary-button" type="button" disabled={isBusy} onClick={() => void rejectCapability()}><X />不适合当前节点</button></section>}
       {!unresolved && <ExperienceEditor creator={creator} node={node} disabled={isBusy} onChange={onCreatorChange} onBusy={setWorking} />}
       {!proposal && <>
@@ -456,7 +456,7 @@ export function IntentStudio({ projectId }: { projectId: string }) {
   const [projectMenuOpen, setProjectMenuOpen] = useState(false)
   const [projects, setProjects] = useState<Array<{ project_id: string; session_id: string; name: string; intent: string; revision: number }>>([])
   const [pendingAiAction, setPendingAiAction] = useState<'discover' | 'compose' | 'node' | null>(null)
-  const [workspaceMode, setWorkspaceMode] = useState<'discover' | 'compose'>('compose')
+  const [workspaceMode, setWorkspaceMode] = useState<'discover' | 'compose'>('discover')
   const composerRef = useRef<HTMLTextAreaElement | null>(null)
   const aiConnectedRef = useRef<boolean | null>(null)
   const resolutionCheckRef = useRef('')
@@ -469,6 +469,7 @@ export function IntentStudio({ projectId }: { projectId: string }) {
         setCreator(value)
         setGoal(value.intent)
         setSelectedId(value.trusted_recipe.nodes.find((node) => node.resolution?.status === 'unresolved')?.id || value.trusted_recipe.nodes[0]?.id || '')
+        setWorkspaceMode(value.trusted_recipe.nodes.length ? 'compose' : 'discover')
       })
       .catch(() => showToast({ title: '草稿读取失败', description: '请刷新页面后重试。', type: 'error' }))
       .finally(() => { if (active) setLoading(false) })
@@ -650,25 +651,28 @@ export function IntentStudio({ projectId }: { projectId: string }) {
   }
 
   return <main className="creator-workspace">
-    <header className="creator-topbar">
+    <header className={`creator-topbar is-${workspaceMode}`}>
       <div className="creator-brand">
         <span className="creator-brand-mark" aria-hidden="true"><Workflow /></span>
         <strong>CartridgeFlow</strong>
         <span>创作空间</span>
       </div>
-      <nav className="creator-mode-switch" aria-label="创作模式">
-        <button className={workspaceMode === 'discover' ? 'is-active' : ''} type="button" onClick={() => setWorkspaceMode('discover')}><Lightbulb />方向探索</button>
-        <button className={workspaceMode === 'compose' ? 'is-active' : ''} type="button" onClick={() => setWorkspaceMode('compose')}><Workflow />方案编排</button>
+      <nav className="creator-mode-switch" aria-label="创作进度">
+        <button className={workspaceMode === 'discover' ? 'is-active' : ''} type="button" onClick={() => setWorkspaceMode('discover')}><span>1</span><Lightbulb />想法</button>
+        <button className={workspaceMode === 'compose' ? 'is-active' : ''} type="button" onClick={() => setWorkspaceMode('compose')}><span>2</span><Workflow />方案</button>
+        <button className={packageResult ? 'is-complete' : ''} type="button" disabled={!creator?.generation_readiness.ready} onClick={() => void buildPackage()}><span>3</span><PackageCheck />交付</button>
       </nav>
       <div className="creator-top-actions">
-        <span className="creator-saved"><CheckCircle2 />已自动保存</span>
-        <button className="icon-button" type="button" title="当前没有可撤销的操作" disabled><Undo2 /></button>
-        <button className="icon-button" type="button" title="当前没有可重做的操作" disabled><Redo2 /></button>
-        {packageResult ? <a className="creator-package-download" href={packageResult.url} download><Download />下载包</a> : <button className="creator-package-button" type="button" disabled={busy || !creator?.generation_readiness.ready} onClick={() => void buildPackage()} title={creator?.generation_readiness.ready ? '打包当前项目' : '完成所有节点审核后可打包'}><PackageCheck />打包</button>}
+        {workspaceMode === 'compose' && <>
+          <span className="creator-saved"><CheckCircle2 />已自动保存</span>
+          <button className="icon-button" type="button" title="当前没有可撤销的操作" disabled><Undo2 /></button>
+          <button className="icon-button" type="button" title="当前没有可重做的操作" disabled><Redo2 /></button>
+          {packageResult ? <a className="creator-package-download" href={packageResult.url} download><Download />下载卡带</a> : <button className="creator-package-button" type="button" disabled={busy || !creator?.generation_readiness.ready} onClick={() => void buildPackage()} title={creator?.generation_readiness.ready ? '生成可安装卡带' : '完成所有步骤后可交付'}><PackageCheck />生成卡带</button>}
+        </>}
       </div>
     </header>
 
-    <div className="creator-shell">
+    <div className={`creator-shell is-${workspaceMode}`}>
       <aside className="creator-sidebar">
         <section className="creator-sidebar-section creator-project-section">
           <header><strong>项目</strong><button className="sidebar-icon-button" type="button" onClick={createProject}><Plus />新建项目</button></header>
@@ -678,7 +682,7 @@ export function IntentStudio({ projectId }: { projectId: string }) {
         </section>
 
         <section className="creator-sidebar-section creator-outline">
-          <header><strong>项目大纲</strong><ChevronDown /></header>
+          <header><strong>方案步骤</strong><span>{confirmedCount}/{totalCount || 0}</span></header>
           <div className="creator-outline-list">
             {creator?.trusted_recipe.nodes.map((node, index) => {
               const unresolved = node.resolution?.status === 'unresolved'
@@ -693,13 +697,13 @@ export function IntentStudio({ projectId }: { projectId: string }) {
         </section>
 
         <section className="creator-sidebar-section creator-progress">
-          <header><strong>审核进度</strong><ChevronDown /></header>
+          <header><strong>完成情况</strong><ChevronDown /></header>
           <div className="creator-progress-summary">
             <div className="creator-progress-ring" style={{ '--progress': `${totalCount ? Math.round((confirmedCount / totalCount) * 100) : 0}%` } as CSSProperties}><strong>{confirmedCount}/{totalCount || 0}</strong><small>已完成</small></div>
             <div className="creator-progress-legend"><span><i className="confirmed" />已确认 <b>{confirmedCount}</b></span><span><i className="review" />待审核 <b>{reviewCount}</b></span><span><i className="unresolved" />待补齐能力 <b>{unresolvedCount}</b></span></div>
           </div>
           {unresolvedCount > 0 && <button className="creator-refresh-capabilities" type="button" disabled={busy} onClick={() => void refreshCapabilities()}><RefreshCw />重新检查可信能力</button>}
-          <p>完成所有节点审核后可打包</p>
+          <p>所有步骤确认后即可生成可安装卡带</p>
         </section>
       </aside>
 
@@ -708,16 +712,16 @@ export function IntentStudio({ projectId }: { projectId: string }) {
         {workspaceMode === 'compose' ? <>
           <div className="creator-canvas"><IntentCanvas creator={creator} selectedId={selectedId} onSelect={setSelectedId} /></div>
           <form className="creator-composer" onSubmit={submit}>
-            <div className="creator-composer-heading"><div><Bot /><strong>AI 指令</strong></div><button className="creator-variable-button" type="button" title="项目变量"><Braces />变量</button></div>
+            <div className="creator-composer-heading"><div><Bot /><strong>调整整个方案</strong></div><button className="creator-variable-button" type="button" title="插入项目变量"><Braces />变量</button></div>
             {composerError && <div className="creator-composer-error" role="alert"><strong>这次没有完成编排</strong><span>{composerError} 你的想法已经保留，可以直接重试。</span></div>}
-            <label className="creator-goal-input"><textarea ref={composerRef} value={goal} disabled={busy} onChange={(event) => { setGoal(event.currentTarget.value); setComposerError('') }} placeholder="描述你希望如何调整整个方案" aria-label="整体调整要求" /></label>
+            <label className="creator-goal-input"><textarea ref={composerRef} value={goal} disabled={busy} onChange={(event) => { setGoal(event.currentTarget.value); setComposerError('') }} placeholder="告诉 AI 你想增加、删除或调整什么" aria-label="整体调整要求" /></label>
             <div className="creator-composer-actions"><div><button className="icon-button" type="button" title="添加参考资料"><Paperclip /></button><button className="icon-button" type="button" title="让 AI 优化指令"><Sparkles /></button></div><button type="submit" disabled={busy || goal.trim().length < 3}>{busy ? <Loader2 className="spinning" /> : <Sparkles />}{creator ? '重新生成' : '生成方案'}</button></div>
           </form>
         </> : <section className="creator-discovery">
-          <div className="creator-discovery-intro"><span><Lightbulb /></span><div><small>方向探索</small><h1>从目标出发，找到值得实现的方向</h1><p>描述你的场景和期望结果，AI 会提出几条可比较的创作方向。</p></div></div>
-          <form onSubmit={(event) => { event.preventDefault(); void discover() }}><textarea value={goal} onChange={(event) => { setGoal(event.currentTarget.value); setComposerError('') }} placeholder="例如：我想持续了解 AI 行业变化，并生成可以审核来源的中文日报" /><button type="submit" disabled={busy || goal.trim().length < 3}>{busy ? <Loader2 className="spinning" /> : <Search />}探索方向</button></form>
+          <div className="creator-discovery-intro"><span><Lightbulb /></span><div><small>从一个想法开始</small><h1>你想让这张卡带帮你做什么？</h1><p>先说结果，不用考虑模型、工具或流程。AI 会把想法拆成几种可以比较的方案。</p></div></div>
+          <form onSubmit={(event) => { event.preventDefault(); void discover() }}><textarea autoFocus value={goal} onChange={(event) => { setGoal(event.currentTarget.value); setComposerError('') }} placeholder="例如：每天早上整理可信的 AI 行业动态，生成一份中文简报" /><button type="submit" disabled={busy || goal.trim().length < 3}>{busy ? <Loader2 className="spinning" /> : <Sparkles />}拆解想法</button></form>
           {composerError && <div className="creator-discovery-error" role="alert"><strong>这次没有生成方向建议</strong><span>{composerError} 你的输入已经保留，可以直接重试。</span></div>}
-          <div className="creator-possibilities" aria-label="AI 方向建议">{possibilities.length ? possibilities.map((item) => <article key={item.id}><span><Target /></span><h3>{item.title}</h3><p>{item.outcome}</p><small>{item.why_it_fits}</small><button type="button" onClick={() => { setGoal(item.recipe.intent); setWorkspaceMode('compose'); void compose(item.recipe.intent) }}><Send />沿这个方向编排</button></article>) : <div className="creator-discovery-empty"><Sparkles /><strong>方向建议会显示在这里</strong><span>你也可以直接切换到“方案编排”。</span></div>}</div>
+          <div className="creator-possibilities" aria-label="AI 方向建议">{possibilities.length ? possibilities.map((item) => <article key={item.id}><span><Target /></span><h3>{item.title}</h3><p>{item.outcome}</p><small>{item.why_it_fits}</small><button type="button" onClick={() => { setGoal(item.recipe.intent); setWorkspaceMode('compose'); void compose(item.recipe.intent) }}><Send />用这个方向生成方案</button></article>) : <div className="creator-discovery-empty"><Sparkles /><strong>方案方向会出现在这里</strong><span>已有明确目标时，也可以直接进入第 2 步。</span></div>}</div>
         </section>}
         {loading && <div className="creator-loading"><Loader2 className="spinning" /><span>正在读取项目</span></div>}
       </section>

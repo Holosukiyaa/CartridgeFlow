@@ -57,6 +57,39 @@ DISCOVERY = {
     ],
 }
 
+SEMANTIC_RECIPE = {
+    "nodes": [
+        {
+            "id": "read-notes",
+            "label": "读懂会议记录",
+            "description": "找出会议中的决定、待办事项和仍未解决的问题。",
+            "needed_capability": "能够理解会议记录并识别决定与待办事项",
+            "capability_id": None,
+            "values": {},
+        },
+        {
+            "id": "assign-actions",
+            "label": "整理负责人和截止时间",
+            "description": "把待办事项整理成有负责人、截止时间和优先级的行动清单。",
+            "needed_capability": "能够把待办事项整理成明确的行动清单",
+            "capability_id": None,
+            "values": {},
+        },
+        {
+            "id": "review-output",
+            "label": "生成可确认的结果",
+            "description": "输出一份便于团队逐项确认和继续跟进的结果。",
+            "needed_capability": "能够生成便于团队确认的行动结果",
+            "capability_id": None,
+            "values": {},
+        },
+    ],
+    "relations": [
+        {"id": "notes-to-actions", "from_node_id": "read-notes", "to_node_id": "assign-actions", "relation": "informs"},
+        {"id": "actions-to-review", "from_node_id": "assign-actions", "to_node_id": "review-output", "relation": "produces"},
+    ],
+}
+
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, _format: str, *_args: object) -> None:
@@ -87,6 +120,8 @@ class Handler(BaseHTTPRequestHandler):
         user = str(next((item.get("content") for item in reversed(messages or []) if item.get("role") == "user"), ""))
         if "exactly three distinct possibilities" in system:
             content = json.dumps(DISCOVERY, ensure_ascii=False)
+        elif "one-to-eight step semantic recipe" in system:
+            content = json.dumps(SEMANTIC_RECIPE, ensure_ascii=False)
         elif "supplied trusted preset ids" in system:
             facts = json.loads(user)
             preset_ids = [item["id"] for item in facts.get("trusted_presets") or []]

@@ -576,6 +576,7 @@ function Workshop() {
   const creatorGoal = query.get('goal') || ''
   const projectId = query.get('projectId') || ''
   const targetNodeId = query.get('nodeId') || ''
+  const targetNodeLabel = query.get('nodeLabel') || ''
   const [flows, setFlows] = useState<AnyRecord[]>([])
   const [flowId, setFlowId] = useState(query.get('flowId') || '')
   const [detail, setDetail] = useState<AnyRecord>({})
@@ -589,7 +590,7 @@ function Workshop() {
   const [components, setComponents] = useState<AnyRecord[]>([])
   const [verification, setVerification] = useState<AnyRecord>({ status: 'missing' })
   const [error, setError] = useState('')
-  const [newName, setNewName] = useState(creatorGoal || '新的能力卡带')
+  const [newName, setNewName] = useState(targetNodeLabel || creatorGoal || '新的能力卡带')
   const [workspaceTab, setWorkspaceTab] = useState<'design' | 'experience' | 'verify' | 'publish'>('design')
   const [capabilitySearch, setCapabilitySearch] = useState('')
 
@@ -648,33 +649,41 @@ function Workshop() {
   const cartridge = object(detail.cartridge)
   const filteredCapabilities = capabilities.filter((item) => `${String(item.id)} ${String(object(item.creator).label || '')}`.toLowerCase().includes(capabilitySearch.toLowerCase()))
   const findingCount = array(validation.findings).length
+  const hasCreatorContext = Boolean(projectId && targetNodeId)
+  const nextTab = workspaceTab === 'design' ? 'experience' : workspaceTab === 'experience' ? 'verify' : 'publish'
   return <main className="workshop">
     <header className="topbar">
-      <div className="workshop-brand"><b>CartridgeFlow</b><span>/</span><strong>能力工坊</strong>{creatorGoal && <><i /><small>AI 日报 / {creatorGoal}</small></>}</div>
+      <div className="workshop-brand"><b>CartridgeFlow</b><span>/</span><strong>能力工坊</strong></div>
       <div className="header-actions">
-        {projectId && <a href={`/projects/${encodeURIComponent(projectId)}/studio`}><ArrowLeft />返回创作空间</a>}
-        <button className="icon" type="button" title="帮助"><CircleHelp /></button><button className="icon" type="button" title="通知"><Bell /></button>
-        <select aria-label="选择 Flow" value={flowId} onChange={(event) => { setFlowId(event.target.value); void load(event.target.value) }}><option value="">选择 Flow</option>{flows.map((flow) => <option key={String(flow.id)} value={String(flow.id)}>{String(flow.name || flow.id)}</option>)}</select>
-        <span className="workshop-user">CF</span>
+        {projectId && <a className="return-to-creator" href={`/projects/${encodeURIComponent(projectId)}/studio`}><ArrowLeft />返回原方案</a>}
+        {!hasCreatorContext && <><button className="icon" type="button" title="帮助"><CircleHelp /></button><button className="icon" type="button" title="通知"><Bell /></button>
+          <select aria-label="选择 Flow" value={flowId} onChange={(event) => { setFlowId(event.target.value); void load(event.target.value) }}><option value="">选择 Flow</option>{flows.map((flow) => <option key={String(flow.id)} value={String(flow.id)}>{String(flow.name || flow.id)}</option>)}</select>
+          <span className="workshop-user">CF</span></>}
       </div>
     </header>
     {error && <p className="page-error"><CircleAlert />{error}</p>}
-    {!flowId ? <section className="empty-workshop"><Wrench /><h1>新建能力卡带</h1><input value={newName} onChange={(event) => setNewName(event.currentTarget.value)} /><button type="button" onClick={() => void createFlow()} disabled={!newName.trim()}><FilePlus2 />创建内部 Flow</button></section> : <div className="workshop-product">
+    {!flowId ? hasCreatorContext ? <section className="creator-handoff">
+      <div className="handoff-intro"><span><Wrench />深入制作</span><h1>为原方案补齐一个子能力</h1><p>外层方案已经保留。这里只制作当前步骤的内部做法，发布后会自动回填。</p></div>
+      <div className="handoff-path" aria-label="从原目标进入子能力"><div><small>原方案目标</small><p>{creatorGoal}</p></div><span aria-hidden="true"></span><div><small>当前要补齐</small><strong>{targetNodeLabel || newName}</strong></div></div>
+      <form onSubmit={(event) => { event.preventDefault(); void createFlow() }}><label><span>子能力名称</span><input autoFocus value={newName} onChange={(event) => setNewName(event.currentTarget.value)} /></label><button type="submit" disabled={!newName.trim()}><FilePlus2 />开始搭建内部流程</button></form>
+      <small className="handoff-return-note"><CheckCircle2 />完成发布后返回原方案，当前步骤会直接获得这个能力</small>
+    </section> : <section className="empty-workshop"><Wrench /><span>高级制作</span><h1>{newName || '新建能力卡带'}</h1><label><span>能力名称</span><input value={newName} onChange={(event) => setNewName(event.currentTarget.value)} /></label><button type="button" onClick={() => void createFlow()} disabled={!newName.trim()}><FilePlus2 />进入内部流程</button></section> : <div className="workshop-product">
+      {hasCreatorContext && <section className="creator-handoff-banner"><div><span>正在深入一个子能力</span><strong>{targetNodeLabel || String(cartridge.name || flowId)}</strong><p>{creatorGoal}</p></div><div><small>外层方案已安全保留</small><a href={`/projects/${encodeURIComponent(projectId)}/studio`}><ArrowLeft />退出内部制作</a></div></section>}
       <section className="capability-header">
-        <div className="capability-identity"><Box /><div><strong>{String(cartridge.name || flowId)}</strong><span>v{String(cartridge.version || '1.0.0')} · 开发中版本</span></div><small className={validation.valid ? 'is-valid' : ''}><CheckCircle2 />{validation.valid ? '校验通过' : `${findingCount} 项待校验`}</small></div>
-        <nav className="workshop-tabs" aria-label="能力制作阶段"><button className={workspaceTab === 'design' ? 'is-active' : ''} type="button" onClick={() => setWorkspaceTab('design')}><GitBranch />实现设计</button><button className={workspaceTab === 'experience' ? 'is-active' : ''} type="button" onClick={() => setWorkspaceTab('experience')}><Box />展示组件</button><button className={workspaceTab === 'verify' ? 'is-active' : ''} type="button" onClick={() => setWorkspaceTab('verify')}><Play />运行验证</button><button className={workspaceTab === 'publish' ? 'is-active' : ''} type="button" onClick={() => setWorkspaceTab('publish')}><PackageCheck />版本发布</button></nav>
-        <div className="capability-actions"><button type="button" onClick={() => void load()}><RefreshCw />刷新</button><button type="button" onClick={() => setWorkspaceTab('verify')}><Play />运行能力</button><button className="primary" type="button" disabled={workspaceTab === 'design' ? !selectedNode : workspaceTab !== 'experience'} onClick={() => { if (workspaceTab === 'experience') document.getElementById('display-component-save')?.click(); else { setWorkspaceTab('design'); requestAnimationFrame(() => document.getElementById('capability-node-save')?.click()) } }}><Save />{workspaceTab === 'experience' ? '保存组件' : '保存节点'}</button></div>
+        <div className="capability-identity"><Box /><div><strong>{String(cartridge.name || flowId)}</strong><span>{hasCreatorContext ? '子能力内部流程' : '独立能力'} · v{String(cartridge.version || '1.0.0')}</span></div><small className={validation.valid ? 'is-valid' : ''}><CheckCircle2 />{validation.valid ? '结构完整' : `${findingCount} 项待处理`}</small></div>
+        <nav className="workshop-tabs" aria-label="能力制作阶段"><button className={workspaceTab === 'design' ? 'is-active' : ''} type="button" onClick={() => setWorkspaceTab('design')}><span>1</span><GitBranch />内部流程</button><button className={workspaceTab === 'experience' ? 'is-active' : ''} type="button" onClick={() => setWorkspaceTab('experience')}><span>2</span><Box />结果界面</button><button className={workspaceTab === 'verify' ? 'is-active' : ''} type="button" onClick={() => setWorkspaceTab('verify')}><span>3</span><Play />实际验证</button><button className={workspaceTab === 'publish' ? 'is-active' : ''} type="button" onClick={() => setWorkspaceTab('publish')}><span>4</span><PackageCheck />发布回填</button></nav>
+        <div className="capability-actions"><button className="icon-action" type="button" onClick={() => void load()} title="刷新当前能力"><RefreshCw /></button>{workspaceTab === 'design' && <button className="primary" type="button" disabled={!selectedNode} onClick={() => requestAnimationFrame(() => document.getElementById('capability-node-save')?.click())}><Save />保存节点</button>}{workspaceTab === 'experience' && <button className="primary" type="button" onClick={() => document.getElementById('display-component-save')?.click()}><Save />保存界面</button>}{workspaceTab === 'verify' && <button className="primary" type="button" onClick={() => setWorkspaceTab('publish')} disabled={!verificationToken}><PackageCheck />去发布</button>}</div>
       </section>
 
       <div className="workshop-shell">
-        <aside className="workshop-sidebar">
+        {workspaceTab === 'design' && <aside className="workshop-sidebar">
           <details open><summary>节点库<ChevronDown /></summary><div className="node-library"><button type="button" disabled><Play /><span>开始</span></button><button type="button" onClick={() => void addNode('interaction')}><Box /><span>展示结果</span></button><button type="button" onClick={() => void addNode('checkpoint')}><User /><span>人工审核</span></button><button type="button" onClick={() => void addNode('runtime')}><GitBranch /><span>数据处理</span></button><button type="button" onClick={() => void addNode('tool_call')}><Plug /><span>调用工具</span></button><button type="button" onClick={() => void addNode('prompt')}><Bot /><span>AI 处理</span></button></div><div className="node-library-footer"><button type="button" onClick={() => void addNode('remote_call')}>服务节点</button><button type="button" onClick={() => setWorkspaceTab('experience')}>设计展示</button></div></details>
           <details open><summary>可复用能力<ChevronDown /></summary><label className="capability-search"><Search /><input value={capabilitySearch} onChange={(event) => setCapabilitySearch(event.currentTarget.value)} placeholder="搜索可复用能力" /></label><div className="reusable-capabilities">{filteredCapabilities.length ? filteredCapabilities.map((item) => <button type="button" key={String(item.id)} title={String(item.id)}><strong>{String(object(item.creator).label || item.id)}</strong><small>v{String(item.revision)} · {String(item.trust_scope || 'workspace')}</small></button>) : <p>没有匹配的已发布能力。</p>}</div></details>
           <AssistantPanel flowId={flowId} selectedId={selected} />
           <ToolResourcePanel flowId={flowId} tools={tools} catalog={resourceCatalog} onChanged={() => load(flowId)} />
           <DlcPanel flowId={flowId} onChanged={() => load(flowId)} />
           <details open className="proof-library"><summary>基础运行证明<ChevronDown /></summary>{capabilities.slice(0, 3).map((item) => <div key={String(item.id)}><ShieldCheck /><span><strong>{String(object(item.creator).label || item.id)}</strong><small>workspace · v{String(item.revision)}</small></span></div>)}</details>
-        </aside>
+        </aside>}
 
         <section className={`workshop-stage is-${workspaceTab}`}>
           {workspaceTab === 'design' && <div className="workshop-body"><Graph flowId={flowId} graph={graph} selected={selected} onSelect={setSelected} onReload={() => load(flowId)} />{selectedNode ? <CapabilityNodeEditor key={`${flowId}:${selected}`} flowId={flowId} node={selectedNode} tools={tools} manifestInputs={array(cartridge.inputs)} files={flowFiles} onSaved={() => load(flowId)} onClose={() => setSelected('')} /> : <aside className="node-editor boundary-editor"><div className="boundary-copy"><GitBranch /><p>选择一个节点后在这里配置实现、契约和运行参数。</p></div></aside>}</div>}
@@ -684,7 +693,7 @@ function Workshop() {
         </section>
       </div>
 
-      <footer className="workshop-readiness"><div><CircleAlert /><span>未解决校验</span><b>{findingCount}</b></div><div><span>契约完整度</span><small className={validation.valid ? 'ready' : ''}>{validation.valid ? '可完成' : '待补齐'}</small></div><div><span>运行证明</span><small className={verificationToken ? 'ready' : ''}>{verificationToken ? '已就绪 2/2' : '尚未登记'}</small></div><div><span>发布就绪度</span><small className={validation.valid && verificationToken ? 'ready' : ''}>{validation.valid && verificationToken ? '可发布' : '待完成'}</small></div><button type="button" onClick={() => setWorkspaceTab(workspaceTab === 'design' ? 'experience' : workspaceTab === 'experience' ? 'verify' : 'publish')} disabled={workspaceTab === 'publish'}>{workspaceTab === 'design' ? <><Box />进入展示组件</> : workspaceTab === 'experience' ? <><Play />进入运行验证</> : workspaceTab === 'verify' ? <><PackageCheck />进入版本发布</> : <><Check />已进入发布</>}</button></footer>
+      <footer className="workshop-readiness"><div><span>当前进度</span><strong>{workspaceTab === 'design' ? '搭建内部做法' : workspaceTab === 'experience' ? '定义用户看到的结果' : workspaceTab === 'verify' ? '证明成功和安全失败' : hasCreatorContext ? '发布并回到原方案' : '发布为可信能力'}</strong></div><div><span>结构</span><small className={validation.valid ? 'ready' : ''}>{validation.valid ? '完整' : `${findingCount} 项待处理`}</small></div><div><span>验证</span><small className={verificationToken ? 'ready' : ''}>{verificationToken ? '成功与失败均通过' : '尚未完成'}</small></div><button type="button" onClick={() => setWorkspaceTab(nextTab)} disabled={workspaceTab === 'publish'}>{workspaceTab === 'design' ? <><Box />下一步：结果界面</> : workspaceTab === 'experience' ? <><Play />下一步：实际验证</> : workspaceTab === 'verify' ? <><PackageCheck />下一步：发布回填</> : <><Check />已到发布阶段</>}</button></footer>
     </div>}
   </main>
 }

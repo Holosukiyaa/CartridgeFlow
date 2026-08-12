@@ -49,12 +49,12 @@ validated executable contracts.
 
 ## Protocol Rules
 
-The source of truth is `protocol-source/protocol-source.sqlite`, pinned
-by `config/protocol/protocol-registry.lock.json`. This product consumes the
-read-only `config/protocol/protocol-registry.sqlite` published snapshot. It
-contains `current` and `temp-runtime`; runtime APIs default to `current`, while
-the second source is governance-only unless explicitly selected. The product
-snapshot additionally includes only the explicit committed `config/` knowledge
+The independent [cartridgeflow-protocols](https://github.com/Holosukiyaa/cartridgeflow-protocols)
+repository is the unique protocol source of truth. It must not be embedded or
+mounted inside this product workspace. `config/protocol/protocol-registry.lock.json`
+pins one published source commit and database digest; this product consumes only
+the read-only `config/protocol/protocol-registry.sqlite` snapshot. The snapshot
+additionally includes only the explicit committed `config/` knowledge
 allowlist maintained in `governance_registry.py`: Base declarations and
 evidence, config documentation, runtime defaults and safe templates. Never add
 `.data/`, local credentials, generated databases, locks or viewer tooling to
@@ -64,11 +64,12 @@ These releases define semantic recipes, immutable complete-Flow capabilities,
 typed public ports, exact dependencies, trust scope and provenance. Generic
 Developer Flows continue to follow the catalog's default FARP version.
 
-Protocol edits belong in the embedded `protocol-source` Git submodule and go
-through `protocol-source/scripts/protocol_db.py`. After committing and
-pushing them from that submodule, run
-`python scripts/update_protocol_registry.py`; it refuses dirty or unpublished
-protocol source. Do not edit the product SQLite snapshot directly.
+Protocol edits belong in a separate checkout of `cartridgeflow-protocols` and
+go through that repository's `scripts/protocol_db.py`. After committing and
+pushing them, run
+`python scripts/update_protocol_registry.py --protocol-repository <external-checkout>`;
+it refuses a dirty or unpublished protocol source. Do not edit the product
+SQLite snapshot directly or add a protocol-source submodule.
 Never add domain capabilities such as RSS to Base; ship them as package-owned
 DLC.
 

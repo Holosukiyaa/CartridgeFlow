@@ -483,8 +483,8 @@ runtime_contract_invalid
 
 ## 10. 参考文件
 
-- `protocol-source/protocol-source.sqlite` 的 `current:protocol/release-envelope/1/specification.md`：CF-CRE@1 原本。
-- `protocol-source/protocol-source.sqlite` 的 `current:protocol/flow-authoring/1.0/` artifacts：CF-FARP@1.0 原本。
+- 独立 [cartridgeflow-protocols](https://github.com/Holosukiyaa/cartridgeflow-protocols) 仓库 `protocol-source.sqlite` 的 `current:protocol/release-envelope/1/specification.md`：CF-CRE@1 原本。
+- 独立协议仓库 `protocol-source.sqlite` 的 `current:protocol/flow-authoring/1.0/` artifacts：CF-FARP@1.0 原本。
 - `config/protocol/protocol-registry.sqlite`：本产品锁定的协议发布、生命周期和默认版本副本。
 - `config/base/BASE_IMPLEMENTATION.json`：参考 Base 的支持声明。
 - `src/core/protocol/release_builder.py`：Base 的发行包构建和检查实现。

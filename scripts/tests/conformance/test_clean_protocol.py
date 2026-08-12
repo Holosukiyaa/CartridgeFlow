@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 
@@ -16,11 +15,9 @@ from core.protocol import (
     CLEAN_CONTRACT_IDS,
     CLEAN_SOURCE_ID,
     DataContractError,
-    ImplementationSource,
     ProtocolKnowledgeRegistry,
     build_clean_base_candidate,
     build_clean_protocol_support_report,
-    publish_protocol_knowledge_registry,
     resolve_clean_protocol_adapter,
     validate_clean_contract,
 )
@@ -29,17 +26,7 @@ from core.protocol import (
 class CleanProtocolTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls._temporary = tempfile.TemporaryDirectory()
-        cls.registry = Path(cls._temporary.name) / "protocol-registry.sqlite"
-        publish_protocol_knowledge_registry(
-            cls.registry,
-            ROOT / "protocol-source" / "protocol-source.sqlite",
-            implementation_sources=[ImplementationSource(CLEAN_SOURCE_ID, ROOT)],
-        )
-
-    @classmethod
-    def tearDownClass(cls) -> None:
-        cls._temporary.cleanup()
+        cls.registry = ROOT / "config" / "protocol" / "protocol-registry.sqlite"
 
     def test_base_supports_the_complete_clean_generation(self):
         report = build_clean_protocol_support_report(

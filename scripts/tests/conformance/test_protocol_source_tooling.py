@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import configparser
 import json
 import os
 import sys
@@ -18,32 +17,19 @@ import update_protocol_registry
 
 
 class ProtocolSourceToolingTests(unittest.TestCase):
-    def test_protocol_source_is_embedded_at_the_governed_submodule_path(self):
-        config = configparser.ConfigParser()
-        self.assertTrue(config.read(ROOT / ".gitmodules", encoding="utf-8"))
-        section = 'submodule "protocol-source"'
-        self.assertEqual("protocol-source", config.get(section, "path"))
-        self.assertEqual(
-            "https://github.com/Holosukiyaa/cartridgeflow-protocols.git",
-            config.get(section, "url"),
-        )
-        self.assertEqual(
-            ROOT / "protocol-source",
-            update_protocol_registry.DEFAULT_PROTOCOL_REPOSITORY,
-        )
-        self.assertTrue((ROOT / "protocol-source" / ".git").exists())
-
-    def test_embedded_source_checkout_is_clean_and_published(self):
-        commit, remote = update_protocol_registry._validate_source_repository(
-            update_protocol_registry.DEFAULT_PROTOCOL_REPOSITORY
-        )
+    def test_protocol_source_is_external_and_pinned_by_the_product_lock(self):
+        self.assertFalse((ROOT / ".gitmodules").exists())
+        self.assertFalse((ROOT / "protocol-source").exists())
+        self.assertFalse(hasattr(update_protocol_registry, "DEFAULT_PROTOCOL_REPOSITORY"))
         lock = json.loads(
             (ROOT / "config" / "protocol" / "protocol-registry.lock.json").read_text(
                 encoding="utf-8"
             )
         )
-        self.assertEqual(lock["repository"]["commit"], commit)
-        self.assertEqual(lock["repository"]["url"], remote)
+        self.assertEqual(update_protocol_registry.REPOSITORY_URL, lock["repository"]["url"])
+        self.assertEqual(40, len(lock["repository"]["commit"]))
+        self.assertEqual("protocol-source.sqlite", lock["source_database"]["path"])
+        self.assertEqual(64, len(lock["source_database"]["database_sha256"]))
 
     def test_registry_base_and_lock_replace_rolls_back_as_one_bundle(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -116,14 +102,11 @@ class ProtocolSourceToolingTests(unittest.TestCase):
             self.assertEqual(b"new-lock", lock.read_bytes())
 
     def test_viewer_is_immutable_and_loopback_only(self):
-        databases = (
-            ROOT / "protocol-source" / "protocol-source.sqlite",
-            ROOT / "config" / "protocol" / "protocol-registry.sqlite",
-        )
+        databases = launch_protocol_viewer.DEFAULT_DATABASES
         command = launch_protocol_viewer.viewer_command(
             Path("datasette"), databases, 8123
         )
-        self.assertEqual(2, command.count("-i"))
+        self.assertEqual(1, command.count("-i"))
         for database in databases:
             self.assertIn(str(database), command)
         self.assertEqual(
@@ -143,16 +126,13 @@ class ProtocolSourceToolingTests(unittest.TestCase):
         metadata = json.loads(metadata_bytes)
         self.assertEqual("CartridgeFlow 协议知识库", metadata["title"])
         databases_metadata = metadata["databases"]
-        self.assertEqual(
-            {"protocol-source", "protocol-registry"},
-            set(databases_metadata),
-        )
-        self.assertEqual(
-            {"data_contract_catalog", "protocol_catalog", "read_protocol", "search_protocols"},
-            set(databases_metadata["protocol-source"]["queries"]),
-        )
+        self.assertEqual({"protocol-registry"}, set(databases_metadata))
         self.assertEqual(
             {
+                "data_contract_catalog",
+                "protocol_catalog",
+                "read_protocol",
+                "search_protocols",
                 "configuration_catalog",
                 "read_configuration",
                 "search_configuration",
@@ -174,6 +154,9 @@ class ProtocolSourceToolingTests(unittest.TestCase):
         )
         templates = launch_protocol_viewer.VIEWER_TEMPLATES
         self.assertIn("协议知识库", (templates / "index.html").read_text(encoding="utf-8"))
+        base_template = (templates / "base.html").read_text(encoding="utf-8")
+        self.assertIn("https://github.com/Holosukiyaa/cartridgeflow-protocols", base_template)
+        self.assertIn("产品锁定协议快照", base_template)
         self.assertIn("运行查询", (templates / "query.html").read_text(encoding="utf-8"))
         self.assertIn(
             "数据合同",
@@ -191,6 +174,8 @@ class ProtocolSourceToolingTests(unittest.TestCase):
         plugin_text = plugin.read_text(encoding="utf-8")
         self.assertIn("register_routes", plugin_text)
         self.assertIn("FOUR_MAJOR_LAYERS", plugin_text)
+        self.assertIn("cartridgeflow-authoritative", plugin_text)
+        self.assertIn("IN ('active', 'published')", plugin_text)
         self.assertNotIn("CONTRACT_TOKENS", plugin_text)
         self.assertIn("data_contract_release", plugin_text)
 

@@ -13,11 +13,8 @@ if str(SOURCE_ROOT) not in sys.path:
     sys.path.insert(0, str(SOURCE_ROOT))
 
 from core.protocol import (
-    CLEAN_SOURCE_ID,
     CleanAuthoringProjectionError,
     CleanAuthoringProjector,
-    ImplementationSource,
-    publish_protocol_knowledge_registry,
 )
 from core.studio.authoring_service import AuthoringSessionStore
 from core.studio.capability_cartridges import CapabilityCartridgeStore
@@ -26,18 +23,8 @@ from core.studio.capability_cartridges import CapabilityCartridgeStore
 class CleanAuthoringProjectionTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls._temporary = tempfile.TemporaryDirectory()
-        cls.registry = Path(cls._temporary.name) / "protocol-registry.sqlite"
-        publish_protocol_knowledge_registry(
-            cls.registry,
-            ROOT / "protocol-source" / "protocol-source.sqlite",
-            implementation_sources=[ImplementationSource(CLEAN_SOURCE_ID, ROOT)],
-        )
+        cls.registry = ROOT / "config" / "protocol" / "protocol-registry.sqlite"
         cls.projector = CleanAuthoringProjector(ROOT, registry_path=cls.registry)
-
-    @classmethod
-    def tearDownClass(cls) -> None:
-        cls._temporary.cleanup()
 
     def test_current_product_facts_project_to_all_35_authoring_contracts(self):
         envelopes = []

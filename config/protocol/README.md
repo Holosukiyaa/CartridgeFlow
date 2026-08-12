@@ -15,25 +15,19 @@ lock files and viewer implementation files are never copied into this database.
 to one full Git commit, its source database SHA-256 and logical digest. It also
 pins the published product database SHA-256.
 
-Protocol originals live at:
+Protocol originals live only in the independent
+https://github.com/Holosukiyaa/cartridgeflow-protocols repository. This product
+does not embed or mount that repository.
 
-```text
-../../protocol-source/protocol-source.sqlite
-```
-
-`protocol-source/` is a Git submodule backed by
-https://github.com/Holosukiyaa/cartridgeflow-protocols.
-
-Do not edit this product database directly. Update the authoritative source
-database with `protocol-source/scripts/protocol_db.py`, verify it, commit and
-push the submodule repository, then
-publish from the CartridgeFlow repository:
+Do not edit this product database directly. Update and verify the authoritative
+database in a separate checkout, commit and push that repository, then publish
+from the CartridgeFlow repository with the checkout passed explicitly:
 
 ```powershell
-python scripts/update_protocol_registry.py
+python scripts/update_protocol_registry.py --protocol-repository C:\path\to\cartridgeflow-protocols
 python scripts/audit_protocol_governance.py
 ```
 
 For local read-only browsing, run `view-protocols.bat` from the repository root.
-The Chinese portal at `http://127.0.0.1:8001/` exposes the authoritative source
-and this product snapshot as separate knowledge areas.
+The Chinese portal at `http://127.0.0.1:8001/` exposes this product's locked
+snapshot. Follow its GitHub link to inspect or modify the unique protocol source.

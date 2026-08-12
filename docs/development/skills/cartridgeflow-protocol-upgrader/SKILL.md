@@ -34,18 +34,19 @@ Use an in-place documentation patch only for spelling, clarification that does n
 ## Upgrade Workflow
 
 1. Preserve existing protocol meaning. Do not rewrite v0.1 to mean v0.2.
-2. Export the relevant `current` artifacts to an ignored temporary workspace with `protocol-source/scripts/protocol_db.py export`; never recreate a committed protocol tree.
+2. In a separate `cartridgeflow-protocols` checkout, export the relevant artifacts to an ignored temporary workspace with `scripts/protocol_db.py export`; never recreate a committed protocol tree inside CartridgeFlow.
 3. Author a complete version bundle in that temporary workspace, including its machine-readable `release.json`.
 4. Add version-local `capabilities.json` and `profiles.json` when the protocol declares them, then publish the complete bundle into `protocol-source.sqlite` in one transaction.
 5. Declare `runtime_adapter` and `features` in both release records. Reuse an existing adapter only when runtime semantics are unchanged; otherwise add a new adapter implementation and then declare it in `config/base/BASE_IMPLEMENTATION.json.supported_protocol_adapters` after tests support it.
 6. Transactionally update the `current:protocol/governance/GOVERNANCE.md` artifact so future agents see the new protocol.
 7. Add or update tests proving the registry, docs, and base support declarations are consistent.
 8. Only apply certification labels after the relevant certification report passes.
-9. Commit and push the embedded `protocol-source` submodule, then run `python scripts/update_protocol_registry.py` in CartridgeFlow to refresh the read-only SQLite copy and pinned submodule commit.
+9. Commit and push the independent protocol repository, then run `python scripts/update_protocol_registry.py --protocol-repository <external-checkout>` in CartridgeFlow to refresh the read-only SQLite snapshot and pinned source commit.
 
 ## Hard Boundaries
 
 - Never loosen certification so one cartridge passes.
+- Never embed or mount the protocol source repository inside the CartridgeFlow workspace.
 - Never treat a development-base behavior as portable unless protocol, base declaration, and capability declaration all agree.
 - In CF-FARP v0.2 and later, user-facing business nodes may be unified as "process node + suffix", but protocol behavior must still be constrained by `type=process`, `kind`, `executor`, and `effect`.
 - It is acceptable to merge transfer, retrieval, decision, gate, UI, and MCP execution under the same protocol `type=process`, but preserve hard behavior boundaries with `kind` and `effect`.

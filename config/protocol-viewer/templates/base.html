@@ -36,6 +36,7 @@
         .cf-back:hover { background: #edf2f1; }
         .cf-brand { color: var(--cf-ink) !important; display: inline-flex; align-items: center; font-weight: 700; gap: 10px; text-decoration: none; }
         .cf-brand-mark { background: var(--cf-warm); display: inline-block; height: 10px; width: 10px; }
+        .cf-source-link { color: var(--cf-muted); font-size: 13px; margin-left: auto; text-decoration: none; }
         @media (max-width: 640px) {
             header nav { padding: 0 16px; }
             section.content { padding: 24px 16px 40px; }
@@ -45,11 +46,11 @@
 </head>
 <body class="{% block body_class %}{% endblock %}">
 <div class="not-footer">
-<header><nav>{% block nav %}{% block crumbs %}{% if request and request.path != "/" %}<a class="cf-back" href="{{ urls.instance() }}" onclick="if (window.history.length > 1) { window.history.back(); return false; }" aria-label="返回上一页" title="返回上一页">←</a>{% endif %}<a class="cf-brand" href="{{ urls.instance() }}"><span class="cf-brand-mark" aria-hidden="true"></span><span>CartridgeFlow 协议知识库</span></a>{% endblock %}{% endblock %}</nav></header>
+<header><nav>{% block nav %}{% block crumbs %}{% if request and request.path != "/" %}<a class="cf-back" href="{{ urls.instance() }}" onclick="if (window.history.length > 1) { window.history.back(); return false; }" aria-label="返回上一页" title="返回上一页">←</a>{% endif %}<a class="cf-brand" href="{{ urls.instance() }}"><span class="cf-brand-mark" aria-hidden="true"></span><span>CartridgeFlow 协议知识库</span></a><a class="cf-source-link" href="https://github.com/Holosukiyaa/cartridgeflow-protocols">协议真源</a>{% endblock %}{% endblock %}</nav></header>
 {% block messages %}{% if show_messages %}{% for message, message_type in show_messages() %}<p class="message-{% if message_type == 1 %}info{% elif message_type == 2 %}warning{% elif message_type == 3 %}error{% endif %}">{{ message }}</p>{% endfor %}{% endif %}{% endblock %}
 <section class="content">{% block content %}{% endblock %}</section>
 </div>
-<footer class="ft">本机只读 · 仅监听 127.0.0.1 · 协议原本与产品快照分库展示</footer>
+<footer class="ft">本机只读 · 仅监听 127.0.0.1 · 产品锁定协议快照</footer>
 {% block close_open_menus %}{% include "_close_open_menus.html" %}{% endblock %}
 {% for body_script in body_scripts %}<script{% if body_script.module %} type="module"{% endif %}>{{ body_script.script }}</script>{% endfor %}
 {% if select_templates %}<!-- Templates considered: {{ select_templates|join(", ") }} -->{% endif %}

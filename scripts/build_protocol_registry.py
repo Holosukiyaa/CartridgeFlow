@@ -6,7 +6,6 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_PROTOCOL_REPOSITORY = ROOT / "protocol-source"
 CLEAN_PROTOCOL_SOURCE_ID = "cartridgeflow-authoritative"
 SOURCE_ROOT = ROOT / "src"
 if str(SOURCE_ROOT) not in sys.path:
@@ -49,13 +48,13 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Publish a product registry from the authoritative protocol SQLite database."
     )
-    parser.add_argument(
+    source_group = parser.add_mutually_exclusive_group(required=True)
+    source_group.add_argument(
         "--source-database",
         type=Path,
-        default=DEFAULT_PROTOCOL_REPOSITORY / "protocol-source.sqlite",
-        help="Authoritative SQLite protocol source.",
+        help="Explicit protocol-source.sqlite from the authoritative cartridgeflow-protocols checkout.",
     )
-    parser.add_argument(
+    source_group.add_argument(
         "--source",
         action="append",
         type=_source,

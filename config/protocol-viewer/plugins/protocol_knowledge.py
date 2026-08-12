@@ -1,4 +1,4 @@
-"""Simple tree and reader pages for the protocol knowledge database."""
+"""Simple tree and reader pages for the locked product protocol snapshot."""
 
 from __future__ import annotations
 
@@ -18,7 +18,13 @@ FOUR_MAJOR_LAYERS = (
     {"number": "03", "label": "发行与信任"},
     {"number": "04", "label": "运行与交付"},
 )
-SOURCE_LABELS = {"unified": "统一协议", "current": "正式线档案", "temp-runtime": "演进线档案"}
+SOURCE_LABELS = {
+    "cartridgeflow-authoritative": "当前锁定协议",
+    "unified": "统一协议",
+    "current": "正式线档案",
+    "temp-runtime": "演进线档案",
+}
+SOURCE_ORDER = ("cartridgeflow-authoritative", "unified", "current", "temp-runtime")
 UNIFIED_PROTOCOL_ORDER = {
     "CF-FOUNDATION": 1,
     "CF-AUTHORING": 2,
@@ -85,7 +91,7 @@ async def _contract_tree(database, active_id: str | None, active_version: str | 
         "family.domain_order, family.sort_order, release.version "
         "FROM data_contract_family AS family "
         "JOIN data_contract_release AS release ON release.contract_id = family.contract_id "
-        "WHERE release.lifecycle = 'active' "
+        "WHERE release.lifecycle IN ('active', 'published') "
         "ORDER BY family.layer, family.domain_order, family.domain, family.sort_order, "
         "family.contract_id, release.version",
     )
@@ -143,7 +149,8 @@ async def _protocol_tree(
 ) -> list[dict]:
     releases = await _rows(
         database,
-        "SELECT source_id, protocol_id, version FROM protocol_release WHERE lifecycle = 'active' "
+        "SELECT source_id, protocol_id, version FROM protocol_release "
+        "WHERE lifecycle IN ('active', 'published') "
         "ORDER BY source_id, protocol_id, version",
     )
     artifacts = await _rows(
@@ -183,7 +190,8 @@ async def _protocol_tree(
             }
         )
     sources = []
-    for source_id in ("unified", "current", "temp-runtime"):
+    ordered_sources = [*SOURCE_ORDER, *sorted(set(grouped) - set(SOURCE_ORDER))]
+    for source_id in ordered_sources:
         if not grouped[source_id]:
             continue
         protocols = []
@@ -202,7 +210,7 @@ async def _protocol_tree(
         sources.append(
             {
                 "source_id": source_id,
-                "label": SOURCE_LABELS[source_id],
+                "label": SOURCE_LABELS.get(source_id, source_id),
                 "protocols": protocols,
                 "active": source_id == active_source,
             }
@@ -235,12 +243,12 @@ async def _catalog(
 
 
 async def protocol_index(request, datasette):
-    database = datasette.get_database("protocol-source")
+    database = datasette.get_database("protocol-registry")
     row = await _rows(
         database,
         "SELECT release.contract_id, release.version FROM data_contract_release AS release "
         "JOIN data_contract_family AS family ON family.contract_id = release.contract_id "
-        "WHERE release.lifecycle = 'active' "
+        "WHERE release.lifecycle IN ('active', 'published') "
         "ORDER BY CASE release.generation WHEN 'next' THEN 0 ELSE 1 END, "
         "family.layer, family.domain_order, family.sort_order, release.version LIMIT 1",
     )
@@ -253,7 +261,7 @@ async def protocol_index(request, datasette):
 
 
 async def contract_detail(request, datasette):
-    database = datasette.get_database("protocol-source")
+    database = datasette.get_database("protocol-registry")
     contract_id = request.url_vars["contract_id"]
     releases = await _rows(
         database,
@@ -358,7 +366,7 @@ async def contract_detail(request, datasette):
 
 
 async def protocol_detail(request, datasette):
-    database = datasette.get_database("protocol-source")
+    database = datasette.get_database("protocol-registry")
     source_id = request.url_vars["source_id"]
     protocol_id = request.url_vars["protocol_id"]
     releases = await _rows(

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 
@@ -12,29 +11,16 @@ if str(SOURCE_ROOT) not in sys.path:
     sys.path.insert(0, str(SOURCE_ROOT))
 
 from core.protocol import (
-    CLEAN_SOURCE_ID,
     CleanRuntimeProjector,
     DataContractError,
-    ImplementationSource,
-    publish_protocol_knowledge_registry,
 )
 
 
 class CleanRuntimeProjectionTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls._temporary = tempfile.TemporaryDirectory()
-        cls.registry = Path(cls._temporary.name) / "protocol-registry.sqlite"
-        publish_protocol_knowledge_registry(
-            cls.registry,
-            ROOT / "protocol-source" / "protocol-source.sqlite",
-            implementation_sources=[ImplementationSource(CLEAN_SOURCE_ID, ROOT)],
-        )
+        cls.registry = ROOT / "config" / "protocol" / "protocol-registry.sqlite"
         cls.projector = CleanRuntimeProjector(ROOT, registry_path=cls.registry)
-
-    @classmethod
-    def tearDownClass(cls) -> None:
-        cls._temporary.cleanup()
 
     def test_runtime_facts_cover_all_17_contracts(self):
         envelopes = self.projector.host(

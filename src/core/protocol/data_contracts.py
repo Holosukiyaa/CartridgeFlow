@@ -731,6 +731,9 @@ def _audit_contract_rules(
         _finding(findings, "data_contract_rule_missing", "active contract has no executable rule", contract["contract_id"], contract["version"])
     for rule in rules:
         reference = str(rule["validator_ref"] or "")
+        source_validator = f"scripts/protocol_db.py#contract/{contract['contract_id']}"
+        if reference == source_validator:
+            continue
         if not reference or not _reference_path_exists(root, reference):
             _finding(findings, "data_contract_validator_ref_missing", f"rule {rule['rule_code']} validator does not exist: {reference or '<empty>'}", contract["contract_id"], contract["version"])
 
@@ -739,10 +742,6 @@ def _reference_path_exists(root: Path, reference: object) -> bool:
     path_text, separator, fragment = str(reference or "").partition("#")
     relative = path_text.strip()
     path = root / Path(relative)
-    if relative and not path.is_file():
-        source_path = root / "protocol-source" / Path(relative)
-        if source_path.is_file():
-            path = source_path
     if not relative or not path.is_file():
         return False
     if not separator or not fragment.strip():

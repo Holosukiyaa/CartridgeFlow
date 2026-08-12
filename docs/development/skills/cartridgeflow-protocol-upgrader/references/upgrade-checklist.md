@@ -2,11 +2,12 @@
 
 Use this checklist when applying, not merely discussing, a protocol upgrade.
 
-Run source commands from the embedded `protocol-source/` submodule. The `protocol/...` paths
-below are artifact keys inside `protocol-source.sqlite`, not committed file
-paths. Export them only to an ignored temporary workspace. After committing
-and pushing the source database, refresh CartridgeFlow with
-`python scripts/update_protocol_registry.py`.
+Run source commands from a separate checkout of
+`https://github.com/Holosukiyaa/cartridgeflow-protocols`. The `protocol/...`
+paths below are artifact keys inside `protocol-source.sqlite`, not committed
+file paths. Export them only to an ignored temporary workspace in that checkout.
+After committing and pushing the source database, refresh CartridgeFlow with
+`python scripts/update_protocol_registry.py --protocol-repository <external-checkout>`.
 
 ## 1. Classify The Change
 
@@ -164,7 +165,7 @@ Prefer small conformance tests over broad integration tests for protocol registr
 Run at minimum:
 
 ```text
-python protocol-source\scripts\protocol_db.py verify
+python C:\path\to\cartridgeflow-protocols\scripts\protocol_db.py verify
 python scripts/run_conformance.py
 ```
 

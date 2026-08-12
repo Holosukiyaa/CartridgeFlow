@@ -14,13 +14,10 @@ if str(SOURCE_ROOT) not in sys.path:
     sys.path.insert(0, str(SOURCE_ROOT))
 
 from core.protocol import (
-    CLEAN_SOURCE_ID,
     CleanDistributionProjectionError,
     CleanDistributionProjector,
     DataContractError,
-    ImplementationSource,
     build_release_archive,
-    publish_protocol_knowledge_registry,
 )
 from core.protocol.release_signing import generate_signing_identity
 from core.studio.release import clean_release_contracts
@@ -31,12 +28,7 @@ class CleanDistributionProjectionTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls._temporary = tempfile.TemporaryDirectory()
         cls.root = Path(cls._temporary.name)
-        cls.registry = cls.root / "protocol-registry.sqlite"
-        publish_protocol_knowledge_registry(
-            cls.registry,
-            ROOT / "protocol-source" / "protocol-source.sqlite",
-            implementation_sources=[ImplementationSource(CLEAN_SOURCE_ID, ROOT)],
-        )
+        cls.registry = ROOT / "config" / "protocol" / "protocol-registry.sqlite"
         source = cls.root / "source"
         (source / "assets").mkdir(parents=True)
         (source / "manifest.json").write_text(

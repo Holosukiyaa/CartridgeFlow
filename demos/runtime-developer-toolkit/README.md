@@ -108,8 +108,8 @@ node runtime-developer-toolkit/demo/run.mjs run `
 
 ## 规范来源
 
-- `protocol-source/protocol-source.sqlite` 中的 `current:protocol/release-envelope/1/specification.md`
-- `protocol-source/protocol-source.sqlite` 中的 `current:protocol/flow-authoring/1.0/` artifacts
+- 独立 [cartridgeflow-protocols](https://github.com/Holosukiyaa/cartridgeflow-protocols) 仓库 `protocol-source.sqlite` 中的 `current:protocol/release-envelope/1/specification.md`
+- 独立协议仓库 `protocol-source.sqlite` 中的 `current:protocol/flow-authoring/1.0/` artifacts
 - `config/base/BASE_IMPLEMENTATION.json`
 - `src/core/protocol/release_builder.py`
 - `src/core/protocol/release_signing.py`

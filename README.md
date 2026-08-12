@@ -10,7 +10,6 @@ and composed recursively instead of being rejected or hard-coded into Base.
 Requires Python 3, Node.js 20.19 or later, and npm on `PATH`.
 
 ```powershell
-git submodule update --init protocol-source
 powershell -ExecutionPolicy Bypass -File scripts/bootstrap.ps1
 run.bat
 ```
@@ -63,8 +62,8 @@ integration; all other detectors remain enabled.
 - `src/core/`: cartridge, runtime, protocol, lab and studio logic.
 - `src/intent-studio/`: direction discovery and semantic composition.
 - `src/capability-workshop/`: executable capability design, verification and publication.
-- `protocol-source/`: embedded Git submodule containing the authoritative SQLite knowledge base from [cartridgeflow-protocols](https://github.com/Holosukiyaa/cartridgeflow-protocols).
-- `config/protocol/`: pinned read-only `protocol-registry.sqlite` published from the embedded authority.
+- [cartridgeflow-protocols](https://github.com/Holosukiyaa/cartridgeflow-protocols): the independent, unique protocol source; it is not mounted in this workspace.
+- `config/protocol/`: pinned read-only `protocol-registry.sqlite` published from an explicit checkout of that authority.
 - `demos/capabilities/`: package-owned capability examples such as RSS.
 - `demos/runtime-developer-toolkit/`: independent package test bench.
 - `scripts/`: bootstrap, launch, verification and test tools.
@@ -82,8 +81,7 @@ view-protocols.bat
 
 The first launch creates an isolated viewer under ignored `.tools/` and installs
 its pinned Datasette dependencies. The browser binds only to `127.0.0.1:8001`
-and opens a Chinese portal for both databases: the authoritative protocol
-original and the product governance snapshot. The product snapshot also makes
-the approved committed `config/` documentation, defaults and safe templates
-readable and searchable. Runtime state under `.data/` is never included. Stop
-the viewer with `Ctrl+C`.
+and opens a Chinese portal for the product's locked protocol snapshot. The
+snapshot contains the adopted protocol artifacts, Base implementation evidence
+and approved committed `config/` documentation, defaults and safe templates.
+Runtime state under `.data/` is never included. Stop the viewer with `Ctrl+C`.

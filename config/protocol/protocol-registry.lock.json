@@ -28,8 +28,8 @@
   ],
   "registry": {
     "schema_version": "4",
-    "logical_digest": "69c55b0b31dfbca93fcbfad85d7ca9eeffeb06eccbe5d25762bd2ccbd5f2a63a",
-    "database_sha256": "e08099b71b5792dc8fad3555f4414bee4eff2c0a86861ec3bc7ff125da81dc22",
+    "logical_digest": "b6ef9b042b527bedd1f8dbdf281469de5a80794ec44b1c720d12cef478ffe644",
+    "database_sha256": "92a73bffe64a4c4b5a383867d2888ebefe3aa158a8145814569e2e89cf59d8cf",
     "path": "config/protocol/protocol-registry.sqlite"
   }
 }

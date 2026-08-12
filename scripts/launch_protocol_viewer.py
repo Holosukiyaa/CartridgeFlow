@@ -17,9 +17,8 @@ from urllib.request import urlopen
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE_DATABASE = ROOT / "protocol-source" / "protocol-source.sqlite"
 PRODUCT_DATABASE = ROOT / "config" / "protocol" / "protocol-registry.sqlite"
-DEFAULT_DATABASES = (SOURCE_DATABASE, PRODUCT_DATABASE)
+DEFAULT_DATABASES = (PRODUCT_DATABASE,)
 VIEWER_CONFIG = ROOT / "config" / "protocol-viewer" / "datasette.json"
 VIEWER_TEMPLATES = ROOT / "config" / "protocol-viewer" / "templates"
 VIEWER_PLUGINS = ROOT / "config" / "protocol-viewer" / "plugins"
@@ -152,7 +151,7 @@ def main() -> int:
         "--database",
         action="append",
         type=Path,
-        help="SQLite database to serve. Repeat to override the two default knowledge bases.",
+        help="SQLite database to serve. Repeat to override the default product snapshot.",
     )
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--no-browser", action="store_true")
@@ -170,7 +169,7 @@ def main() -> int:
         if missing:
             raise RuntimeError(
                 f"knowledge database not found: {', '.join(missing)}. "
-                "Initialize protocol-source and publish the product registry first."
+                "Publish the product protocol registry first."
             )
         url = viewer_url(args.port)
         if not args.prepare_only and viewer_is_running(args.port):

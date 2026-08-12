@@ -27,18 +27,19 @@
 {% block content %}
 <div class="cf-intro">
     <h1>协议知识库</h1>
-    <p>协议原本负责定义规则，产品快照负责记录 CartridgeFlow 当前采用的协议、实现证据与源码配置。两者只读展示，边界清晰。</p>
+    <p>这里仅展示 CartridgeFlow 当前锁定的协议发布快照、实现证据与产品配置。协议唯一真源位于独立的 cartridgeflow-protocols 仓库。</p>
 </div>
 
 <section class="cf-library" aria-labelledby="source-title">
     <div class="cf-library-label">
-        <h2 id="source-title">权威协议原本</h2>
-        <p>独立仓库提交后的 SQLite 权威副本，不包含产品运行配置。</p>
+        <h2 id="source-title">已锁定协议快照</h2>
+        <p>由产品锁文件固定到独立协议仓库的具体提交，只读展示产品实际采用的协议内容。</p>
     </div>
     <div class="cf-actions">
-        <a class="cf-action" href="{{ urls.database('protocol-source') }}/protocol_catalog"><strong>协议目录</strong><span>按协议线、ID 与版本浏览全部发布记录</span></a>
-        <a class="cf-action" href="{{ urls.database('protocol-source') }}/read_protocol"><strong>阅读协议</strong><span>输入协议 ID，直接阅读完整规范正文</span></a>
-        <a class="cf-action" href="{{ urls.database('protocol-source') }}/search_protocols"><strong>搜索协议章节</strong><span>搜索统一协议与只读旧版档案</span></a>
+        <a class="cf-action" href="{{ urls.database('protocol-registry') }}/protocol_catalog"><strong>协议目录</strong><span>按协议线、ID 与版本浏览当前产品快照</span></a>
+        <a class="cf-action" href="{{ urls.database('protocol-registry') }}/read_protocol"><strong>阅读协议</strong><span>输入协议 ID，直接阅读已锁定规范正文</span></a>
+        <a class="cf-action" href="{{ urls.database('protocol-registry') }}/search_protocols"><strong>搜索协议章节</strong><span>搜索当前产品采用的协议内容</span></a>
+        <a class="cf-action" href="https://github.com/Holosukiyaa/cartridgeflow-protocols"><strong>打开协议真源</strong><span>前往独立 GitHub 仓库查看和维护权威协议</span></a>
     </div>
 </section>
 
@@ -56,5 +57,5 @@
     </div>
 </section>
 
-<p class="cf-advanced">高级浏览：<a href="{{ urls.database('protocol-source') }}">权威库数据表</a> · <a href="{{ urls.database('protocol-registry') }}">产品库数据表</a></p>
+<p class="cf-advanced">高级浏览：<a href="{{ urls.database('protocol-registry') }}">产品快照数据表</a></p>
 {% endblock %}

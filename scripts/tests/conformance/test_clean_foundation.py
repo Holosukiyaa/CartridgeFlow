@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 
@@ -16,26 +15,14 @@ from core.protocol import (
     CLEAN_SOURCE_ID,
     CleanFoundationProjectionError,
     CleanFoundationProjector,
-    ImplementationSource,
-    publish_protocol_knowledge_registry,
 )
 
 
 class CleanFoundationProjectionTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls._temporary = tempfile.TemporaryDirectory()
-        cls.registry = Path(cls._temporary.name) / "protocol-registry.sqlite"
-        publish_protocol_knowledge_registry(
-            cls.registry,
-            ROOT / "protocol-source" / "protocol-source.sqlite",
-            implementation_sources=[ImplementationSource(CLEAN_SOURCE_ID, ROOT)],
-        )
+        cls.registry = ROOT / "config" / "protocol" / "protocol-registry.sqlite"
         cls.projector = CleanFoundationProjector(ROOT, registry_path=cls.registry)
-
-    @classmethod
-    def tearDownClass(cls) -> None:
-        cls._temporary.cleanup()
 
     def test_verified_implementation_and_v4_lock_cover_all_8_foundation_contracts(self):
         envelopes = self.projector.implementation(

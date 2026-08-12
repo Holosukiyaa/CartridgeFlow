@@ -1,9 +1,12 @@
 import json
 import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+
+import run_conformance
 
 from core.cartridge.registry import CartridgeRegistry
 from core.data_paths import (
@@ -29,6 +32,103 @@ ROOT = Path(__file__).resolve().parents[3]
 
 
 class CleanBaseHygieneTests(unittest.TestCase):
+    def test_conformance_isolates_external_user_data_and_cleans_local_state(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "source"
+            root.mkdir()
+            external = Path(temp_dir) / "state"
+            captured = {}
+
+            def run(command, **kwargs):
+                captured.update({"command": command, **kwargs})
+                generated = root / ".data" / "runtime" / "runs" / "test" / "run.json"
+                generated.parent.mkdir(parents=True)
+                generated.write_text("{}", encoding="utf-8")
+                return subprocess.CompletedProcess(command, 0)
+
+            environment = {
+                "CARTRIDGEFLOW_DATA_ROOT": str(external),
+                "KEEP_ME": "yes",
+            }
+            with patch.object(run_conformance.subprocess, "run", side_effect=run):
+                result = run_conformance.run_isolated_conformance(
+                    root,
+                    external,
+                    ["--quiet"],
+                    environment=environment,
+                )
+
+            self.assertEqual(0, result)
+            self.assertFalse((root / ".data").exists())
+            self.assertEqual(root, captured["cwd"])
+            self.assertFalse(captured["check"])
+            self.assertNotIn("CARTRIDGEFLOW_DATA_ROOT", captured["env"])
+            self.assertEqual("1", captured["env"]["CARTRIDGEFLOW_CONFORMANCE_CHILD"])
+            self.assertEqual(
+                str(external / "reports" / "conformance" / "latest.json"),
+                captured["env"]["CARTRIDGEFLOW_CONFORMANCE_REPORT"],
+            )
+            self.assertEqual("yes", captured["env"]["KEEP_ME"])
+
+    def test_conformance_preserves_local_data_when_ownership_marker_changes(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "source"
+            root.mkdir()
+
+            def run(command, **_kwargs):
+                (root / ".data" / ".conformance-owner").write_text("foreign", encoding="ascii")
+                return subprocess.CompletedProcess(command, 0)
+
+            with patch.object(run_conformance.subprocess, "run", side_effect=run):
+                result = run_conformance.run_isolated_conformance(
+                    root,
+                    Path(temp_dir) / "state",
+                    [],
+                    environment={"KEEP_ME": "yes"},
+                )
+
+            self.assertEqual(2, result)
+            self.assertTrue((root / ".data" / ".conformance-owner").is_file())
+
+    def test_conformance_cleans_owned_data_when_child_cannot_start(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "source"
+            root.mkdir()
+
+            with patch.object(
+                run_conformance.subprocess,
+                "run",
+                side_effect=OSError("cannot start child"),
+            ):
+                with self.assertRaisesRegex(OSError, "cannot start child"):
+                    run_conformance.run_isolated_conformance(
+                        root,
+                        Path(temp_dir) / "state",
+                        [],
+                        environment={},
+                    )
+
+            self.assertFalse((root / ".data").exists())
+
+    def test_conformance_refuses_to_clean_preexisting_local_data(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "source"
+            existing = root / ".data" / "user" / "keep.json"
+            existing.parent.mkdir(parents=True)
+            existing.write_text("{}", encoding="utf-8")
+
+            with patch.object(run_conformance.subprocess, "run") as run:
+                result = run_conformance.run_isolated_conformance(
+                    root,
+                    Path(temp_dir) / "state",
+                    [],
+                    environment={},
+                )
+
+            self.assertEqual(2, result)
+            run.assert_not_called()
+            self.assertTrue(existing.is_file())
+
     def test_data_root_can_be_relocated_as_one_unified_tree(self):
         with tempfile.TemporaryDirectory() as temp_dir, patch.dict(
             os.environ, {"CARTRIDGEFLOW_DATA_ROOT": temp_dir}, clear=False,

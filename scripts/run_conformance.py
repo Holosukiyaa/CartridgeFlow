@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import os
+import shutil
+import subprocess
 import sys
 import unittest
+import uuid
 from pathlib import Path
 
 
@@ -12,6 +16,70 @@ sys.dont_write_bytecode = True
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE_ROOT = ROOT / "src"
+EXTERNAL_DATA_ROOT_ENV = "CARTRIDGEFLOW_DATA_ROOT"
+ISOLATED_REPORT_ENV = "CARTRIDGEFLOW_CONFORMANCE_REPORT"
+ISOLATED_CHILD_ENV = "CARTRIDGEFLOW_CONFORMANCE_CHILD"
+
+
+def run_isolated_conformance(
+    root: Path,
+    external_data_root: str | Path,
+    arguments: list[str],
+    *,
+    environment: dict[str, str] | None = None,
+) -> int:
+    """Run tests with default relative data paths while keeping the report external."""
+    local_data = root / ".data"
+    owner_file = local_data / ".conformance-owner"
+    owner_token = uuid.uuid4().hex
+    try:
+        local_data.mkdir()
+        owner_file.write_text(owner_token, encoding="ascii")
+    except FileExistsError:
+        print(
+            "Conformance isolation refused to use an existing local .data directory. "
+            "Move or remove it before running with CARTRIDGEFLOW_DATA_ROOT.",
+            file=sys.stderr,
+        )
+        return 2
+
+    child_environment = dict(os.environ if environment is None else environment)
+    child_environment.pop(EXTERNAL_DATA_ROOT_ENV, None)
+    child_environment[ISOLATED_CHILD_ENV] = "1"
+    report_root = Path(external_data_root).expanduser()
+    if not report_root.is_absolute():
+        report_root = (root / report_root).resolve()
+    child_environment[ISOLATED_REPORT_ENV] = str(
+        report_root / "reports" / "conformance" / "latest.json"
+    )
+    command = [sys.executable, str(Path(__file__).resolve()), *arguments]
+    cleanup_failed = False
+    try:
+        completed = subprocess.run(command, cwd=root, env=child_environment, check=False)
+    finally:
+        if owner_file.is_file() and owner_file.read_text(encoding="ascii") == owner_token:
+            shutil.rmtree(local_data)
+        elif local_data.exists():
+            cleanup_failed = True
+            print(
+                "Conformance isolation preserved local .data because its ownership marker changed.",
+                file=sys.stderr,
+            )
+    return 2 if cleanup_failed else completed.returncode
+
+
+if (
+    __name__ == "__main__"
+    and os.environ.get(EXTERNAL_DATA_ROOT_ENV, "").strip()
+    and os.environ.get(ISOLATED_CHILD_ENV) != "1"
+):
+    raise SystemExit(run_isolated_conformance(
+        ROOT,
+        os.environ[EXTERNAL_DATA_ROOT_ENV],
+        sys.argv[1:],
+    ))
+
+
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(SOURCE_ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -48,7 +116,10 @@ def undiscovered_test_groups(pattern: str) -> list[str]:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run conformance tests and emit a machine-readable report.")
     parser.add_argument("--pattern", default="test_*.py")
-    parser.add_argument("--output", default=CONFORMANCE_REPORT.as_posix())
+    parser.add_argument(
+        "--output",
+        default=os.environ.get(ISOLATED_REPORT_ENV, CONFORMANCE_REPORT.as_posix()),
+    )
     parser.add_argument("--quiet", action="store_true")
     args = parser.parse_args()
 

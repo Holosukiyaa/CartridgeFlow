@@ -34,7 +34,6 @@ def run_isolated_conformance(
     owner_token = uuid.uuid4().hex
     try:
         local_data.mkdir()
-        owner_file.write_text(owner_token, encoding="ascii")
     except FileExistsError:
         print(
             "Conformance isolation refused to use an existing local .data directory. "
@@ -42,6 +41,14 @@ def run_isolated_conformance(
             file=sys.stderr,
         )
         return 2
+    try:
+        owner_file.write_text(owner_token, encoding="ascii")
+    except OSError:
+        try:
+            local_data.rmdir()
+        except OSError:
+            pass
+        raise
 
     child_environment = dict(os.environ if environment is None else environment)
     child_environment.pop(EXTERNAL_DATA_ROOT_ENV, None)

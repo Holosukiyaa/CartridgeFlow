@@ -110,6 +110,22 @@ class CleanBaseHygieneTests(unittest.TestCase):
 
             self.assertFalse((root / ".data").exists())
 
+    def test_conformance_cleans_empty_data_when_owner_marker_write_fails(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "source"
+            root.mkdir()
+
+            with patch.object(Path, "write_text", side_effect=OSError("disk unavailable")):
+                with self.assertRaisesRegex(OSError, "disk unavailable"):
+                    run_conformance.run_isolated_conformance(
+                        root,
+                        Path(temp_dir) / "state",
+                        [],
+                        environment={},
+                    )
+
+            self.assertFalse((root / ".data").exists())
+
     def test_conformance_refuses_to_clean_preexisting_local_data(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "source"

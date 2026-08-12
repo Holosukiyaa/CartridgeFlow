@@ -83,6 +83,7 @@ from backend.api_models import (
     NodeDeletePayload,
     NodeUpdatePayload,
     PendingInteractionAnswerPayload,
+    PassiveDisplayComponentPayload,
     PortableDlcScaffoldPayload,
     RecipeReleasePayload,
     SandboxHostRequestPayload,
@@ -129,6 +130,7 @@ from core.cartridge.assets import (
     delete_asset,
     delete_component,
     load_asset_bundle,
+    write_passive_display_component,
     write_asset,
     write_component,
 )
@@ -3584,6 +3586,34 @@ def put_lab_flow_interaction_component(cartridge_id: str, component_id: str, pay
         raise HTTPException(status_code=404, detail=str(exc))
     except CartridgeAssetError as exc:
         raise HTTPException(status_code=400, detail={"code": exc.code, "message": str(exc)})
+
+
+@app.put("/api/lab/flows/{cartridge_id}/display-components/{component_id}")
+def put_lab_flow_display_component(cartridge_id: str, component_id: str, payload: PassiveDisplayComponentPayload):
+    try:
+        cartridge = registry.get_cartridge(cartridge_id)
+        if not cartridge.get("editable"):
+            raise HTTPException(status_code=403, detail="Only dev flows are editable")
+        result = write_passive_display_component(
+            cartridge.get("package_path"),
+            cartridge.get("manifest") or {},
+            cartridge.get("root_flow") or {},
+            component_id=component_id,
+            label=payload.label,
+            description=payload.description,
+            template_id=payload.template_id,
+            target_node_id=payload.target_node_id,
+            fields=payload.fields,
+        )
+        return {
+            "status": "display_component_saved",
+            **result,
+            "files": dev_flow_manager.read_files(cartridge_id),
+        }
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except CartridgeAssetError as exc:
+        raise HTTPException(status_code=409 if exc.code.endswith("_IN_USE") else 400, detail={"code": exc.code, "message": str(exc)})
 
 
 @app.delete("/api/lab/flows/{cartridge_id}/interaction-components/{component_id}")

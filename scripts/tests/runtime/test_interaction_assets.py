@@ -11,6 +11,8 @@ from core.cartridge.assets import (
     load_asset_bundle,
     validate_interaction_nodes,
     validate_passive_html,
+    write_asset,
+    write_passive_display_component,
 )
 from core.cartridge.runner import CartridgeRunner
 from core.lab.node_executor import LabNodeExecutor
@@ -116,6 +118,122 @@ class InteractionAssetRuntimeTests(unittest.TestCase):
         self.assertEqual({"policy": "resume_target_node", "target_node": "complete", "action_id": "approve"}, resolved)
         with self.assertRaises(ValueError):
             runner._resolve_answer_resume(resume, {"action_id": "undeclared", "payload": {}})
+
+    def test_passive_display_authoring_writes_component_asset_and_node_together(self):
+        with tempfile.TemporaryDirectory() as temp:
+            manager = DevFlowManager(temp)
+            created = manager.create_flow("dev.component", "Component")
+            package = Path(created["path"])
+            created["root_flow"]["states"]["show"] = {
+                "type": "process",
+                "kind": "interaction",
+                "executor": "deterministic",
+                "effect": "none",
+                "action": "render_interaction",
+                "component_ref": "welcome.panel",
+                "interaction_mode": "display",
+                "input_binding": {},
+                "inputs": {},
+                "outputs": {},
+            }
+
+            result = write_passive_display_component(
+                package,
+                created["manifest"],
+                created["root_flow"],
+                component_id="result.panel",
+                label="结果面板",
+                description="把处理结果清楚地交付给用户",
+                template_id="data_panel",
+                target_node_id="show",
+                fields=[
+                    {"id": "summary", "label": "摘要", "type": "text", "required": True, "source": "store:summary"},
+                    {"id": "items", "label": "条目", "type": "list", "required": False, "source": "store:items"},
+                ],
+            )
+
+            bundle = load_asset_bundle(package, created["manifest"], include_content=True)
+            component = bundle["component_by_id"]["result.panel"]
+            flow = json.loads((package / "root.flow.json").read_text(encoding="utf-8"))
+            html = bundle["asset_by_id"]["ui.result.panel"]["content"]
+            self.assertEqual("结果面板", result["component"]["label"])
+            self.assertEqual("结果面板", component["label"])
+            self.assertEqual("passive_display_v1", component["authoring"]["kind"])
+            self.assertIn('data-cf-bind="items"', html)
+            self.assertEqual("result.panel", flow["states"]["show"]["component_ref"])
+            self.assertEqual({"summary": "store:summary", "items": "store:items"}, flow["states"]["show"]["input_binding"])
+            self.assertEqual([], validate_interaction_nodes(flow, bundle))
+
+    def test_passive_display_authoring_rejects_invalid_target_without_partial_files(self):
+        with tempfile.TemporaryDirectory() as temp:
+            manager = DevFlowManager(temp)
+            created = manager.create_flow("dev.rollback", "Rollback")
+            package = Path(created["path"])
+            before = {path.relative_to(package): path.read_bytes() for path in package.rglob("*") if path.is_file()}
+
+            with self.assertRaises(CartridgeAssetError):
+                write_passive_display_component(
+                    package,
+                    created["manifest"],
+                    created["root_flow"],
+                    component_id="result.panel",
+                    label="结果面板",
+                    description="",
+                    template_id="summary",
+                    target_node_id="complete",
+                    fields=[{"id": "result", "label": "结果", "type": "text", "source": "store:result"}],
+                )
+
+            after = {path.relative_to(package): path.read_bytes() for path in package.rglob("*") if path.is_file()}
+            self.assertEqual(before, after)
+
+    def test_passive_display_authoring_does_not_overwrite_hand_authored_components(self):
+        with tempfile.TemporaryDirectory() as temp:
+            manager = DevFlowManager(temp)
+            created = manager.create_flow("dev.owned", "Owned")
+            package = Path(created["path"])
+            created["root_flow"]["states"]["show"] = {
+                "type": "process", "kind": "interaction", "executor": "deterministic", "effect": "none",
+                "action": "render_interaction", "component_ref": "welcome.panel", "interaction_mode": "display",
+                "input_binding": {}, "inputs": {}, "outputs": {},
+            }
+
+            with self.assertRaises(CartridgeAssetError) as caught:
+                write_passive_display_component(
+                    package, created["manifest"], created["root_flow"],
+                    component_id="welcome.panel", label="不能覆盖", description="", template_id="summary",
+                    target_node_id="show",
+                    fields=[{"id": "result", "label": "结果", "type": "text", "source": "store:result"}],
+                )
+
+            self.assertEqual("DISPLAY_COMPONENT_ID_IN_USE", caught.exception.code)
+            self.assertNotIn("authoring", load_asset_bundle(package, created["manifest"])["component_by_id"]["welcome.panel"])
+
+    def test_passive_display_authoring_does_not_take_over_an_existing_asset_id(self):
+        with tempfile.TemporaryDirectory() as temp:
+            manager = DevFlowManager(temp)
+            created = manager.create_flow("dev.asset-owned", "Asset owned")
+            package = Path(created["path"])
+            created["root_flow"]["states"]["show"] = {
+                "type": "process", "kind": "interaction", "executor": "deterministic", "effect": "none",
+                "action": "render_interaction", "component_ref": "welcome.panel", "interaction_mode": "display",
+                "input_binding": {}, "inputs": {}, "outputs": {},
+            }
+            write_asset(
+                package, created["manifest"], asset_id="ui.result.panel", kind="prompt",
+                relative_path="assets/existing.txt", media_type="text/plain", content="owned elsewhere",
+            )
+
+            with self.assertRaises(CartridgeAssetError) as caught:
+                write_passive_display_component(
+                    package, created["manifest"], created["root_flow"],
+                    component_id="result.panel", label="结果", description="", template_id="summary",
+                    target_node_id="show",
+                    fields=[{"id": "result", "label": "结果", "type": "text", "source": "store:result"}],
+                )
+
+            self.assertEqual("DISPLAY_ASSET_ID_IN_USE", caught.exception.code)
+            self.assertEqual("owned elsewhere", (package / "assets/existing.txt").read_text(encoding="utf-8"))
 
     def test_pending_interaction_rejects_component_identity_changes(self):
         with tempfile.TemporaryDirectory() as temp:

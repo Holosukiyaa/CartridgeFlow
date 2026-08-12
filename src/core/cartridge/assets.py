@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import base64
+import copy
 import hashlib
 import json
 import mimetypes
 import re
+import shutil
+import tempfile
+from html import escape
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import urlparse
@@ -29,6 +33,8 @@ EXECUTABLE_SUFFIXES = {
     ".msi", ".ps1", ".py", ".pyd", ".sh", ".so", ".wasm",
 }
 TEXT_MEDIA_PREFIXES = ("text/", "application/json", "application/schema+json")
+DISPLAY_COMPONENT_TEMPLATES = {"summary", "list", "data_panel"}
+DISPLAY_FIELD_TYPES = {"text", "number", "boolean", "list"}
 
 
 class CartridgeAssetError(ValueError):
@@ -473,6 +479,8 @@ def write_component(package_root: str | Path, manifest: dict, component: dict) -
     items = document.setdefault("components", [])
     normalized = {
         "id": component_id,
+        "label": str(component.get("label") or component_id).strip(),
+        "description": str(component.get("description") or "").strip(),
         "version": str(component.get("version") or "1.0.0"),
         "runtime": runtime,
         "entry": component.get("entry"),
@@ -481,6 +489,8 @@ def write_component(package_root: str | Path, manifest: dict, component: dict) -
         "actions": component.get("actions") or [],
         "host_capabilities": component.get("host_capabilities") or [],
     }
+    if isinstance(component.get("authoring"), dict):
+        normalized["authoring"] = component["authoring"]
     for index, item in enumerate(items):
         if isinstance(item, dict) and item.get("id") == component_id:
             items[index] = normalized
@@ -494,6 +504,263 @@ def write_component(package_root: str | Path, manifest: dict, component: dict) -
         path.write_bytes(previous_document)
         raise
     return normalized
+
+
+def write_passive_display_component(
+    package_root: str | Path,
+    manifest: dict,
+    root_flow: dict,
+    *,
+    component_id: str,
+    label: str,
+    description: str,
+    template_id: str,
+    target_node_id: str,
+    fields: list[dict],
+) -> dict:
+    """Create a passive component and bind it to a display node as one authoring action."""
+    root = Path(package_root).resolve()
+    component_id = str(component_id or "").strip()
+    label = str(label or "").strip()
+    description = str(description or "").strip()
+    template_id = str(template_id or "").strip()
+    target_node_id = str(target_node_id or "").strip()
+    if not re.fullmatch(r"[a-zA-Z0-9._-]+", component_id):
+        raise CartridgeAssetError("component id is invalid")
+    if not label or len(label) > 120:
+        raise CartridgeAssetError("component label must be 1-120 characters")
+    if len(description) > 360:
+        raise CartridgeAssetError("component description must be at most 360 characters")
+    if template_id not in DISPLAY_COMPONENT_TEMPLATES:
+        raise CartridgeAssetError(f"unsupported display component template: {template_id}")
+
+    normalized_fields = _normalize_display_component_fields(fields)
+    next_flow = copy.deepcopy(root_flow)
+    states = next_flow.get("states") if isinstance(next_flow.get("states"), dict) else {}
+    target_node = states.get(target_node_id)
+    if not isinstance(target_node, dict):
+        raise CartridgeAssetError(f"display target node does not exist: {target_node_id}", "DISPLAY_NODE_MISSING")
+    action = str(target_node.get("action") or (target_node.get("params") or {}).get("action") or "")
+    if target_node.get("type") != "process" or target_node.get("kind") != "interaction" or action != "render_interaction":
+        raise CartridgeAssetError("display target must be a render_interaction process node", "DISPLAY_NODE_INVALID")
+
+    target_node.update({
+        "executor": "deterministic",
+        "effect": "none",
+        "component_ref": component_id,
+        "interaction_mode": "display",
+        "input_binding": {item["id"]: item["source"] for item in normalized_fields},
+    })
+    if not str(target_node.get("display_name") or "").strip():
+        target_node["display_name"] = label
+    target_node["experience"] = {
+        "authoring": "passive_display_v1",
+        "template_id": template_id,
+    }
+
+    bundle = load_asset_bundle(root, manifest)
+    existing = bundle["component_by_id"].get(component_id) or {}
+    existing_authoring = existing.get("authoring") if isinstance(existing.get("authoring"), dict) else {}
+    if existing and existing_authoring.get("kind") != "passive_display_v1":
+        raise CartridgeAssetError(
+            f"component id is already owned by a non-template component: {component_id}",
+            "DISPLAY_COMPONENT_ID_IN_USE",
+        )
+    asset_id = f"ui.{component_id}"
+    asset_path = f"assets/components/{component_id}.html"
+    existing_asset = bundle["asset_by_id"].get(asset_id) or {}
+    existing_entry = existing.get("entry") if isinstance(existing.get("entry"), dict) else {}
+    owns_asset = (
+        existing_authoring.get("kind") == "passive_display_v1"
+        and existing_entry.get("type") == "asset"
+        and existing_entry.get("ref") == f"asset:{asset_id}"
+        and existing_asset.get("path") == asset_path
+    )
+    if existing_asset and not owns_asset:
+        raise CartridgeAssetError(
+            f"asset id is already owned outside template authoring: {asset_id}",
+            "DISPLAY_ASSET_ID_IN_USE",
+        )
+    version = _next_component_version(str(existing.get("version") or "")) if existing else "1.0.0"
+    html = _render_passive_display_html(label, description, template_id, normalized_fields)
+    raw = html.encode("utf-8")
+    component = {
+        "id": component_id,
+        "label": label,
+        "description": description,
+        "version": version,
+        "runtime": "passive",
+        "entry": {"type": "asset", "ref": f"asset:{asset_id}"},
+        "supported_modes": ["display"],
+        "input_schema": _display_component_schema(normalized_fields),
+        "actions": [],
+        "host_capabilities": [],
+        "authoring": {
+            "kind": "passive_display_v1",
+            "template_id": template_id,
+            "fields": normalized_fields,
+        },
+    }
+
+    registry = copy.deepcopy(bundle["registry"])
+    asset_item = {
+        "id": asset_id,
+        "kind": "interaction_template",
+        "path": asset_path,
+        "media_type": "text/html",
+        "sha256": sha256_bytes(raw),
+        "size": len(raw),
+        "executable": False,
+    }
+    registry["assets"] = [
+        asset_item if isinstance(item, dict) and item.get("id") == asset_id else item
+        for item in registry.get("assets") or []
+    ]
+    if not any(isinstance(item, dict) and item.get("id") == asset_id for item in registry["assets"]):
+        registry["assets"].append(asset_item)
+
+    components = copy.deepcopy(bundle["components_registry"])
+    components["components"] = [
+        component if isinstance(item, dict) and item.get("id") == component_id else item
+        for item in components.get("components") or []
+    ]
+    if not any(isinstance(item, dict) and item.get("id") == component_id for item in components["components"]):
+        components["components"].append(component)
+
+    registry_path = resolve_package_path(root, manifest.get("asset_registry"), "manifest.asset_registry")
+    components_path = resolve_package_path(root, manifest.get("interaction_components"), "manifest.interaction_components")
+    root_flow_ref = manifest.get("root_flow") if isinstance(manifest.get("root_flow"), dict) else {}
+    root_flow_path = resolve_package_path(root, root_flow_ref.get("entry"), "manifest.root_flow.entry")
+    target_path = resolve_package_path(root, asset_path, "asset.path")
+    documents = {
+        target_path: raw,
+        registry_path: _json_bytes(registry),
+        components_path: _json_bytes(components),
+        root_flow_path: _json_bytes(next_flow),
+    }
+
+    with tempfile.TemporaryDirectory(prefix="cartridgeflow-component-authoring-", dir=root.parent) as temp_dir:
+        staged = Path(temp_dir) / "package"
+        shutil.copytree(root, staged)
+        staged_documents = {
+            staged / path.relative_to(root): content
+            for path, content in documents.items()
+        }
+        for path, content in staged_documents.items():
+            _write_bytes_atomic(path, content)
+        staged_bundle = load_asset_bundle(staged, manifest)
+        blockers = [item for item in validate_interaction_nodes(next_flow, staged_bundle) if item.get("severity") == "blocker"]
+        if blockers:
+            finding = blockers[0]
+            raise CartridgeAssetError(
+                f"{finding.get('node')}: {finding.get('message')}",
+                str(finding.get("code") or "DISPLAY_COMPONENT_INVALID").upper(),
+            )
+
+    originals = {path: path.read_bytes() if path.is_file() else None for path in documents}
+    try:
+        for path, content in documents.items():
+            _write_bytes_atomic(path, content)
+        load_asset_bundle(root, manifest)
+    except Exception:
+        for path, content in originals.items():
+            if content is None:
+                path.unlink(missing_ok=True)
+            else:
+                _write_bytes_atomic(path, content)
+        raise
+    return {"component": component, "asset": asset_item, "target_node_id": target_node_id}
+
+
+def _normalize_display_component_fields(fields: list[dict]) -> list[dict]:
+    if not isinstance(fields, list) or not fields:
+        raise CartridgeAssetError("display component requires at least one field")
+    if len(fields) > 12:
+        raise CartridgeAssetError("display component supports at most 12 fields")
+    normalized = []
+    seen = set()
+    for index, raw in enumerate(fields):
+        if not isinstance(raw, dict):
+            raise CartridgeAssetError(f"display field {index + 1} must be an object")
+        field_id = str(raw.get("id") or "").strip()
+        field_label = str(raw.get("label") or "").strip()
+        field_type = str(raw.get("type") or "text").strip()
+        source = str(raw.get("source") or "").strip()
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,63}", field_id) or field_id in seen:
+            raise CartridgeAssetError(f"display field id is invalid or duplicated: {field_id or index + 1}")
+        if not field_label or len(field_label) > 80:
+            raise CartridgeAssetError(f"display field {field_id}.label must be 1-80 characters")
+        if field_type not in DISPLAY_FIELD_TYPES:
+            raise CartridgeAssetError(f"display field {field_id}.type is invalid")
+        if not re.fullmatch(r"(?:store|artifact):[A-Za-z0-9._-]+", source):
+            raise CartridgeAssetError(f"display field {field_id}.source must use store: or artifact:")
+        seen.add(field_id)
+        normalized.append({
+            "id": field_id,
+            "label": field_label,
+            "type": field_type,
+            "required": bool(raw.get("required", False)),
+            "source": source,
+        })
+    return normalized
+
+
+def _display_component_schema(fields: list[dict]) -> dict:
+    type_map = {
+        "text": {"type": "string"},
+        "number": {"type": "number"},
+        "boolean": {"type": "boolean"},
+        "list": {"type": "array", "items": {"type": "string"}},
+    }
+    properties = {}
+    required = []
+    for field in fields:
+        properties[field["id"]] = {**type_map[field["type"]], "title": field["label"]}
+        if field["required"]:
+            required.append(field["id"])
+    schema = {"type": "object", "properties": properties, "additionalProperties": False}
+    if required:
+        schema["required"] = required
+    return schema
+
+
+def _render_passive_display_html(label: str, description: str, template_id: str, fields: list[dict]) -> str:
+    title = escape(label)
+    copy_text = escape(description or "运行结果")
+    field_markup = []
+    for field in fields:
+        field_label = escape(field["label"])
+        binding = escape(field["id"], quote=True)
+        if field["type"] == "list":
+            value = f'<ul class="cf-list" data-cf-bind="{binding}"><li>暂无内容</li></ul>'
+        else:
+            value = f'<div class="cf-value" data-cf-bind="{binding}">暂无内容</div>'
+        field_markup.append(f'<section class="cf-field cf-field--{field["type"]}"><span>{field_label}</span>{value}</section>')
+    body = "".join(field_markup)
+    layout_class = {"summary": "summary", "list": "list", "data_panel": "panel"}[template_id]
+    return (
+        '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        f'<title>{title}</title><style>'
+        ':root{color:#243139;background:#f4f7f8;font-family:Inter,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}'
+        '*{box-sizing:border-box}body{margin:0;padding:18px}.cf-view{max-width:760px;margin:auto;background:#fff;border:1px solid #d5dfe3;border-radius:6px;overflow:hidden}'
+        '.cf-head{padding:18px 20px 14px;border-bottom:1px solid #e1e7ea}.cf-head small{display:block;color:#087f8f;font-size:11px;font-weight:700}'
+        '.cf-head h1{margin:5px 0 0;font-size:21px;line-height:1.3}.cf-head p{margin:7px 0 0;color:#65737a;font-size:12px;line-height:1.55}'
+        '.cf-fields{display:grid;gap:0}.cf-field{min-width:0;padding:14px 20px;border-bottom:1px solid #edf1f2}.cf-field:last-child{border-bottom:0}'
+        '.cf-field>span{display:block;margin-bottom:6px;color:#69777e;font-size:10px;font-weight:700}.cf-value{font-size:15px;line-height:1.5;overflow-wrap:anywhere}'
+        '.cf-list{display:grid;gap:7px;margin:0;padding:0;list-style:none}.cf-list li{padding:9px 11px;background:#f5f8f9;border-left:3px solid #168c75;font-size:13px;line-height:1.45;overflow-wrap:anywhere}'
+        '.cf-view--summary .cf-fields{grid-template-columns:repeat(2,minmax(0,1fr))}.cf-view--summary .cf-field:first-child{grid-column:1/-1}.cf-view--summary .cf-field:first-child .cf-value{font-size:24px;font-weight:700}'
+        '.cf-view--list .cf-field--list{padding-block:16px}.cf-view--panel .cf-fields{grid-template-columns:repeat(2,minmax(0,1fr))}.cf-view--panel .cf-field{border-right:1px solid #edf1f2}'
+        '@media(max-width:560px){body{padding:10px}.cf-view--summary .cf-fields,.cf-view--panel .cf-fields{grid-template-columns:1fr}.cf-view--summary .cf-field:first-child{grid-column:auto}}'
+        f'</style></head><body><main class="cf-view cf-view--{layout_class}"><header class="cf-head"><small>CartridgeFlow 运行呈现</small><h1>{title}</h1><p>{copy_text}</p></header><div class="cf-fields">{body}</div></main></body></html>'
+    )
+
+
+def _next_component_version(value: str) -> str:
+    match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)", value)
+    if not match:
+        return "1.0.0"
+    return f"{match.group(1)}.{match.group(2)}.{int(match.group(3)) + 1}"
 
 
 def delete_asset(package_root: str | Path, manifest: dict, root_flow: dict, asset_id: str) -> None:
@@ -546,7 +813,15 @@ def _find_scalar_references(value, needle: str, path: str = "$") -> list[str]:
 
 
 def _write_json_atomic(path: Path, value: dict) -> None:
+    _write_bytes_atomic(path, _json_bytes(value))
+
+
+def _json_bytes(value: dict) -> bytes:
+    return json.dumps(value, ensure_ascii=False, indent=2).encode("utf-8")
+
+
+def _write_bytes_atomic(path: Path, value: bytes) -> None:
     temp = path.with_suffix(path.suffix + ".tmp")
     temp.parent.mkdir(parents=True, exist_ok=True)
-    temp.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
+    temp.write_bytes(value)
     temp.replace(path)

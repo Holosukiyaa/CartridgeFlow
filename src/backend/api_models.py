@@ -267,6 +267,14 @@ class InteractionComponentPayload(BaseModel):
     component: dict = Field(default_factory=dict)
 
 
+class PassiveDisplayComponentPayload(BaseModel):
+    label: str
+    description: str = ""
+    template_id: str = "summary"
+    target_node_id: str
+    fields: list[dict] = Field(default_factory=list)
+
+
 class LLMProviderPayload(BaseModel):
     id: str = ""
     name: str = ""

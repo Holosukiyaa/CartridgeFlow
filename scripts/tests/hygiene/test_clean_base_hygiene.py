@@ -78,7 +78,7 @@ class CleanBaseHygieneTests(unittest.TestCase):
 
     def test_documentation_has_canonical_entry_points(self):
         expected = (
-            ROOT / "docs" / "development" / "FILE_INVENTORY.md",
+            ROOT / "README.md",
             ROOT / "config" / "protocol" / "README.md",
             ROOT / "config" / "protocol" / "protocol-registry.lock.json",
             ROOT / "config" / "protocol" / "protocol-registry.sqlite",
@@ -94,15 +94,24 @@ class CleanBaseHygieneTests(unittest.TestCase):
         self.assertFalse((ROOT / "BASE_IMPLEMENTATION.json").exists())
         self.assertTrue((ROOT / "config" / "base" / "BASE_IMPLEMENTATION.json").is_file())
         self.assertFalse((ROOT / "cartridges").exists())
+        for governance_only in (
+            "AGENT.md",
+            "AGENTS.md",
+            "MENTOR_WORKERS.md",
+            "PLAN.md",
+            "PRODUCT_EXPERIENCE_ARCHITECTURE.md",
+            "todo.md",
+        ):
+            self.assertFalse((ROOT / governance_only).exists(), governance_only)
+        self.assertFalse((ROOT / "demos").exists())
+        self.assertFalse(any(path.is_file() for path in (ROOT / "docs" / "development").rglob("*")))
+        self.assertFalse(any(path.is_file() for path in (ROOT / "docs" / "protocol-rebuild").rglob("*")))
 
     def test_maintenance_assets_and_generated_output_have_single_owners(self):
         expected_maintenance_assets = (
-            ROOT / "docs" / "development" / "README.md",
             ROOT / "scripts" / "bootstrap.ps1",
             ROOT / "scripts" / "launch.py",
-            ROOT / "scripts" / "launch_protocol_viewer.py",
             ROOT / "scripts" / "run_conformance.py",
-            ROOT / "docs" / "development" / "skills" / "cartridgeflow-protocol-upgrader" / "SKILL.md",
         )
         self.assertTrue(all(path.is_file() for path in expected_maintenance_assets))
         for legacy_dir in ("development", "devtools", "skills", "web_static", "logs", "tests", "tooling"):
@@ -126,7 +135,7 @@ class CleanBaseHygieneTests(unittest.TestCase):
         ]
         self.assertEqual([], unexpected)
         self.assertFalse((scripts_root / "skills").exists())
-        self.assertTrue((ROOT / "docs" / "development" / "skills").is_dir())
+        self.assertFalse(any(path.is_file() for path in (ROOT / "docs" / "development").rglob("*")))
 
     def test_lite_uses_host_runtimes(self):
         launcher = (ROOT / "run.bat").read_text(encoding="utf-8")

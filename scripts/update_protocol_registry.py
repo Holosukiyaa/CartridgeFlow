@@ -27,7 +27,7 @@ from core.protocol import (
     publish_protocol_knowledge_registry,
 )
 from core.protocol.base_manifest import BASE_IMPLEMENTATION_PATH
-from core.protocol.governance_registry import (
+from core.protocol.knowledge_registry import (
     EVIDENCE_RELATIVE_PATH,
     IMPLEMENTATION_KNOWLEDGE_RELATIVE_PATHS,
 )

@@ -1,6 +1,5 @@
 import json
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -12,7 +11,7 @@ from core.extensions import PortableDlcValidationError, load_portable_dlc_descri
 from core.lab.builtin_mcp import BuiltinMcpRegistry
 from core.lab.node_executor import LabNodeExecutor
 from core.protocol import load_base_implementation
-from scripts.tests.fixtures.portable_dlc import PortableDlcFixture
+from scripts.tests.fixtures.portable_dlc import PortableDlcFixture, TransparentDlcFixture
 
 
 class PortableDlcTests(unittest.TestCase):
@@ -107,25 +106,23 @@ class PortableDlcTests(unittest.TestCase):
         self.assertEqual(run["interaction_components"], projected["interaction_components"])
 
     def test_transparent_v3_worker_executes_declared_graph_handler(self):
-        package = ROOT / "demos" / "capabilities" / "rss-reader"
-        manifest = json.loads((package / "manifest.json").read_text(encoding="utf-8"))
-        with tempfile.TemporaryDirectory(prefix="cartridgeflow-transparent-worker-") as directory:
+        with TransparentDlcFixture() as fixture:
             scoped = BuiltinMcpRegistry.for_manifest(
                 ROOT,
-                manifest,
-                package_path=package,
-                worker_journal_dir=Path(directory),
+                fixture.manifest,
+                package_path=fixture.package,
+                worker_journal_dir=fixture.worker_journal_dir,
             )
             result = scoped.call(
-                "rss_reader",
-                "fetch",
-                {"urls": ["http://127.0.0.1/private-feed.xml"], "max_items": 1},
+                "fixture_graph",
+                "validate",
+                {"value": ""},
             )
 
         self.assertFalse(result["ok"])
         self.assertEqual("dlc_operation_failed", result["code"])
-        self.assertEqual("validate_sources", result["operation_id"])
-        self.assertIn("HTTPS", result["error"])
+        self.assertEqual("validate_value", result["operation_id"])
+        self.assertIn("non-empty", result["error"])
 
     def test_hash_mismatch_blocks_descriptor(self):
         with PortableDlcFixture() as fixture:

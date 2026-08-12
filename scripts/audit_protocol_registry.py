@@ -456,8 +456,7 @@ def _audit_product_bindings(root: Path, catalog, errors: list[str], *, clean: bo
     _require_text(root / "src/backend/main.py", "protocol_catalog", errors)
     _require_text(root / "src/core/studio/creator_runtime_bridge.py", 'CREATOR_PACKAGE_PROTOCOL = {"id": "CF-FARP", "version": "1.6"}', errors)
     _require_text(root / "src/intent-studio/src/pages/intent-studio/IntentStudio.tsx", "packageCreatorProject", errors)
-    for document in ("AGENT.md", "README.md"):
-        _require_text(root / document, "protocol-registry", errors)
+    _require_text(root / "README.md", "protocol-registry", errors)
 
     known = {(item["id"], item["version"]) for item in catalog.releases}
     for path in _project_text_files(root):
@@ -497,10 +496,10 @@ def _project_text_files(root: Path):
 def main() -> int:
     errors = audit()
     if errors:
-        print("Protocol governance audit failed:")
+        print("Protocol registry audit failed:")
         print("\n".join(f"- {error}" for error in errors))
         return 1
-    print("Protocol governance audit passed.")
+    print("Protocol registry audit passed.")
     return 0
 
 

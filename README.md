@@ -1,48 +1,37 @@
 # CartridgeFlow
 
-CartridgeFlow turns an open-ended idea into a reviewed semantic recipe and a
-signed, portable application cartridge. A cartridge can also be a reusable
-capability inside another cartridge, so uncommon requirements can be built once
-and composed recursively instead of being rejected or hard-coded into Base.
+CartridgeFlow 将开放式想法整理为经过人工审核的语义方案，并生成带签名、可移植的应用卡带。卡带也可以作为其他卡带中的可复用能力，因此少见需求可以先独立实现，再递归组合，而不需要写死到 Base 内核。
 
-## Start
+## 启动
 
-Requires Python 3, Node.js 20.19 or later, and npm on `PATH`.
+需要在 `PATH` 中提供 Python 3、Node.js 20.19 或更高版本以及 npm。
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/bootstrap.ps1
 run.bat
 ```
 
-One FastAPI process serves both authoring surfaces on one origin:
+一个 FastAPI 进程会在同源地址提供两个创作界面：
 
-- Intent Studio: `http://127.0.0.1:8765/studio`
-- Capability Workshop: `http://127.0.0.1:8765/capabilities`
+- 意图工作室：`http://127.0.0.1:8765/studio`
+- 能力工作台：`http://127.0.0.1:8765/capabilities`
 
-`run.bat` clears only a stale CartridgeFlow listener on port 8765, builds both
-bundles and starts the shared backend. Drafts, capability releases and generated
-packages live under ignored `.data/`. Set `CARTRIDGEFLOW_DATA_ROOT` before
-startup to relocate this directory.
+`run.bat` 只会清理占用 8765 端口的旧 CartridgeFlow 监听进程，然后构建两个前端并启动后端。草稿、能力发布物和生成的卡带默认写入已忽略的 `.data/`；可在启动前设置 `CARTRIDGEFLOW_DATA_ROOT`，将本地数据迁到源码仓之外。
 
-## Product Flow
+## 产品流程
 
 ```text
-idea -> semantic canvas -> trusted capability binding
-     -> recursive package -> demos/runtime verification
+用户想法 -> 语义画布 -> 可信能力绑定
+         -> 递归打包 -> 独立运行交付
 ```
 
-If no implementation matches a semantic node, the Intent Studio preserves the node as a
-capability gap. An advanced user can open the workshop, build and publish a
-complete Flow as a workspace-trusted capability, then return to the same
-Intent Studio node for automatic re-resolution and review. The Intent Layer
-contains no run or implementation configuration UI; package publication is its
-only handoff into executable facts.
+当语义节点没有匹配实现时，意图工作室会保留能力缺口。开发者可以在能力工作台中实现完整 Flow，验证后发布为工作区可信能力，再回到原节点进行自动解析与人工复核。意图层不暴露运行参数和实现拓扑，发布卡带是它进入可执行事实的唯一交接方式。
 
-## Verify
+## 验证
 
 ```powershell
 python scripts/run_conformance.py --quiet
-python scripts/audit_protocol_governance.py
+python scripts/audit_protocol_registry.py
 npm --prefix src/intent-studio run build
 npm --prefix src/intent-studio run test
 npm --prefix src/capability-workshop run build
@@ -51,37 +40,15 @@ trufflehog filesystem . --results=verified --exclude-detectors=Lob --fail --fail
 trufflehog git file://. --results=verified --exclude-detectors=Lob --fail --fail-on-scan-errors --no-update
 ```
 
-The repository does not integrate Lob. Its live verifier classifies ordinary
-Python `test_*` identifiers as verified Lob environment names, so that detector
-is explicitly excluded. Remove the exclusion before introducing any Lob
-integration; all other detectors remain enabled.
+本项目没有集成 Lob。它的在线检测器会把普通 Python `test_*` 标识误判为 Lob 环境名，因此当前明确排除该检测器；引入 Lob 集成时必须取消排除。其余检测器保持启用。
 
-## Repository
+## 仓库内容
 
-- `src/backend/`: shared HTTP application and API routes.
-- `src/core/`: cartridge, runtime, protocol, lab and studio logic.
-- `src/intent-studio/`: direction discovery and semantic composition.
-- `src/capability-workshop/`: executable capability design, verification and publication.
-- [cartridgeflow-protocols](https://github.com/Holosukiyaa/cartridgeflow-protocols): the independent, unique protocol source; it is not mounted in this workspace.
-- `config/protocol/`: pinned read-only `protocol-registry.sqlite` published from an explicit checkout of that authority.
-- `demos/capabilities/`: package-owned capability examples such as RSS.
-- `demos/runtime-developer-toolkit/`: independent package test bench.
-- `scripts/`: bootstrap, launch, verification and test tools.
+- `src/backend/`：共享 HTTP 应用与 API 路由。
+- `src/core/`：卡带、运行时、协议适配、实验室和工作室核心逻辑。
+- `src/intent-studio/`：方向发现与语义组合。
+- `src/capability-workshop/`：可执行能力设计、验证与发布。
+- `config/protocol/`：产品锁定的只读 `protocol-registry.sqlite` 和协议锁。
+- `scripts/`：启动、构建、发布、审计和产品验收工具。
 
-Read `AGENT.md` for engineering boundaries and
-`PRODUCT_EXPERIENCE_ARCHITECTURE.md` for the product contract.
-
-## Protocol Library
-
-Open the Chinese, local read-only knowledge browser:
-
-```powershell
-view-protocols.bat
-```
-
-The first launch creates an isolated viewer under ignored `.tools/` and installs
-its pinned Datasette dependencies. The browser binds only to `127.0.0.1:8001`
-and opens a Chinese portal for the product's locked protocol snapshot. The
-snapshot contains the adopted protocol artifacts, Base implementation evidence
-and approved committed `config/` documentation, defaults and safe templates.
-Runtime state under `.data/` is never included. Stop the viewer with `Ctrl+C`.
+协议本体只存在于独立的 [cartridgeflow-protocols](https://github.com/Holosukiyaa/cartridgeflow-protocols) 仓库，产品仓不嵌入或挂载协议源。产品只消费经过锁定和验证的协议快照。

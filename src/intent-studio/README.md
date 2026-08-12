@@ -1,11 +1,11 @@
-# CartridgeFlow Intent Studio
+# CartridgeFlow 意图工作室
 
-React and TypeScript implementation of direction discovery and reviewed semantic composition. It does not expose executable Flow topology, runtime controls or capability implementation details.
+这里是方向发现与人工审核语义组合界面的 React + TypeScript 实现。它不暴露可执行 Flow 拓扑、运行控制或能力实现细节。
 
-Use the repository-level `README.md` for setup and the root `AGENT.md` for architecture and development rules.
+构建命令：
 
 ```powershell
 npm --prefix src/intent-studio run build
 ```
 
-Production assets are generated in `src/intent-studio/dist/`; FastAPI serves them from `/studio` and `/projects/{project_id}/studio`.
+生产资源输出到 `src/intent-studio/dist/`，由 FastAPI 在 `/studio` 和 `/projects/{project_id}/studio` 提供。

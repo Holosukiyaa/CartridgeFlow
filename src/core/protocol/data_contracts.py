@@ -13,7 +13,7 @@ from jsonschema import Draft202012Validator
 
 from .artifact_store import resolve_protocol_registry
 from .base_manifest import load_base_implementation
-from .governance_registry import ProtocolKnowledgeRegistry, ProtocolKnowledgeRegistryError
+from .knowledge_registry import ProtocolKnowledgeRegistry, ProtocolKnowledgeRegistryError
 from .runtime_catalog import find_runtime_data_contract
 
 

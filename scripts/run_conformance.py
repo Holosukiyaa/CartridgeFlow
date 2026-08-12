@@ -18,7 +18,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from core.conformance import RecordingTestResult, build_conformance_report, write_conformance_report
 from core.data_paths import CONFORMANCE_REPORT
-from audit_protocol_governance import audit as audit_protocol_governance
+from audit_protocol_registry import audit as audit_protocol_registry
 
 
 TEST_GROUPS = ("conformance", "runtime", "studio", "llm", "api", "integration", "lab", "orchestration", "hygiene", "history", "browser")
@@ -58,10 +58,10 @@ def main() -> int:
         print("\n".join(f"- {group}" for group in undiscovered))
         return 1
 
-    governance_errors = audit_protocol_governance(ROOT)
-    if governance_errors:
-        print("Protocol governance audit failed:")
-        print("\n".join(f"- {error}" for error in governance_errors))
+    registry_errors = audit_protocol_registry(ROOT)
+    if registry_errors:
+        print("Protocol registry audit failed:")
+        print("\n".join(f"- {error}" for error in registry_errors))
         return 1
 
     suite = discover_tests(args.pattern)

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from .governance_registry import ProtocolKnowledgeRegistry, ProtocolKnowledgeRegistryError
+from .knowledge_registry import ProtocolKnowledgeRegistry, ProtocolKnowledgeRegistryError
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]

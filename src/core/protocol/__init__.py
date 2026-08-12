@@ -7,7 +7,7 @@ from .artifact_store import (
     load_protocol_registry_lock,
     resolve_protocol_registry,
 )
-from .governance_registry import (
+from .knowledge_registry import (
     ImplementationSource,
     ProtocolKnowledgeRegistry,
     ProtocolKnowledgeRegistryError,

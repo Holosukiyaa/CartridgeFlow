@@ -2,7 +2,6 @@ import sys
 import tempfile
 import unittest
 import json
-import subprocess
 import zipfile
 from copy import deepcopy
 from pathlib import Path
@@ -10,6 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "src"))
 
+from core.protocol import inspect_release_archive, trusted_public_keys
 from core.protocol.trusted_node_recipes import create_dynamic_recipe
 from core.studio.authoring_service import AuthoringServiceError, AuthoringSessionStore
 from core.studio.creator_runtime_bridge import CreatorRuntimeBridge, CreatorRuntimeBridgeError
@@ -155,20 +155,11 @@ class TrustedNodeAuthoringTests(unittest.TestCase):
         with zipfile.ZipFile(Path(self.temp.name) / "packages-v16" / package["filename"]) as archive:
             root_flow = json.loads(archive.read("payload/root.flow.json"))
         self.assertEqual("1.6", root_flow["protocol"]["version"])
-        verified = subprocess.run(
-            [
-                "node",
-                str(ROOT / "demos" / "runtime-developer-toolkit" / "demo" / "run.mjs"),
-                "verify",
-                str(Path(self.temp.name) / "packages-v16" / package["filename"]),
-                "--trust",
-                str(Path(self.temp.name) / ".data" / "user" / "config" / "release_keys" / "trusted_publishers.json"),
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
+        verified = inspect_release_archive(
+            Path(self.temp.name) / "packages-v16" / package["filename"],
+            trusted_keys=trusted_public_keys(Path(self.temp.name)),
         )
-        self.assertEqual(0, verified.returncode, verified.stderr)
+        self.assertTrue(verified["activation_allowed"], verified["report"])
 
     def test_registry_rejects_preset_without_executable_mapping(self):
         empty = TrustedNodePresetStore(Path(self.temp.name) / "strict")

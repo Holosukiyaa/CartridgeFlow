@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ROOT / "src"))
 
-from audit_protocol_governance import audit
+from audit_protocol_registry import audit
 from core.protocol import (
     ProtocolRegistry,
     load_protocol_release_catalog,
@@ -17,7 +17,7 @@ from core.protocol import (
 )
 
 
-class ProtocolReleaseGovernanceTests(unittest.TestCase):
+class ProtocolRegistryAuditTests(unittest.TestCase):
     def test_runtime_compatibility_catalog_is_product_owned_and_minimal(self):
         runtime = load_runtime_protocol_catalog(ROOT)
         self.assertEqual(
@@ -62,5 +62,5 @@ class ProtocolReleaseGovernanceTests(unittest.TestCase):
         self.assertFalse(registry.supports_protocol("CF-FARP", "0.5"))
         self.assertTrue(registry.recognizes_protocol("CF-FARP", "0.5"))
 
-    def test_project_protocol_governance_audit_passes(self):
+    def test_project_protocol_registry_audit_passes(self):
         self.assertEqual([], audit(ROOT))

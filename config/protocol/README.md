@@ -1,33 +1,20 @@
-# Compiled Protocol Registry
+# 产品协议快照
 
-`protocol-registry.sqlite` is the read-only product governance knowledge base.
-It contains complete protocol artifacts and searchable sections for both
-`current` and `temp-runtime`, plus the Base implementation evidence and an
-explicit allowlist of committed `config/` documentation, defaults and safe
-templates. Runtime reads default to `current`; the second line is present for
-governance and comparison, never implicit merging.
+`protocol-registry.sqlite` 是产品锁定的只读协议快照，不是协议编辑源。当前快照采用 `clean-v1` 代际，只包含四个正式协议层及其模块、数据合同和产品采用信息。
 
-The allowlist is intentionally fixed rather than recursively scanned. Runtime
-state and production data under `.data/`, credentials, generated databases,
-lock files and viewer implementation files are never copied into this database.
+`protocol-registry.lock.json` 同时锁定：
 
-`protocol-registry.lock.json` pins the authoritative `protocol-source.sqlite`
-to one full Git commit, its source database SHA-256 and logical digest. It also
-pins the published product database SHA-256.
+- 权威协议仓库地址与完整 Git commit；
+- `protocol-source.sqlite` 的文件摘要和逻辑摘要；
+- 编译后产品快照的摘要；
+- 运行兼容目录与 Base 实现声明。
 
-Protocol originals live only in the independent
-https://github.com/Holosukiyaa/cartridgeflow-protocols repository. This product
-does not embed or mount that repository.
+协议原本只存在于独立的 [cartridgeflow-protocols](https://github.com/Holosukiyaa/cartridgeflow-protocols) 仓库。本产品不得嵌入、挂载或直接修改协议源，也不得手工编辑本目录中的 SQLite 快照。
 
-Do not edit this product database directly. Update and verify the authoritative
-database in a separate checkout, commit and push that repository, then publish
-from the CartridgeFlow repository with the checkout passed explicitly:
+协议发布完成并提交到独立仓后，在 CartridgeFlow 中显式传入协议仓工作副本，原子更新产品快照、Base 声明和协议锁：
 
 ```powershell
 python scripts/update_protocol_registry.py --protocol-repository C:\path\to\cartridgeflow-protocols
-python scripts/audit_protocol_governance.py
+python scripts/audit_protocol_registry.py
+python scripts/run_conformance.py --quiet
 ```
-
-For local read-only browsing, run `view-protocols.bat` from the repository root.
-The Chinese portal at `http://127.0.0.1:8001/` exposes this product's locked
-snapshot. Follow its GitHub link to inspect or modify the unique protocol source.

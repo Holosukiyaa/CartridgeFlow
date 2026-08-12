@@ -15,7 +15,7 @@ from .data_contracts import (
     build_data_contract_support_report,
     validate_data_contract_instance,
 )
-from .governance_registry import ProtocolKnowledgeRegistry
+from .knowledge_registry import ProtocolKnowledgeRegistry
 
 
 UNIFIED_GENERATION = "unified-v1"

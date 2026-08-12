@@ -41,10 +41,9 @@ export function displaySources(graph: AnyRecord, manifestInputs: AnyRecord[]): D
     Object.entries(object(node.outputs)).forEach(([outputId, raw]) => {
       const output = object(raw)
       const target = object(output.target)
-      const targetType = String(target.type || '')
       const targetId = String(target.key || target.artifact_id || '').trim()
-      if (targetId && (targetType === 'store' || targetType === 'artifact')) {
-        sources.set(`${targetType}:${targetId}`, `${nodeLabel} / ${String(object(output.schema).title || outputId)}`)
+      if (targetId && target.type === 'store') {
+        sources.set(`store:${targetId}`, `${nodeLabel} / ${String(object(output.schema).title || outputId)}`)
       }
     })
   })

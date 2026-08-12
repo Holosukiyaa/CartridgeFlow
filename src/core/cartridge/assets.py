@@ -692,8 +692,8 @@ def _normalize_display_component_fields(fields: list[dict]) -> list[dict]:
             raise CartridgeAssetError(f"display field {field_id}.label must be 1-80 characters")
         if field_type not in DISPLAY_FIELD_TYPES:
             raise CartridgeAssetError(f"display field {field_id}.type is invalid")
-        if not re.fullmatch(r"(?:store|artifact):[A-Za-z0-9._-]+", source):
-            raise CartridgeAssetError(f"display field {field_id}.source must use store: or artifact:")
+        if not re.fullmatch(r"store:[A-Za-z0-9._-]+", source):
+            raise CartridgeAssetError(f"display field {field_id}.source must use store:")
         seen.add(field_id)
         normalized.append({
             "id": field_id,

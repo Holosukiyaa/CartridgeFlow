@@ -187,6 +187,24 @@ class InteractionAssetRuntimeTests(unittest.TestCase):
             after = {path.relative_to(package): path.read_bytes() for path in package.rglob("*") if path.is_file()}
             self.assertEqual(before, after)
 
+    def test_passive_display_authoring_rejects_sources_not_supported_by_dr(self):
+        with tempfile.TemporaryDirectory() as temp:
+            manager = DevFlowManager(temp)
+            created = manager.create_flow("dev.source", "Source")
+            created["root_flow"]["states"]["show"] = {
+                "type": "process", "kind": "interaction", "executor": "deterministic", "effect": "none",
+                "action": "render_interaction", "component_ref": "welcome.panel", "interaction_mode": "display",
+                "input_binding": {}, "inputs": {}, "outputs": {},
+            }
+
+            with self.assertRaisesRegex(CartridgeAssetError, "must use store"):
+                write_passive_display_component(
+                    Path(created["path"]), created["manifest"], created["root_flow"],
+                    component_id="result.panel", label="结果", description="", template_id="summary",
+                    target_node_id="show",
+                    fields=[{"id": "report", "label": "报告", "type": "text", "source": "artifact:report.html"}],
+                )
+
     def test_passive_display_authoring_does_not_overwrite_hand_authored_components(self):
         with tempfile.TemporaryDirectory() as temp:
             manager = DevFlowManager(temp)

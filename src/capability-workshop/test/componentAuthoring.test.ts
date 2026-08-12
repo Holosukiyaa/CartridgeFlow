@@ -3,9 +3,13 @@ import assert from 'node:assert/strict'
 import { componentSlug, displaySources, generatedComponentDraft, mockDisplayValue, nextComponentId } from '../src/componentAuthoring.ts'
 
 test('builds display sources from public inputs and typed node outputs', () => {
-  const sources = displaySources({ nodes: [{ id: 'build', title: '生成结果', outputs: { report: { schema: { title: '报告' }, target: { type: 'artifact', artifact_id: 'report.html' } } } }] }, [{ id: 'topic', label: '主题' }])
+  const sources = displaySources({ nodes: [{ id: 'build', title: '生成结果', outputs: {
+    summary: { schema: { title: '摘要' }, target: { type: 'store', key: 'summary' } },
+    report: { schema: { title: '报告' }, target: { type: 'artifact', artifact_id: 'report.html' } },
+  } }] }, [{ id: 'topic', label: '主题' }])
   assert.ok(sources.some((item) => item.value === 'store:topic' && item.label === '主题'))
-  assert.ok(sources.some((item) => item.value === 'artifact:report.html' && item.label === '生成结果 / 报告'))
+  assert.ok(sources.some((item) => item.value === 'store:summary' && item.label === '生成结果 / 摘要'))
+  assert.ok(!sources.some((item) => item.value.startsWith('artifact:')))
 })
 
 test('restores only generated component metadata into the editor', () => {

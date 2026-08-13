@@ -74,6 +74,9 @@ check(canvas.includes("CreatorCanvasTool = 'inspect' | 'pointer' | 'lasso'") && 
 check(canvas.includes('nextNodeIds.length === currentNodeIds.length'), 'lasso selection ignores an unchanged node set')
 check(workspace.includes('creator-draft-review') && canvas.includes('preview: CreatorRecipePreview | null'), 'AI outline revisions remain visible and reviewable on the canvas')
 check(workspace.includes('if (creator) setGoal(creator.intent)') && workspace.includes('onClick={rejectRecipePreview}'), 'rejecting an outline revision restores the accepted intent')
+check(workspace.includes('creator-commandbar') && workspace.includes('creator-tool-rail'), 'Creator restores the two-tier workbench shell and compact canvas rail')
+check(canvas.includes('<MiniMap') && canvas.includes('BackgroundVariant.Lines'), 'Creator canvas restores the overview map and quiet grid')
+check(workspace.includes('项目与大纲') && workspace.includes('sidebarOpen'), 'project and outline navigation remains available from the compact rail')
 
 const visibleForbidden = ['Developer', '工程语义', '运行测试', '调试', '调优', '版本切换', '执行映射', '配置模型', '配置工具', '权限设置']
 for (const phrase of visibleForbidden) check(!workspace.includes(phrase), `Creator UI omits ${phrase}`)

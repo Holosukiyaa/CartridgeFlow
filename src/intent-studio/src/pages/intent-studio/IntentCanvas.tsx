@@ -6,6 +6,7 @@ import {
   Controls,
   Handle,
   MarkerType,
+  MiniMap,
   Position,
   ReactFlow,
   SelectionMode,
@@ -35,29 +36,28 @@ function CreatorNode({ data, selected }: NodeProps<CanvasNode>) {
     <Handle type="target" position={data.direction === 'vertical' ? Position.Top : Position.Left} />
     <header className="creator-node-header">
       <span className="creator-node-order">{data.order ? String(data.order).padStart(2, '0') : 'AI'}</span>
-      <span className="creator-node-state">
-        {data.state === 'confirmed' ? <Check /> : data.state === 'empty' ? <Sparkles /> : data.state === 'unresolved' ? <Wrench /> : <CircleDashed />}
-        {stateLabel}
-      </span>
+      <span className="creator-node-title"><strong title={data.label}>{data.label}</strong><small>{data.state === 'empty' ? '从想法开始' : '语义步骤'}</small></span>
+      <span className="creator-node-state" title={stateLabel} aria-label={stateLabel}>{data.state === 'confirmed' ? <Check /> : data.state === 'empty' ? <Sparkles /> : data.state === 'unresolved' ? <Wrench /> : <CircleDashed />}</span>
     </header>
     <div className="creator-node-body">
-      <strong title={data.label}>{data.label}</strong>
+      <span>这一步要完成</span>
       <p title={data.description}>{data.description}</p>
     </div>
+    <footer className="creator-node-footer"><span>步骤 {data.order || '—'}</span><strong>{stateLabel}</strong></footer>
     <Handle type="source" position={data.direction === 'vertical' ? Position.Bottom : Position.Right} />
   </div>
 }
 
 const nodeTypes = { creator: CreatorNode }
 const fitOptions = {
-  padding: { top: '10%', right: '7%', bottom: '10%', left: '7%' },
+  padding: 0.12,
   minZoom: 0.55,
   maxZoom: 1,
 } as const
 const compactFitOptions = {
-  padding: '5%',
-  minZoom: 0.78,
-  maxZoom: 1,
+  padding: 0.1,
+  minZoom: 0.48,
+  maxZoom: 0.84,
 } as const
 const emptyFitOptions = {
   padding: 0.35,
@@ -69,17 +69,17 @@ function layout(nodes: CanvasNode[], edges: Edge[], vertical: boolean) {
   if (!vertical && nodes.length > 1 && nodes.length <= 6) {
     return nodes.map((node, index) => ({
       ...node,
-      position: { x: (index % 3) * 286, y: Math.floor(index / 3) * 238 },
+      position: { x: (index % 3) * 326, y: Math.floor(index / 3) * 252 },
     }))
   }
   const graph = new dagre.graphlib.Graph().setDefaultEdgeLabel(() => ({}))
   graph.setGraph({ rankdir: vertical ? 'TB' : 'LR', ranksep: vertical ? 42 : 56, nodesep: 44, marginx: 32, marginy: 36, acyclicer: 'greedy' })
-  nodes.forEach((node) => graph.setNode(node.id, { width: 214, height: 146 }))
+  nodes.forEach((node) => graph.setNode(node.id, { width: 256, height: 178 }))
   edges.forEach((edge) => graph.setEdge(edge.source, edge.target))
   dagre.layout(graph)
   return nodes.map((node) => {
     const point = graph.node(node.id)
-    return { ...node, position: { x: point.x - 107, y: point.y - 73 } }
+    return { ...node, position: { x: point.x - 128, y: point.y - 89 } }
   })
 }
 
@@ -106,8 +106,8 @@ export function IntentCanvas({ creator, preview, draftGoal, selectedId, contextN
       const nodes: CanvasNode[] = [{
         id: 'empty',
         type: 'creator',
-        width: 214,
-        height: 146,
+        width: 256,
+        height: 178,
         position: { x: 0, y: 0 },
         data: {
           order: 0,
@@ -126,8 +126,8 @@ export function IntentCanvas({ creator, preview, draftGoal, selectedId, contextN
     const nodes: CanvasNode[] = recipeNodes.map((node, index) => ({
       id: node.id,
       type: 'creator',
-      width: 214,
-      height: 146,
+      width: 256,
+      height: 178,
       position: { x: 0, y: 0 },
       selected: tool === 'inspect' ? node.id === selectedId : contextNodeIds.includes(node.id),
       data: {
@@ -145,7 +145,7 @@ export function IntentCanvas({ creator, preview, draftGoal, selectedId, contextN
       label: relation.relation === 'produces' ? '产出' : relation.relation === 'uses' ? '提供' : '提供信息',
       type: 'smoothstep',
       animated: true,
-      markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--intent-accent)', width: 18, height: 18 },
+      markerEnd: { type: MarkerType.ArrowClosed, color: '#87949a', width: 18, height: 18 },
       className: 'creator-edge',
     }))
     return { nodes: layout(nodes, edges, vertical), edges }
@@ -162,6 +162,20 @@ export function IntentCanvas({ creator, preview, draftGoal, selectedId, contextN
     })
     return () => cancelAnimationFrame(frame)
   }, [activeFitOptions, flow, layoutSignature])
+
+  useEffect(() => {
+    if (!flow) return
+    let frame = 0
+    const refit = () => {
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => void flow.fitView({ ...activeFitOptions, duration: 180 }))
+    }
+    window.addEventListener('resize', refit)
+    return () => {
+      window.removeEventListener('resize', refit)
+      cancelAnimationFrame(frame)
+    }
+  }, [activeFitOptions, flow])
 
   return <ReactFlow
     nodes={elements.nodes}
@@ -200,7 +214,16 @@ export function IntentCanvas({ creator, preview, draftGoal, selectedId, contextN
     maxZoom={1.35}
     proOptions={{ hideAttribution: true }}
   >
-    <Background variant={BackgroundVariant.Dots} color="var(--intent-line-strong)" gap={22} size={1} />
-    <Controls showInteractive={false} position="top-left" />
+    <Background variant={BackgroundVariant.Lines} color="var(--intent-line)" gap={46} size={1} />
+    <Controls showInteractive={false} position="bottom-left" />
+    <MiniMap
+      pannable
+      zoomable
+      position="bottom-left"
+      nodeBorderRadius={2}
+      nodeColor={(node) => node.selected ? 'var(--intent-accent)' : '#aeb5b0'}
+      nodeStrokeColor="#8d9591"
+      maskColor="rgba(240, 243, 244, .64)"
+    />
   </ReactFlow>
 }

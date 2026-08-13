@@ -17,6 +17,7 @@ import {
   RefreshCw,
   Scan,
   Send,
+  Share2,
   Search,
   Settings,
   ShieldCheck,
@@ -536,6 +537,7 @@ export function IntentStudio({ projectId }: { projectId: string }) {
   const [busy, setBusy] = useState(false)
   const [composerError, setComposerError] = useState('')
   const [modelSetupOpen, setModelSetupOpen] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
   const [projectMenuOpen, setProjectMenuOpen] = useState(false)
   const [projects, setProjects] = useState<Array<{ project_id: string; session_id: string; name: string; intent: string; revision: number }>>([])
   const [pendingAiAction, setPendingAiAction] = useState<'discover' | 'compose' | 'node' | null>(null)
@@ -795,27 +797,53 @@ export function IntentStudio({ projectId }: { projectId: string }) {
     else createProject()
   }
 
-  return <main className="creator-workspace" style={themeVariables(theme)}>
-    <header className="creator-topbar is-co-create">
+  return <main className="creator-workspace creator-workbench" style={themeVariables(theme)}>
+    <header className="creator-topbar is-co-create creator-workbench-header">
       <div className="creator-brand">
-        <span className="creator-brand-mark" aria-hidden="true"><Workflow /></span>
-        <strong>CartridgeFlow</strong>
-        <span>创作空间</span>
+        <span className="creator-brand-mark" aria-hidden="true"><Share2 /></span>
+        <div className="creator-brand-copy">
+          <div className="creator-workspace-heading"><strong>CARTRIDGE WORKSPACE</strong><span>/ 卡带工作台</span></div>
+          <div className="creator-brand-tags" aria-label="工作台状态"><span>语义大纲</span><span>持续共创</span><span>简体中文</span></div>
+        </div>
       </div>
-      <div className="creator-workspace-heading"><strong>大纲共创</strong><span>{canvasStatus}</span></div>
       <div className="creator-top-actions">
-        <button className="creator-theme-button" type="button" onClick={() => setThemePanelOpen(true)}><Palette />主题</button>
+        <span className="creator-design-mode"><Workflow />设计</span>
         {creator && <>
           <span className="creator-saved"><CheckCircle2 />已自动保存</span>
           <button className="icon-button" type="button" title="当前没有可撤销的操作" disabled><Undo2 /></button>
           <button className="icon-button" type="button" title="当前没有可重做的操作" disabled><Redo2 /></button>
-          {packageResult ? <a className="creator-package-download" href={packageResult.url} download><Download />下载卡带</a> : <button className="creator-package-button" type="button" disabled={busy || !creator?.generation_readiness.ready} onClick={() => void buildPackage()} title={creator?.generation_readiness.ready ? '生成可安装卡带' : '完成所有步骤后可交付'}><PackageCheck />生成卡带</button>}
         </>}
+        <button className="creator-theme-button" type="button" onClick={() => setThemePanelOpen(true)}><Palette />主题</button>
+        {creator && (packageResult ? <a className="creator-package-download" href={packageResult.url} download><Download />下载卡带</a> : <button className="creator-package-button" type="button" disabled={busy || !creator?.generation_readiness.ready} onClick={() => void buildPackage()} title={creator?.generation_readiness.ready ? '生成可安装卡带' : '完成所有步骤后可交付'}><PackageCheck />生成卡带</button>)}
       </div>
     </header>
 
+    <div className="creator-commandbar">
+      <div className="creator-commandbar-left">
+        <span className="creator-mode-indicator"><i />选择模式</span>
+        <span className="creator-view-indicator"><Workflow />大纲视图</span>
+        <span className="creator-canvas-status"><i className={recipePreview ? 'is-preview' : ''} />{canvasStatus}</span>
+        <span className="creator-outline-metrics">{totalCount} 步骤 · {confirmedCount} 已确认 · {reviewCount} 待审核 · {unresolvedCount} 待补齐</span>
+      </div>
+      <div className="creator-commandbar-actions" role="tablist" aria-label="右侧面板">
+        <button type="button" role="tab" aria-selected={Boolean(selectedNode)} disabled={!selectedNode} className={selectedNode ? 'is-active' : ''} onClick={() => setCanvasTool('inspect')}><FileText />详情</button>
+        <button type="button" role="tab" aria-selected={!selectedNode} className={!selectedNode ? 'is-active' : ''} onClick={() => setSelectedId('')}><Bot />AI 管家</button>
+      </div>
+    </div>
+
     <div className="creator-shell is-co-create">
-      <aside className="creator-sidebar">
+      <nav className="creator-tool-rail" aria-label="画布工具">
+        <button className={canvasTool === 'inspect' ? 'is-active' : ''} type="button" title="打开步骤详情" onClick={() => { setCanvasTool('inspect'); setContextNodeIds([]) }}><Search /><span>查看</span></button>
+        <button className={canvasTool === 'pointer' ? 'is-active' : ''} type="button" title="指向一个步骤继续讨论" onClick={() => { setCanvasTool('pointer'); setSelectedId(''); setContextNodeIds([]) }}><MousePointer2 /><span>指向</span></button>
+        <button className={canvasTool === 'lasso' ? 'is-active' : ''} type="button" title="框选一组步骤继续讨论" onClick={() => { setCanvasTool('lasso'); setSelectedId(''); setContextNodeIds([]) }}><Scan /><span>框选</span></button>
+        <span className="creator-tool-divider" />
+        <button className={sidebarOpen ? 'is-active' : ''} type="button" title="打开项目和大纲" aria-expanded={sidebarOpen} onClick={() => setSidebarOpen((value) => !value)}><FileText /><span>项目</span></button>
+        <button type="button" title="调整全局主题" onClick={() => setThemePanelOpen(true)}><Palette /><span>主题</span></button>
+        <button type="button" title={creator?.generation_readiness.ready ? '生成可安装卡带' : '完成所有步骤后可交付'} disabled={!creator || busy || !creator.generation_readiness.ready} onClick={() => void buildPackage()}><PackageCheck /><span>打包</span></button>
+      </nav>
+
+      <aside className={`creator-sidebar ${sidebarOpen ? 'is-open' : ''}`} aria-label="项目与大纲">
+        <header className="creator-sidebar-drawer-head"><div><FileText /><span><strong>项目与大纲</strong><small>在画布旁快速定位</small></span></div><button className="icon-button" type="button" title="收起项目面板" onClick={() => setSidebarOpen(false)}><X /></button></header>
         <section className="creator-sidebar-section creator-project-section">
           <header><strong>项目</strong><button className="sidebar-icon-button" type="button" onClick={createProject}><Plus />新建项目</button></header>
           <button className="creator-current-project" type="button" onClick={() => setProjectMenuOpen((value) => !value)}><FileText /><span>{creator?.project_name || creator?.intent || '新项目'}</span><ChevronDown /></button>
@@ -855,12 +883,6 @@ export function IntentStudio({ projectId }: { projectId: string }) {
       <section className="creator-stage is-co-create" aria-label="持续共创大纲">
         {packageError && <div className="creator-package-error" role="alert"><strong>打包未完成</strong><span>{packageError}</span></div>}
         <div className={`creator-canvas tool-${canvasTool}`}>
-          <div className="creator-canvas-tools" role="toolbar" aria-label="大纲选择工具">
-            <button className={canvasTool === 'inspect' ? 'is-active' : ''} type="button" title="打开步骤详情" aria-label="查看步骤" onClick={() => { setCanvasTool('inspect'); setContextNodeIds([]) }}><Search /></button>
-            <button className={canvasTool === 'pointer' ? 'is-active' : ''} type="button" title="指向一个步骤继续讨论" aria-label="指针工具" onClick={() => { setCanvasTool('pointer'); setSelectedId(''); setContextNodeIds([]) }}><MousePointer2 /></button>
-            <button className={canvasTool === 'lasso' ? 'is-active' : ''} type="button" title="框选一组步骤继续讨论" aria-label="框选工具" onClick={() => { setCanvasTool('lasso'); setSelectedId(''); setContextNodeIds([]) }}><Scan /></button>
-          </div>
-          <div className="creator-canvas-state"><i className={recipePreview ? 'is-preview' : ''} /><span>{canvasStatus}</span></div>
           <IntentCanvas creator={creator} preview={recipePreview} draftGoal={goal} selectedId={selectedId} contextNodeIds={contextNodeIds} tool={canvasTool} onSelect={setSelectedId} onContextChange={setContextNodeIds} />
           {recipePreview && <section className="creator-draft-review" aria-label="新大纲确认">
             <div><strong>新大纲已铺在画布上</strong><span>新增 {recipePreview.impact.added_node_ids.length} · 保留 {recipePreview.impact.retained_node_ids.length} · 移除 {recipePreview.impact.removed_node_ids.length}</span></div>

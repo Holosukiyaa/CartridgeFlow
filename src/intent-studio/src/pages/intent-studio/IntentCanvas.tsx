@@ -50,7 +50,7 @@ function CreatorNode({ data, selected }: NodeProps<CanvasNode>) {
 
 const nodeTypes = { creator: CreatorNode }
 const fitOptions = {
-  padding: 0.12,
+  padding: { x: 0.04, top: '0px', bottom: '39%' },
   minZoom: 0.55,
   maxZoom: 1,
 } as const
@@ -58,6 +58,11 @@ const compactFitOptions = {
   padding: 0.1,
   minZoom: 0.48,
   maxZoom: 0.84,
+} as const
+const multiRowFitOptions = {
+  padding: 0.06,
+  minZoom: 0.55,
+  maxZoom: 1,
 } as const
 const emptyFitOptions = {
   padding: 0.35,
@@ -69,17 +74,17 @@ function layout(nodes: CanvasNode[], edges: Edge[], vertical: boolean) {
   if (!vertical && nodes.length > 1 && nodes.length <= 6) {
     return nodes.map((node, index) => ({
       ...node,
-      position: { x: (index % 3) * 326, y: Math.floor(index / 3) * 252 },
+      position: { x: (index % 3) * 392, y: Math.floor(index / 3) * 328 },
     }))
   }
   const graph = new dagre.graphlib.Graph().setDefaultEdgeLabel(() => ({}))
   graph.setGraph({ rankdir: vertical ? 'TB' : 'LR', ranksep: vertical ? 42 : 56, nodesep: 44, marginx: 32, marginy: 36, acyclicer: 'greedy' })
-  nodes.forEach((node) => graph.setNode(node.id, { width: 256, height: 178 }))
+  nodes.forEach((node) => graph.setNode(node.id, { width: 304, height: 254 }))
   edges.forEach((edge) => graph.setEdge(edge.source, edge.target))
   dagre.layout(graph)
   return nodes.map((node) => {
     const point = graph.node(node.id)
-    return { ...node, position: { x: point.x - 128, y: point.y - 89 } }
+    return { ...node, position: { x: point.x - 152, y: point.y - 127 } }
   })
 }
 
@@ -106,8 +111,8 @@ export function IntentCanvas({ creator, preview, draftGoal, selectedId, contextN
       const nodes: CanvasNode[] = [{
         id: 'empty',
         type: 'creator',
-        width: 256,
-        height: 178,
+        width: 304,
+        height: 254,
         position: { x: 0, y: 0 },
         data: {
           order: 0,
@@ -126,8 +131,8 @@ export function IntentCanvas({ creator, preview, draftGoal, selectedId, contextN
     const nodes: CanvasNode[] = recipeNodes.map((node, index) => ({
       id: node.id,
       type: 'creator',
-      width: 256,
-      height: 178,
+      width: 304,
+      height: 254,
       position: { x: 0, y: 0 },
       selected: tool === 'inspect' ? node.id === selectedId : contextNodeIds.includes(node.id),
       data: {
@@ -152,7 +157,7 @@ export function IntentCanvas({ creator, preview, draftGoal, selectedId, contextN
   }, [contextNodeIds, creator, draftGoal, preview, selectedId, tool, vertical])
 
   const layoutSignature = `${elements.nodes.map((node) => node.id).join(':')}|${elements.edges.map((edge) => `${edge.source}>${edge.target}`).join(':')}`
-  const activeFitOptions = !creator ? emptyFitOptions : vertical ? compactFitOptions : fitOptions
+  const activeFitOptions = !creator ? emptyFitOptions : vertical ? compactFitOptions : elements.nodes.length > 3 ? multiRowFitOptions : fitOptions
   useEffect(() => {
     if (!flow) return
     let frame = requestAnimationFrame(() => {
@@ -214,7 +219,7 @@ export function IntentCanvas({ creator, preview, draftGoal, selectedId, contextN
     maxZoom={1.35}
     proOptions={{ hideAttribution: true }}
   >
-    <Background variant={BackgroundVariant.Lines} color="var(--intent-line)" gap={46} size={1} />
+    <Background variant={BackgroundVariant.Dots} color="var(--intent-line-strong)" gap={14} size={0.7} />
     <Controls showInteractive={false} position="bottom-left" />
     <MiniMap
       pannable

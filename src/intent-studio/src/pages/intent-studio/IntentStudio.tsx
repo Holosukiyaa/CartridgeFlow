@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   ChevronDown,
   Download,
+  Eye,
   FileText,
   Globe2,
   Loader2,
@@ -76,6 +77,7 @@ type CreatorTheme = {
 
 const CREATOR_THEME_KEY = 'cartridgeflow.creator-theme'
 const CREATOR_THEME_PRESETS: CreatorTheme[] = [
+  { id: 'clear-sky', label: '清透蓝', accent: '#176bff', focus: '#2563eb', page: '#f8fbff' },
   { id: 'morning-mist', label: '晨雾青', accent: '#087f82', focus: '#0f9da0', page: '#f7faf9' },
   { id: 'paper-ink', label: '纸张墨', accent: '#3c5360', focus: '#4f7180', page: '#faf9f6' },
   { id: 'quiet-forest', label: '静谧林', accent: '#3f725d', focus: '#5d9b7d', page: '#f5f8f5' },
@@ -803,7 +805,7 @@ export function IntentStudio({ projectId }: { projectId: string }) {
         <span className="creator-brand-mark" aria-hidden="true"><Share2 /></span>
         <div className="creator-brand-copy">
           <div className="creator-workspace-heading"><strong>CARTRIDGE WORKSPACE</strong><span>/ 卡带工作台</span></div>
-          <div className="creator-brand-tags" aria-label="工作台状态"><span>语义大纲</span><span>持续共创</span><span>简体中文</span></div>
+          <div className="creator-brand-tags" aria-label="工作台状态"><span>语义步骤</span><span>待办驱动</span><span>整体中文</span></div>
         </div>
       </div>
       <div className="creator-top-actions">
@@ -833,7 +835,7 @@ export function IntentStudio({ projectId }: { projectId: string }) {
 
     <div className="creator-shell is-co-create">
       <nav className="creator-tool-rail" aria-label="画布工具">
-        <button className={canvasTool === 'inspect' ? 'is-active' : ''} type="button" title="打开步骤详情" onClick={() => { setCanvasTool('inspect'); setContextNodeIds([]) }}><Search /><span>查看</span></button>
+        <button className={canvasTool === 'inspect' ? 'is-active' : ''} type="button" title="打开步骤详情" onClick={() => { setCanvasTool('inspect'); setContextNodeIds([]) }}><Eye /><span>查看</span></button>
         <button className={canvasTool === 'pointer' ? 'is-active' : ''} type="button" title="指向一个步骤继续讨论" onClick={() => { setCanvasTool('pointer'); setSelectedId(''); setContextNodeIds([]) }}><MousePointer2 /><span>指向</span></button>
         <button className={canvasTool === 'lasso' ? 'is-active' : ''} type="button" title="框选一组步骤继续讨论" onClick={() => { setCanvasTool('lasso'); setSelectedId(''); setContextNodeIds([]) }}><Scan /><span>框选</span></button>
         <span className="creator-tool-divider" />

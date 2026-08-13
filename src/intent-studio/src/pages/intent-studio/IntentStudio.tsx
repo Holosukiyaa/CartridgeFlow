@@ -1,31 +1,27 @@
 import { type CSSProperties, type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Bot,
-  BarChart3,
-  Braces,
   Check,
   CheckCircle2,
   ChevronDown,
   Download,
   FileText,
-  FolderOpen,
   Globe2,
-  Lightbulb,
   Loader2,
+  MousePointer2,
   PackageCheck,
   Paperclip,
   Palette,
-  PenLine,
   Plus,
   Redo2,
   RefreshCw,
+  Scan,
   Send,
   Search,
   Settings,
   ShieldCheck,
   Sparkles,
   Target,
-  Users,
   Undo2,
   Workflow,
   Wrench,
@@ -58,7 +54,6 @@ import {
   setCreatorExperience,
   type CreatorPackage,
   type CreatorClarification,
-  type CreatorPossibility,
   type CreatorProjection,
   type CreatorProposal,
   type CreatorRecipePreview,
@@ -66,7 +61,7 @@ import {
   type CreatorSourceCandidate,
 } from '../../api.ts'
 import { showToast } from '../../toast.tsx'
-import { IntentCanvas } from './IntentCanvas.tsx'
+import { IntentCanvas, type CreatorCanvasTool } from './IntentCanvas.tsx'
 
 const creatorId = () => `creator.${crypto.randomUUID()}`
 
@@ -85,13 +80,18 @@ const CREATOR_THEME_PRESETS: CreatorTheme[] = [
   { id: 'quiet-forest', label: '静谧林', accent: '#3f725d', focus: '#5d9b7d', page: '#f5f8f5' },
 ]
 
-const CREATOR_RECENT_EXAMPLES = [
-  { title: '整理本周 AI 行业动态', description: '生成中文简报', icon: FileText },
-  { title: '分析竞品对手动态', description: '生成对比分析报告', icon: BarChart3 },
-  { title: '撰写产品发布文案', description: '面向开发者的介绍', icon: PenLine },
-  { title: '整理用户反馈要点', description: '生成洞察与建议', icon: Users },
-  { title: '研究某个技术主题', description: '生成学习笔记', icon: FolderOpen },
-]
+type StewardMessage = {
+  id: string
+  role: 'assistant' | 'user'
+  text: string
+  clarification?: CreatorClarification | null
+}
+
+const STEWARD_WELCOME: StewardMessage = {
+  id: 'welcome',
+  role: 'assistant',
+  text: '先说你现在想到的结果。我会立刻摆出一版大纲；之后每次讨论都在这张图上继续，不把任何轮次当成最终答案。',
+}
 
 function readCreatorTheme(): CreatorTheme {
   try {
@@ -523,8 +523,11 @@ export function IntentStudio({ projectId }: { projectId: string }) {
   const [creator, setCreator] = useState<CreatorProjection | null>(null)
   const [goal, setGoal] = useState('')
   const [selectedId, setSelectedId] = useState('')
-  const [possibilities, setPossibilities] = useState<CreatorPossibility[]>([])
   const [clarification, setClarification] = useState<CreatorClarification | null>(null)
+  const [stewardInput, setStewardInput] = useState('')
+  const [stewardMessages, setStewardMessages] = useState<StewardMessage[]>([STEWARD_WELCOME])
+  const [canvasTool, setCanvasTool] = useState<CreatorCanvasTool>('inspect')
+  const [contextNodeIds, setContextNodeIds] = useState<string[]>([])
   const [aiStatus, setAiStatus] = useState<{ provider: string; has_key: boolean; base_url: string; model: string } | null>(null)
   const [packageResult, setPackageResult] = useState<CreatorPackage | null>(null)
   const [recipePreview, setRecipePreview] = useState<CreatorRecipePreview | null>(null)
@@ -536,8 +539,7 @@ export function IntentStudio({ projectId }: { projectId: string }) {
   const [projectMenuOpen, setProjectMenuOpen] = useState(false)
   const [projects, setProjects] = useState<Array<{ project_id: string; session_id: string; name: string; intent: string; revision: number }>>([])
   const [pendingAiAction, setPendingAiAction] = useState<'discover' | 'compose' | 'node' | null>(null)
-  const [workspaceMode, setWorkspaceMode] = useState<'discover' | 'compose'>('discover')
-  const composerRef = useRef<HTMLTextAreaElement | null>(null)
+  const stewardThreadRef = useRef<HTMLDivElement | null>(null)
   const aiConnectedRef = useRef<boolean | null>(null)
   const resolutionCheckRef = useRef('')
 
@@ -552,8 +554,7 @@ export function IntentStudio({ projectId }: { projectId: string }) {
         if (!active || !value) return
         setCreator(value)
         setGoal(value.intent)
-        setSelectedId(value.trusted_recipe.nodes.find((node) => node.resolution?.status === 'unresolved')?.id || value.trusted_recipe.nodes[0]?.id || '')
-        setWorkspaceMode(value.trusted_recipe.nodes.length ? 'compose' : 'discover')
+        setSelectedId('')
       })
       .catch(() => showToast({ title: '草稿读取失败', description: '请刷新页面后重试。', type: 'error' }))
       .finally(() => { if (active) setLoading(false) })
@@ -574,6 +575,10 @@ export function IntentStudio({ projectId }: { projectId: string }) {
   }, [])
 
   useEffect(() => {
+    stewardThreadRef.current?.scrollTo({ top: stewardThreadRef.current.scrollHeight, behavior: 'smooth' })
+  }, [busy, stewardMessages])
+
+  useEffect(() => {
     if (!creator || !creator.capability_resolution?.unresolved) return
     const key = `${creator.session_id}:${creator.capability_resolution.revision}`
     if (resolutionCheckRef.current === key) return
@@ -592,6 +597,8 @@ export function IntentStudio({ projectId }: { projectId: string }) {
   const totalCount = creator?.trusted_recipe.nodes.length || 0
   const unresolvedCount = creator?.trusted_recipe.nodes.filter((node) => node.resolution?.status === 'unresolved').length || 0
   const reviewCount = Math.max(0, totalCount - confirmedCount - unresolvedCount)
+  const contextNodes = useMemo(() => (recipePreview?.nodes || creator?.trusted_recipe.nodes || []).filter((node) => contextNodeIds.includes(node.id)), [contextNodeIds, creator, recipePreview])
+  const canvasStatus = recipePreview ? 'AI 刚提出一版新大纲，正在等你确认' : creator ? '大纲会随着讨论持续变化' : goal.trim() ? '准备把当前想法摆成大纲' : '先说一句现在的想法'
 
   const saveCreator = (next: CreatorProjection) => {
     setCreator(next)
@@ -616,17 +623,30 @@ export function IntentStudio({ projectId }: { projectId: string }) {
     }
     setBusy(true)
     setComposerError('')
-    setPossibilities([])
     setClarification(null)
+    setStewardMessages((current) => [...current, { id: `user.${Date.now()}`, role: 'user', text: context }])
     try {
-      const result = await discoverCreatorPossibilities(context)
-      setPossibilities(result.possibilities)
-      setClarification(result.clarification)
+      const discoveryPromise = discoverCreatorPossibilities(context).catch(() => null)
+      const result = await composeCreatorRecipe({ session_id: creatorId(), project_id: projectId, goal: context })
+      if (!result.creator) throw new Error('missing creator')
+      saveCreator(result.creator)
+      setGoal(result.creator.intent)
+      const discovery = await discoveryPromise
+      const nextClarification = discovery?.clarification || null
+      setClarification(nextClarification)
+      setStewardMessages((current) => [...current, {
+        id: `assistant.${Date.now()}`,
+        role: 'assistant',
+        text: nextClarification
+          ? `我先按目前的理解摆了一版大纲。${nextClarification.question}`
+          : '第一版大纲已经摆出来了。它只是当前理解，你可以继续描述，也可以用指针或框选告诉我具体在说哪一部分。',
+        clarification: nextClarification,
+      }])
     } catch (error) {
       if (isModelBlock(error, 'discover')) return
       const description = friendlyError(error, 'discover')
       setComposerError(description)
-      showToast({ title: '暂时无法打开新方向', description, type: 'error' })
+      showToast({ title: '暂时无法摆出大纲', description, type: 'error' })
     } finally { setBusy(false) }
   }
   const compose = async (requestedGoal: string) => {
@@ -638,12 +658,24 @@ export function IntentStudio({ projectId }: { projectId: string }) {
     }
     setBusy(true)
     setComposerError('')
-    setPossibilities([])
     setClarification(null)
     try {
       if (creator) {
+        const discoveryPromise = discoverCreatorPossibilities(nextGoal).catch(() => null)
         const preview = await previewCreatorRecompose(creator.session_id, { goal: nextGoal, expected_revision: creator.revision })
         setRecipePreview(preview)
+        setGoal(nextGoal)
+        const discovery = await discoveryPromise
+        const nextClarification = discovery?.clarification || null
+        setClarification(nextClarification)
+        setStewardMessages((current) => [...current, {
+          id: `assistant.${Date.now()}`,
+          role: 'assistant',
+          text: nextClarification
+            ? `我已经把这次补充反映到新大纲里。${nextClarification.question}`
+            : '我已经把这次理解铺到画布上。先看变化是否接近你的意思，再决定应用或继续讨论。',
+          clarification: nextClarification,
+        }])
         return
       }
       const result = await composeCreatorRecipe({ session_id: creatorId(), project_id: projectId, goal: nextGoal })
@@ -651,7 +683,7 @@ export function IntentStudio({ projectId }: { projectId: string }) {
       saveCreator(result.creator)
       setGoal(result.creator.intent)
       setSelectedId('')
-      showToast({ title: creator ? '整体草稿已更新' : '整体草稿已生成', description: '请逐个打开节点进行审核。', type: 'success' })
+      showToast({ title: '整体草稿已生成', description: '你可以继续对话或直接指向大纲内容。', type: 'success' })
     } catch (error) {
       if (isModelBlock(error, 'compose')) return
       const description = friendlyError(error, 'compose')
@@ -667,15 +699,37 @@ export function IntentStudio({ projectId }: { projectId: string }) {
       saveCreator(result.creator)
       setGoal(result.creator.intent)
       setSelectedId('')
+      setContextNodeIds([])
       setRecipePreview(null)
+      setStewardMessages((current) => [...current, { id: `assistant.${Date.now()}`, role: 'assistant', text: '这版已经应用，但仍然不是终稿。继续指出不对的地方，我会沿着你的意思再调整。' }])
       showToast({ title: '整体草稿已更新', description: '请逐个打开节点继续审核。', type: 'success' })
     } catch (error) {
       showToast({ title: '预览已失效', description: friendlyError(error, 'compose'), type: 'error' })
     } finally { setBusy(false) }
   }
-  const submit = (event: FormEvent) => {
-    event.preventDefault()
-    void compose(goal)
+  const rejectRecipePreview = () => {
+    setRecipePreview(null)
+    setContextNodeIds([])
+    if (creator) setGoal(creator.intent)
+    setStewardMessages((current) => [...current, {
+      id: `assistant.${Date.now()}`,
+      role: 'assistant',
+      text: '这版先不采用，画布已经回到原来的大纲。继续说你想保留什么、换掉什么。',
+    }])
+  }
+  const continueCoCreation = (message: string) => {
+    const feedback = message.trim()
+    if (!feedback || busy) return
+    const scope = contextNodes.length
+      ? `本轮只讨论这些步骤：${contextNodes.map((node) => `“${node.label}”`).join('、')}。\n`
+      : ''
+    const nextGoal = `${goal.trim()}\n${scope}本轮补充：${feedback}`.trim()
+    setStewardInput('')
+    setGoal(creator ? nextGoal : feedback)
+    if (creator) {
+      setStewardMessages((current) => [...current, { id: `user.${Date.now()}`, role: 'user', text: feedback }])
+      void compose(nextGoal)
+    } else void discover(feedback)
   }
   const buildPackage = async () => {
     if (!creator) return
@@ -742,20 +796,16 @@ export function IntentStudio({ projectId }: { projectId: string }) {
   }
 
   return <main className="creator-workspace" style={themeVariables(theme)}>
-    <header className={`creator-topbar is-${workspaceMode}`}>
+    <header className="creator-topbar is-co-create">
       <div className="creator-brand">
         <span className="creator-brand-mark" aria-hidden="true"><Workflow /></span>
         <strong>CartridgeFlow</strong>
         <span>创作空间</span>
       </div>
-      <nav className="creator-mode-switch" aria-label="创作进度">
-        <button className={workspaceMode === 'discover' ? 'is-active' : ''} type="button" onClick={() => setWorkspaceMode('discover')}><span>1</span><Lightbulb />想法</button>
-        <button className={workspaceMode === 'compose' ? 'is-active' : ''} type="button" onClick={() => setWorkspaceMode('compose')}><span>2</span><Workflow />方案</button>
-        <button className={packageResult ? 'is-complete' : ''} type="button" disabled={!creator?.generation_readiness.ready} onClick={() => void buildPackage()}><span>3</span><PackageCheck />交付</button>
-      </nav>
+      <div className="creator-workspace-heading"><strong>大纲共创</strong><span>{canvasStatus}</span></div>
       <div className="creator-top-actions">
         <button className="creator-theme-button" type="button" onClick={() => setThemePanelOpen(true)}><Palette />主题</button>
-        {workspaceMode === 'compose' && <>
+        {creator && <>
           <span className="creator-saved"><CheckCircle2 />已自动保存</span>
           <button className="icon-button" type="button" title="当前没有可撤销的操作" disabled><Undo2 /></button>
           <button className="icon-button" type="button" title="当前没有可重做的操作" disabled><Redo2 /></button>
@@ -764,7 +814,7 @@ export function IntentStudio({ projectId }: { projectId: string }) {
       </div>
     </header>
 
-    <div className={`creator-shell is-${workspaceMode}`}>
+    <div className="creator-shell is-co-create">
       <aside className="creator-sidebar">
         <section className="creator-sidebar-section creator-project-section">
           <header><strong>项目</strong><button className="sidebar-icon-button" type="button" onClick={createProject}><Plus />新建项目</button></header>
@@ -774,12 +824,15 @@ export function IntentStudio({ projectId }: { projectId: string }) {
         </section>
 
         <section className="creator-sidebar-section creator-outline">
-          <header><strong>方案步骤</strong><span>{confirmedCount}/{totalCount || 0}</span></header>
+          <header><strong>当前大纲</strong><span>{confirmedCount}/{totalCount || 0}</span></header>
           <div className="creator-outline-list">
             {creator?.trusted_recipe.nodes.map((node, index) => {
               const unresolved = node.resolution?.status === 'unresolved'
               const confirmed = !unresolved && creator.frozen_steps.includes(node.id)
-              return <button className={node.id === selectedId ? 'is-selected' : ''} type="button" key={node.id} onClick={() => { setWorkspaceMode('compose'); setSelectedId(node.id) }}>
+              return <button className={node.id === selectedId || contextNodeIds.includes(node.id) ? 'is-selected' : ''} type="button" key={node.id} onClick={() => {
+                if (canvasTool === 'inspect') setSelectedId(node.id)
+                else setContextNodeIds([node.id])
+              }}>
                 <span className="outline-index">{String(index + 1).padStart(2, '0')}</span>
                 <span className="outline-label">{node.label}</span>
                 <span className={`outline-state ${unresolved ? 'is-unresolved' : confirmed ? 'is-confirmed' : 'is-review'}`}>{unresolved ? <><Wrench />待补齐</> : confirmed ? <><Check />已确认</> : <><span className="state-ring" />待审核</>}</span>
@@ -799,36 +852,50 @@ export function IntentStudio({ projectId }: { projectId: string }) {
         </section>
       </aside>
 
-      <section className={`creator-stage is-${workspaceMode}`} aria-label={workspaceMode === 'compose' ? '项目链路图' : '方向探索'}>
+      <section className="creator-stage is-co-create" aria-label="持续共创大纲">
         {packageError && <div className="creator-package-error" role="alert"><strong>打包未完成</strong><span>{packageError}</span></div>}
-        {workspaceMode === 'compose' ? <>
-          <div className="creator-canvas"><IntentCanvas creator={creator} selectedId={selectedId} onSelect={setSelectedId} /></div>
-          <form className="creator-composer" onSubmit={submit}>
-            <div className="creator-composer-heading"><div><Bot /><strong>调整整个方案</strong></div><button className="creator-variable-button" type="button" title="插入项目变量"><Braces />变量</button></div>
-            {composerError && <div className="creator-composer-error" role="alert"><strong>这次没有完成编排</strong><span>{composerError} 你的想法已经保留，可以直接重试。</span></div>}
-            <label className="creator-goal-input"><textarea ref={composerRef} value={goal} disabled={busy} onChange={(event) => { setGoal(event.currentTarget.value); setComposerError('') }} placeholder="告诉 AI 你想增加、删除或调整什么" aria-label="整体调整要求" /></label>
-            <div className="creator-composer-actions"><div><button className="icon-button" type="button" title="添加参考资料"><Paperclip /></button><button className="icon-button" type="button" title="让 AI 优化指令"><Sparkles /></button></div><button type="submit" disabled={busy || goal.trim().length < 3}>{busy ? <Loader2 className="spinning" /> : <Sparkles />}{creator ? '重新生成' : '生成方案'}</button></div>
-          </form>
-        </> : <section className="creator-discovery">
-          <div className="creator-discovery-intro"><span><Lightbulb /></span><div><small>从一个想法开始</small><h1>你想让这张卡带帮你做什么？</h1><p>先说结果，不用考虑模型、工具或流程。AI 会先判断信息是否足够，必要时只追问一个关键问题。</p><div className="creator-ai-context"><span><Bot />{aiStatus?.has_key ? aiStatus.provider : '尚未连接 AI'}</span><span><Globe2 />简体中文输出</span></div></div></div>
-          <form onSubmit={(event) => { event.preventDefault(); void discover() }}><textarea autoFocus value={goal} onChange={(event) => { setGoal(event.currentTarget.value); setComposerError(''); setClarification(null); setPossibilities([]) }} placeholder="例如：每天早上整理可信的 AI 行业动态，生成一份中文简报" /><button type="submit" disabled={busy || goal.trim().length < 3}>{busy ? <Loader2 className="spinning" /> : <Sparkles />}拆解想法</button></form>
-          {composerError && <div className="creator-discovery-error" role="alert"><strong>这次没有生成方向建议</strong><span>{composerError} 你的输入已经保留，可以直接重试。</span></div>}
-          {clarification && <section className="creator-clarification" aria-label="AI 需要确认"><header><span><Bot /></span><div><small>先确认一件事</small><h2>{clarification.question}</h2><p>{clarification.why_it_matters}</p></div></header><div>{clarification.suggested_answers.map((answer) => <button type="button" key={answer} disabled={busy} onClick={() => { const nextContext = `${goal.trim()}\n补充：${answer}`; setGoal(nextContext); setClarification(null); void discover(nextContext) }}>{answer}</button>)}</div><small>也可以直接修改上面的描述，再次拆解。</small></section>}
-          {!clarification && <div className="creator-possibilities" aria-label="AI 方向建议">{possibilities.length ? possibilities.map((item) => {
-            const subject = item.title.replace(/^(把|生成|形成)/, '')
-            const recommended = subject.length >= 4 && goal.includes(subject)
-            return <article className={recommended ? 'is-recommended' : ''} key={item.id}><span><Target /></span>{recommended && <em><CheckCircle2 />推荐</em>}<h3>{item.title}</h3><p>{item.outcome}</p><small>{item.why_it_fits}</small><button type="button" onClick={() => { setGoal(item.recipe.intent); setWorkspaceMode('compose'); void compose(item.recipe.intent) }}><Send />用这个方向生成方案</button></article>
-          }) : <div className={`creator-discovery-empty ${goal.trim() ? 'has-goal' : ''}`}><Sparkles /><strong>AI 会先理解你的目标</strong><span>信息不足时先追问，足够时再给出可比较的方向。</span><div className="creator-recent-examples"><strong>最近的示例</strong><div>{CREATOR_RECENT_EXAMPLES.map(({ title, description, icon: Icon }) => <button type="button" key={title} onClick={() => setGoal(title)}><Icon /><span><strong>{title}</strong><small>{description}</small></span><Send /></button>)}</div></div></div>}</div>}
-        </section>}
+        <div className={`creator-canvas tool-${canvasTool}`}>
+          <div className="creator-canvas-tools" role="toolbar" aria-label="大纲选择工具">
+            <button className={canvasTool === 'inspect' ? 'is-active' : ''} type="button" title="打开步骤详情" aria-label="查看步骤" onClick={() => { setCanvasTool('inspect'); setContextNodeIds([]) }}><Search /></button>
+            <button className={canvasTool === 'pointer' ? 'is-active' : ''} type="button" title="指向一个步骤继续讨论" aria-label="指针工具" onClick={() => { setCanvasTool('pointer'); setSelectedId(''); setContextNodeIds([]) }}><MousePointer2 /></button>
+            <button className={canvasTool === 'lasso' ? 'is-active' : ''} type="button" title="框选一组步骤继续讨论" aria-label="框选工具" onClick={() => { setCanvasTool('lasso'); setSelectedId(''); setContextNodeIds([]) }}><Scan /></button>
+          </div>
+          <div className="creator-canvas-state"><i className={recipePreview ? 'is-preview' : ''} /><span>{canvasStatus}</span></div>
+          <IntentCanvas creator={creator} preview={recipePreview} draftGoal={goal} selectedId={selectedId} contextNodeIds={contextNodeIds} tool={canvasTool} onSelect={setSelectedId} onContextChange={setContextNodeIds} />
+          {recipePreview && <section className="creator-draft-review" aria-label="新大纲确认">
+            <div><strong>新大纲已铺在画布上</strong><span>新增 {recipePreview.impact.added_node_ids.length} · 保留 {recipePreview.impact.retained_node_ids.length} · 移除 {recipePreview.impact.removed_node_ids.length}</span></div>
+            <button className="secondary-button" type="button" disabled={busy} onClick={rejectRecipePreview}>保留旧版</button>
+            <button type="button" disabled={busy} onClick={() => void applyRecipePreview()}><Check />应用这版</button>
+          </section>}
+        </div>
         {loading && <div className="creator-loading"><Loader2 className="spinning" /><span>正在读取项目</span></div>}
       </section>
 
-      <aside className="creator-inspector">
-        {workspaceMode === 'compose' && creator && selectedNode && !recipePreview ? <NodeEditor key={`${selectedNode.id}:${creator.revision}:${creator.experience_revision}`} creator={creator} node={selectedNode} busy={busy} onCreatorChange={saveCreator} onClose={() => setSelectedId('')} onModelRequired={() => requestModelConnection('node')} /> : <div className="creator-inspector-empty"><Workflow /><strong>{workspaceMode === 'discover' ? '方向探索' : '选择一个步骤'}</strong><p>{workspaceMode === 'discover' ? '比较候选方向后进入方案编排。' : '在画布或项目大纲中选择节点，审核目标、业务参数和能力来源。'}</p></div>}
+      <aside className="creator-inspector creator-steward" aria-label="AI 管家">
+        {canvasTool === 'inspect' && creator && selectedNode && !recipePreview ? <NodeEditor key={`${selectedNode.id}:${creator.revision}:${creator.experience_revision}`} creator={creator} node={selectedNode} busy={busy} onCreatorChange={saveCreator} onClose={() => setSelectedId('')} onModelRequired={() => requestModelConnection('node')} /> : <>
+          <header className="creator-steward-head"><span><Bot /></span><div><strong>AI 管家</strong><small>{aiStatus?.has_key ? '和大纲一起持续靠近你的想法' : '连接后开始共同搭建'}</small></div></header>
+          <div className="creator-steward-tools">
+            <button className={canvasTool === 'pointer' ? 'is-active' : ''} type="button" onClick={() => { setCanvasTool('pointer'); setContextNodeIds([]) }}><MousePointer2 /><span>指向一步</span></button>
+            <button className={canvasTool === 'lasso' ? 'is-active' : ''} type="button" onClick={() => { setCanvasTool('lasso'); setContextNodeIds([]) }}><Scan /><span>框选一段</span></button>
+          </div>
+          <div className={`creator-steward-selection ${contextNodes.length ? 'has-selection' : ''}`}><span>讨论范围</span><strong>{contextNodes.length ? contextNodes.map((node) => node.label).join('、') : '整个大纲'}</strong>{contextNodes.length > 0 && <button type="button" title="清除讨论范围" onClick={() => setContextNodeIds([])}><X /></button>}</div>
+          <div className="creator-steward-thread" ref={stewardThreadRef} aria-live="polite">
+            {stewardMessages.map((message) => <article className={`creator-steward-message is-${message.role}`} key={message.id}>
+              {message.role === 'assistant' && <span><Bot /></span>}
+              <div><p>{message.text}</p>{message.clarification && clarification === message.clarification && <section className="creator-clarification"><small>{message.clarification.why_it_matters}</small><div>{message.clarification.suggested_answers.map((answer) => <button type="button" key={answer} disabled={busy} onClick={() => { setClarification(null); continueCoCreation(answer) }}>{answer}</button>)}</div></section>}</div>
+            </article>)}
+            {busy && <div className="creator-steward-loading"><i /><i /><i /><span>正在把这句话放进大纲</span></div>}
+            {composerError && <div className="creator-steward-error" role="alert"><strong>这次没有完成</strong><span>{composerError}</span></div>}
+          </div>
+          <form className="creator-steward-composer" onSubmit={(event) => { event.preventDefault(); continueCoCreation(stewardInput) }}>
+            <textarea autoFocus={!creator} value={stewardInput} disabled={busy} onChange={(event) => { setStewardInput(event.currentTarget.value); setComposerError('') }} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); continueCoCreation(stewardInput) } }} placeholder={creator ? '继续说哪里不对，或先用指针、框选限定范围' : '例如：每天整理可信的 AI 动态，给我一份可审核的中文简报'} />
+            <div><button className="icon-button" type="button" title="添加参考资料"><Paperclip /></button><span><Globe2 />简体中文输出</span><button type="submit" disabled={busy || stewardInput.trim().length < 3} title="发送给 AI 管家" aria-label="发送给 AI 管家">{busy ? <Loader2 className="spinning" /> : <Send />}</button></div>
+          </form>
+          <p className="creator-steward-footnote">每次回答都只是下一版可见大纲，不代表 AI 已经完全理解。</p>
+        </>}
       </aside>
     </div>
 
-    {creator && recipePreview && <aside className="creator-recipe-preview" aria-label="整体草稿预览"><header><div><span>整体改动预览</span><h2>{recipePreview.goal}</h2></div><button className="icon-button" type="button" title="关闭预览" onClick={() => setRecipePreview(null)}><X /></button></header><div className="creator-recipe-preview-body"><p>新草稿包含 {recipePreview.nodes.length} 个步骤，其中 {recipePreview.nodes.filter((node) => node.resolution === 'unresolved').length} 个需要补齐能力。</p>{recipePreview.nodes.map((node, index) => <article key={node.id}><span>{index + 1}</span><div><strong>{node.label}</strong><p>{node.description}</p><small>{node.resolution === 'resolved' ? '已有可信能力' : '保留为待补齐能力'}</small></div></article>)}<div className="creator-recipe-impact"><span>新增 {recipePreview.impact.added_node_ids.length}</span><span>保留 {recipePreview.impact.retained_node_ids.length}</span><span>移除 {recipePreview.impact.removed_node_ids.length}</span></div><div className="creator-recipe-preview-actions"><button className="secondary-button" type="button" disabled={busy} onClick={() => setRecipePreview(null)}>放弃这版</button><button type="button" disabled={busy} onClick={() => void applyRecipePreview()}><Check />应用整体改动</button></div></div></aside>}
     {modelSetupOpen && <><div className="creator-overlay" aria-hidden="true" /><ModelConnectionPanel onConnect={connectModel} onClose={() => { setModelSetupOpen(false); setPendingAiAction(null) }} /></>}
     {themePanelOpen && <><div className="creator-overlay" aria-hidden="true" /><CreatorThemePanel theme={theme} onChange={setTheme} onClose={() => setThemePanelOpen(false)} /></>}
   </main>

@@ -8,13 +8,16 @@ import {
   MarkerType,
   Position,
   ReactFlow,
+  SelectionMode,
   type Edge,
   type Node,
   type NodeProps,
   type ReactFlowInstance,
 } from '@xyflow/react'
 import { Check, CircleDashed, Sparkles, Wrench } from 'lucide-react'
-import type { CreatorProjection } from '../../api.types.ts'
+import type { CreatorProjection, CreatorRecipePreview } from '../../api.types.ts'
+
+export type CreatorCanvasTool = 'inspect' | 'pointer' | 'lasso'
 
 type CanvasNodeData = {
   order: number
@@ -56,6 +59,11 @@ const compactFitOptions = {
   minZoom: 0.78,
   maxZoom: 1,
 } as const
+const emptyFitOptions = {
+  padding: 0.35,
+  minZoom: 0.65,
+  maxZoom: 0.9,
+} as const
 
 function layout(nodes: CanvasNode[], edges: Edge[], vertical: boolean) {
   if (!vertical && nodes.length > 1 && nodes.length <= 6) {
@@ -75,10 +83,15 @@ function layout(nodes: CanvasNode[], edges: Edge[], vertical: boolean) {
   })
 }
 
-export function IntentCanvas({ creator, selectedId, onSelect }: {
+export function IntentCanvas({ creator, preview, draftGoal, selectedId, contextNodeIds, tool, onSelect, onContextChange }: {
   creator: CreatorProjection | null
+  preview: CreatorRecipePreview | null
+  draftGoal: string
   selectedId: string
+  contextNodeIds: string[]
+  tool: CreatorCanvasTool
   onSelect: (nodeId: string) => void
+  onContextChange: (nodeIds: string[]) => void
 }) {
   const [flow, setFlow] = useState<ReactFlowInstance<CanvasNode, Edge> | null>(null)
   const [vertical, setVertical] = useState(() => window.matchMedia('(max-width: 760px)').matches)
@@ -96,28 +109,36 @@ export function IntentCanvas({ creator, selectedId, onSelect }: {
         width: 214,
         height: 146,
         position: { x: 0, y: 0 },
-        data: { order: 0, label: '开始创作', description: '告诉 AI 你想得到什么', state: 'empty', direction: vertical ? 'vertical' : 'horizontal' },
+        data: {
+          order: 0,
+          label: draftGoal.trim() ? '当前想法' : '从一句话开始',
+          description: draftGoal.trim() || '告诉 AI 你想得到什么，大纲会立刻出现在这里。',
+          state: 'empty',
+          direction: vertical ? 'vertical' : 'horizontal',
+        },
         selectable: false,
       }]
       return { nodes: layout(nodes, [], vertical), edges: [] as Edge[] }
     }
-    const confirmed = new Set(creator.frozen_steps)
-    const nodes: CanvasNode[] = creator.trusted_recipe.nodes.map((node, index) => ({
+    const confirmed = new Set(preview ? [] : creator.frozen_steps)
+    const recipeNodes = preview?.nodes || creator.trusted_recipe.nodes
+    const recipeRelations = preview?.relations || creator.trusted_recipe.relations
+    const nodes: CanvasNode[] = recipeNodes.map((node, index) => ({
       id: node.id,
       type: 'creator',
       width: 214,
       height: 146,
       position: { x: 0, y: 0 },
-      selected: node.id === selectedId,
+      selected: tool === 'inspect' ? node.id === selectedId : contextNodeIds.includes(node.id),
       data: {
         order: index + 1,
         label: node.label,
         description: node.description,
-        state: node.resolution?.status === 'unresolved' ? 'unresolved' : confirmed.has(node.id) ? 'confirmed' : 'review',
+        state: (typeof node.resolution === 'string' ? node.resolution : node.resolution?.status) === 'unresolved' ? 'unresolved' : confirmed.has(node.id) ? 'confirmed' : 'review',
         direction: vertical ? 'vertical' : 'horizontal',
       },
     }))
-    const edges: Edge[] = creator.trusted_recipe.relations.map((relation) => ({
+    const edges: Edge[] = recipeRelations.map((relation) => ({
       id: relation.id,
       source: relation.relation === 'uses' ? relation.to_node_id : relation.from_node_id,
       target: relation.relation === 'uses' ? relation.from_node_id : relation.to_node_id,
@@ -128,31 +149,53 @@ export function IntentCanvas({ creator, selectedId, onSelect }: {
       className: 'creator-edge',
     }))
     return { nodes: layout(nodes, edges, vertical), edges }
-  }, [creator, selectedId, vertical])
+  }, [contextNodeIds, creator, draftGoal, preview, selectedId, tool, vertical])
 
   const layoutSignature = `${elements.nodes.map((node) => node.id).join(':')}|${elements.edges.map((edge) => `${edge.source}>${edge.target}`).join(':')}`
+  const activeFitOptions = !creator ? emptyFitOptions : vertical ? compactFitOptions : fitOptions
   useEffect(() => {
     if (!flow) return
     let frame = requestAnimationFrame(() => {
       frame = requestAnimationFrame(() => {
-        void flow.fitView({ ...(vertical ? compactFitOptions : fitOptions), duration: 260 })
+        void flow.fitView({ ...activeFitOptions, duration: 260 })
       })
     })
     return () => cancelAnimationFrame(frame)
-  }, [flow, layoutSignature, vertical])
+  }, [activeFitOptions, flow, layoutSignature])
 
   return <ReactFlow
     nodes={elements.nodes}
     edges={elements.edges}
     nodeTypes={nodeTypes}
     onInit={setFlow}
-    onNodeClick={(_, node) => node.id !== 'empty' && onSelect(node.id)}
+    onNodeClick={(event, node) => {
+      if (node.id === 'empty') return
+      if (tool === 'pointer') {
+        event.preventDefault()
+        onContextChange([node.id])
+        return
+      }
+      if (tool === 'inspect') onSelect(node.id)
+    }}
+    onSelectionChange={({ nodes }) => {
+      if (tool !== 'lasso') return
+      const nextNodeIds = nodes.map((node) => node.id).sort()
+      const currentNodeIds = [...contextNodeIds].sort()
+      if (nextNodeIds.length === currentNodeIds.length && nextNodeIds.every((nodeId, index) => nodeId === currentNodeIds[index])) return
+      onContextChange(nextNodeIds)
+    }}
+    onPaneClick={() => {
+      if (tool === 'inspect') onSelect('')
+    }}
     nodesDraggable={false}
     nodesConnectable={false}
     elementsSelectable={Boolean(creator)}
+    selectionOnDrag={tool === 'lasso'}
+    selectionMode={SelectionMode.Partial}
+    panOnDrag={tool === 'lasso' ? [1, 2] : true}
     deleteKeyCode={null}
     fitView
-    fitViewOptions={vertical ? compactFitOptions : fitOptions}
+    fitViewOptions={activeFitOptions}
     minZoom={0.5}
     maxZoom={1.35}
     proOptions={{ hideAttribution: true }}

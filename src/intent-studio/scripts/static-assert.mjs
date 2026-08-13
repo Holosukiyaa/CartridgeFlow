@@ -68,6 +68,12 @@ check(workspace.includes('CREATOR_THEME_PRESETS') && workspace.includes('morning
 check(workspace.includes("localStorage.setItem(CREATOR_THEME_KEY") && workspace.includes("localStorage.getItem(CREATOR_THEME_KEY"), 'Creator persists the selected visual theme locally')
 check(workspace.includes('控件颜色') && workspace.includes('焦点颜色') && workspace.includes('背景颜色'), 'Creator exposes the three user-adjustable theme colors')
 check(styles.includes('--intent-accent') && styles.includes('--intent-focus') && styles.includes('--intent-page'), 'Creator routes controls, focus, and page background through theme variables')
+check(!workspace.includes('creator-mode-switch') && workspace.includes('creator-workspace-heading'), 'Creator keeps outlining and refinement on one continuous work surface')
+check(workspace.includes('AI 管家') && workspace.includes('不代表 AI 已经完全理解'), 'Creator never treats a conversation count as proof of user intent')
+check(canvas.includes("CreatorCanvasTool = 'inspect' | 'pointer' | 'lasso'") && canvas.includes('selectionOnDrag={tool === \'lasso\'}'), 'Creator supports pointer and lasso context selection')
+check(canvas.includes('nextNodeIds.length === currentNodeIds.length'), 'lasso selection ignores an unchanged node set')
+check(workspace.includes('creator-draft-review') && canvas.includes('preview: CreatorRecipePreview | null'), 'AI outline revisions remain visible and reviewable on the canvas')
+check(workspace.includes('if (creator) setGoal(creator.intent)') && workspace.includes('onClick={rejectRecipePreview}'), 'rejecting an outline revision restores the accepted intent')
 
 const visibleForbidden = ['Developer', '工程语义', '运行测试', '调试', '调优', '版本切换', '执行映射', '配置模型', '配置工具', '权限设置']
 for (const phrase of visibleForbidden) check(!workspace.includes(phrase), `Creator UI omits ${phrase}`)

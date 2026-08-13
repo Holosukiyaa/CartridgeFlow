@@ -51,7 +51,7 @@ class ApiSurfaceTests(unittest.TestCase):
 
     def test_creator_discovery_uses_configured_model_and_returns_creator_safe_possibilities(self):
         content = json.dumps({"mode": "propose", "clarification": None, "possibilities": [
-            {"id": "weekly-radar", "title": "每周行业观察", "outcome": "每周得到值得关注的行业变化。", "why_it_fits": "适合先建立稳定的观察节奏。", "first_week_output": "一份本周观察摘要。", "needs_confirmation": ["最关注的细分方向"], "recipe": {"intent": "持续了解行业变化", "steps": [{"id": "choose-focus", "intent": "确认本周最想关注的主题", "inputs": [], "outputs": []}, {"id": "review-learning", "intent": "整理本周值得继续追问的变化", "inputs": [], "outputs": []}]}},
+            {"id": "weekly-radar", "title": "每周行业观察", "outcome": "每周得到值得关注的行业变化。", "why_it_fits": "适合先建立稳定的观察节奏。", "first_week_output": "一份本周观察摘要。", "needs_confirmation": [], "recipe": {"intent": "持续了解行业变化", "steps": [{"id": "choose-focus", "intent": "确认本周最想关注的主题", "inputs": [], "outputs": []}, {"id": "review-learning", "intent": "整理本周值得继续追问的变化", "inputs": [], "outputs": []}]}},
             {"id": "question-journal", "title": "问题观察笔记", "outcome": "逐步形成一个问题的观察记录。", "why_it_fits": "适合还在判断什么值得深入。", "first_week_output": "一页带有下一步问题的笔记。", "needs_confirmation": ["最想弄清的问题"], "recipe": {"intent": "理解一个行业问题", "steps": [{"id": "frame-question", "intent": "写下当前最重要的问题", "inputs": [], "outputs": []}, {"id": "capture-insight", "intent": "记录新发现和仍未解决的疑问", "inputs": [], "outputs": []}]}},
             {"id": "idea-brief", "title": "创作方向简报", "outcome": "形成一个可以继续推进的创作方向。", "why_it_fits": "适合先小范围验证价值。", "first_week_output": "一份明确目标和下一步的简报。", "needs_confirmation": ["希望带来的变化"], "recipe": {"intent": "探索新的创作方向", "steps": [{"id": "collect-context", "intent": "整理已有的背景和想法", "inputs": [], "outputs": []}, {"id": "define-first-output", "intent": "确定第一周要完成的小成果", "inputs": [], "outputs": []}]}},
         ]}, ensure_ascii=False)
@@ -65,8 +65,17 @@ class ApiSurfaceTests(unittest.TestCase):
         self.assertEqual(3, len(payload["possibilities"]))
         first = payload["possibilities"][0]
         self.assertEqual("每周行业观察", first["title"])
+        self.assertEqual([], first["needs_confirmation"])
         self.assertEqual(["choose-focus", "review-learning"], [step["id"] for step in first["recipe"]["steps"]])
         self.assertEqual("creator_discovery", chat.call_args.kwargs["agent_name"])
+        prompt_payload = json.loads(chat.call_args.args[1][1]["content"])
+        shapes = prompt_payload["valid_response_shapes"]
+        self.assertEqual(2, len(shapes["clarify"]["clarification"]["suggested_answers"]))
+        self.assertEqual(2, len(shapes["propose"]["possibilities"]))
+        self.assertTrue(all(len(item["recipe"]["steps"]) == 2 for item in shapes["propose"]["possibilities"]))
+        from core.llm.creator_discovery import parse_creator_discovery
+        self.assertEqual("clarify", parse_creator_discovery(json.dumps(shapes["clarify"], ensure_ascii=False))["mode"])
+        self.assertEqual("propose", parse_creator_discovery(json.dumps(shapes["propose"], ensure_ascii=False))["mode"])
         self.assertNotIn("developer", json.dumps(payload).lower())
         self.assertNotIn("runtime", json.dumps(payload).lower())
 
@@ -112,7 +121,19 @@ class ApiSurfaceTests(unittest.TestCase):
         self.assertEqual(200, response.status_code)
         self.assertEqual("哪一种结果对你最重要？", response.json()["clarification"]["question"])
         self.assertEqual(2, chat.await_count)
-        self.assertEqual("output_language_repair", chat.await_args_list[1].kwargs["phase"])
+        self.assertEqual("output_contract_repair", chat.await_args_list[1].kwargs["phase"])
+
+    def test_creator_discovery_repairs_invalid_confirmations_once(self):
+        invalid = json.dumps({"mode": "propose", "clarification": None, "possibilities": [
+            {"id": "rss-daily", "title": "AI 行业每日摘要", "outcome": "每天得到 RSS 订阅源和便于速读的中文摘要。", "why_it_fits": "输入已经说明来源、频率和每条内容。", "first_week_output": "一份可订阅的 RSS 和每日摘要。", "needs_confirmation": None, "recipe": {"intent": "自动整理 AI 行业动态", "steps": [{"id": "collect-news", "intent": "从固定新闻网站和博客收集动态", "inputs": [], "outputs": []}, {"id": "publish-digest", "intent": "生成 RSS 订阅源和每日中文摘要", "inputs": [], "outputs": []}]}},
+            {"id": "rss-review", "title": "AI 动态审核清单", "outcome": "按来源和主题查看每日动态。", "why_it_fits": "方便快速筛选值得继续阅读的内容。", "first_week_output": "一份带来源与点评的清单。", "needs_confirmation": [], "recipe": {"intent": "审核每日 AI 动态", "steps": [{"id": "group-items", "intent": "按来源整理当天动态", "inputs": [], "outputs": []}, {"id": "review-items", "intent": "查看摘要和一句话点评", "inputs": [], "outputs": []}]}}]}, ensure_ascii=False)
+        repaired = invalid.replace('"needs_confirmation": null', '"needs_confirmation": []')
+        with patch("core.llm.config_manager.resolve_model", return_value=type("Model", (), {"api_key": "configured"})()), patch("core.llm.chat", new_callable=AsyncMock, side_effect=[{"content": invalid}, {"content": repaired}]) as chat:
+            response = self.client.post("/api/creator/possibilities", json={"context": "根据 RSS 自动整理 AI 行业动态，生成真正的订阅源和每日中文摘要"})
+        self.assertEqual(200, response.status_code)
+        self.assertEqual([], response.json()["possibilities"][0]["needs_confirmation"])
+        self.assertEqual(2, chat.await_count)
+        self.assertEqual("output_contract_repair", chat.await_args_list[1].kwargs["phase"])
 
     def test_creator_discovery_rejects_wrong_language_after_repair(self):
         wrong_language = json.dumps({
@@ -129,6 +150,30 @@ class ApiSurfaceTests(unittest.TestCase):
         self.assertEqual(502, response.status_code)
         self.assertEqual("AI_CREATOR_DISCOVERY_OUTPUT_INVALID", response.json()["detail"]["code"])
         self.assertEqual(2, chat.await_count)
+
+    def test_creator_discovery_repair_shares_the_original_timeout_budget(self):
+        invalid = '{"possibilities": []}'
+        repaired = json.dumps({
+            "mode": "clarify",
+            "clarification": {
+                "question": "你最希望先改善哪一种结果？",
+                "why_it_matters": "这个答案会改变后续方向。",
+                "suggested_answers": ["节省时间", "帮助做决定"],
+            },
+            "possibilities": [],
+        }, ensure_ascii=False)
+        captured_timeouts = []
+
+        async def immediate(awaitable, *, timeout):
+            captured_timeouts.append(timeout)
+            return await awaitable
+
+        with patch("core.llm.config_manager.resolve_model", return_value=type("Model", (), {"api_key": "configured", "timeout": 75})()), patch("core.llm.chat", new_callable=AsyncMock, side_effect=[{"content": invalid}, {"content": repaired}]), patch("backend.main.asyncio.wait_for", side_effect=immediate):
+            response = self.client.post("/api/creator/possibilities", json={"context": "我想提高效率"})
+        self.assertEqual(200, response.status_code)
+        self.assertEqual(2, len(captured_timeouts))
+        self.assertLessEqual(captured_timeouts[1], captured_timeouts[0])
+        self.assertLessEqual(captured_timeouts[0], 75)
 
     def test_creator_discovery_rejects_unbound_or_invalid_model_output(self):
         with patch("core.llm.config_manager.resolve_model", side_effect=ValueError("unbound")):

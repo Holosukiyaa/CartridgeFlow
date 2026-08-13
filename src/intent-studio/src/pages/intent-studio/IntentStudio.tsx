@@ -69,6 +69,7 @@ function friendlyError(error: unknown, action: 'discover' | 'compose' | 'node' |
   const code = error instanceof ApiError ? error.code : ''
   if (code.includes('MODEL_UNBOUND')) return 'AI 共创服务尚未准备好。'
   if (code.includes('TIMEOUT')) return 'AI 响应超时，请稍后重试。'
+  if (action === 'discover' && code.includes('OUTPUT_INVALID')) return 'AI 已返回内容，但自动修正后仍未通过格式检查。请重试或切换模型。'
   if (code.includes('REVISION')) return '草稿已经发生变化，请重新操作。'
   if (action === 'package' && (code.includes('BLOCKED') || code.includes('FREEZE'))) return '还有节点没有完成审核，暂时不能打包。'
   if (action === 'package') return '打包校验没有通过，请检查所有节点后重试。'

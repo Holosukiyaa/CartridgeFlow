@@ -32,19 +32,40 @@ def build_creator_discovery_messages(context: str, output_locale: str = "zh-CN")
     normalized = " ".join(str(context).split())
     if not normalized:
         raise CreatorDiscoveryError("A discovery context is required.")
-    contract = {
-        "mode": "clarify | propose",
-        "clarification": {
-            "question": "one decisive question",
-            "why_it_matters": "why this answer changes the direction",
-            "suggested_answers": ["two to four short answers"],
+    valid_response_shapes = {
+        "clarify": {
+            "mode": "clarify",
+            "clarification": {
+                "question": "一个会改变方向选择的关键问题？",
+                "why_it_matters": "这个答案会改变后续方向。",
+                "suggested_answers": ["第一个简短选项", "第二个简短选项"],
+            },
+            "possibilities": [],
         },
-        "possibilities": [{
-            "id": "lowercase-slug", "title": "short creator-facing title", "outcome": "concrete outcome",
-            "why_it_fits": "why this direction fits the supplied context", "first_week_output": "a small first-week result",
-            "needs_confirmation": ["one question to confirm"],
-            "recipe": {"intent": "creator-facing recipe intent", "steps": [{"id": "lowercase-slug", "intent": "creator-facing step", "inputs": [], "outputs": []}]},
-        }],
+        "propose": {
+            "mode": "propose",
+            "clarification": None,
+            "possibilities": [
+                {
+                    "id": "first-direction", "title": "第一个方向", "outcome": "第一个具体结果。",
+                    "why_it_fits": "说明第一个方向为什么合适。", "first_week_output": "第一周可以完成的小成果。",
+                    "needs_confirmation": [],
+                    "recipe": {"intent": "第一个方向的目标", "steps": [
+                        {"id": "first-step", "intent": "完成第一个可理解步骤", "inputs": [], "outputs": []},
+                        {"id": "second-step", "intent": "完成第二个可理解步骤", "inputs": [], "outputs": []},
+                    ]},
+                },
+                {
+                    "id": "second-direction", "title": "第二个方向", "outcome": "另一个不同的具体结果。",
+                    "why_it_fits": "说明第二个方向为什么合适。", "first_week_output": "另一个第一周小成果。",
+                    "needs_confirmation": [],
+                    "recipe": {"intent": "第二个方向的目标", "steps": [
+                        {"id": "compare-options", "intent": "比较相关选择", "inputs": [], "outputs": []},
+                        {"id": "review-result", "intent": "审核形成的草稿", "inputs": [], "outputs": []},
+                    ]},
+                },
+            ],
+        },
     }
     return [
         {
@@ -53,29 +74,33 @@ def build_creator_discovery_messages(context: str, output_locale: str = "zh-CN")
                 "Return JSON only. Decide whether the creator's goal is specific enough to compare useful directions. "
                 "If one missing answer would materially change the result, return mode=clarify, one decisive question, why it matters, "
                 "two to four short suggested answers, and possibilities=[]. Otherwise return mode=propose, clarification=null, and two to four genuinely distinct possibilities. "
+                "For each possibility, needs_confirmation must be a JSON list with zero to four short questions; use [] when the supplied context already answers everything important. "
                 "Use only the supplied context; do not claim facts, invent sources, or imply that any source was checked. "
                 f"Write every user-facing field in {output_locale}. "
-                "Do not mention implementation, APIs, models, tools, nodes, protocols, credentials, URLs, or technical terms. "
+                "Do not introduce implementation details, APIs, models, tools, nodes, protocols, credentials, URLs, or technical terms that the creator did not use. "
+                "Preserve creator-supplied domain terms such as RSS or AI when they are central to the requested outcome. "
                 "Each proposed recipe must have two to five plain-language steps."
             ),
         },
-        {"role": "user", "content": json.dumps({"context": normalized, "output_locale": output_locale, "response_contract": contract}, ensure_ascii=False)},
+        {"role": "user", "content": json.dumps({"context": normalized, "output_locale": output_locale, "valid_response_shapes": valid_response_shapes}, ensure_ascii=False)},
     ]
 
 
-def build_creator_discovery_language_repair_messages(
+def build_creator_discovery_repair_messages(
     context: str,
     invalid_content: str,
+    failure_reason: str,
     output_locale: str = "zh-CN",
 ) -> list[dict]:
-    """Give the same model one bounded chance to repair only the output language."""
+    """Give the same model one bounded chance to repair the complete output contract."""
     messages = build_creator_discovery_messages(context, output_locale)
     messages.append({"role": "assistant", "content": str(invalid_content or "")[:12_000]})
     messages.append({
         "role": "user",
         "content": (
-            f"The structure was usable, but user-facing text did not satisfy output_locale={output_locale}. "
-            "Return the complete JSON object again with the same meaning and valid structure, translating every user-facing field."
+            f"The previous response was rejected because: {str(failure_reason or 'invalid output')[:300]} "
+            f"Return the complete JSON object again with the same meaning, one exact valid_response_shapes structure, and every user-facing field in {output_locale}. "
+            "Do not add a clarification or a needs_confirmation question merely to make a list non-empty. Return JSON only."
         ),
     })
     return messages
@@ -173,7 +198,7 @@ def _normalize_possibility(value: Any, output_locale: str) -> dict:
         raise CreatorDiscoveryError("AI discovery recipe shape is invalid.")
     identifier = _identifier(value["id"], "possibility")
     confirmations = value["needs_confirmation"]
-    if not isinstance(confirmations, list) or not 1 <= len(confirmations) <= 4:
+    if not isinstance(confirmations, list) or len(confirmations) > 4:
         raise CreatorDiscoveryError("AI discovery confirmations are invalid.")
     steps = recipe["steps"]
     if not isinstance(steps, list) or not 2 <= len(steps) <= 5:

@@ -50,7 +50,7 @@ class ApiSurfaceTests(unittest.TestCase):
             self.assertEqual(origin, response.headers.get("access-control-allow-origin"))
 
     def test_creator_discovery_uses_configured_model_and_returns_creator_safe_possibilities(self):
-        content = json.dumps({"possibilities": [
+        content = json.dumps({"mode": "propose", "clarification": None, "possibilities": [
             {"id": "weekly-radar", "title": "每周行业观察", "outcome": "每周得到值得关注的行业变化。", "why_it_fits": "适合先建立稳定的观察节奏。", "first_week_output": "一份本周观察摘要。", "needs_confirmation": ["最关注的细分方向"], "recipe": {"intent": "持续了解行业变化", "steps": [{"id": "choose-focus", "intent": "确认本周最想关注的主题", "inputs": [], "outputs": []}, {"id": "review-learning", "intent": "整理本周值得继续追问的变化", "inputs": [], "outputs": []}]}},
             {"id": "question-journal", "title": "问题观察笔记", "outcome": "逐步形成一个问题的观察记录。", "why_it_fits": "适合还在判断什么值得深入。", "first_week_output": "一页带有下一步问题的笔记。", "needs_confirmation": ["最想弄清的问题"], "recipe": {"intent": "理解一个行业问题", "steps": [{"id": "frame-question", "intent": "写下当前最重要的问题", "inputs": [], "outputs": []}, {"id": "capture-insight", "intent": "记录新发现和仍未解决的疑问", "inputs": [], "outputs": []}]}},
             {"id": "idea-brief", "title": "创作方向简报", "outcome": "形成一个可以继续推进的创作方向。", "why_it_fits": "适合先小范围验证价值。", "first_week_output": "一份明确目标和下一步的简报。", "needs_confirmation": ["希望带来的变化"], "recipe": {"intent": "探索新的创作方向", "steps": [{"id": "collect-context", "intent": "整理已有的背景和想法", "inputs": [], "outputs": []}, {"id": "define-first-output", "intent": "确定第一周要完成的小成果", "inputs": [], "outputs": []}]}},
@@ -59,7 +59,9 @@ class ApiSurfaceTests(unittest.TestCase):
             response = self.client.post("/api/creator/possibilities", json={"context": "我想持续了解 AI 行业的变化"})
         self.assertEqual(200, response.status_code)
         payload = response.json()
-        self.assertEqual("cartridgeflow.creator_possibilities.v1", payload["schema"])
+        self.assertEqual("cartridgeflow.creator_discovery.v2", payload["schema"])
+        self.assertEqual("propose", payload["mode"])
+        self.assertEqual("zh-CN", payload["output_locale"])
         self.assertEqual(3, len(payload["possibilities"]))
         first = payload["possibilities"][0]
         self.assertEqual("每周行业观察", first["title"])
@@ -67,6 +69,66 @@ class ApiSurfaceTests(unittest.TestCase):
         self.assertEqual("creator_discovery", chat.call_args.kwargs["agent_name"])
         self.assertNotIn("developer", json.dumps(payload).lower())
         self.assertNotIn("runtime", json.dumps(payload).lower())
+
+    def test_creator_discovery_can_ask_one_decisive_question(self):
+        content = json.dumps({
+            "mode": "clarify",
+            "clarification": {
+                "question": "你最希望先改善哪一种结果？",
+                "why_it_matters": "不同结果会形成完全不同的卡带方向。",
+                "suggested_answers": ["减少重复整理", "更快做出决定", "形成可分享的简报"],
+            },
+            "possibilities": [],
+        }, ensure_ascii=False)
+        with patch("core.llm.config_manager.resolve_model", return_value=type("Model", (), {"api_key": "configured"})()), patch("core.llm.chat", new_callable=AsyncMock, return_value={"content": content}):
+            response = self.client.post("/api/creator/possibilities", json={"context": "我想提高效率", "output_locale": "zh-CN"})
+        self.assertEqual(200, response.status_code)
+        payload = response.json()
+        self.assertEqual("clarify", payload["mode"])
+        self.assertEqual([], payload["possibilities"])
+        self.assertEqual(3, len(payload["clarification"]["suggested_answers"]))
+
+    def test_creator_discovery_repairs_wrong_language_once(self):
+        wrong_language = json.dumps({
+            "mode": "clarify",
+            "clarification": {
+                "question": "Which result matters most?",
+                "why_it_matters": "The answer changes the direction.",
+                "suggested_answers": ["Save time", "Make decisions"],
+            },
+            "possibilities": [],
+        })
+        repaired = json.dumps({
+            "mode": "clarify",
+            "clarification": {
+                "question": "哪一种结果对你最重要？",
+                "why_it_matters": "这个答案会改变后续方向。",
+                "suggested_answers": ["节省时间", "帮助做决定"],
+            },
+            "possibilities": [],
+        }, ensure_ascii=False)
+        with patch("core.llm.config_manager.resolve_model", return_value=type("Model", (), {"api_key": "configured"})()), patch("core.llm.chat", new_callable=AsyncMock, side_effect=[{"content": wrong_language}, {"content": repaired}]) as chat:
+            response = self.client.post("/api/creator/possibilities", json={"context": "我想提高效率"})
+        self.assertEqual(200, response.status_code)
+        self.assertEqual("哪一种结果对你最重要？", response.json()["clarification"]["question"])
+        self.assertEqual(2, chat.await_count)
+        self.assertEqual("output_language_repair", chat.await_args_list[1].kwargs["phase"])
+
+    def test_creator_discovery_rejects_wrong_language_after_repair(self):
+        wrong_language = json.dumps({
+            "mode": "clarify",
+            "clarification": {
+                "question": "Which result matters most?",
+                "why_it_matters": "The answer changes the entire direction.",
+                "suggested_answers": ["Save time", "Make decisions"],
+            },
+            "possibilities": [],
+        })
+        with patch("core.llm.config_manager.resolve_model", return_value=type("Model", (), {"api_key": "configured"})()), patch("core.llm.chat", new_callable=AsyncMock, side_effect=[{"content": wrong_language}, {"content": wrong_language}]) as chat:
+            response = self.client.post("/api/creator/possibilities", json={"context": "我想提高效率"})
+        self.assertEqual(502, response.status_code)
+        self.assertEqual("AI_CREATOR_DISCOVERY_OUTPUT_INVALID", response.json()["detail"]["code"])
+        self.assertEqual(2, chat.await_count)
 
     def test_creator_discovery_rejects_unbound_or_invalid_model_output(self):
         with patch("core.llm.config_manager.resolve_model", side_effect=ValueError("unbound")):

@@ -10,8 +10,16 @@ class CreatorDiscoveryError(ValueError):
     """A model result that cannot safely enter the creator journey."""
 
 
+class CreatorDiscoveryLanguageError(CreatorDiscoveryError):
+    """The model returned valid structure in the wrong interface language."""
+
+
 _ID = re.compile(r"^[a-z][a-z0-9-]{1,47}$")
+_HAN = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff]")
+_LATIN_WORD = re.compile(r"[A-Za-z]{2,}")
 _FORBIDDEN_TEXT = re.compile(r"https?://|\b(api|endpoint|mcp|dlc|root flow|token|secret|credential)\b", re.IGNORECASE)
+_DISCOVERY_KEYS = frozenset({"mode", "clarification", "possibilities"})
+_CLARIFICATION_KEYS = frozenset({"question", "why_it_matters", "suggested_answers"})
 _POSSIBILITY_KEYS = frozenset({"id", "title", "outcome", "why_it_fits", "first_week_output", "needs_confirmation", "recipe"})
 _RECIPE_KEYS = frozenset({"intent", "steps"})
 _STEP_KEYS = frozenset({"id", "intent", "inputs", "outputs"})
@@ -19,12 +27,18 @@ _SOURCE_CANDIDATE_KEYS = frozenset({"id", "name", "provides", "why_recommended",
 _DEFAULT_RECIPE_KEYS = frozenset({"recipe"})
 
 
-def build_creator_discovery_messages(context: str) -> list[dict]:
-    """Constrain the model to creator language and a small, reviewable recipe shape."""
+def build_creator_discovery_messages(context: str, output_locale: str = "zh-CN") -> list[dict]:
+    """Ask the model whether to clarify the goal or propose reviewable directions."""
     normalized = " ".join(str(context).split())
     if not normalized:
         raise CreatorDiscoveryError("A discovery context is required.")
     contract = {
+        "mode": "clarify | propose",
+        "clarification": {
+            "question": "one decisive question",
+            "why_it_matters": "why this answer changes the direction",
+            "suggested_answers": ["two to four short answers"],
+        },
         "possibilities": [{
             "id": "lowercase-slug", "title": "short creator-facing title", "outcome": "concrete outcome",
             "why_it_fits": "why this direction fits the supplied context", "first_week_output": "a small first-week result",
@@ -33,24 +47,72 @@ def build_creator_discovery_messages(context: str) -> list[dict]:
         }],
     }
     return [
-        {"role": "system", "content": "Return JSON only. Produce exactly three distinct possibilities for a creator with an open-ended idea. Use only the supplied context; do not claim facts, invent sources, or imply that any source was checked. Write in the user's language and creator language. Do not mention implementation, APIs, models, tools, nodes, protocols, credentials, URLs, or technical terms. Each recipe must have two to five plain-language steps."},
-        {"role": "user", "content": json.dumps({"context": normalized, "response_contract": contract}, ensure_ascii=False)},
+        {
+            "role": "system",
+            "content": (
+                "Return JSON only. Decide whether the creator's goal is specific enough to compare useful directions. "
+                "If one missing answer would materially change the result, return mode=clarify, one decisive question, why it matters, "
+                "two to four short suggested answers, and possibilities=[]. Otherwise return mode=propose, clarification=null, and two to four genuinely distinct possibilities. "
+                "Use only the supplied context; do not claim facts, invent sources, or imply that any source was checked. "
+                f"Write every user-facing field in {output_locale}. "
+                "Do not mention implementation, APIs, models, tools, nodes, protocols, credentials, URLs, or technical terms. "
+                "Each proposed recipe must have two to five plain-language steps."
+            ),
+        },
+        {"role": "user", "content": json.dumps({"context": normalized, "output_locale": output_locale, "response_contract": contract}, ensure_ascii=False)},
     ]
 
 
-def parse_creator_discovery(content: str) -> list[dict]:
-    """Validate and normalize a model response before it becomes selectable work."""
+def build_creator_discovery_language_repair_messages(
+    context: str,
+    invalid_content: str,
+    output_locale: str = "zh-CN",
+) -> list[dict]:
+    """Give the same model one bounded chance to repair only the output language."""
+    messages = build_creator_discovery_messages(context, output_locale)
+    messages.append({"role": "assistant", "content": str(invalid_content or "")[:12_000]})
+    messages.append({
+        "role": "user",
+        "content": (
+            f"The structure was usable, but user-facing text did not satisfy output_locale={output_locale}. "
+            "Return the complete JSON object again with the same meaning and valid structure, translating every user-facing field."
+        ),
+    })
+    return messages
+
+
+def parse_creator_discovery(content: str, output_locale: str = "zh-CN") -> dict:
+    """Validate the AI decision before it becomes selectable Creator work."""
     try:
         payload: Any = json.loads(str(content or ""))
     except json.JSONDecodeError as exc:
         raise CreatorDiscoveryError("AI discovery response must be JSON.") from exc
-    possibilities = payload.get("possibilities") if isinstance(payload, dict) and set(payload) == {"possibilities"} else None
-    if not isinstance(possibilities, list) or len(possibilities) != 3:
-        raise CreatorDiscoveryError("AI discovery response must contain exactly three possibilities.")
-    normalized = [_normalize_possibility(item) for item in possibilities]
+    if not isinstance(payload, dict) or set(payload) != _DISCOVERY_KEYS:
+        raise CreatorDiscoveryError("AI discovery response shape is invalid.")
+    mode = payload.get("mode")
+    clarification = payload.get("clarification")
+    possibilities = payload.get("possibilities")
+    if mode == "clarify":
+        if not isinstance(clarification, dict) or set(clarification) != _CLARIFICATION_KEYS or possibilities != []:
+            raise CreatorDiscoveryError("AI clarification response shape is invalid.")
+        answers = clarification.get("suggested_answers")
+        if not isinstance(answers, list) or not 2 <= len(answers) <= 4:
+            raise CreatorDiscoveryError("AI clarification needs two to four suggested answers.")
+        return {
+            "mode": "clarify",
+            "clarification": {
+                "question": _localized_text(clarification.get("question"), "clarification question", 240, output_locale),
+                "why_it_matters": _localized_text(clarification.get("why_it_matters"), "clarification reason", 300, output_locale),
+                "suggested_answers": [_localized_text(item, "suggested answer", 120, output_locale) for item in answers],
+            },
+            "possibilities": [],
+        }
+    if mode != "propose" or clarification is not None or not isinstance(possibilities, list) or not 2 <= len(possibilities) <= 4:
+        raise CreatorDiscoveryError("AI proposal response needs two to four possibilities.")
+    normalized = [_normalize_possibility(item, output_locale) for item in possibilities]
     if len({item["id"] for item in normalized}) != len(normalized):
         raise CreatorDiscoveryError("AI discovery possibility ids must be unique.")
-    return normalized
+    return {"mode": "propose", "clarification": None, "possibilities": normalized}
 
 
 def build_default_recipe_messages(context: str) -> list[dict]:
@@ -103,7 +165,7 @@ def parse_source_discovery(content: str) -> list[dict]:
     return normalized
 
 
-def _normalize_possibility(value: Any) -> dict:
+def _normalize_possibility(value: Any, output_locale: str) -> dict:
     if not isinstance(value, dict) or set(value) != _POSSIBILITY_KEYS:
         raise CreatorDiscoveryError("AI discovery possibility shape is invalid.")
     recipe = value["recipe"]
@@ -116,16 +178,19 @@ def _normalize_possibility(value: Any) -> dict:
     steps = recipe["steps"]
     if not isinstance(steps, list) or not 2 <= len(steps) <= 5:
         raise CreatorDiscoveryError("AI discovery recipes need two to five steps.")
-    result_steps = [_normalize_step(item) for item in steps]
+    result_steps = [_normalize_step(item, output_locale) for item in steps]
     if len({item["id"] for item in result_steps}) != len(result_steps):
         raise CreatorDiscoveryError("AI discovery step ids must be unique.")
-    return {"id": identifier, "title": _text(value["title"], "title", 100), "outcome": _text(value["outcome"], "outcome", 300), "why_it_fits": _text(value["why_it_fits"], "why_it_fits", 300), "first_week_output": _text(value["first_week_output"], "first_week_output", 300), "needs_confirmation": [_text(item, "confirmation", 120) for item in confirmations], "recipe": {"intent": _text(recipe["intent"], "recipe intent", 300), "steps": result_steps}}
+    return {"id": identifier, "title": _localized_text(value["title"], "title", 100, output_locale), "outcome": _localized_text(value["outcome"], "outcome", 300, output_locale), "why_it_fits": _localized_text(value["why_it_fits"], "why_it_fits", 300, output_locale), "first_week_output": _localized_text(value["first_week_output"], "first_week_output", 300, output_locale), "needs_confirmation": [_localized_text(item, "confirmation", 120, output_locale) for item in confirmations], "recipe": {"intent": _localized_text(recipe["intent"], "recipe intent", 300, output_locale), "steps": result_steps}}
 
 
-def _normalize_step(value: Any) -> dict:
+def _normalize_step(value: Any, output_locale: str | None = None) -> dict:
     if not isinstance(value, dict) or set(value) != _STEP_KEYS or value["inputs"] != [] or value["outputs"] != []:
         raise CreatorDiscoveryError("AI discovery step shape is invalid.")
-    return {"id": _identifier(value["id"], "step"), "intent": _text(value["intent"], "step intent", 300), "inputs": [], "outputs": []}
+    intent = _text(value["intent"], "step intent", 300)
+    if output_locale:
+        intent = _require_locale(intent, "step intent", output_locale)
+    return {"id": _identifier(value["id"], "step"), "intent": intent, "inputs": [], "outputs": []}
 
 
 def _normalize_source_candidate(value: Any) -> dict:
@@ -149,6 +214,20 @@ def _text(value: Any, field: str, limit: int) -> str:
     text = " ".join(str(value).split()) if isinstance(value, str) else ""
     if not text or len(text) > limit or _FORBIDDEN_TEXT.search(text):
         raise CreatorDiscoveryError(f"AI discovery {field} is invalid.")
+    return text
+
+
+def _localized_text(value: Any, field: str, limit: int, output_locale: str) -> str:
+    return _require_locale(_text(value, field, limit), field, output_locale)
+
+
+def _require_locale(text: str, field: str, output_locale: str) -> str:
+    if output_locale == "zh-CN":
+        han_count = len(_HAN.findall(text))
+        latin_words = _LATIN_WORD.findall(text)
+        latin_character_count = sum(len(word) for word in latin_words if word.lower() not in {"ai", "fps", "rag"})
+        if not han_count or latin_character_count > max(8, han_count * 2):
+            raise CreatorDiscoveryLanguageError(f"AI discovery {field} must be written in Simplified Chinese.")
     return text
 
 

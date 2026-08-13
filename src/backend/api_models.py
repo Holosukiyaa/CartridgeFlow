@@ -1,5 +1,7 @@
 """Request payload models for the CartridgeFlow HTTP API."""
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 class CartridgeRunCreate(BaseModel):
@@ -107,6 +109,7 @@ class AuthoringSessionCreatePayload(BaseModel):
 
 class CreatorDiscoveryPayload(BaseModel):
     context: str = Field(min_length=3, max_length=2000)
+    output_locale: Literal["zh-CN"] = "zh-CN"
 
 
 class CreatorDefaultRecipePayload(BaseModel):

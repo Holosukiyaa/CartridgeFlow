@@ -2194,12 +2194,18 @@ def _creator_ai_timeout(model) -> int:
 async def discover_creator_possibilities_endpoint(payload: CreatorDiscoveryPayload):
     from core.llm import chat
     from core.llm.config_manager import resolve_model
-    from core.llm.creator_discovery import CreatorDiscoveryError, build_creator_discovery_messages, parse_creator_discovery
+    from core.llm.creator_discovery import (
+        CreatorDiscoveryError,
+        CreatorDiscoveryLanguageError,
+        build_creator_discovery_language_repair_messages,
+        build_creator_discovery_messages,
+        parse_creator_discovery,
+    )
     try:
         model = resolve_model("mentor")
         if not str(model.api_key or "").strip():
             raise AuthoringServiceError("AI_CREATOR_DISCOVERY_MODEL_UNBOUND", "No configured discovery model is available.", status=409)
-        messages = build_creator_discovery_messages(payload.context)
+        messages = build_creator_discovery_messages(payload.context, payload.output_locale)
         try:
             response = await asyncio.wait_for(
                 chat(model, messages, agent_name="creator_discovery", phase="possibility_discovery"),
@@ -2207,11 +2213,34 @@ async def discover_creator_possibilities_endpoint(payload: CreatorDiscoveryPaylo
             )
         except TimeoutError as exc:
             raise AuthoringServiceError("AI_CREATOR_DISCOVERY_TIMEOUT", "The AI discovery service did not respond in time.", status=504) from exc
+        content = str(response.get("content") or "")
         try:
-            possibilities = parse_creator_discovery(str(response.get("content") or ""))
+            discovery = parse_creator_discovery(content, payload.output_locale)
+        except CreatorDiscoveryLanguageError:
+            try:
+                repaired = await asyncio.wait_for(
+                    chat(
+                        model,
+                        build_creator_discovery_language_repair_messages(payload.context, content, payload.output_locale),
+                        agent_name="creator_discovery",
+                        phase="output_language_repair",
+                    ),
+                    timeout=_creator_ai_timeout(model),
+                )
+            except TimeoutError as exc:
+                raise AuthoringServiceError("AI_CREATOR_DISCOVERY_TIMEOUT", "The AI discovery language repair did not respond in time.", status=504) from exc
+            try:
+                discovery = parse_creator_discovery(str(repaired.get("content") or ""), payload.output_locale)
+            except CreatorDiscoveryError as exc:
+                raise AuthoringServiceError("AI_CREATOR_DISCOVERY_OUTPUT_INVALID", str(exc), status=502) from exc
         except CreatorDiscoveryError as exc:
             raise AuthoringServiceError("AI_CREATOR_DISCOVERY_OUTPUT_INVALID", str(exc), status=502) from exc
-        return {"schema": "cartridgeflow.creator_possibilities.v1", "context": " ".join(payload.context.split()), "possibilities": possibilities}
+        return {
+            "schema": "cartridgeflow.creator_discovery.v2",
+            "context": " ".join(payload.context.split()),
+            "output_locale": payload.output_locale,
+            **discovery,
+        }
     except AuthoringServiceError as exc:
         _authoring_error(exc)
     except ValueError as exc:

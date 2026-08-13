@@ -52,6 +52,7 @@ import {
   resolveCreatorCapabilities,
   setCreatorExperience,
   type CreatorPackage,
+  type CreatorClarification,
   type CreatorPossibility,
   type CreatorProjection,
   type CreatorProposal,
@@ -446,6 +447,8 @@ export function IntentStudio({ projectId }: { projectId: string }) {
   const [goal, setGoal] = useState('')
   const [selectedId, setSelectedId] = useState('')
   const [possibilities, setPossibilities] = useState<CreatorPossibility[]>([])
+  const [clarification, setClarification] = useState<CreatorClarification | null>(null)
+  const [aiStatus, setAiStatus] = useState<{ provider: string; has_key: boolean; base_url: string; model: string } | null>(null)
   const [packageResult, setPackageResult] = useState<CreatorPackage | null>(null)
   const [recipePreview, setRecipePreview] = useState<CreatorRecipePreview | null>(null)
   const [packageError, setPackageError] = useState('')
@@ -483,6 +486,7 @@ export function IntentStudio({ projectId }: { projectId: string }) {
   useEffect(() => {
     fetchCreatorAiStatus()
       .then((status) => {
+        setAiStatus(status)
         aiConnectedRef.current = status.has_key
       })
       .catch(() => null)
@@ -522,17 +526,21 @@ export function IntentStudio({ projectId }: { projectId: string }) {
     requestModelConnection(action)
     return true
   }
-  const discover = async () => {
-    if (goal.trim().length < 3) return
+  const discover = async (requestedContext = goal) => {
+    const context = requestedContext.trim()
+    if (context.length < 3) return
     if (aiConnectedRef.current === false) {
       requestModelConnection('discover')
       return
     }
     setBusy(true)
     setComposerError('')
+    setPossibilities([])
+    setClarification(null)
     try {
-      const result = await discoverCreatorPossibilities(goal.trim())
+      const result = await discoverCreatorPossibilities(context)
       setPossibilities(result.possibilities)
+      setClarification(result.clarification)
     } catch (error) {
       if (isModelBlock(error, 'discover')) return
       const description = friendlyError(error, 'discover')
@@ -550,6 +558,7 @@ export function IntentStudio({ projectId }: { projectId: string }) {
     setBusy(true)
     setComposerError('')
     setPossibilities([])
+    setClarification(null)
     try {
       if (creator) {
         const preview = await previewCreatorRecompose(creator.session_id, { goal: nextGoal, expected_revision: creator.revision })
@@ -619,6 +628,7 @@ export function IntentStudio({ projectId }: { projectId: string }) {
   const connectModel = async (connection: { base_url: string; api_key: string; model: string }) => {
     await connectCreatorAi(connection)
     aiConnectedRef.current = true
+    fetchCreatorAiStatus().then(setAiStatus).catch(() => null)
     const retry = pendingAiAction
     setModelSetupOpen(false)
     setPendingAiAction(null)
@@ -718,10 +728,11 @@ export function IntentStudio({ projectId }: { projectId: string }) {
             <div className="creator-composer-actions"><div><button className="icon-button" type="button" title="添加参考资料"><Paperclip /></button><button className="icon-button" type="button" title="让 AI 优化指令"><Sparkles /></button></div><button type="submit" disabled={busy || goal.trim().length < 3}>{busy ? <Loader2 className="spinning" /> : <Sparkles />}{creator ? '重新生成' : '生成方案'}</button></div>
           </form>
         </> : <section className="creator-discovery">
-          <div className="creator-discovery-intro"><span><Lightbulb /></span><div><small>从一个想法开始</small><h1>你想让这张卡带帮你做什么？</h1><p>先说结果，不用考虑模型、工具或流程。AI 会把想法拆成几种可以比较的方案。</p></div></div>
-          <form onSubmit={(event) => { event.preventDefault(); void discover() }}><textarea autoFocus value={goal} onChange={(event) => { setGoal(event.currentTarget.value); setComposerError('') }} placeholder="例如：每天早上整理可信的 AI 行业动态，生成一份中文简报" /><button type="submit" disabled={busy || goal.trim().length < 3}>{busy ? <Loader2 className="spinning" /> : <Sparkles />}拆解想法</button></form>
+          <div className="creator-discovery-intro"><span><Lightbulb /></span><div><small>从一个想法开始</small><h1>你想让这张卡带帮你做什么？</h1><p>先说结果，不用考虑模型、工具或流程。AI 会先判断信息是否足够，必要时只追问一个关键问题。</p><div className="creator-ai-context"><span><Bot />{aiStatus?.has_key ? aiStatus.provider : '尚未连接 AI'}</span><span><Globe2 />简体中文输出</span></div></div></div>
+          <form onSubmit={(event) => { event.preventDefault(); void discover() }}><textarea autoFocus value={goal} onChange={(event) => { setGoal(event.currentTarget.value); setComposerError(''); setClarification(null); setPossibilities([]) }} placeholder="例如：每天早上整理可信的 AI 行业动态，生成一份中文简报" /><button type="submit" disabled={busy || goal.trim().length < 3}>{busy ? <Loader2 className="spinning" /> : <Sparkles />}拆解想法</button></form>
           {composerError && <div className="creator-discovery-error" role="alert"><strong>这次没有生成方向建议</strong><span>{composerError} 你的输入已经保留，可以直接重试。</span></div>}
-          <div className="creator-possibilities" aria-label="AI 方向建议">{possibilities.length ? possibilities.map((item) => <article key={item.id}><span><Target /></span><h3>{item.title}</h3><p>{item.outcome}</p><small>{item.why_it_fits}</small><button type="button" onClick={() => { setGoal(item.recipe.intent); setWorkspaceMode('compose'); void compose(item.recipe.intent) }}><Send />用这个方向生成方案</button></article>) : <div className="creator-discovery-empty"><Sparkles /><strong>方案方向会出现在这里</strong><span>已有明确目标时，也可以直接进入第 2 步。</span></div>}</div>
+          {clarification && <section className="creator-clarification" aria-label="AI 需要确认"><header><span><Bot /></span><div><small>先确认一件事</small><h2>{clarification.question}</h2><p>{clarification.why_it_matters}</p></div></header><div>{clarification.suggested_answers.map((answer) => <button type="button" key={answer} disabled={busy} onClick={() => { const nextContext = `${goal.trim()}\n补充：${answer}`; setGoal(nextContext); setClarification(null); void discover(nextContext) }}>{answer}</button>)}</div><small>也可以直接修改上面的描述，再次拆解。</small></section>}
+          {!clarification && <div className="creator-possibilities" aria-label="AI 方向建议">{possibilities.length ? possibilities.map((item) => <article key={item.id}><span><Target /></span><h3>{item.title}</h3><p>{item.outcome}</p><small>{item.why_it_fits}</small><button type="button" onClick={() => { setGoal(item.recipe.intent); setWorkspaceMode('compose'); void compose(item.recipe.intent) }}><Send />用这个方向生成方案</button></article>) : <div className="creator-discovery-empty"><Sparkles /><strong>AI 会先理解你的目标</strong><span>信息不足时先追问，足够时再给出可比较的方向。</span></div>}</div>}
         </section>}
         {loading && <div className="creator-loading"><Loader2 className="spinning" /><span>正在读取项目</span></div>}
       </section>

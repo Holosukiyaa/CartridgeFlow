@@ -8,53 +8,65 @@ import json
 
 
 DISCOVERY = {
+    "mode": "propose",
+    "clarification": None,
     "possibilities": [
         {
             "id": "action-list",
-            "title": "Turn meeting notes into actions",
-            "outcome": "A short list of owned and prioritized follow-up actions.",
-            "why_it_fits": "It turns an existing meeting record into something the team can execute.",
-            "first_week_output": "One reviewed action list from the latest meeting.",
-            "needs_confirmation": ["Which meeting record should be processed first?"],
+            "title": "把信息整理成行动清单",
+            "outcome": "每天得到一份有负责人和优先级的后续行动清单。",
+            "why_it_fits": "它把零散信息变成可以立即执行的结果。",
+            "first_week_output": "一份经过确认的行动清单。",
+            "needs_confirmation": ["最先处理哪一类信息？"],
             "recipe": {
-                "intent": "Turn meeting notes into clear action items",
+                "intent": "把每天收到的信息整理成明确行动",
                 "steps": [
-                    {"id": "read-notes", "intent": "Identify decisions and unresolved work", "inputs": [], "outputs": []},
-                    {"id": "write-actions", "intent": "Write prioritized actions with owners", "inputs": [], "outputs": []},
+                    {"id": "read-notes", "intent": "识别决定和仍未解决的事项", "inputs": [], "outputs": []},
+                    {"id": "write-actions", "intent": "整理带负责人和优先级的行动", "inputs": [], "outputs": []},
                 ],
             },
         },
         {
             "id": "decision-summary",
-            "title": "Create a decision summary",
-            "outcome": "A concise record of decisions, reasons, and open questions.",
-            "why_it_fits": "It preserves the parts of a meeting that people need to recall later.",
-            "first_week_output": "One decision summary ready for team review.",
-            "needs_confirmation": ["How detailed should the decision reasoning be?"],
+            "title": "生成可审核的中文简报",
+            "outcome": "得到一份包含结论、依据和待确认问题的简报。",
+            "why_it_fits": "它适合快速阅读，也保留了继续核查的入口。",
+            "first_week_output": "一份可供团队审核的中文简报。",
+            "needs_confirmation": ["简报主要给谁阅读？"],
             "recipe": {
-                "intent": "Summarize meeting decisions and open questions",
+                "intent": "把每天收到的信息生成可审核的中文简报",
                 "steps": [
-                    {"id": "find-decisions", "intent": "Find decisions and supporting reasons", "inputs": [], "outputs": []},
-                    {"id": "record-questions", "intent": "Record questions that remain open", "inputs": [], "outputs": []},
+                    {"id": "find-decisions", "intent": "找出主要结论和支持依据", "inputs": [], "outputs": []},
+                    {"id": "record-questions", "intent": "记录仍需要确认的问题", "inputs": [], "outputs": []},
                 ],
             },
         },
         {
             "id": "weekly-review",
-            "title": "Build a weekly review",
-            "outcome": "A weekly view of progress, blockers, and the next priorities.",
-            "why_it_fits": "It combines repeated meeting notes into a stable review habit.",
-            "first_week_output": "A first weekly review based on the notes you provide.",
-            "needs_confirmation": ["Which meetings belong in the weekly review?"],
+            "title": "形成每周变化回顾",
+            "outcome": "每周汇总重要变化、阻碍和下一步优先事项。",
+            "why_it_fits": "它更适合观察长期趋势，而不是处理单条信息。",
+            "first_week_output": "第一份本周变化回顾。",
+            "needs_confirmation": ["哪些主题需要持续跟踪？"],
             "recipe": {
-                "intent": "Create a weekly progress review from meeting notes",
+                "intent": "从每天的信息中形成每周变化回顾",
                 "steps": [
-                    {"id": "group-progress", "intent": "Group progress and blockers", "inputs": [], "outputs": []},
-                    {"id": "set-priorities", "intent": "Set the next weekly priorities", "inputs": [], "outputs": []},
+                    {"id": "group-progress", "intent": "归纳本周变化和阻碍", "inputs": [], "outputs": []},
+                    {"id": "set-priorities", "intent": "确定下周优先关注的事项", "inputs": [], "outputs": []},
                 ],
             },
         },
     ],
+}
+
+CLARIFICATION = {
+    "mode": "clarify",
+    "clarification": {
+        "question": "你希望这些信息最后变成什么结果？",
+        "why_it_matters": "结果形态会决定后续是强调行动、审核还是长期观察。",
+        "suggested_answers": ["每天生成一份可审核的中文简报", "整理成带优先级的行动清单", "每周形成一次变化回顾"],
+    },
+    "possibilities": [],
 }
 
 SEMANTIC_RECIPE = {
@@ -118,8 +130,8 @@ class Handler(BaseHTTPRequestHandler):
         messages = payload.get("messages") if isinstance(payload, dict) else []
         system = str(next((item.get("content") for item in messages or [] if item.get("role") == "system"), ""))
         user = str(next((item.get("content") for item in reversed(messages or []) if item.get("role") == "user"), ""))
-        if "exactly three distinct possibilities" in system:
-            content = json.dumps(DISCOVERY, ensure_ascii=False)
+        if "mode=clarify" in system:
+            content = json.dumps(DISCOVERY if "补充：" in user else CLARIFICATION, ensure_ascii=False)
         elif "one-to-eight step semantic recipe" in system:
             content = json.dumps(SEMANTIC_RECIPE, ensure_ascii=False)
         elif "supplied trusted preset ids" in system:

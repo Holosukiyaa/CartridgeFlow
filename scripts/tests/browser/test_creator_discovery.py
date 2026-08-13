@@ -29,17 +29,18 @@ def main() -> None:
             wait_until="networkidle",
         )
         page.locator(".creator-discovery textarea").fill(
-            "我想持续了解 AI 行业变化，并生成可以审核来源的中文日报。"
+            "我想更高效地处理每天收到的信息。"
         )
         page.get_by_role("button", name="拆解想法").click()
 
         page.locator(
-            ".creator-model-setup, .creator-possibilities article, "
+            ".creator-model-setup, .creator-clarification, "
             ".creator-discovery-error"
         ).first.wait_for(timeout=30000)
         if page.locator(".creator-model-setup").is_visible():
             if os.environ.get("SAME_ORIGIN_PRODUCT") == "1":
                 raise AssertionError("Full product acceptance stopped at model setup")
+            assert not discovery_requests, "Unbound Creator must not call the discovery API"
             unexpected = [
                 error for error in console_errors if "status of 409" not in error
             ]
@@ -57,9 +58,11 @@ def main() -> None:
             browser.close()
             return
 
-        page.get_by_role("button", name="用这个方向生成方案").first.wait_for(
-            timeout=5000
-        )
+        page.locator(".creator-clarification").wait_for(timeout=5000)
+        assert "你希望" in page.locator(".creator-clarification h2").inner_text()
+        page.get_by_role("button", name="每天生成一份可审核的中文简报").click()
+        page.locator(".creator-possibilities article").first.wait_for(timeout=5000)
+        assert "中文" in page.locator(".creator-possibilities article").nth(1).inner_text()
 
         page.get_by_role("button", name="用这个方向生成方案").first.click()
         page.locator(".creator-node").first.wait_for(timeout=30000)

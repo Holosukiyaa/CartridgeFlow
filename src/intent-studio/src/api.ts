@@ -1,6 +1,6 @@
 import type {
+  CreatorDiscoveryResult,
   CreatorPackage,
-  CreatorPossibility,
   CreatorProjection,
   CreatorProposal,
   CreatorProposalPreview,
@@ -80,7 +80,7 @@ export const fetchCreatorSession = (sessionId: string) =>
   api<{ creator: CreatorProjection }>(sessionRoute(sessionId))
 
 export const fetchCreatorAiStatus = () =>
-  api<{ has_key: boolean; base_url: string; model: string }>('/api/settings')
+  api<{ provider: string; has_key: boolean; base_url: string; model: string }>('/api/settings')
 
 export async function connectCreatorAi(body: { base_url: string; api_key: string; model: string }) {
   const detected = await api<{
@@ -114,8 +114,8 @@ export async function connectCreatorAi(body: { base_url: string; api_key: string
 }
 
 export const discoverCreatorPossibilities = (context: string) =>
-  api<{ possibilities: CreatorPossibility[] }>('/api/creator/possibilities', {
-    method: 'POST', body: JSON.stringify({ context }), timeoutMs: 135_000,
+  api<CreatorDiscoveryResult>('/api/creator/possibilities', {
+    method: 'POST', body: JSON.stringify({ context, output_locale: 'zh-CN' }), timeoutMs: 135_000,
   })
 
 export const composeCreatorRecipe = (body: { session_id: string; project_id: string; goal: string }) =>

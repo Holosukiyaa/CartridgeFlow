@@ -115,6 +115,21 @@ export interface CreatorPossibility {
   }
 }
 
+export interface CreatorClarification {
+  question: string
+  why_it_matters: string
+  suggested_answers: string[]
+}
+
+export interface CreatorDiscoveryResult {
+  schema: 'cartridgeflow.creator_discovery.v2'
+  context: string
+  output_locale: 'zh-CN'
+  mode: 'clarify' | 'propose'
+  clarification: CreatorClarification | null
+  possibilities: CreatorPossibility[]
+}
+
 export interface CreatorProposalPreview {
   accepted_change_ids: string[]
   impact: { plain_summary?: string; changed_steps?: string[]; changed_sources?: string[] }

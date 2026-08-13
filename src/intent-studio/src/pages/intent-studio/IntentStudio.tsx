@@ -1,17 +1,21 @@
 import { type CSSProperties, type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Bot,
+  BarChart3,
   Braces,
   Check,
   CheckCircle2,
   ChevronDown,
   Download,
   FileText,
+  FolderOpen,
   Globe2,
   Lightbulb,
   Loader2,
   PackageCheck,
   Paperclip,
+  Palette,
+  PenLine,
   Plus,
   Redo2,
   RefreshCw,
@@ -21,6 +25,7 @@ import {
   ShieldCheck,
   Sparkles,
   Target,
+  Users,
   Undo2,
   Workflow,
   Wrench,
@@ -64,6 +69,75 @@ import { showToast } from '../../toast.tsx'
 import { IntentCanvas } from './IntentCanvas.tsx'
 
 const creatorId = () => `creator.${crypto.randomUUID()}`
+
+type CreatorTheme = {
+  id: string
+  label: string
+  accent: string
+  focus: string
+  page: string
+}
+
+const CREATOR_THEME_KEY = 'cartridgeflow.creator-theme'
+const CREATOR_THEME_PRESETS: CreatorTheme[] = [
+  { id: 'morning-mist', label: '晨雾青', accent: '#087f82', focus: '#0f9da0', page: '#f7faf9' },
+  { id: 'paper-ink', label: '纸张墨', accent: '#3c5360', focus: '#4f7180', page: '#faf9f6' },
+  { id: 'quiet-forest', label: '静谧林', accent: '#3f725d', focus: '#5d9b7d', page: '#f5f8f5' },
+]
+
+const CREATOR_RECENT_EXAMPLES = [
+  { title: '整理本周 AI 行业动态', description: '生成中文简报', icon: FileText },
+  { title: '分析竞品对手动态', description: '生成对比分析报告', icon: BarChart3 },
+  { title: '撰写产品发布文案', description: '面向开发者的介绍', icon: PenLine },
+  { title: '整理用户反馈要点', description: '生成洞察与建议', icon: Users },
+  { title: '研究某个技术主题', description: '生成学习笔记', icon: FolderOpen },
+]
+
+function readCreatorTheme(): CreatorTheme {
+  try {
+    const saved = JSON.parse(localStorage.getItem(CREATOR_THEME_KEY) || 'null') as Partial<CreatorTheme> | null
+    if (saved?.id && saved.accent && saved.focus && saved.page) return { ...CREATOR_THEME_PRESETS[0], ...saved }
+  } catch { /* use the bundled preset */ }
+  return CREATOR_THEME_PRESETS[0]
+}
+
+function themeVariables(theme: CreatorTheme): CSSProperties {
+  return {
+    '--intent-accent': theme.accent,
+    '--intent-accent-dark': `color-mix(in srgb, ${theme.accent} 78%, #12363a)`,
+    '--intent-accent-soft': `color-mix(in srgb, ${theme.accent} 12%, ${theme.page})`,
+    '--intent-focus': theme.focus,
+    '--intent-focus-ring': `color-mix(in srgb, ${theme.focus} 30%, transparent)`,
+    '--intent-page': theme.page,
+    '--intent-surface-muted': `color-mix(in srgb, ${theme.page} 58%, #ffffff)`,
+  } as CSSProperties
+}
+
+function CreatorThemePanel({ theme, onChange, onClose }: {
+  theme: CreatorTheme
+  onChange: (theme: CreatorTheme) => void
+  onClose: () => void
+}) {
+  const update = (key: keyof Pick<CreatorTheme, 'accent' | 'focus' | 'page'>, value: string) => onChange({ ...theme, id: 'custom', label: '自定义主题', [key]: value })
+  return <aside className="creator-theme-panel" aria-label="全局视觉主题">
+    <header>
+      <div><span><Palette /> 全局视觉</span><h2>调整主题</h2></div>
+      <button className="icon-button" type="button" onClick={onClose} title="关闭主题设置"><X /></button>
+    </header>
+    <div className="creator-theme-panel-body">
+      <label><span>好看的预设</span><select value={theme.id} onChange={(event) => {
+        const preset = CREATOR_THEME_PRESETS.find((item) => item.id === event.currentTarget.value)
+        if (preset) onChange(preset)
+      }}><option value="custom">自定义主题</option>{CREATOR_THEME_PRESETS.map((preset) => <option value={preset.id} key={preset.id}>{preset.label}</option>)}</select></label>
+      <div className="creator-theme-color-grid">
+        <label><span>控件颜色</span><input type="color" value={theme.accent} onChange={(event) => update('accent', event.currentTarget.value)} /></label>
+        <label><span>焦点颜色</span><input type="color" value={theme.focus} onChange={(event) => update('focus', event.currentTarget.value)} /></label>
+        <label><span>背景颜色</span><input type="color" value={theme.page} onChange={(event) => update('page', event.currentTarget.value)} /></label>
+      </div>
+      <p>主题会应用到当前创作空间的按钮、焦点状态、画布和页面背景，并自动保存在本机。</p>
+    </div>
+  </aside>
+}
 
 function friendlyError(error: unknown, action: 'discover' | 'compose' | 'node' | 'package') {
   const code = error instanceof ApiError ? error.code : ''
@@ -444,6 +518,8 @@ function ModelConnectionPanel({ onConnect, onClose }: {
 }
 
 export function IntentStudio({ projectId }: { projectId: string }) {
+  const [theme, setTheme] = useState<CreatorTheme>(readCreatorTheme)
+  const [themePanelOpen, setThemePanelOpen] = useState(false)
   const [creator, setCreator] = useState<CreatorProjection | null>(null)
   const [goal, setGoal] = useState('')
   const [selectedId, setSelectedId] = useState('')
@@ -464,6 +540,10 @@ export function IntentStudio({ projectId }: { projectId: string }) {
   const composerRef = useRef<HTMLTextAreaElement | null>(null)
   const aiConnectedRef = useRef<boolean | null>(null)
   const resolutionCheckRef = useRef('')
+
+  useEffect(() => {
+    localStorage.setItem(CREATOR_THEME_KEY, JSON.stringify(theme))
+  }, [theme])
 
   useEffect(() => {
     let active = true
@@ -661,7 +741,7 @@ export function IntentStudio({ projectId }: { projectId: string }) {
     else createProject()
   }
 
-  return <main className="creator-workspace">
+  return <main className="creator-workspace" style={themeVariables(theme)}>
     <header className={`creator-topbar is-${workspaceMode}`}>
       <div className="creator-brand">
         <span className="creator-brand-mark" aria-hidden="true"><Workflow /></span>
@@ -674,6 +754,7 @@ export function IntentStudio({ projectId }: { projectId: string }) {
         <button className={packageResult ? 'is-complete' : ''} type="button" disabled={!creator?.generation_readiness.ready} onClick={() => void buildPackage()}><span>3</span><PackageCheck />交付</button>
       </nav>
       <div className="creator-top-actions">
+        <button className="creator-theme-button" type="button" onClick={() => setThemePanelOpen(true)}><Palette />主题</button>
         {workspaceMode === 'compose' && <>
           <span className="creator-saved"><CheckCircle2 />已自动保存</span>
           <button className="icon-button" type="button" title="当前没有可撤销的操作" disabled><Undo2 /></button>
@@ -733,7 +814,11 @@ export function IntentStudio({ projectId }: { projectId: string }) {
           <form onSubmit={(event) => { event.preventDefault(); void discover() }}><textarea autoFocus value={goal} onChange={(event) => { setGoal(event.currentTarget.value); setComposerError(''); setClarification(null); setPossibilities([]) }} placeholder="例如：每天早上整理可信的 AI 行业动态，生成一份中文简报" /><button type="submit" disabled={busy || goal.trim().length < 3}>{busy ? <Loader2 className="spinning" /> : <Sparkles />}拆解想法</button></form>
           {composerError && <div className="creator-discovery-error" role="alert"><strong>这次没有生成方向建议</strong><span>{composerError} 你的输入已经保留，可以直接重试。</span></div>}
           {clarification && <section className="creator-clarification" aria-label="AI 需要确认"><header><span><Bot /></span><div><small>先确认一件事</small><h2>{clarification.question}</h2><p>{clarification.why_it_matters}</p></div></header><div>{clarification.suggested_answers.map((answer) => <button type="button" key={answer} disabled={busy} onClick={() => { const nextContext = `${goal.trim()}\n补充：${answer}`; setGoal(nextContext); setClarification(null); void discover(nextContext) }}>{answer}</button>)}</div><small>也可以直接修改上面的描述，再次拆解。</small></section>}
-          {!clarification && <div className="creator-possibilities" aria-label="AI 方向建议">{possibilities.length ? possibilities.map((item) => <article key={item.id}><span><Target /></span><h3>{item.title}</h3><p>{item.outcome}</p><small>{item.why_it_fits}</small><button type="button" onClick={() => { setGoal(item.recipe.intent); setWorkspaceMode('compose'); void compose(item.recipe.intent) }}><Send />用这个方向生成方案</button></article>) : <div className="creator-discovery-empty"><Sparkles /><strong>AI 会先理解你的目标</strong><span>信息不足时先追问，足够时再给出可比较的方向。</span></div>}</div>}
+          {!clarification && <div className="creator-possibilities" aria-label="AI 方向建议">{possibilities.length ? possibilities.map((item) => {
+            const subject = item.title.replace(/^(把|生成|形成)/, '')
+            const recommended = subject.length >= 4 && goal.includes(subject)
+            return <article className={recommended ? 'is-recommended' : ''} key={item.id}><span><Target /></span>{recommended && <em><CheckCircle2 />推荐</em>}<h3>{item.title}</h3><p>{item.outcome}</p><small>{item.why_it_fits}</small><button type="button" onClick={() => { setGoal(item.recipe.intent); setWorkspaceMode('compose'); void compose(item.recipe.intent) }}><Send />用这个方向生成方案</button></article>
+          }) : <div className={`creator-discovery-empty ${goal.trim() ? 'has-goal' : ''}`}><Sparkles /><strong>AI 会先理解你的目标</strong><span>信息不足时先追问，足够时再给出可比较的方向。</span><div className="creator-recent-examples"><strong>最近的示例</strong><div>{CREATOR_RECENT_EXAMPLES.map(({ title, description, icon: Icon }) => <button type="button" key={title} onClick={() => setGoal(title)}><Icon /><span><strong>{title}</strong><small>{description}</small></span><Send /></button>)}</div></div></div>}</div>}
         </section>}
         {loading && <div className="creator-loading"><Loader2 className="spinning" /><span>正在读取项目</span></div>}
       </section>
@@ -744,6 +829,7 @@ export function IntentStudio({ projectId }: { projectId: string }) {
     </div>
 
     {creator && recipePreview && <aside className="creator-recipe-preview" aria-label="整体草稿预览"><header><div><span>整体改动预览</span><h2>{recipePreview.goal}</h2></div><button className="icon-button" type="button" title="关闭预览" onClick={() => setRecipePreview(null)}><X /></button></header><div className="creator-recipe-preview-body"><p>新草稿包含 {recipePreview.nodes.length} 个步骤，其中 {recipePreview.nodes.filter((node) => node.resolution === 'unresolved').length} 个需要补齐能力。</p>{recipePreview.nodes.map((node, index) => <article key={node.id}><span>{index + 1}</span><div><strong>{node.label}</strong><p>{node.description}</p><small>{node.resolution === 'resolved' ? '已有可信能力' : '保留为待补齐能力'}</small></div></article>)}<div className="creator-recipe-impact"><span>新增 {recipePreview.impact.added_node_ids.length}</span><span>保留 {recipePreview.impact.retained_node_ids.length}</span><span>移除 {recipePreview.impact.removed_node_ids.length}</span></div><div className="creator-recipe-preview-actions"><button className="secondary-button" type="button" disabled={busy} onClick={() => setRecipePreview(null)}>放弃这版</button><button type="button" disabled={busy} onClick={() => void applyRecipePreview()}><Check />应用整体改动</button></div></div></aside>}
-    {modelSetupOpen && <ModelConnectionPanel onConnect={connectModel} onClose={() => { setModelSetupOpen(false); setPendingAiAction(null) }} />}
+    {modelSetupOpen && <><div className="creator-overlay" aria-hidden="true" /><ModelConnectionPanel onConnect={connectModel} onClose={() => { setModelSetupOpen(false); setPendingAiAction(null) }} /></>}
+    {themePanelOpen && <><div className="creator-overlay" aria-hidden="true" /><CreatorThemePanel theme={theme} onChange={setTheme} onClose={() => setThemePanelOpen(false)} /></>}
   </main>
 }

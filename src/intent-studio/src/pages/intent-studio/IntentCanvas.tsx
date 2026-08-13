@@ -124,7 +124,7 @@ export function IntentCanvas({ creator, selectedId, onSelect }: {
       label: relation.relation === 'produces' ? '产出' : relation.relation === 'uses' ? '提供' : '提供信息',
       type: 'smoothstep',
       animated: true,
-      markerEnd: { type: MarkerType.ArrowClosed, color: '#447675', width: 18, height: 18 },
+      markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--intent-accent)', width: 18, height: 18 },
       className: 'creator-edge',
     }))
     return { nodes: layout(nodes, edges, vertical), edges }
@@ -157,7 +157,7 @@ export function IntentCanvas({ creator, selectedId, onSelect }: {
     maxZoom={1.35}
     proOptions={{ hideAttribution: true }}
   >
-    <Background variant={BackgroundVariant.Dots} color="#c7d5d4" gap={22} size={1} />
+    <Background variant={BackgroundVariant.Dots} color="var(--intent-line-strong)" gap={22} size={1} />
     <Controls showInteractive={false} position="top-left" />
   </ReactFlow>
 }

@@ -25,6 +25,7 @@ const app = source.get('App.tsx') || ''
 const api = source.get('api.ts') || ''
 const workspace = source.get('pages/intent-studio/IntentStudio.tsx') || ''
 const canvas = source.get('pages/intent-studio/IntentCanvas.tsx') || ''
+const styles = source.get('styles/intent-studio.css') || ''
 
 check(source.has('pages/intent-studio/IntentStudio.tsx'), 'Intent Studio is the semantic product surface')
 check(source.has('pages/intent-studio/IntentCanvas.tsx'), 'Intent Studio owns one focused canvas implementation')
@@ -63,6 +64,10 @@ check(canvas.includes("relation.relation === 'uses' ? relation.to_node_id") && c
 check(canvas.includes('onInit={setFlow}') && canvas.includes('flow.fitView'), 'the canvas refits after an asynchronous semantic draft arrives')
 check(workspace.includes('ProposalChanges') && workspace.includes('creator-review-changes'), 'node proposals expose their concrete Creator-safe field changes before acceptance')
 check(workspace.includes('creator-package-error'), 'Creator packaging failures remain visible on the canvas')
+check(workspace.includes('CREATOR_THEME_PRESETS') && workspace.includes('morning-mist') && workspace.includes('paper-ink') && workspace.includes('quiet-forest'), 'Creator ships three visual theme presets')
+check(workspace.includes("localStorage.setItem(CREATOR_THEME_KEY") && workspace.includes("localStorage.getItem(CREATOR_THEME_KEY"), 'Creator persists the selected visual theme locally')
+check(workspace.includes('控件颜色') && workspace.includes('焦点颜色') && workspace.includes('背景颜色'), 'Creator exposes the three user-adjustable theme colors')
+check(styles.includes('--intent-accent') && styles.includes('--intent-focus') && styles.includes('--intent-page'), 'Creator routes controls, focus, and page background through theme variables')
 
 const visibleForbidden = ['Developer', '工程语义', '运行测试', '调试', '调优', '版本切换', '执行映射', '配置模型', '配置工具', '权限设置']
 for (const phrase of visibleForbidden) check(!workspace.includes(phrase), `Creator UI omits ${phrase}`)

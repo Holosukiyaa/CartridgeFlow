@@ -1,12 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import dagre from '@dagrejs/dagre'
 import {
-  Background,
-  BackgroundVariant,
-  Controls,
   Handle,
   MarkerType,
-  MiniMap,
+  Panel,
   Position,
   ReactFlow,
   SelectionMode,
@@ -16,6 +13,7 @@ import {
   type ReactFlowInstance,
   useNodesState,
 } from '@xyflow/react'
+import { CheckCircle2, Circle, FilePlus2, FileText, Filter, Globe2, Maximize2, Minus, Plus, Send, UserRound } from 'lucide-react'
 import type { CreatorProjection, CreatorRecipePreview } from '../../api.types.ts'
 
 export type CreatorCanvasTool = 'inspect' | 'pointer' | 'lasso'
@@ -25,34 +23,38 @@ type CanvasNodeData = {
   label: string
   description: string
   state: 'empty' | 'review' | 'confirmed' | 'unresolved'
-  direction: 'horizontal' | 'vertical'
+  targetPosition: Position
+  sourcePosition: Position
 }
 
 type CanvasNode = Node<CanvasNodeData, 'creator'>
 
 function CreatorNode({ data, selected }: NodeProps<CanvasNode>) {
   const stateLabel = data.state === 'confirmed' ? '已确认' : data.state === 'review' ? '待审核' : data.state === 'unresolved' ? '待补齐能力' : '空白画布'
-  return <div className={`creator-node creator-node-${data.state} ${selected ? 'is-selected' : ''}`}>
-    <Handle type="target" position={data.direction === 'vertical' ? Position.Top : Position.Left} />
+  const icons = [Globe2, Filter, FilePlus2, FileText, UserRound, Send]
+  const NodeIcon = icons[Math.max(0, data.order - 1) % icons.length] || FileText
+  return <div className={`creator-node creator-node-${data.state} creator-node-order-${data.order} ${selected ? 'is-selected' : ''}`}>
+    <Handle type="target" position={data.targetPosition} />
     <header className="creator-node-header">
       <span className="creator-node-order">{data.order ? String(data.order).padStart(2, '0') : 'AI'}</span>
+      {data.order > 0 && <NodeIcon className="creator-node-kind" />}
       <span className="creator-node-title"><strong title={data.label}>{data.label}</strong></span>
     </header>
     <div className="creator-node-body">
       <p title={data.description}>{data.description}</p>
     </div>
-    <footer className="creator-node-footer"><strong><i />{stateLabel}</strong></footer>
-    <Handle type="source" position={data.direction === 'vertical' ? Position.Bottom : Position.Right} />
+    <footer className="creator-node-footer"><strong>{data.state === 'confirmed' ? <CheckCircle2 /> : <Circle />}{stateLabel}</strong></footer>
+    <Handle type="source" position={data.sourcePosition} />
   </div>
 }
 
 const nodeTypes = { creator: CreatorNode }
-const NODE_WIDTH = 288
-const NODE_HEIGHT = 202
-const CREATOR_LAYOUT_KEY = 'cartridgeflow.creator-layout'
+const NODE_WIDTH = 204
+const NODE_HEIGHT = 174
+const CREATOR_LAYOUT_KEY = 'cartridgeflow.creator-layout.v2'
 const fitOptions = {
-  padding: { x: 0.04, top: '4%', bottom: '32%' },
-  minZoom: 0.68,
+  padding: { x: 0.04, top: '7%', bottom: '7%' },
+  minZoom: 0.7,
   maxZoom: 1,
 } as const
 const compactFitOptions = {
@@ -61,9 +63,9 @@ const compactFitOptions = {
   maxZoom: 0.9,
 } as const
 const multiRowFitOptions = {
-  padding: 0.08,
-  minZoom: 0.7,
-  maxZoom: 0.96,
+  padding: { x: 0.025, top: '7%', bottom: '5%' },
+  minZoom: 0.64,
+  maxZoom: 1,
 } as const
 const emptyFitOptions = {
   padding: 0.35,
@@ -95,13 +97,18 @@ function savePositions(projectId: string, nodes: CanvasNode[]) {
 function layout(nodes: CanvasNode[], edges: Edge[], vertical: boolean) {
   if (!vertical && nodes.length > 1 && nodes.length <= 8) {
     const columns = nodes.length > 6 ? 4 : 3
-    const columnGap = nodes.length <= 3 ? 132 : 42
-    const rowGap = 96
+    const columnGap = nodes.length <= 3 ? 90 : nodes.length <= 6 ? 90 : 38
     return nodes.map((node, index) => ({
       ...node,
       position: {
-        x: (Math.floor(index / columns) % 2 ? columns - 1 - (index % columns) : index % columns) * (NODE_WIDTH + columnGap),
-        y: Math.floor(index / columns) * (NODE_HEIGHT + rowGap),
+        x: index < columns
+          ? index * (NODE_WIDTH + columnGap)
+          : index === columns && columns === 3
+            ? 557
+            : index === columns + 1 && columns === 3
+              ? 280
+              : (columns - 1 - ((index - columns) % columns)) * (NODE_WIDTH + columnGap),
+        y: index < columns ? 0 : index === columns ? 294 : 460,
       },
     }))
   }
@@ -127,6 +134,7 @@ export function IntentCanvas({ creator, preview, draftGoal, selectedId, contextN
   onContextChange: (nodeIds: string[]) => void
 }) {
   const [flow, setFlow] = useState<ReactFlowInstance<CanvasNode, Edge> | null>(null)
+  const [zoom, setZoom] = useState(1)
   const [vertical, setVertical] = useState(() => window.matchMedia('(max-width: 760px)').matches)
   useEffect(() => {
     const query = window.matchMedia('(max-width: 760px)')
@@ -147,7 +155,8 @@ export function IntentCanvas({ creator, preview, draftGoal, selectedId, contextN
           label: draftGoal.trim() ? '当前想法' : '从一句话开始',
           description: draftGoal.trim() || '告诉 AI 你想得到什么，大纲会立刻出现在这里。',
           state: 'empty',
-          direction: vertical ? 'vertical' : 'horizontal',
+          targetPosition: vertical ? Position.Top : Position.Left,
+          sourcePosition: vertical ? Position.Bottom : Position.Right,
         },
         selectable: false,
       }]
@@ -168,7 +177,8 @@ export function IntentCanvas({ creator, preview, draftGoal, selectedId, contextN
         label: node.label,
         description: node.description,
         state: (typeof node.resolution === 'string' ? node.resolution : node.resolution?.status) === 'unresolved' ? 'unresolved' : confirmed.has(node.id) ? 'confirmed' : 'review',
-        direction: vertical ? 'vertical' : 'horizontal',
+        targetPosition: vertical ? Position.Top : recipeNodes.length <= 3 || index < 3 ? Position.Left : index === 3 ? Position.Top : Position.Right,
+        sourcePosition: vertical ? Position.Bottom : recipeNodes.length <= 3 || index < 2 ? Position.Right : index === 2 || index === 3 ? Position.Bottom : Position.Left,
       },
     }))
     const edges: Edge[] = recipeRelations.map((relation) => ({
@@ -189,6 +199,14 @@ export function IntentCanvas({ creator, preview, draftGoal, selectedId, contextN
   const [nodes, setNodes, onNodesChange] = useNodesState<CanvasNode>(elements.nodes)
   const layoutSignature = `${elements.nodes.map((node) => node.id).join(':')}|${elements.edges.map((edge) => `${edge.source}>${edge.target}`).join(':')}`
   const activeFitOptions = !creator ? emptyFitOptions : vertical ? compactFitOptions : elements.nodes.length > 3 ? multiRowFitOptions : fitOptions
+  const fitCanvas = useCallback(async (duration: number) => {
+    if (!flow) return
+    await flow.fitView({ ...activeFitOptions, duration })
+    if (!vertical) {
+      const viewport = flow.getViewport()
+      await flow.setViewport({ ...viewport, x: viewport.x - 9, y: viewport.y - 9 })
+    }
+  }, [activeFitOptions, flow, vertical])
   useEffect(() => {
     const sameScope = layoutScopeRef.current === layoutScope
     const saved = readSavedPositions(layoutScope)
@@ -209,11 +227,11 @@ export function IntentCanvas({ creator, preview, draftGoal, selectedId, contextN
         const firstNode = flow.getNodes().find((node) => node.id !== 'empty')
         if (vertical && creator && firstNode) {
           void flow.setCenter(firstNode.position.x + NODE_WIDTH / 2, firstNode.position.y + NODE_HEIGHT / 2, { zoom: 0.82, duration: 260 })
-        } else void flow.fitView({ ...activeFitOptions, duration: 260 })
+        } else void fitCanvas(260)
       })
     })
     return () => cancelAnimationFrame(frame)
-  }, [activeFitOptions, creator, flow, layoutSignature, vertical])
+  }, [creator, fitCanvas, flow, layoutSignature, vertical])
 
   useEffect(() => {
     if (!flow) return
@@ -227,7 +245,7 @@ export function IntentCanvas({ creator, preview, draftGoal, selectedId, contextN
           const firstNode = flow.getNodes().find((node) => node.id !== 'empty')
           if (vertical && creator && firstNode) {
             void flow.setCenter(firstNode.position.x + NODE_WIDTH / 2, firstNode.position.y + NODE_HEIGHT / 2, { zoom: 0.82, duration: 180 })
-          } else void flow.fitView({ ...activeFitOptions, duration: 180 })
+          } else void fitCanvas(180)
         }, 120)
       })
     }
@@ -237,7 +255,7 @@ export function IntentCanvas({ creator, preview, draftGoal, selectedId, contextN
       cancelAnimationFrame(frame)
       window.clearTimeout(timer)
     }
-  }, [activeFitOptions, creator, flow, vertical])
+  }, [creator, fitCanvas, flow, vertical])
 
   return <ReactFlow
     nodes={nodes}
@@ -268,6 +286,7 @@ export function IntentCanvas({ creator, preview, draftGoal, selectedId, contextN
     onPaneClick={() => {
       if (tool === 'inspect') onSelect('')
     }}
+    onMoveEnd={(_, viewport) => setZoom(viewport.zoom)}
     nodesDraggable={Boolean(creator) && tool === 'inspect'}
     nodesConnectable={false}
     elementsSelectable={Boolean(creator)}
@@ -281,16 +300,11 @@ export function IntentCanvas({ creator, preview, draftGoal, selectedId, contextN
     maxZoom={1.35}
     proOptions={{ hideAttribution: true }}
   >
-    <Background variant={BackgroundVariant.Dots} color="var(--intent-line-strong)" gap={14} size={0.7} />
-    <Controls showInteractive={false} position="bottom-left" />
-    <MiniMap
-      pannable
-      zoomable
-      position="bottom-left"
-      nodeBorderRadius={2}
-      nodeColor={(node) => node.selected ? 'var(--intent-accent)' : '#aeb5b0'}
-      nodeStrokeColor="#8d9591"
-      maskColor="rgba(240, 243, 244, .64)"
-    />
+    <Panel className="creator-zoom-controls" position="bottom-left">
+      <button type="button" title="缩小" aria-label="缩小" onClick={() => void flow?.zoomOut({ duration: 150 })}><Minus /></button>
+      <span>{Math.round(zoom * 100)}%</span>
+      <button type="button" title="放大" aria-label="放大" onClick={() => void flow?.zoomIn({ duration: 150 })}><Plus /></button>
+      <button type="button" title="适应画布" aria-label="适应画布" onClick={() => void fitCanvas(180)}><Maximize2 /></button>
+    </Panel>
   </ReactFlow>
 }

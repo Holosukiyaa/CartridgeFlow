@@ -5,16 +5,15 @@ import {
   CheckCircle2,
   ChevronDown,
   Download,
-  Eye,
   FileText,
   Globe2,
   Loader2,
+  Move,
   MousePointer2,
   PackageCheck,
   Paperclip,
   Palette,
   Plus,
-  Redo2,
   RefreshCw,
   Scan,
   Send,
@@ -24,8 +23,6 @@ import {
   ShieldCheck,
   Sparkles,
   Target,
-  Undo2,
-  Workflow,
   Wrench,
   X,
 } from 'lucide-react'
@@ -77,6 +74,7 @@ type CreatorTheme = {
 
 const CREATOR_THEME_KEY = 'cartridgeflow.creator-theme'
 const CREATOR_THEME_PRESETS: CreatorTheme[] = [
+  { id: 'quiet-workbench', label: '静定工作台', accent: '#426b9b', focus: '#3f6ea8', page: '#f2f4f5' },
   { id: 'clear-sky', label: '清透蓝', accent: '#176bff', focus: '#2563eb', page: '#f8fbff' },
   { id: 'morning-mist', label: '晨雾青', accent: '#087f82', focus: '#0f9da0', page: '#f7faf9' },
   { id: 'paper-ink', label: '纸张墨', accent: '#3c5360', focus: '#4f7180', page: '#faf9f6' },
@@ -107,12 +105,12 @@ function readCreatorTheme(): CreatorTheme {
 function themeVariables(theme: CreatorTheme): CSSProperties {
   return {
     '--intent-accent': theme.accent,
-    '--intent-accent-dark': `color-mix(in srgb, ${theme.accent} 78%, #12363a)`,
+    '--intent-accent-dark': `color-mix(in srgb, ${theme.accent} 78%, #152033)`,
     '--intent-accent-soft': `color-mix(in srgb, ${theme.accent} 12%, ${theme.page})`,
     '--intent-focus': theme.focus,
-    '--intent-focus-ring': `color-mix(in srgb, ${theme.focus} 30%, transparent)`,
+    '--intent-focus-ring': `color-mix(in srgb, ${theme.focus} 24%, transparent)`,
     '--intent-page': theme.page,
-    '--intent-surface-muted': `color-mix(in srgb, ${theme.page} 58%, #ffffff)`,
+    '--intent-surface-muted': `color-mix(in srgb, ${theme.page} 66%, #ffffff)`,
   } as CSSProperties
 }
 
@@ -559,6 +557,11 @@ export function IntentStudio({ projectId }: { projectId: string }) {
         setCreator(value)
         setGoal(value.intent)
         setSelectedId('')
+        setStewardMessages([{
+          id: 'loaded-outline',
+          role: 'assistant',
+          text: '我先按目前的理解摆了一版大纲。它还不是最终答案，你可以继续描述，也可以直接指向或框选画布中的部分。',
+        }])
       })
       .catch(() => showToast({ title: '草稿读取失败', description: '请刷新页面后重试。', type: 'error' }))
       .finally(() => { if (active) setLoading(false) })
@@ -602,7 +605,13 @@ export function IntentStudio({ projectId }: { projectId: string }) {
   const unresolvedCount = creator?.trusted_recipe.nodes.filter((node) => node.resolution?.status === 'unresolved').length || 0
   const reviewCount = Math.max(0, totalCount - confirmedCount - unresolvedCount)
   const contextNodes = useMemo(() => (recipePreview?.nodes || creator?.trusted_recipe.nodes || []).filter((node) => contextNodeIds.includes(node.id)), [contextNodeIds, creator, recipePreview])
-  const canvasStatus = recipePreview ? 'AI 刚提出一版新大纲，正在等你确认' : creator ? '大纲会随着讨论持续变化' : goal.trim() ? '准备把当前想法摆成大纲' : '先说一句现在的想法'
+  const canvasStatus = recipePreview
+    ? '新大纲 · 正在等你确认'
+    : creator
+      ? `${creator.revision <= 1 ? '第一版大纲' : '当前大纲'} · 会随着讨论持续变化`
+      : goal.trim()
+        ? '准备把当前想法摆成大纲'
+        : '先说一句现在的想法'
 
   const saveCreator = (next: CreatorProjection) => {
     setCreator(next)
@@ -803,18 +812,10 @@ export function IntentStudio({ projectId }: { projectId: string }) {
     <header className="creator-topbar is-co-create creator-workbench-header">
       <div className="creator-brand">
         <span className="creator-brand-mark" aria-hidden="true"><Share2 /></span>
-        <div className="creator-brand-copy">
-          <div className="creator-workspace-heading"><strong>CARTRIDGE WORKSPACE</strong><span>/ 卡带工作台</span></div>
-          <div className="creator-brand-tags" aria-label="工作台状态"><span>语义步骤</span><span>待办驱动</span><span>整体中文</span></div>
-        </div>
+        <div className="creator-workspace-heading"><strong>CARTRIDGE WORKSPACE</strong><span>/ 卡带工作台</span></div>
       </div>
       <div className="creator-top-actions">
-        <span className="creator-design-mode"><Workflow />设计</span>
-        {creator && <>
-          <span className="creator-saved"><CheckCircle2 />已自动保存</span>
-          <button className="icon-button" type="button" title="当前没有可撤销的操作" disabled><Undo2 /></button>
-          <button className="icon-button" type="button" title="当前没有可重做的操作" disabled><Redo2 /></button>
-        </>}
+        {creator && <span className="creator-saved"><CheckCircle2 />已自动保存</span>}
         <button className="creator-theme-button" type="button" onClick={() => setThemePanelOpen(true)}><Palette />主题</button>
         {creator && (packageResult ? <a className="creator-package-download" href={packageResult.url} download><Download />下载卡带</a> : <button className="creator-package-button" type="button" disabled={busy || !creator?.generation_readiness.ready} onClick={() => void buildPackage()} title={creator?.generation_readiness.ready ? '生成可安装卡带' : '完成所有步骤后可交付'}><PackageCheck />生成卡带</button>)}
       </div>
@@ -822,10 +823,8 @@ export function IntentStudio({ projectId }: { projectId: string }) {
 
     <div className="creator-commandbar">
       <div className="creator-commandbar-left">
-        <span className="creator-mode-indicator"><i />选择模式</span>
-        <span className="creator-view-indicator"><Workflow />大纲视图</span>
         <span className="creator-canvas-status"><i className={recipePreview ? 'is-preview' : ''} />{canvasStatus}</span>
-        <span className="creator-outline-metrics">{totalCount} 步骤 · {confirmedCount} 已确认 · {reviewCount} 待审核 · {unresolvedCount} 待补齐</span>
+        <span className="creator-outline-metrics">{totalCount} 步骤 · {confirmedCount} 已确认 · {reviewCount} 待审核{unresolvedCount ? ` · ${unresolvedCount} 待补齐` : ''}</span>
       </div>
       <div className="creator-commandbar-actions" role="tablist" aria-label="右侧面板">
         <button type="button" role="tab" aria-selected={Boolean(selectedNode)} disabled={!selectedNode} className={selectedNode ? 'is-active' : ''} onClick={() => setCanvasTool('inspect')}><FileText />详情</button>
@@ -835,13 +834,11 @@ export function IntentStudio({ projectId }: { projectId: string }) {
 
     <div className="creator-shell is-co-create">
       <nav className="creator-tool-rail" aria-label="画布工具">
-        <button className={canvasTool === 'inspect' ? 'is-active' : ''} type="button" title="打开步骤详情" onClick={() => { setCanvasTool('inspect'); setContextNodeIds([]) }}><Eye /><span>查看</span></button>
+        <button className={canvasTool === 'inspect' ? 'is-active' : ''} type="button" title="直接拖动节点整理画布，单击打开详情" onClick={() => { setCanvasTool('inspect'); setContextNodeIds([]) }}><Move /><span>整理</span></button>
         <button className={canvasTool === 'pointer' ? 'is-active' : ''} type="button" title="指向一个步骤继续讨论" onClick={() => { setCanvasTool('pointer'); setSelectedId(''); setContextNodeIds([]) }}><MousePointer2 /><span>指向</span></button>
         <button className={canvasTool === 'lasso' ? 'is-active' : ''} type="button" title="框选一组步骤继续讨论" onClick={() => { setCanvasTool('lasso'); setSelectedId(''); setContextNodeIds([]) }}><Scan /><span>框选</span></button>
         <span className="creator-tool-divider" />
         <button className={sidebarOpen ? 'is-active' : ''} type="button" title="打开项目和大纲" aria-expanded={sidebarOpen} onClick={() => setSidebarOpen((value) => !value)}><FileText /><span>项目</span></button>
-        <button type="button" title="调整全局主题" onClick={() => setThemePanelOpen(true)}><Palette /><span>主题</span></button>
-        <button type="button" title={creator?.generation_readiness.ready ? '生成可安装卡带' : '完成所有步骤后可交付'} disabled={!creator || busy || !creator.generation_readiness.ready} onClick={() => void buildPackage()}><PackageCheck /><span>打包</span></button>
       </nav>
 
       <aside className={`creator-sidebar ${sidebarOpen ? 'is-open' : ''}`} aria-label="项目与大纲">
@@ -898,10 +895,6 @@ export function IntentStudio({ projectId }: { projectId: string }) {
       <aside className="creator-inspector creator-steward" aria-label="AI 管家">
         {canvasTool === 'inspect' && creator && selectedNode && !recipePreview ? <NodeEditor key={`${selectedNode.id}:${creator.revision}:${creator.experience_revision}`} creator={creator} node={selectedNode} busy={busy} onCreatorChange={saveCreator} onClose={() => setSelectedId('')} onModelRequired={() => requestModelConnection('node')} /> : <>
           <header className="creator-steward-head"><span><Bot /></span><div><strong>AI 管家</strong><small>{aiStatus?.has_key ? '和大纲一起持续靠近你的想法' : '连接后开始共同搭建'}</small></div></header>
-          <div className="creator-steward-tools">
-            <button className={canvasTool === 'pointer' ? 'is-active' : ''} type="button" onClick={() => { setCanvasTool('pointer'); setContextNodeIds([]) }}><MousePointer2 /><span>指向一步</span></button>
-            <button className={canvasTool === 'lasso' ? 'is-active' : ''} type="button" onClick={() => { setCanvasTool('lasso'); setContextNodeIds([]) }}><Scan /><span>框选一段</span></button>
-          </div>
           <div className={`creator-steward-selection ${contextNodes.length ? 'has-selection' : ''}`}><span>讨论范围</span><strong>{contextNodes.length ? contextNodes.map((node) => node.label).join('、') : '整个大纲'}</strong>{contextNodes.length > 0 && <button type="button" title="清除讨论范围" onClick={() => setContextNodeIds([])}><X /></button>}</div>
           <div className="creator-steward-thread" ref={stewardThreadRef} aria-live="polite">
             {stewardMessages.map((message) => <article className={`creator-steward-message is-${message.role}`} key={message.id}>
@@ -915,7 +908,6 @@ export function IntentStudio({ projectId }: { projectId: string }) {
             <textarea autoFocus={!creator} value={stewardInput} disabled={busy} onChange={(event) => { setStewardInput(event.currentTarget.value); setComposerError('') }} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); continueCoCreation(stewardInput) } }} placeholder={creator ? '继续说哪里不对，或先用指针、框选限定范围' : '例如：每天整理可信的 AI 动态，给我一份可审核的中文简报'} />
             <div><button className="icon-button" type="button" title="添加参考资料"><Paperclip /></button><span><Globe2 />简体中文输出</span><button type="submit" disabled={busy || stewardInput.trim().length < 3} title="发送给 AI 管家" aria-label="发送给 AI 管家">{busy ? <Loader2 className="spinning" /> : <Send />}</button></div>
           </form>
-          <p className="creator-steward-footnote">每次回答都只是下一版可见大纲，不代表 AI 已经完全理解。</p>
         </>}
       </aside>
     </div>

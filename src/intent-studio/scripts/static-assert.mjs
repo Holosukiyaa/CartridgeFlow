@@ -83,6 +83,10 @@ check(workspace.includes('data-view="outline"') && workspace.includes('data-view
 check(!canvas.includes('<MiniMap') && canvas.includes('<Panel className="creator-zoom-controls"'), 'Creator canvas uses the approved compact zoom strip without an overview map')
 check(canvas.includes('NODE_WIDTH = 204') && canvas.includes('NODE_HEIGHT = 174'), 'Creator nodes retain the approved reference dimensions')
 check(workspace.includes('项目与大纲') && workspace.includes('vip-current-project'), 'project and outline navigation remains available in the middle pane')
+check(styles.includes('font-family: "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI Variable Text", "Segoe UI", sans-serif;'), 'Creator uses the Windows-hinted Chinese UI font stack')
+check(styles.includes('--vip-surface-ai: #f3f5f8') && styles.includes('--vip-surface-outline: #f6f7f9') && styles.includes('--vip-surface-canvas: #fafbfc'), 'Creator panes retain distinct neutral surface levels')
+check(/\.vip-ai-panel\s*\{[^}]*grid-template-rows:\s*64px 76px minmax\(0, 1fr\) 104px;/.test(styles) && /\.vip-collaboration-composer > div\s*\{[^}]*padding:\s*4px 14px 6px;/.test(styles), 'Creator composer reserves internal and external bottom breathing room')
+check(/\.vip-outline-row\s*\{[^}]*gap:\s*0;/.test(styles) && !styles.includes('min-height: 49.5px'), 'Creator outline columns align on an integer-pixel grid without inherited button gaps')
 
 const visibleForbidden = ['Developer', '工程语义', '运行测试', '调试', '调优', '版本切换', '执行映射', '配置模型', '配置工具', '权限设置']
 for (const phrase of visibleForbidden) check(!workspace.includes(phrase), `Creator UI omits ${phrase}`)

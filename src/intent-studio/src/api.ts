@@ -64,8 +64,48 @@ async function api<T>(path: string, options: RequestInit & { timeoutMs?: number 
 
 const sessionRoute = (sessionId: string) => `/api/creator/authoring-sessions/${encodeURIComponent(sessionId)}`
 
+export type CreatorWorkspaceRecord<T> = {
+  schema: 'cartridgeflow.creator_workspace.v1'
+  project_id: string
+  revision: number
+  updated_at: string
+  snapshot: T
+}
+
+export type DesktopRunnerStatus = {
+  schema: 'cartridgeflow.desktop_runner_status.v1'
+  available: boolean
+  url: string
+  version: string
+  busy: boolean
+  cartridge: { id: string; name: string; version: string } | null
+  message?: string
+}
+
+export type CreatorRunnerDelivery = {
+  schema: 'cartridgeflow.creator_runner_delivery.v1'
+  status: 'installed' | 'trust_required'
+  package: CreatorPackage
+  delivery: {
+    schema: 'cartridgeflow.desktop_runner_delivery.v1'
+    status: 'installed' | 'trust_required'
+    runner_url: string
+    approval_id?: string
+    publisher?: { id: string; key_id: string; fingerprint: string }
+    cartridge: { id: string; name: string; version: string }
+  }
+}
+
 export const fetchCreatorProject = (projectId: string) =>
   api<{ creator: CreatorProjection | null }>(`/api/creator/projects/${encodeURIComponent(projectId)}?optional=true`)
+
+export const fetchCreatorWorkspace = <T>(projectId: string) =>
+  api<{ workspace: CreatorWorkspaceRecord<T> | null }>(`/api/creator/projects/${encodeURIComponent(projectId)}/workspace`)
+
+export const saveCreatorWorkspace = <T>(projectId: string, snapshot: T, expectedRevision: number) =>
+  api<{ workspace: CreatorWorkspaceRecord<T> }>(`/api/creator/projects/${encodeURIComponent(projectId)}/workspace`, {
+    method: 'PUT', body: JSON.stringify({ snapshot, expected_revision: expectedRevision }),
+  })
 
 export const listCreatorProjects = () =>
   api<{ projects: Array<{ project_id: string; session_id: string; name: string; intent: string; revision: number }> }>('/api/creator/projects')
@@ -206,4 +246,12 @@ export const setCreatorExperience = (
 export const packageCreatorProject = (sessionId: string, expectedRevision: number) =>
   api<CreatorPackage>(`${sessionRoute(sessionId)}/package`, {
     method: 'POST', body: JSON.stringify({ expected_revision: expectedRevision }), timeoutMs: 90_000,
+  })
+
+export const fetchDesktopRunnerStatus = () =>
+  api<DesktopRunnerStatus>('/api/creator/desktop-runner', { timeoutMs: 5_000 })
+
+export const deliverCreatorProject = (sessionId: string, expectedRevision: number) =>
+  api<CreatorRunnerDelivery>(`${sessionRoute(sessionId)}/desktop-runner`, {
+    method: 'POST', body: JSON.stringify({ expected_revision: expectedRevision }), timeoutMs: 30_000,
   })

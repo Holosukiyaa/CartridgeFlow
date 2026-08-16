@@ -338,6 +338,7 @@ class AuthoringSessionStore:
         with self._lock:
             state = self.get(session_id)
             self._require_revision(state, expected_revision)
+            active_freezes = self._active_freezes(state)
             recipe = state.get("semantic_recipe")
             if not isinstance(recipe, dict):
                 raise AuthoringServiceError("AUTHORING_SEMANTIC_RECIPE_REQUIRED", "This project does not use semantic capability resolution.", status=409)
@@ -378,6 +379,14 @@ class AuthoringSessionStore:
             state["instances"][instance["id"]] = instance
             state["semantic_recipe"] = next_recipe
             state["capability_publications"] = publications
+            state.setdefault("freeze_replacements", []).extend(
+                self._capability_freeze_replacements(
+                    active_freezes,
+                    instance,
+                    set(resolved),
+                    transition_id=f"capability-resolution:{instance['id']}",
+                )
+            )
             mappings = state.setdefault("experience_mappings", {})
             for node_id in resolved:
                 mappings.pop(node_id, None)
@@ -392,6 +401,7 @@ class AuthoringSessionStore:
         """Bind a just-published capability to the exact Creator gap that opened Developer."""
         with self._lock:
             state = self.get_by_project_id(project_id)
+            active_freezes = self._active_freezes(state)
             recipe = deepcopy(state.get("semantic_recipe"))
             if not isinstance(recipe, dict):
                 raise AuthoringServiceError(
@@ -435,6 +445,14 @@ class AuthoringSessionStore:
             state["instances"][instance["id"]] = instance
             state["semantic_recipe"] = recipe
             state["capability_publications"] = publications
+            state.setdefault("freeze_replacements", []).extend(
+                self._capability_freeze_replacements(
+                    active_freezes,
+                    instance,
+                    {node_id},
+                    transition_id=f"capability-binding:{instance['id']}:{node_id}",
+                )
+            )
             state["resolution_revision"] = int(state.get("resolution_revision") or 0) + 1
             state["proposals"] = {}
             state.setdefault("capability_bindings", []).append({
@@ -484,6 +502,7 @@ class AuthoringSessionStore:
         with self._lock:
             state = self.get(session_id)
             self._require_revision(state, expected_revision)
+            active_freezes = self._active_freezes(state)
             recipe = deepcopy(state.get("semantic_recipe"))
             if not isinstance(recipe, dict):
                 raise AuthoringServiceError("AUTHORING_SEMANTIC_RECIPE_REQUIRED", "This project does not use semantic capability resolution.", status=409)
@@ -518,6 +537,14 @@ class AuthoringSessionStore:
             state["instances"][instance["id"]] = instance
             state["semantic_recipe"] = recipe
             state["capability_publications"] = publications
+            state.setdefault("freeze_replacements", []).extend(
+                self._capability_freeze_replacements(
+                    active_freezes,
+                    instance,
+                    {node_id},
+                    transition_id=f"capability-rejection:{instance['id']}:{node_id}",
+                )
+            )
             state.setdefault("capability_reviews", {}).pop(node_id, None)
             state["resolution_revision"] = int(state.get("resolution_revision") or 0) + 1
             state["proposals"] = {}
@@ -1212,6 +1239,48 @@ class AuthoringSessionStore:
             steps = [{"step_id": step_id, "semantic_digest": _semantic_digest(acceptance["instance"], step_id)} for step_id in preserved]
             snapshot = freeze_snapshot(acceptance["instance"], steps, reference, author="freeze-lineage", summary="Carry forward unaffected frozen steps")
             body = {"schema": "cartridgeflow.authoring_freeze_replacement.v1", "source_snapshot_id": source["id"], "source_snapshot_digest": source["digest"], "acceptance_id": acceptance["id"], "preserved_steps": sorted(preserved), "affected_steps": sorted(changed & {item["step_id"] for item in source["frozen_steps"]}), "snapshot": snapshot}
+            digest = canonical_digest(body)
+            replacements.append({"id": f"freeze-replacement-{digest[:16]}", **body, "digest": digest})
+        return replacements
+
+    @staticmethod
+    def _capability_freeze_replacements(
+        active_freezes: list[dict],
+        instance: dict,
+        changed_steps: set[str],
+        *,
+        transition_id: str,
+    ) -> list[dict]:
+        """Carry reviewed, semantically unchanged steps across a capability-only revision."""
+        replacements = []
+        compiled = compile_instance(instance)
+        reference = {"id": compiled["id"], "kind": "compile", "digest": compiled["digest"]}
+        for source in active_freezes:
+            source_digests = {item["step_id"]: item["semantic_digest"] for item in source["frozen_steps"]}
+            preserved = [
+                step_id
+                for step_id, digest in source_digests.items()
+                if step_id not in changed_steps and _semantic_digest(instance, step_id) == digest
+            ]
+            if not preserved:
+                continue
+            steps = [{"step_id": step_id, "semantic_digest": source_digests[step_id]} for step_id in preserved]
+            snapshot = freeze_snapshot(
+                instance,
+                steps,
+                reference,
+                author="capability-lineage",
+                summary="Carry forward unaffected reviewed steps after capability resolution",
+            )
+            body = {
+                "schema": "cartridgeflow.authoring_freeze_replacement.v1",
+                "source_snapshot_id": source["id"],
+                "source_snapshot_digest": source["digest"],
+                "transition_id": transition_id,
+                "preserved_steps": sorted(preserved),
+                "affected_steps": sorted(changed_steps & set(source_digests)),
+                "snapshot": snapshot,
+            }
             digest = canonical_digest(body)
             replacements.append({"id": f"freeze-replacement-{digest[:16]}", **body, "digest": digest})
         return replacements

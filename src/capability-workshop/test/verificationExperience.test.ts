@@ -1,6 +1,15 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { buildTextVerificationPatch, buildVerificationCases, isCurrentVerification, runDiagnosis, updateVerificationInput } from '../src/verificationExperience'
+import { buildGuidedStarterNode, buildTextVerificationPatch, buildVerificationCases, isCurrentVerification, runDiagnosis, updateVerificationInput } from '../src/verificationExperience'
+
+test('creates a guided starter with a real run input and typed output', () => {
+  const starter = buildGuidedStarterNode('Prepare Daily Brief', '整理日报')
+  assert.equal(starter.template_id, 'runtime')
+  assert.equal(starter.node_id, 'prepare-daily-brief')
+  assert.equal(starter.node.manifest_inputs[0].required, true)
+  assert.deepEqual(starter.node.inputs.content.binding, { source: 'run_input', key: 'content' })
+  assert.deepEqual(starter.node.outputs.result, { schema: { type: 'string' }, target: { type: 'store', key: 'result' } })
+})
 
 test('wires the guided text input through a typed result output', () => {
   const patch = buildTextVerificationPatch({ params: { node_category: 'transfer' }, outputs: {} }, [{ id: 'content' }])

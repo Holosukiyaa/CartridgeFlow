@@ -522,3 +522,5 @@ input:focus-visible, textarea:focus-visible, select:focus-visible, button:focus-
   .component-preview--summary .component-preview-fields, .component-preview--data_panel .component-preview-fields { grid-template-columns: 1fr; }
   .component-preview--summary .component-preview-fields > section:first-child { grid-column: auto; }
 }
+@keyframes workshop-spin { to { transform: rotate(360deg); } }
+.spinning { animation: workshop-spin .8s linear infinite; }

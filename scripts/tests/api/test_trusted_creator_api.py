@@ -2,7 +2,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 import sys
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 from backend import main as backend_main
 from backend.main import app
 from core.studio.authoring_service import AuthoringServiceError, AuthoringSessionStore
+from core.studio.creator_workspace import CreatorWorkspaceStore
 from core.studio.trusted_node_presets import TrustedNodePresetStore, build_trusted_node_mapping
 from core.studio.capability_cartridges import CapabilityCartridgeStore
 from core.cartridge import CartridgeRegistry
@@ -47,6 +48,7 @@ class TrustedCreatorApiTests(unittest.TestCase):
         root = Path(self.temp.name)
         self.root = root
         self.sessions = AuthoringSessionStore(root / "sessions")
+        self.workspaces = CreatorWorkspaceStore(root / "workspaces")
         self.presets = TrustedNodePresetStore(root / "presets")
         self.capabilities = CapabilityCartridgeStore(root / "capabilities")
         self.registry = CartridgeRegistry(root)
@@ -55,14 +57,25 @@ class TrustedCreatorApiTests(unittest.TestCase):
         self.test_runs = root / "capability_test_runs"
         self.verifications.mkdir()
         self.test_runs.mkdir()
+        self.desktop_runner = Mock()
+        self.desktop_runner.status.return_value = {
+            "schema": "cartridgeflow.desktop_runner_status.v1", "available": True,
+            "url": "http://127.0.0.1:18990/", "version": "test", "busy": False, "cartridge": None,
+        }
+        self.desktop_runner.install.return_value = {
+            "schema": "cartridgeflow.desktop_runner_delivery.v1", "status": "installed",
+            "runner_url": "http://127.0.0.1:18990/", "cartridge": {"id": "creator-package"},
+        }
         self.patches = [
             patch.object(backend_main, "authoring_sessions", self.sessions),
+            patch.object(backend_main, "creator_workspaces", self.workspaces),
             patch.object(backend_main, "trusted_node_presets", self.presets),
             patch.object(backend_main, "capability_cartridges", self.capabilities),
             patch.object(backend_main, "registry", self.registry),
             patch.object(backend_main, "dev_flow_manager", self.dev_flows),
             patch.object(backend_main, "capability_verification_dir", self.verifications),
             patch.object(backend_main, "capability_test_run_dir", self.test_runs),
+            patch.object(backend_main, "desktop_runner", self.desktop_runner),
         ]
         for item in self.patches: item.start()
 
@@ -74,6 +87,28 @@ class TrustedCreatorApiTests(unittest.TestCase):
         response = self.client.get("/api/creator/projects/project.missing?optional=true")
         self.assertEqual(200, response.status_code, response.text)
         self.assertIsNone(response.json()["creator"])
+
+    def test_creator_workspace_saves_before_authoring_and_detects_conflicts(self):
+        snapshot = {
+            "version": 1, "goal": "Prepare a brief", "messages": [], "clarification": None,
+            "possibilities": [], "selectedId": "", "middleView": "outline",
+            "workspacePane": "collaboration", "packageResult": None, "packageRevision": None,
+        }
+        missing = self.client.get("/api/creator/projects/project.workspace/workspace")
+        self.assertEqual(200, missing.status_code, missing.text)
+        self.assertIsNone(missing.json()["workspace"])
+        saved = self.client.put(
+            "/api/creator/projects/project.workspace/workspace",
+            json={"expected_revision": 0, "snapshot": snapshot},
+        )
+        self.assertEqual(200, saved.status_code, saved.text)
+        self.assertEqual(1, saved.json()["workspace"]["revision"])
+        conflict = self.client.put(
+            "/api/creator/projects/project.workspace/workspace",
+            json={"expected_revision": 0, "snapshot": snapshot},
+        )
+        self.assertEqual(409, conflict.status_code, conflict.text)
+        self.assertEqual("CREATOR_WORKSPACE_REVISION_CONFLICT", conflict.json()["detail"]["code"])
 
     def test_creator_project_list_rename_and_delete(self):
         created = self.client.post("/api/creator/authoring-sessions", json={
@@ -204,6 +239,30 @@ class TrustedCreatorApiTests(unittest.TestCase):
         self.assertEqual({"schema", "status", "filename", "url", "signature_verified"}, set(payload))
         self.assertEqual("ready", payload["status"])
         self.assertTrue(payload["signature_verified"])
+        with patch.object(backend_main, "ROOT", self.root):
+            delivered = self.client.post(
+                "/api/creator/authoring-sessions/creator.package/desktop-runner",
+                json={"expected_revision": 1},
+            )
+        self.assertEqual(200, delivered.status_code, delivered.text)
+        self.assertEqual("installed", delivered.json()["status"])
+        self.assertTrue(delivered.json()["package"]["signature_verified"])
+        self.desktop_runner.install.assert_called_once()
+        self.desktop_runner.install.reset_mock()
+        self.desktop_runner.install.return_value = {
+            "schema": "cartridgeflow.desktop_runner_delivery.v1", "status": "trust_required",
+            "runner_url": "http://127.0.0.1:18990/?pending=" + "a" * 32,
+            "approval_id": "a" * 32,
+            "publisher": {"id": "creator", "key_id": "creator.development", "fingerprint": "0123456789abcdef"},
+            "cartridge": {"id": "creator-package", "name": "Creator package", "version": "1.0.0"},
+        }
+        with patch.object(backend_main, "ROOT", self.root):
+            awaiting_trust = self.client.post(
+                "/api/creator/authoring-sessions/creator.package/desktop-runner",
+                json={"expected_revision": 1},
+            )
+        self.assertEqual(200, awaiting_trust.status_code, awaiting_trust.text)
+        self.assertEqual("trust_required", awaiting_trust.json()["status"])
 
     def test_overall_recompose_replaces_the_draft_and_resets_node_reviews(self):
         self.presets.put(PRESET, mapping(), expected_revision=0)

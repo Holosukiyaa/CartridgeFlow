@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client'
 import dagre from '@dagrejs/dagre'
 import {
   ArrowLeft, Bell, Bot, Box, Boxes, Check, CheckCircle2, ChevronDown, CircleAlert, CircleHelp,
-  Database, Download, ExternalLink, FilePlus2, GitBranch, PackageCheck, Play, Plug, Plus, Power, RefreshCw,
+  Database, Download, ExternalLink, FilePlus2, GitBranch, Loader2, PackageCheck, Play, Plug, Plus, Power, RefreshCw,
   Save, Search, ShieldCheck, Trash2, User, Wrench, X,
 } from 'lucide-react'
 import {
@@ -16,7 +16,7 @@ import { capabilityApi, publicApiUrl } from './api'
 import { type AnyRecord } from './model'
 import { CartridgeSettingsEditor } from './CartridgeSettingsEditor'
 import { DisplayComponentWorkshop } from './DisplayComponentWorkshop'
-import { buildTextVerificationPatch, buildVerificationCases, isCurrentVerification, runDiagnosis, updateVerificationInput } from './verificationExperience'
+import { buildGuidedStarterNode, buildTextVerificationPatch, buildVerificationCases, isCurrentVerification, runDiagnosis, updateVerificationInput } from './verificationExperience'
 import { buildNodePresentationFiles, nodeSettingDrafts, type NodeSettingDraft, type PresentationFiles } from './settingsPresentation'
 import './styles.css'
 
@@ -607,6 +607,7 @@ function Workshop() {
     queryStage === 'experience' || queryStage === 'verify' || queryStage === 'publish' ? queryStage : 'design',
   )
   const [capabilitySearch, setCapabilitySearch] = useState('')
+  const [creating, setCreating] = useState(false)
 
   const loadRegistry = async () => {
     const result = await capabilityApi.capabilityRegistry()
@@ -646,14 +647,24 @@ function Workshop() {
 
   const createFlow = async () => {
     const flowSlug = slug(newName) || crypto.randomUUID().slice(0, 8)
+    setCreating(true)
+    setError('')
     try {
       const result = await capabilityApi.createFlow({ flow_id: `dev.${flowSlug}`, name: newName, description: creatorGoal })
       const nextFlowId = String(result.id)
+      let starterId = ''
+      if (projectId && targetNodeId) {
+        const starter = buildGuidedStarterNode(`prepare-${targetNodeId}`, targetNodeLabel || newName)
+        await capabilityApi.createNode(nextFlowId, starter)
+        starterId = String(starter.node_id)
+      }
       const nextUrl = new URL(window.location.href)
       nextUrl.searchParams.set('flowId', nextFlowId)
       window.history.replaceState(null, '', `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`)
       await loadFlows(nextFlowId)
+      if (starterId) setSelected(starterId)
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Flow 创建失败。') }
+    finally { setCreating(false) }
   }
   const addNode = async (templateId: string): Promise<string | undefined> => {
     if (!flowId) return undefined
@@ -715,7 +726,7 @@ function Workshop() {
     {!flowId ? hasCreatorContext ? <section className="creator-handoff">
       <div className="handoff-intro"><span><Wrench />深入制作</span><h1>为原方案补齐一个子能力</h1><p>外层方案已经保留。这里只制作当前步骤的内部做法，发布后会自动回填。</p></div>
       <div className="handoff-path" aria-label="从原目标进入子能力"><div><small>原方案目标</small><p>{creatorGoal}</p></div><span aria-hidden="true"></span><div><small>当前要补齐</small><strong>{targetNodeLabel || newName}</strong></div></div>
-      <form onSubmit={(event) => { event.preventDefault(); void createFlow() }}><label><span>子能力名称</span><input autoFocus value={newName} onChange={(event) => setNewName(event.currentTarget.value)} /></label><button type="submit" disabled={!newName.trim()}><FilePlus2 />开始搭建内部流程</button></form>
+      <form onSubmit={(event) => { event.preventDefault(); void createFlow() }}><label><span>子能力名称</span><input autoFocus value={newName} disabled={creating} onChange={(event) => setNewName(event.currentTarget.value)} /></label><button type="submit" disabled={creating || !newName.trim()}>{creating ? <Loader2 className="spinning" /> : <FilePlus2 />}{creating ? '正在准备可运行草稿' : '生成可运行草稿'}</button></form>
       <small className="handoff-return-note"><CheckCircle2 />完成发布后返回原方案，当前步骤会直接获得这个能力</small>
     </section> : <section className="empty-workshop"><Wrench /><span>高级制作</span><h1>{newName || '新建能力卡带'}</h1><label><span>能力名称</span><input value={newName} onChange={(event) => setNewName(event.currentTarget.value)} /></label><button type="button" onClick={() => void createFlow()} disabled={!newName.trim()}><FilePlus2 />进入内部流程</button></section> : <div className="workshop-product">
       {hasCreatorContext && <section className="creator-handoff-banner"><div><span>正在深入一个子能力</span><strong>{targetNodeLabel || String(cartridge.name || flowId)}</strong><p>{creatorGoal}</p></div><div><small>外层方案已安全保留</small><a href={`/projects/${encodeURIComponent(projectId)}/studio`}><ArrowLeft />退出内部制作</a></div></section>}

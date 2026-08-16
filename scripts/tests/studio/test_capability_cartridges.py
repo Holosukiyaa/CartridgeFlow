@@ -182,10 +182,15 @@ class CapabilityCartridgeTests(unittest.TestCase):
             revision = sessions.get_by_project_id("project.exact")["head"]["revision"]
             sessions.validate_capability_binding("project.exact", "special", compatible)
             self.assertEqual(revision, sessions.get_by_project_id("project.exact")["head"]["revision"])
+            sessions.freeze("creator.exact", ["source"], author="creator", summary="Reviewed the existing source")
             bound = sessions.bind_capability("project.exact", "special", compatible)
             special = next(item for item in bound["trusted_recipe"]["nodes"] if item["id"] == "special")
             self.assertEqual("resolved", special["resolution"]["status"])
             self.assertEqual(compatible["digest"], special["resolution"]["capability"]["digest"])
+            self.assertEqual(["source"], bound["frozen_steps"])
+            replacement = sessions.get("creator.exact")["freeze_replacements"][0]
+            self.assertEqual(["source"], replacement["preserved_steps"])
+            self.assertEqual([], replacement["affected_steps"])
 
     def test_unresolved_node_reresolves_in_place_and_packages_namespaced_flow(self):
         with tempfile.TemporaryDirectory() as directory:

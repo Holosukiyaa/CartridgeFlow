@@ -2,6 +2,28 @@ import { type AnyRecord } from './model'
 
 const list = (value: unknown) => Array.isArray(value) ? value as AnyRecord[] : []
 
+export function buildGuidedStarterNode(nodeId: string, title: string): AnyRecord {
+  const normalizedId = nodeId.replace(/[^a-zA-Z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'prepare-result'
+  const label = title.trim() || '整理结果'
+  return {
+    template_id: 'runtime',
+    node_id: normalizedId,
+    title: label,
+    after_node_id: 'start',
+    node: {
+      display_name: label,
+      params: { node_category: 'transfer', input: 'content', output: 'result' },
+      inputs: {
+        content: { required: true, schema: { type: 'string' }, binding: { source: 'run_input', key: 'content' } },
+      },
+      outputs: {
+        result: { schema: { type: 'string' }, target: { type: 'store', key: 'result' } },
+      },
+      manifest_inputs: [{ id: 'content', label: '输入内容', type: 'textarea', required: true }],
+    },
+  }
+}
+
 export function buildTextVerificationPatch(processNode: AnyRecord, currentInputs: AnyRecord[]): {
   manifestInputs: AnyRecord[]
   params: AnyRecord

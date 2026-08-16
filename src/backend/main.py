@@ -35,6 +35,7 @@ from backend.api_models import (
     CreatorRecomposeRecipePayload,
     CreatorRecomposeAcceptPayload,
     CreatorPackagePayload,
+    CreatorRunnerDeliveryPayload,
     CreatorNodeRefinementPayload,
     CreatorExperienceMappingPayload,
     DeveloperMaterializationPayload,
@@ -47,6 +48,7 @@ from backend.api_models import (
     CreatorSourceInspectPayload,
     TrustedNodePublishFromFlowPayload,
     CreatorSourceDiscoveryPayload,
+    CreatorWorkspaceSavePayload,
     AuthoringFreezePayload,
     CreatorHandoffPayload,
     AuthoringProposalPayload,
@@ -96,6 +98,8 @@ from backend.api_models import (
 
 from core.cartridge import CartridgeRegistry, CartridgeRunner
 from core.studio.authoring_service import AuthoringServiceError, AuthoringSessionStore
+from core.studio.creator_workspace import CreatorWorkspaceError, CreatorWorkspaceStore
+from backend.desktop_runner import DesktopRunnerClient, DesktopRunnerError
 from core.studio.creator_runtime_bridge import CreatorRuntimeBridge, CreatorRuntimeBridgeError
 from core.studio.trusted_node_presets import TrustedNodePresetStore, build_trusted_node_mapping
 from core.studio.capability_cartridges import CapabilityCartridgeStore
@@ -371,6 +375,8 @@ async def add_utf8_charset(request, call_next):
 
 registry = CartridgeRegistry(ROOT)
 authoring_sessions = AuthoringSessionStore(ROOT / DATA_ROOT / "user" / "authoring_sessions")
+creator_workspaces = CreatorWorkspaceStore(ROOT / DATA_ROOT / "user" / "creator_workspaces")
+desktop_runner = DesktopRunnerClient(str(os.environ.get("CARTRIDGEFLOW_DESKTOP_RUNNER_URL") or "http://127.0.0.1:18990"))
 trusted_node_presets = TrustedNodePresetStore(ROOT / DATA_ROOT / "user" / "trusted_node_presets")
 capability_cartridges = CapabilityCartridgeStore(ROOT / DATA_ROOT / "user" / "capability_cartridges")
 capability_verification_dir = ROOT / DATA_ROOT / "user" / "capability_verifications"
@@ -3507,6 +3513,28 @@ def get_creator_project(project_id: str, optional: bool = False):
         _authoring_error(exc)
 
 
+@app.get("/api/creator/projects/{project_id}/workspace")
+def get_creator_workspace(project_id: str):
+    try:
+        return {"workspace": creator_workspaces.get(project_id)}
+    except CreatorWorkspaceError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.as_dict()) from exc
+
+
+@app.put("/api/creator/projects/{project_id}/workspace")
+def save_creator_workspace(project_id: str, payload: CreatorWorkspaceSavePayload):
+    try:
+        return {
+            "workspace": creator_workspaces.save(
+                project_id,
+                payload.snapshot,
+                expected_revision=payload.expected_revision,
+            )
+        }
+    except CreatorWorkspaceError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.as_dict()) from exc
+
+
 @app.patch("/api/creator/projects/{project_id}")
 def rename_creator_project(project_id: str, payload: CreatorProjectRenamePayload):
     try:
@@ -3518,7 +3546,9 @@ def rename_creator_project(project_id: str, payload: CreatorProjectRenamePayload
 @app.delete("/api/creator/projects/{project_id}")
 def delete_creator_project(project_id: str):
     try:
-        return authoring_sessions.delete_project(project_id)
+        result = authoring_sessions.delete_project(project_id)
+        creator_workspaces.delete(project_id)
+        return result
     except AuthoringServiceError as exc:
         _authoring_error(exc)
 
@@ -3708,6 +3738,44 @@ def package_creator_project(session_id: str, payload: CreatorPackagePayload):
             "url": f"/packages/{result['filename']}",
             "signature_verified": bool((result.get("signature") or {}).get("verified")),
         }
+    except CreatorRuntimeBridgeError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.as_dict()) from exc
+    except AuthoringServiceError as exc:
+        _authoring_error(exc)
+
+
+@app.get("/api/creator/desktop-runner")
+def get_creator_desktop_runner_status():
+    return desktop_runner.status()
+
+
+@app.post("/api/creator/authoring-sessions/{session_id}/desktop-runner")
+def deliver_creator_project_to_desktop_runner(session_id: str, payload: CreatorRunnerDeliveryPayload):
+    """Package through the sole Creator boundary, then transfer the signed archive to DR."""
+    try:
+        bridge = CreatorRuntimeBridge(ROOT, ROOT / PACKAGES_DIR, capability_cartridges)
+        result = bridge.package(authoring_sessions, session_id, expected_revision=payload.expected_revision)
+        if not bool((result.get("signature") or {}).get("verified")):
+            raise DesktopRunnerError("DESKTOP_RUNNER_PACKAGE_UNVERIFIED", "The trial package signature was not verified.", status=409)
+        package_root = (ROOT / PACKAGES_DIR).resolve()
+        archive = (package_root / str(result["filename"])).resolve()
+        if archive.parent != package_root:
+            raise DesktopRunnerError("DESKTOP_RUNNER_PACKAGE_INVALID", "The trial package path is invalid.", status=409)
+        delivery = desktop_runner.install(archive)
+        return {
+            "schema": "cartridgeflow.creator_runner_delivery.v1",
+            "status": delivery["status"],
+            "package": {
+                "schema": "cartridgeflow.creator_package.v1",
+                "status": "ready",
+                "filename": result["filename"],
+                "url": f"/packages/{result['filename']}",
+                "signature_verified": True,
+            },
+            "delivery": delivery,
+        }
+    except DesktopRunnerError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.as_dict()) from exc
     except CreatorRuntimeBridgeError as exc:
         raise HTTPException(status_code=exc.status, detail=exc.as_dict()) from exc
     except AuthoringServiceError as exc:

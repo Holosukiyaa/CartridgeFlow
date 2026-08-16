@@ -2,6 +2,30 @@ import { type AnyRecord } from './model'
 
 const list = (value: unknown) => Array.isArray(value) ? value as AnyRecord[] : []
 
+export function buildTextVerificationPatch(processNode: AnyRecord, currentInputs: AnyRecord[]): {
+  manifestInputs: AnyRecord[]
+  params: AnyRecord
+  inputs: AnyRecord
+  outputs: AnyRecord
+} {
+  const usedIds = new Set(currentInputs.map((input) => String(input.id || '')).filter(Boolean))
+  let inputId = 'content'
+  let suffix = 2
+  while (usedIds.has(inputId)) inputId = `content_${suffix++}`
+  return {
+    manifestInputs: [...currentInputs, { id: inputId, label: '输入内容', type: 'textarea', required: true }],
+    params: { ...processNode.params as AnyRecord, input: inputId, output: 'result' },
+    inputs: {
+      ...processNode.inputs as AnyRecord,
+      content: { required: true, schema: { type: 'string' }, binding: { source: 'run_input', key: inputId } },
+    },
+    outputs: {
+      ...processNode.outputs as AnyRecord,
+      result: { schema: { type: 'string' }, target: { type: 'store', key: 'result' } },
+    },
+  }
+}
+
 function sampleValue(input: AnyRecord): unknown {
   if (input.default !== undefined && input.default !== null && input.default !== '') return input.default
   const type = String(input.type || 'text')

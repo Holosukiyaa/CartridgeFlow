@@ -525,6 +525,29 @@ main.creator-workspace.creator-workbench { border: 0; border-radius: 0; box-shad
 .vip-current-goal strong { display: block; font-size: 14px; }
 .vip-current-goal p { margin: 9px 0 0; color: #344667; font-size: 12px; line-height: 1.55; }
 .vip-collaboration-thread { min-height: 0; overflow: hidden auto; padding: 2px 18px 8px 16px; scrollbar-width: thin; }
+.vip-next-action {
+  position: sticky;
+  z-index: 4;
+  top: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 7px 10px;
+  margin: 0 0 14px;
+  padding: 13px 14px;
+  background: #fff;
+  border: 1px solid #d8e0ec;
+  border-left: 3px solid var(--vip-blue);
+  border-radius: 5px;
+  box-shadow: 0 5px 14px rgba(43, 61, 91, .06);
+}
+.vip-next-action header { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; }
+.vip-next-action header span { color: var(--vip-blue); font-size: 10px; font-weight: 800; }
+.vip-next-action header small { color: #77859a; font-size: 9px; }
+.vip-next-action > strong { min-width: 0; color: #20365d; font-size: 14px; line-height: 1.4; }
+.vip-next-action > p { grid-column: 1 / -1; margin: 0; color: #52647d; font-size: 11px; line-height: 1.55; }
+.vip-next-action > button { grid-column: 1 / -1; min-height: 34px; justify-content: center; }
+.vip-next-action > a { grid-column: 1 / -1; display: inline-flex; align-items: center; justify-content: center; gap: 4px; color: #425a76; font-size: 10px; font-weight: 700; text-decoration: none; }
+.vip-next-action > a svg { width: 12px; height: 12px; }
 .vip-record-entry {
   position: relative;
   display: grid;

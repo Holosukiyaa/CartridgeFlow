@@ -255,6 +255,12 @@ input:focus-visible, textarea:focus-visible, select:focus-visible, button:focus-
 .verification-panel > header small.ready { color: var(--workshop-green); }
 .production-candidate { display: flex; align-items: center; gap: 10px; margin: 14px 14px 0; padding: 10px; color: #765619; background: #fff8e8; border: 1px solid #ead9ac; }
 .production-candidate > svg { width: 18px; flex: 0 0 auto; }
+.verification-remedy { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 10px; margin: 10px 14px 0; padding: 10px; color: #765619; background: #fff8e8; border: 1px solid #ead9ac; }
+.verification-remedy > svg { width: 17px; height: 17px; }
+.verification-remedy > div { min-width: 0; display: grid; gap: 2px; }
+.verification-remedy strong { font-size: 11px; }
+.verification-remedy small { color: #826f43; font-size: 9px; line-height: 1.5; }
+.verification-remedy button { white-space: nowrap; }
 .production-candidate > div { min-width: 0; display: grid; gap: 2px; }
 .production-candidate strong { font-size: 10px; }
 .production-candidate small { color: #806a3d; font-size: 8px; }
@@ -290,6 +296,9 @@ input:focus-visible, textarea:focus-visible, select:focus-visible, button:focus-
 .verification-panel > button, .verification-panel > .error { margin-inline: 14px; }
 .publish-workspace { display: grid; grid-template-columns: minmax(0, 1fr) 320px; align-items: start; gap: 14px; }
 .publish-primary { min-width: 0; display: grid; gap: 14px; }
+.guided-release-options { background: transparent; border: 0; }
+.guided-release-options > summary { padding: 4px 0; color: var(--workshop-muted); font-size: 10px; font-weight: 700; cursor: pointer; }
+.guided-release-options > .release-panel { margin-top: 8px; }
 .publish-panel { min-width: 0; overflow: hidden; }
 .publish-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 14px; }
 .publish-fields label > span { display: block; margin-bottom: 4px; color: var(--workshop-muted); font-size: 9px; font-weight: 700; }
@@ -492,6 +501,8 @@ input:focus-visible, textarea:focus-visible, select:focus-visible, button:focus-
   .workshop-readiness { grid-template-columns: 1fr auto; }
   .workshop-readiness > div:not(:first-child) { display: none; }
   .verification-cases, .publish-fields, .dependency-list { grid-template-columns: 1fr; }
+  .verification-remedy { grid-template-columns: 18px minmax(0, 1fr); }
+  .verification-remedy button { grid-column: 1 / -1; }
   .verification-inputs { grid-template-columns: 1fr; }
   .presentation-proof { align-items: flex-start; flex-direction: column; }
   .presentation-proof span { text-align: left; }

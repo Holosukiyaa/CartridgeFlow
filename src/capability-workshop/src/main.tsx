@@ -16,7 +16,7 @@ import { capabilityApi, publicApiUrl } from './api'
 import { type AnyRecord } from './model'
 import { CartridgeSettingsEditor } from './CartridgeSettingsEditor'
 import { DisplayComponentWorkshop } from './DisplayComponentWorkshop'
-import { buildVerificationCases, isCurrentVerification, runDiagnosis, updateVerificationInput } from './verificationExperience'
+import { buildTextVerificationPatch, buildVerificationCases, isCurrentVerification, runDiagnosis, updateVerificationInput } from './verificationExperience'
 import { buildNodePresentationFiles, nodeSettingDrafts, type NodeSettingDraft, type PresentationFiles } from './settingsPresentation'
 import './styles.css'
 
@@ -430,8 +430,8 @@ function RunOutcome({ run }: { run: AnyRecord }) {
   return <div className={`verification-outcome is-${diagnosis.tone}`}><span>{diagnosis.title}</span>{diagnosis.detail && <small>{diagnosis.detail}</small>}</div>
 }
 
-function VerificationPanel({ flowId, inputs, verification, deliveryLevel, onVerified, onPromoted }: {
-  flowId: string; inputs: AnyRecord[]; verification: AnyRecord; deliveryLevel: string; onVerified: (value: AnyRecord) => void; onPromoted: () => Promise<void>
+function VerificationPanel({ flowId, inputs, verification, deliveryLevel, onVerified, onPromoted, onAddInput }: {
+  flowId: string; inputs: AnyRecord[]; verification: AnyRecord; deliveryLevel: string; onVerified: (value: AnyRecord) => void; onPromoted: () => Promise<void>; onAddInput: () => Promise<void>
 }) {
   const initial = useMemo(() => buildVerificationCases(inputs), [inputs])
   const [successInputs, setSuccessInputs] = useState<AnyRecord>(initial.success)
@@ -463,9 +463,16 @@ function VerificationPanel({ flowId, inputs, verification, deliveryLevel, onVeri
     catch (reason) { setError(reason instanceof Error ? reason.message : '无法进入生产验收。') }
     finally { setWorking('') }
   }
+  const addInput = async () => {
+    setWorking('input'); setError('')
+    try { await onAddInput() }
+    catch (reason) { setError(reason instanceof Error ? reason.message : '无法添加验证输入。') }
+    finally { setWorking('') }
+  }
   const evidence = object(verification.verification)
   return <section className="workbench-panel verification-panel"><header><div><Play /><span>真实运行证据</span></div><small className={isCurrentVerification(verification) ? 'ready' : ''}>{isCurrentVerification(verification) ? '当前源码已有证明' : '成功与安全失败缺一不可'}</small></header>
     {!productionCandidate && <div className="production-candidate"><PackageCheck /><div><strong>开发级 Flow</strong><small>生产证明必须在正式发布意图之后生成</small></div><button type="button" disabled={Boolean(working)} onClick={() => void promote()}>进入生产验收</button></div>}
+    {!initial.failureField && <div className="verification-remedy"><CircleAlert /><div><strong>还缺一个可验证的输入</strong><small>添加必填文本输入后，系统会自动构造成功和安全失败两种情况。</small></div><button type="button" disabled={Boolean(working)} onClick={() => void addInput()}><Plus />添加必填文本输入</button></div>}
     <div className="verification-cases"><section><header><strong>成功路径</strong><small>使用真实类型和当前组件</small></header><VerificationInputFields inputs={inputs} values={successInputs} onChange={setSuccessInputs} /><button type="button" disabled={Boolean(working) || !productionCandidate} onClick={() => void runCase('success')}><Play />运行成功路径</button><RunOutcome run={successRun} /></section><section><header><strong>安全失败</strong><small>{initial.failureField ? `主动省略：${String(initial.failureField.label || initial.failureField.id)}` : '缺少可省略的必填输入'}</small></header><VerificationInputFields inputs={inputs} values={failureInputs} disabledField={String(initial.failureField?.id || '')} onChange={setFailureInputs} /><button type="button" disabled={Boolean(working) || !productionCandidate || !initial.failureField} onClick={() => void runCase('failure')}><CircleAlert />运行安全失败</button><RunOutcome run={failureRun} /></section></div>
     <button type="button" disabled={Boolean(working) || successRun.status !== 'completed' || failureRun.status !== 'failed'} onClick={() => void register()}><ShieldCheck />登记为当前源码证据</button>
     {isCurrentVerification(verification) && <div className="verification-proof"><ShieldCheck /><div><strong>{String(evidence.source_digest || '').slice(0, 16)}</strong><small>{String(evidence.created_at || '')} · {String(object(evidence.success_run).run_id || '')} / {String(object(evidence.failure_run).run_id || '')}</small></div><span>{array(evidence.presentation_checks).length} 个展示组件</span></div>}
@@ -494,10 +501,10 @@ function ReleasePanel({ flowId, verification }: { flowId: string; verification: 
   </section>
 }
 
-function PublishPanel({ flowId, flowName, goal, projectId, nodeId, verificationToken, validation, capabilities, onPublished }: {
-  flowId: string; flowName: string; goal: string; projectId: string; nodeId: string; verificationToken: string; validation: AnyRecord; capabilities: AnyRecord[]; onPublished: () => Promise<void>
+function PublishPanel({ flowId, flowName, goal, projectId, nodeId, guided, verificationToken, validation, capabilities, onPublished }: {
+  flowId: string; flowName: string; goal: string; projectId: string; nodeId: string; guided: boolean; verificationToken: string; validation: AnyRecord; capabilities: AnyRecord[]; onPublished: () => Promise<void>
 }) {
-  const [id, setId] = useState(`workspace.${slug(flowName || flowId) || 'capability'}`)
+  const [id, setId] = useState(`workspace.${slug(flowName) || slug(flowId) || 'capability'}`)
   const [label, setLabel] = useState(goal || flowName)
   const [description, setDescription] = useState(goal || `由 ${flowName} 提供的可复用能力。`)
   const [terms, setTerms] = useState(goal || flowName)
@@ -544,6 +551,10 @@ function PublishPanel({ flowId, flowName, goal, projectId, nodeId, verificationT
       const release = object(result.release)
       setDone(`已发布 ${String(release.id)} v${String(release.revision)}，创作空间会重新检查原节点。`)
       await onPublished()
+      if (projectId && nodeId) {
+        const query = new URLSearchParams({ capabilityPublished: String(release.id), nodeId })
+        window.location.assign(`/projects/${encodeURIComponent(projectId)}/studio?${query.toString()}`)
+      }
     } catch (reason) { setError(reason instanceof Error ? reason.message : '能力发布失败。') } finally { setWorking(false) }
   }
 
@@ -555,7 +566,7 @@ function PublishPanel({ flowId, flowName, goal, projectId, nodeId, verificationT
       <label className="wide"><span>能力说明</span><textarea value={description} onChange={(event) => setDescription(event.currentTarget.value)} /></label>
       <label className="wide"><span>匹配词</span><input value={terms} onChange={(event) => setTerms(event.currentTarget.value)} /></label>
     </div>
-    <details open><summary>公开接口与可编辑字段</summary><div className="contract-editor">
+    <details open={!guided}><summary>{guided ? '高级信息：接口与可编辑字段' : '公开接口与可编辑字段'}</summary><div className="contract-editor">
       <FieldEditor items={fields} onChange={setFields} />
       <PortEditor title="公开输入" description="从上游能力接收的数据" items={inputs} onChange={setInputs} />
       <PortEditor title="公开输出" description="提供给下游能力的数据" items={outputs} onChange={setOutputs} />
@@ -573,6 +584,7 @@ function PublishPanel({ flowId, flowName, goal, projectId, nodeId, verificationT
 
 function Workshop() {
   const query = useMemo(() => new URLSearchParams(location.search), [])
+  const queryStage = query.get('stage')
   const creatorGoal = query.get('goal') || ''
   const projectId = query.get('projectId') || ''
   const targetNodeId = query.get('nodeId') || ''
@@ -591,7 +603,9 @@ function Workshop() {
   const [verification, setVerification] = useState<AnyRecord>({ status: 'missing' })
   const [error, setError] = useState('')
   const [newName, setNewName] = useState(targetNodeLabel || creatorGoal || '新的能力卡带')
-  const [workspaceTab, setWorkspaceTab] = useState<'design' | 'experience' | 'verify' | 'publish'>('design')
+  const [workspaceTab, setWorkspaceTab] = useState<'design' | 'experience' | 'verify' | 'publish'>(
+    queryStage === 'experience' || queryStage === 'verify' || queryStage === 'publish' ? queryStage : 'design',
+  )
   const [capabilitySearch, setCapabilitySearch] = useState('')
 
   const loadRegistry = async () => {
@@ -624,11 +638,21 @@ function Workshop() {
 
   useEffect(() => { Promise.all([loadFlows(), loadRegistry()]).catch((reason) => setError(reason instanceof Error ? reason.message : '工坊加载失败。')) }, [])
 
+  useEffect(() => {
+    const nextUrl = new URL(window.location.href)
+    nextUrl.searchParams.set('stage', workspaceTab)
+    window.history.replaceState(null, '', `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`)
+  }, [workspaceTab])
+
   const createFlow = async () => {
     const flowSlug = slug(newName) || crypto.randomUUID().slice(0, 8)
     try {
       const result = await capabilityApi.createFlow({ flow_id: `dev.${flowSlug}`, name: newName, description: creatorGoal })
-      await loadFlows(String(result.id))
+      const nextFlowId = String(result.id)
+      const nextUrl = new URL(window.location.href)
+      nextUrl.searchParams.set('flowId', nextFlowId)
+      window.history.replaceState(null, '', `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`)
+      await loadFlows(nextFlowId)
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Flow 创建失败。') }
   }
   const addNode = async (templateId: string): Promise<string | undefined> => {
@@ -640,6 +664,32 @@ function Workshop() {
       await load(flowId); setSelected(nodeId)
       return nodeId
     } catch (reason) { setError(reason instanceof Error ? reason.message : '节点创建失败。'); return undefined }
+  }
+
+  const addVerificationInput = async () => {
+    if (!flowId) return
+    const processNode = array(object(detail.graph).nodes).find((node) => node.type === 'process' && !node.locked && node.action === 'pass_result')
+    if (!processNode) throw new Error('先在内部流程中添加一个“数据处理”节点。')
+    const currentInputs = array(object(detail.cartridge).inputs)
+    if (currentInputs.some((input) => input.required)) return
+    const patch = buildTextVerificationPatch(processNode, currentInputs)
+    const result = await capabilityApi.updateNode(flowId, String(processNode.id), {
+      title: String(processNode.title || processNode.label || processNode.id),
+      display_name: String(processNode.display_name || processNode.title || processNode.label || processNode.id),
+      endpoint: processNode.endpoint || null,
+      params: patch.params,
+      inputs: patch.inputs,
+      outputs: patch.outputs,
+      allowed_tools: array(processNode.allowed_tools),
+      mcp_binding: processNode.mcp_binding || null,
+      manifest_inputs: patch.manifestInputs,
+      files: flowFiles,
+    })
+    if (object(result.validation).valid !== true) {
+      const finding = array(object(result.validation).findings)[0]
+      throw new Error(String(finding?.message || '输入合同没有通过校验。'))
+    }
+    await load(flowId)
   }
 
   const graph = object(detail.graph)
@@ -688,12 +738,12 @@ function Workshop() {
         <section className={`workshop-stage is-${workspaceTab}`}>
           {workspaceTab === 'design' && <div className="workshop-body"><Graph flowId={flowId} graph={graph} selected={selected} onSelect={setSelected} onReload={() => load(flowId)} />{selectedNode ? <CapabilityNodeEditor key={`${flowId}:${selected}`} flowId={flowId} node={selectedNode} tools={tools} manifestInputs={array(cartridge.inputs)} files={flowFiles} onSaved={() => load(flowId)} onClose={() => setSelected('')} /> : <aside className="node-editor boundary-editor"><div className="boundary-copy"><GitBranch /><p>选择一个节点后在这里配置实现、契约和运行参数。</p></div></aside>}</div>}
           {workspaceTab === 'experience' && <DisplayComponentWorkshop flowId={flowId} graph={graph} manifestInputs={array(cartridge.inputs)} components={components} onCreateDisplayNode={() => addNode('interaction')} onSaved={() => load(flowId)} />}
-          {workspaceTab === 'verify' && <div className="phase-workspace verification-workspace"><header><div><span>运行验证</span><h2>用真实成功与失败路径证明能力边界</h2></div><small>{verificationToken ? <><CheckCircle2 />运行证据已登记</> : verification.status === 'stale' ? '源码变化，证明已失效' : '需要 2 个互补用例'}</small></header><VerificationPanel flowId={flowId} inputs={array(cartridge.inputs)} verification={verification} deliveryLevel={String(object(cartridge.delivery_readiness).level || 'dev')} onVerified={setVerification} onPromoted={() => load(flowId)} /></div>}
-          {workspaceTab === 'publish' && <div className="phase-workspace publish-workspace"><div className="publish-primary"><ReleasePanel flowId={flowId} verification={verification} /><PublishPanel flowId={flowId} flowName={String(cartridge.name || flowId)} goal={creatorGoal} projectId={projectId} nodeId={targetNodeId} verificationToken={verificationToken} validation={validation} capabilities={capabilities} onPublished={loadRegistry} /></div><details className="workbench-panel capability-registry"><summary><Boxes />已发布能力与版本</summary>{capabilityEntries.length === 0 ? <p>还没有发布过能力。</p> : capabilityEntries.map((entry) => <div key={String(entry.id)}><span><strong>{String(object(entry.current).creator ? object(object(entry.current).creator).label : entry.id)}</strong><small>{String(entry.id)} · {String(entry.status)} · {array(entry.revisions).length || 1} 个版本</small></span><button type="button" onClick={async () => { await capabilityApi.activateCapability(String(entry.id), entry.status !== 'active'); await loadRegistry() }}><Power />{entry.status === 'active' ? '停用' : '启用'}</button></div>)}</details></div>}
+          {workspaceTab === 'verify' && <div className="phase-workspace verification-workspace"><header><div><span>运行验证</span><h2>用真实成功与失败路径证明能力边界</h2></div><small>{verificationToken ? <><CheckCircle2 />运行证据已登记</> : verification.status === 'stale' ? '源码变化，证明已失效' : '需要 2 个互补用例'}</small></header><VerificationPanel flowId={flowId} inputs={array(cartridge.inputs)} verification={verification} deliveryLevel={String(object(cartridge.delivery_readiness).level || 'dev')} onVerified={setVerification} onPromoted={() => load(flowId)} onAddInput={addVerificationInput} /></div>}
+          {workspaceTab === 'publish' && <div className="phase-workspace publish-workspace"><div className="publish-primary">{hasCreatorContext ? <details className="guided-release-options"><summary>高级交付选项</summary><ReleasePanel flowId={flowId} verification={verification} /></details> : <ReleasePanel flowId={flowId} verification={verification} />}<PublishPanel flowId={flowId} flowName={String(cartridge.name || flowId)} goal={creatorGoal} projectId={projectId} nodeId={targetNodeId} guided={hasCreatorContext} verificationToken={verificationToken} validation={validation} capabilities={capabilities} onPublished={loadRegistry} /></div><details className="workbench-panel capability-registry"><summary><Boxes />已发布能力与版本</summary>{capabilityEntries.length === 0 ? <p>还没有发布过能力。</p> : capabilityEntries.map((entry) => <div key={String(entry.id)}><span><strong>{String(object(entry.current).creator ? object(object(entry.current).creator).label : entry.id)}</strong><small>{String(entry.id)} · {String(entry.status)} · {array(entry.revisions).length || 1} 个版本</small></span><button type="button" onClick={async () => { await capabilityApi.activateCapability(String(entry.id), entry.status !== 'active'); await loadRegistry() }}><Power />{entry.status === 'active' ? '停用' : '启用'}</button></div>)}</details></div>}
         </section>
       </div>
 
-      <footer className="workshop-readiness"><div><span>当前进度</span><strong>{workspaceTab === 'design' ? '搭建内部做法' : workspaceTab === 'experience' ? '定义用户看到的结果' : workspaceTab === 'verify' ? '证明成功和安全失败' : hasCreatorContext ? '发布并回到原方案' : '发布为可信能力'}</strong></div><div><span>结构</span><small className={validation.valid ? 'ready' : ''}>{validation.valid ? '完整' : `${findingCount} 项待处理`}</small></div><div><span>验证</span><small className={verificationToken ? 'ready' : ''}>{verificationToken ? '成功与失败均通过' : '尚未完成'}</small></div><button type="button" onClick={() => setWorkspaceTab(nextTab)} disabled={workspaceTab === 'publish'}>{workspaceTab === 'design' ? <><Box />下一步：结果界面</> : workspaceTab === 'experience' ? <><Play />下一步：实际验证</> : workspaceTab === 'verify' ? <><PackageCheck />下一步：发布回填</> : <><Check />已到发布阶段</>}</button></footer>
+      <footer className="workshop-readiness"><div><span>当前进度</span><strong>{workspaceTab === 'design' ? '搭建内部做法' : workspaceTab === 'experience' ? '定义用户看到的结果' : workspaceTab === 'verify' ? '证明成功和安全失败' : hasCreatorContext ? '发布并回到原方案' : '发布为可信能力'}</strong></div><div><span>结构</span><small className={validation.valid ? 'ready' : ''}>{validation.valid ? '完整' : `${findingCount} 项待处理`}</small></div><div><span>验证</span><small className={verificationToken ? 'ready' : ''}>{verificationToken ? '成功与失败均通过' : '尚未完成'}</small></div><button type="button" onClick={() => setWorkspaceTab(nextTab)} disabled={workspaceTab === 'publish' || (workspaceTab === 'design' && !validation.valid) || (workspaceTab === 'verify' && !verificationToken)}>{workspaceTab === 'design' ? <><Box />下一步：结果界面</> : workspaceTab === 'experience' ? <><Play />下一步：实际验证</> : workspaceTab === 'verify' ? <><PackageCheck />下一步：发布回填</> : <><Check />已到发布阶段</>}</button></footer>
     </div>}
   </main>
 }

@@ -1,6 +1,15 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { buildVerificationCases, isCurrentVerification, runDiagnosis, updateVerificationInput } from '../src/verificationExperience'
+import { buildTextVerificationPatch, buildVerificationCases, isCurrentVerification, runDiagnosis, updateVerificationInput } from '../src/verificationExperience'
+
+test('wires the guided text input through a typed result output', () => {
+  const patch = buildTextVerificationPatch({ params: { node_category: 'transfer' }, outputs: {} }, [{ id: 'content' }])
+  assert.equal(patch.manifestInputs[1]?.id, 'content_2')
+  assert.equal(patch.manifestInputs[1]?.required, true)
+  assert.deepEqual(patch.params, { node_category: 'transfer', input: 'content_2', output: 'result' })
+  assert.deepEqual(patch.inputs.content, { required: true, schema: { type: 'string' }, binding: { source: 'run_input', key: 'content_2' } })
+  assert.deepEqual(patch.outputs.result, { schema: { type: 'string' }, target: { type: 'store', key: 'result' } })
+})
 
 test('builds typed success data and a safe missing-required failure', () => {
   const cases = buildVerificationCases([

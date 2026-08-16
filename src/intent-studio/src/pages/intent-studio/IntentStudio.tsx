@@ -94,6 +94,107 @@ type StewardMessage = {
 
 type WorkspacePane = 'collaboration' | 'outline' | 'canvas'
 
+type GuidanceAction = 'focus-composer' | 'show-directions' | 'open-node' | 'build-package' | 'download-package'
+
+type CreatorGuidance = {
+  stage: 'describe' | 'clarify' | 'choose' | 'complete-step' | 'prepare-run' | 'run-ready'
+  step: number
+  title: string
+  detail: string
+  action: GuidanceAction
+  actionLabel: string
+  nodeId?: string
+}
+
+type CreatorWorkspaceSnapshot = {
+  version: 1
+  goal: string
+  messages: StewardMessage[]
+  clarification: CreatorClarification | null
+  possibilities: CreatorPossibility[]
+  selectedId: string
+  middleView: 'outline' | 'detail'
+  workspacePane: WorkspacePane
+  packageResult: CreatorPackage | null
+  packageRevision: number | null
+}
+
+const CREATOR_WORKSPACE_KEY = (projectId: string) => `cartridgeflow.creator-workspace.v1.${projectId}`
+
+function isCreatorClarification(value: unknown): value is CreatorClarification {
+  if (!value || typeof value !== 'object') return false
+  const item = value as Partial<CreatorClarification>
+  return typeof item.question === 'string' && typeof item.why_it_matters === 'string' && Array.isArray(item.suggested_answers) && item.suggested_answers.every((answer) => typeof answer === 'string')
+}
+
+function isCreatorPossibility(value: unknown): value is CreatorPossibility {
+  if (!value || typeof value !== 'object') return false
+  const item = value as Partial<CreatorPossibility>
+  return typeof item.id === 'string' && typeof item.title === 'string' && typeof item.outcome === 'string' && Boolean(item.recipe && typeof item.recipe.intent === 'string')
+}
+
+function readCreatorWorkspace(projectId: string): CreatorWorkspaceSnapshot | null {
+  try {
+    const value = JSON.parse(localStorage.getItem(CREATOR_WORKSPACE_KEY(projectId)) || 'null') as Partial<CreatorWorkspaceSnapshot> | null
+    if (!value || value.version !== 1 || !Array.isArray(value.messages) || !Array.isArray(value.possibilities)) return null
+    const messages = value.messages.filter((item): item is StewardMessage =>
+      Boolean(item && typeof item.id === 'string' && (item.role === 'assistant' || item.role === 'user') && typeof item.text === 'string'),
+    ).slice(-80)
+    return {
+      version: 1,
+      goal: typeof value.goal === 'string' ? value.goal : '',
+      messages: messages.length ? messages : [STEWARD_WELCOME],
+      clarification: isCreatorClarification(value.clarification) ? value.clarification : null,
+      possibilities: value.possibilities.filter(isCreatorPossibility).slice(0, 6),
+      selectedId: typeof value.selectedId === 'string' ? value.selectedId : '',
+      middleView: value.middleView === 'detail' ? 'detail' : 'outline',
+      workspacePane: ['collaboration', 'outline', 'canvas'].includes(String(value.workspacePane)) ? value.workspacePane as WorkspacePane : 'collaboration',
+      packageResult: value.packageResult || null,
+      packageRevision: typeof value.packageRevision === 'number' ? value.packageRevision : null,
+    }
+  } catch { return null }
+}
+
+function capabilityWorkshopUrl(creator: CreatorProjection, node: CreatorRecipeNode) {
+  const query = new URLSearchParams({
+    goal: node.resolution?.needed_capability || node.description,
+    projectId: creator.project_id,
+    nodeId: node.id,
+    nodeLabel: node.label,
+  })
+  return `/capabilities?${query.toString()}`
+}
+
+function creatorGuidance(
+  creator: CreatorProjection | null,
+  clarification: CreatorClarification | null,
+  possibilities: CreatorPossibility[],
+  packageResult: CreatorPackage | null,
+): CreatorGuidance {
+  if (!creator) {
+    if (clarification) return { stage: 'clarify', step: 1, title: '回答这个关键问题', detail: clarification.question, action: 'focus-composer', actionLabel: '继续回答' }
+    if (possibilities.length) return { stage: 'choose', step: 2, title: '选择最接近的方向', detail: `AI 给出了 ${possibilities.length} 个可比较方向，选定后再生成方案。`, action: 'show-directions', actionLabel: '查看方向' }
+    return { stage: 'describe', step: 1, title: '先说清想得到什么', detail: '用结果和使用场景描述，不需要先考虑模型、工具或流程。', action: 'focus-composer', actionLabel: '描述目标' }
+  }
+  const nextNode = creator.trusted_recipe.nodes.find((node) => nodeReviewState(creator, node) !== 'confirmed')
+  if (nextNode) {
+    const state = nodeReviewState(creator, nextNode)
+    return {
+      stage: 'complete-step',
+      step: 3,
+      title: state === 'unresolved' ? `补齐「${nextNode.label}」` : `确认「${nextNode.label}」`,
+      detail: state === 'unresolved'
+        ? '原方案会保留。完成内部做法并发布后，这一步会自动回填。'
+        : '检查业务参数、资料来源和结果界面；确认后会自动前往下一步。',
+      action: 'open-node',
+      actionLabel: state === 'unresolved' ? '开始补齐' : '检查并确认',
+      nodeId: nextNode.id,
+    }
+  }
+  if (!packageResult) return { stage: 'prepare-run', step: 4, title: '方案已完成审核', detail: '生成经过签名验证的试运行包，再到 Desktop Runner 使用真实输入运行。', action: 'build-package', actionLabel: '准备试运行' }
+  return { stage: 'run-ready', step: 4, title: '试运行包已就绪', detail: '下载后交给 Desktop Runner；运行结果和交互会由独立运行台真实呈现。', action: 'download-package', actionLabel: '下载试运行包' }
+}
+
 const STEWARD_WELCOME: StewardMessage = {
   id: 'welcome',
   role: 'assistant',
@@ -298,7 +399,7 @@ function nodeReviewState(creator: CreatorProjection, node: CreatorRecipeNode) {
 
 function ReviewStatus({ state, showSuggestion = false }: { state: 'confirmed' | 'review' | 'unresolved'; showSuggestion?: boolean }) {
   return <span className={`vip-review-status is-${state}`}>
-    <span><i />{state === 'confirmed' ? '已确认' : state === 'review' ? '待审核' : '待补齐能力'}</span>
+    <span><i />{state === 'confirmed' ? '已确认' : state === 'review' ? '待审核' : '需要补齐'}</span>
     {showSuggestion && <small>1项建议待预览</small>}
   </span>
 }
@@ -312,10 +413,13 @@ function CollaborationPanel({
   stewardInput,
   stewardMessages,
   clarification,
+  guidance,
   threadRef,
+  composerRef,
   onInput,
   onSubmit,
   onClarification,
+  onGuidanceAction,
   onOpenDetail,
 }: {
   creator: CreatorProjection | null
@@ -326,10 +430,13 @@ function CollaborationPanel({
   stewardInput: string
   stewardMessages: StewardMessage[]
   clarification: CreatorClarification | null
+  guidance: CreatorGuidance
   threadRef: RefObject<HTMLDivElement | null>
+  composerRef: RefObject<HTMLTextAreaElement | null>
   onInput: (value: string) => void
   onSubmit: (value: string) => void
   onClarification: (value: string) => void
+  onGuidanceAction: () => void
   onOpenDetail: () => void
 }) {
   const confirmed = creator?.trusted_recipe.nodes.filter((node) => nodeReviewState(creator, node) === 'confirmed') || []
@@ -345,9 +452,16 @@ function CollaborationPanel({
     <header className="vip-panel-title"><Sparkles /><strong>AI 共创记录</strong></header>
     <section className="vip-current-goal"><Target /><div><strong>当前目标</strong><p>{goal || '先描述你想得到的结果。'}</p></div></section>
     <div className="vip-collaboration-thread" ref={threadRef}>
+      <section className={`vip-next-action is-${guidance.stage}`} aria-label="当前下一步">
+        <header><span>第 {guidance.step} 步</span><small>{guidance.step}/4</small></header>
+        <strong>{guidance.title}</strong>
+        <p>{guidance.detail}</p>
+        <button type="button" disabled={busy} onClick={onGuidanceAction}>{guidance.action === 'build-package' || guidance.action === 'download-package' ? <PackageCheck /> : guidance.action === 'open-node' ? <ChevronRight /> : <Sparkles />}{guidance.actionLabel}</button>
+        {guidance.stage === 'run-ready' && <a href="http://127.0.0.1:18990/" target="_blank" rel="noreferrer">在 Desktop Runner 中启用 <ChevronRight /></a>}
+      </section>
       {stewardMessages.map((message) => <article className={`vip-live-record is-${message.role}`} key={message.id}>
         <span className={`vip-record-avatar is-${message.role === 'assistant' ? 'ai' : 'user'}`}>{message.role === 'assistant' ? 'AI' : '我'}</span>
-        <div><p>{message.text}</p>{message.clarification && clarification === message.clarification && <section className="creator-clarification"><small>{message.clarification.why_it_matters}</small><div>{message.clarification.suggested_answers.map((answer) => <button type="button" key={answer} disabled={busy} onClick={() => onClarification(answer)}>{answer}</button>)}</div></section>}</div>
+        <div><p>{message.text}</p>{message.clarification && clarification?.question === message.clarification.question && <section className="creator-clarification"><small>{message.clarification.why_it_matters}</small><div>{message.clarification.suggested_answers.map((answer) => <button type="button" key={answer} disabled={busy} onClick={() => onClarification(answer)}>{answer}</button>)}</div></section>}</div>
       </article>)}
       {suggestion && selectedNode && <article className="vip-record-entry is-suggestion">
         <span className="vip-record-avatar is-ai">AI</span><strong>待审核建议</strong><em>未应用</em>
@@ -364,7 +478,7 @@ function CollaborationPanel({
       {composerError && <div className="creator-steward-error" role="alert"><strong>这次没有完成</strong><span>{composerError}</span></div>}
     </div>
     <form className="vip-collaboration-composer" onSubmit={(event) => { event.preventDefault(); onSubmit(stewardInput) }}>
-      <textarea value={stewardInput} disabled={busy} onChange={(event) => onInput(event.currentTarget.value)} placeholder="继续提问或补充说明需求..." />
+      <textarea ref={composerRef} value={stewardInput} disabled={busy} onChange={(event) => onInput(event.currentTarget.value)} placeholder="继续提问或补充说明需求..." />
       <div><button className="vip-attachment" type="button" disabled={!selectedNode} title={selectedNode ? '在节点详情中添加资料来源' : '先选择一个节点'} onClick={onOpenDetail}><Paperclip /></button><span className="vip-language"><Globe2 />简体中文</span><button className="vip-send" type="submit" disabled={busy || stewardInput.trim().length < 3} title="发送" aria-label="发送">{busy ? <Loader2 className="spinning" /> : <Send />}</button></div>
     </form>
   </aside>
@@ -523,7 +637,7 @@ function NodeEditor({ creator, node, busy, onCreatorChange, onNavigate, onReturn
     try {
       const result = await rejectCreatorCapability(creator.session_id, node.id, creator.revision)
       onCreatorChange(result.creator)
-      showToast({ title: '已退回为待补齐能力', description: '需求保留在原节点，可以从这里进入能力卡带工坊。', type: 'success' })
+      showToast({ title: '已退回为需要补齐', description: '需求保留在原节点，可以从这里进入能力工坊。', type: 'success' })
     } catch (error) { fail(error) } finally { setWorking(false) }
   }
   const discoverSources = async () => {
@@ -595,10 +709,10 @@ function NodeEditor({ creator, node, busy, onCreatorChange, onNavigate, onReturn
     <div className="vip-detail-body">
       <section className="vip-detail-section"><span className="vip-detail-number">1</span><div><strong>节点目标</strong><p>{node.description}</p></div></section>
 
-      <section className="vip-detail-section"><span className="vip-detail-number">2</span><div className="vip-detail-wide"><strong>可信能力来源</strong>
-        {unresolved ? <div className="vip-capability-row is-unresolved"><span>{node.resolution?.needed_capability || node.description}</span><ReviewStatus state="unresolved" /></div> : <div className="vip-capability-row"><span>{node.resolution?.capability?.label || '可信能力'}</span><ReviewStatus state={trusted ? 'confirmed' : 'review'} showSuggestion={Boolean(proposal)} /><button className="vip-inline-icon" type="button" title="查看能力来源" onClick={() => setCapabilityOpen((value) => !value)}><Info /></button></div>}
+      <section className="vip-detail-section"><span className="vip-detail-number">2</span><div className="vip-detail-wide"><strong>当前做法</strong>
+        {unresolved ? <div className="vip-capability-row is-unresolved"><span>{node.resolution?.needed_capability || node.description}</span><ReviewStatus state="unresolved" /></div> : <div className="vip-capability-row"><span>{node.resolution?.capability?.label || '可用做法'}</span><ReviewStatus state={trusted ? 'confirmed' : 'review'} showSuggestion={Boolean(proposal)} /><button className="vip-inline-icon" type="button" title="查看高级信息" onClick={() => setCapabilityOpen((value) => !value)}><Info /></button></div>}
         {capabilityOpen && !unresolved && <div className="vip-capability-actions"><span>{node.resolution?.capability?.trust_scope === 'workspace' ? '当前工作区可信' : node.resolution?.capability?.trust_scope === 'organization' ? '组织可信' : '系统可信'} · v{node.resolution?.capability?.revision}</span><button className="secondary-button" type="button" disabled={isBusy} onClick={() => void rejectCapability()}>不适合当前节点</button></div>}
-        {unresolved && <a className="vip-capability-link" href={`/capabilities?goal=${encodeURIComponent(node.resolution?.needed_capability || node.description)}&projectId=${encodeURIComponent(creator.project_id)}&nodeId=${encodeURIComponent(node.id)}&nodeLabel=${encodeURIComponent(node.label)}`}><Wrench />深入制作这个能力</a>}
+        {unresolved && <a className="vip-capability-link" href={capabilityWorkshopUrl(creator, node)}><Wrench />补齐这个步骤</a>}
       </div></section>
 
       <section className="vip-detail-section"><span className="vip-detail-number">3</span><div className="vip-detail-wide"><strong>业务参数</strong><div className="vip-detail-fields"><FieldEditor node={node} values={values} onChange={setValues} disabled={isBusy} /></div>{changed && <button className="vip-save-fields" type="button" disabled={isBusy} onClick={() => void stage()}><Check />保存参数修改</button>}</div></section>
@@ -664,22 +778,24 @@ function ModelConnectionPanel({ onConnect, onClose }: {
 }
 
 export function IntentStudio({ projectId }: { projectId: string }) {
+  const [restoredWorkspace] = useState(() => readCreatorWorkspace(projectId))
   const [theme, setTheme] = useState<CreatorTheme>(readCreatorTheme)
   const [themePanelOpen, setThemePanelOpen] = useState(false)
   const [creator, setCreator] = useState<CreatorProjection | null>(null)
-  const [goal, setGoal] = useState('')
-  const [selectedId, setSelectedId] = useState('')
-  const [possibilities, setPossibilities] = useState<CreatorPossibility[]>([])
-  const [middleView, setMiddleView] = useState<'outline' | 'detail'>('outline')
-  const [workspacePane, setWorkspacePane] = useState<WorkspacePane>('collaboration')
+  const [goal, setGoal] = useState(restoredWorkspace?.goal || '')
+  const [selectedId, setSelectedId] = useState(restoredWorkspace?.selectedId || '')
+  const [possibilities, setPossibilities] = useState<CreatorPossibility[]>(restoredWorkspace?.possibilities || [])
+  const [middleView, setMiddleView] = useState<'outline' | 'detail'>(restoredWorkspace?.middleView || 'outline')
+  const [workspacePane, setWorkspacePane] = useState<WorkspacePane>(restoredWorkspace?.workspacePane || 'collaboration')
   const [canvasLayoutRevision, setCanvasLayoutRevision] = useState(0)
-  const [clarification, setClarification] = useState<CreatorClarification | null>(null)
+  const [clarification, setClarification] = useState<CreatorClarification | null>(restoredWorkspace?.clarification || null)
   const [stewardInput, setStewardInput] = useState('')
-  const [stewardMessages, setStewardMessages] = useState<StewardMessage[]>([STEWARD_WELCOME])
+  const [stewardMessages, setStewardMessages] = useState<StewardMessage[]>(restoredWorkspace?.messages || [STEWARD_WELCOME])
   const [canvasTool, setCanvasTool] = useState<CreatorCanvasTool>('inspect')
   const [contextNodeIds, setContextNodeIds] = useState<string[]>([])
   const [aiStatus, setAiStatus] = useState<{ provider: string; has_key: boolean; base_url: string; model: string } | null>(null)
-  const [packageResult, setPackageResult] = useState<CreatorPackage | null>(null)
+  const [packageResult, setPackageResult] = useState<CreatorPackage | null>(restoredWorkspace?.packageResult || null)
+  const [packageRevision, setPackageRevision] = useState<number | null>(restoredWorkspace?.packageRevision || null)
   const [recipePreview, setRecipePreview] = useState<CreatorRecipePreview | null>(null)
   const [packageError, setPackageError] = useState('')
   const [loading, setLoading] = useState(true)
@@ -692,6 +808,7 @@ export function IntentStudio({ projectId }: { projectId: string }) {
   const [projects, setProjects] = useState<Array<{ project_id: string; session_id: string; name: string; intent: string; revision: number }>>([])
   const [pendingAiAction, setPendingAiAction] = useState<'discover' | 'compose' | 'node' | null>(null)
   const stewardThreadRef = useRef<HTMLDivElement | null>(null)
+  const stewardComposerRef = useRef<HTMLTextAreaElement | null>(null)
   const aiConnectedRef = useRef<boolean | null>(null)
   const resolutionCheckRef = useRef('')
   const canvasPanelRef = useRef<HTMLElement | null>(null)
@@ -699,6 +816,22 @@ export function IntentStudio({ projectId }: { projectId: string }) {
   useEffect(() => {
     localStorage.setItem(CREATOR_THEME_KEY, JSON.stringify(theme))
   }, [theme])
+
+  useEffect(() => {
+    const snapshot: CreatorWorkspaceSnapshot = {
+      version: 1,
+      goal,
+      messages: stewardMessages.slice(-80),
+      clarification,
+      possibilities,
+      selectedId,
+      middleView,
+      workspacePane,
+      packageResult,
+      packageRevision,
+    }
+    localStorage.setItem(CREATOR_WORKSPACE_KEY(projectId), JSON.stringify(snapshot))
+  }, [clarification, goal, middleView, packageResult, packageRevision, possibilities, projectId, selectedId, stewardMessages, workspacePane])
 
   useEffect(() => {
     let active = true
@@ -711,14 +844,32 @@ export function IntentStudio({ projectId }: { projectId: string }) {
         }
         setCreator(value)
         setGoal(value.intent)
-        setSelectedId(value.trusted_recipe.nodes.find((node) => !value.frozen_steps.includes(node.id))?.id || value.trusted_recipe.nodes[0]?.id || '')
-        setMiddleView('outline')
+        const returnedNodeId = new URLSearchParams(window.location.search).get('nodeId') || ''
+        const restoredNodeId = restoredWorkspace?.selectedId || ''
+        const nextNodeId = value.trusted_recipe.nodes.find((node) => nodeReviewState(value, node) !== 'confirmed')?.id || value.trusted_recipe.nodes[0]?.id || ''
+        const selected = value.trusted_recipe.nodes.some((node) => node.id === returnedNodeId)
+          ? returnedNodeId
+          : value.trusted_recipe.nodes.some((node) => node.id === restoredNodeId) ? restoredNodeId : nextNodeId
+        setSelectedId(selected)
+        setMiddleView(returnedNodeId ? 'detail' : restoredWorkspace?.middleView || 'outline')
+        setWorkspacePane(returnedNodeId ? 'outline' : restoredWorkspace?.workspacePane || 'collaboration')
+        if (packageRevision !== value.revision) {
+          setPackageResult(null)
+          setPackageRevision(null)
+        }
         setSyncState('loaded')
-        setStewardMessages([{
-          id: 'loaded-outline',
-          role: 'assistant',
-          text: '已加载当前项目大纲。它还不是最终答案，你可以继续描述，也可以直接指向或框选画布中的部分。',
+        const publishedCapability = new URLSearchParams(window.location.search).get('capabilityPublished')
+        setStewardMessages((current) => current.length > 1 ? current : [{
+          id: 'loaded-outline', role: 'assistant',
+          text: publishedCapability ? '新做法已经回填到原方案。请检查这一节点的参数和结果界面，然后确认继续。' : '已加载当前项目大纲。它还不是最终答案，你可以继续描述，也可以直接指向或框选画布中的部分。',
         }])
+        if (publishedCapability) {
+          showToast({ title: '新做法已回填', description: '原方案没有丢失，现在可以继续审核当前步骤。', type: 'success' })
+          const cleanUrl = new URL(window.location.href)
+          cleanUrl.searchParams.delete('capabilityPublished')
+          cleanUrl.searchParams.delete('nodeId')
+          window.history.replaceState(null, '', `${cleanUrl.pathname}${cleanUrl.search}${cleanUrl.hash}`)
+        }
       })
       .catch(() => {
         setSyncState('error')
@@ -754,12 +905,29 @@ export function IntentStudio({ projectId }: { projectId: string }) {
       .then((result) => {
         if (!result.resolved_node_ids.length) return
         saveCreator(result.creator)
+        setSelectedId(result.resolved_node_ids[0])
+        setMiddleView('detail')
+        setWorkspacePane('outline')
+        setStewardMessages((current) => [...current, {
+          id: `capability.${Date.now()}`,
+          role: 'assistant',
+          text: '新的做法已经放回原步骤。请检查参数和结果界面，确认后我会带你继续下一步。',
+        }])
         showToast({ title: '新的可信能力已匹配', description: '原草稿节点已保留，请打开节点审核来源和默认字段。', type: 'success' })
       })
       .catch(() => null)
   }, [creator?.session_id, creator?.revision, creator?.capability_resolution?.revision, creator?.capability_resolution?.unresolved])
 
+  useEffect(() => {
+    if (!creator) return
+    const selected = creator.trusted_recipe.nodes.find((node) => node.id === selectedId)
+    if (selected && nodeReviewState(creator, selected) !== 'confirmed') return
+    const next = creator.trusted_recipe.nodes.find((node) => nodeReviewState(creator, node) !== 'confirmed')
+    if (next) setSelectedId(next.id)
+  }, [creator?.session_id, creator?.revision, creator?.experience_revision])
+
   const selectedNode = useMemo(() => creator?.trusted_recipe.nodes.find((node) => node.id === selectedId) || null, [creator, selectedId])
+  const guidance = useMemo(() => creatorGuidance(creator, clarification, possibilities, packageResult), [clarification, creator, packageResult, possibilities])
   const confirmedCount = creator?.trusted_recipe.nodes.filter((node) => node.resolution?.status !== 'unresolved' && creator.frozen_steps.includes(node.id)).length || 0
   const totalCount = creator?.trusted_recipe.nodes.length || 0
   const unresolvedCount = creator?.trusted_recipe.nodes.filter((node) => node.resolution?.status === 'unresolved').length || 0
@@ -778,6 +946,7 @@ export function IntentStudio({ projectId }: { projectId: string }) {
     setSyncState('saved')
     setSavedAt(new Date())
     setPackageResult(null)
+    setPackageRevision(null)
     setPackageError('')
   }
   const requestModelConnection = (action: 'discover' | 'compose' | 'node') => {
@@ -920,6 +1089,13 @@ export function IntentStudio({ projectId }: { projectId: string }) {
     try {
       const result = await packageCreatorProject(creator.session_id, creator.revision)
       setPackageResult(result)
+      setPackageRevision(creator.revision)
+      setWorkspacePane('collaboration')
+      setStewardMessages((current) => [...current, {
+        id: `package.${Date.now()}`,
+        role: 'assistant',
+        text: '试运行包已经通过签名验证。下载后在 Desktop Runner 中启用，就能用真实输入运行并查看结果。',
+      }])
       showToast({ title: '打包完成', description: '签名已验证，可以交给独立测试台。', type: 'success' })
     } catch (error) {
       const description = friendlyError(error, 'package')
@@ -995,6 +1171,37 @@ export function IntentStudio({ projectId }: { projectId: string }) {
     setMiddleView('detail')
     setWorkspacePane('outline')
   }
+  const runGuidanceAction = () => {
+    if (guidance.action === 'focus-composer') {
+      setWorkspacePane('collaboration')
+      requestAnimationFrame(() => stewardComposerRef.current?.focus())
+      return
+    }
+    if (guidance.action === 'show-directions') {
+      setMiddleView('outline')
+      setWorkspacePane('outline')
+      return
+    }
+    if (guidance.action === 'open-node' && creator && guidance.nodeId) {
+      const node = creator.trusted_recipe.nodes.find((item) => item.id === guidance.nodeId)
+      if (node?.resolution?.status === 'unresolved') {
+        window.location.assign(capabilityWorkshopUrl(creator, node))
+        return
+      }
+      openNodeDetail(guidance.nodeId)
+      return
+    }
+    if (guidance.action === 'build-package') {
+      void buildPackage()
+      return
+    }
+    if (guidance.action === 'download-package' && packageResult) {
+      const download = document.createElement('a')
+      download.href = packageResult.url
+      download.download = packageResult.filename
+      download.click()
+    }
+  }
   const resetCanvasLayout = () => {
     localStorage.removeItem(`cartridgeflow.creator-layout.v2.${projectId}.horizontal`)
     localStorage.removeItem(`cartridgeflow.creator-layout.v2.${projectId}.vertical`)
@@ -1028,7 +1235,7 @@ export function IntentStudio({ projectId }: { projectId: string }) {
       <div className={`vip-autosave is-${busy ? 'busy' : syncState}`} title={aiStatus?.has_key ? `AI 已连接：${aiStatus.model}` : 'AI 尚未连接'}><i />{syncLabel}</div>
       <div className="creator-top-actions">
         <button className="creator-theme-button" type="button" onClick={() => setThemePanelOpen(true)}><Sun />{theme.label}</button>
-        {creator && (packageResult ? <a className="creator-package-download" href={packageResult.url} download><Download />下载卡带</a> : <button className="creator-package-button" type="button" disabled={busy || !creator.generation_readiness.ready} onClick={() => void buildPackage()} title={creator.generation_readiness.ready ? '生成可安装卡带' : '完成所有步骤后可交付'}><PackageCheck />生成卡带</button>)}
+        {creator && (packageResult ? <a className="creator-package-download" href={packageResult.url} download><Download />下载试运行包</a> : <button className="creator-package-button" type="button" disabled={busy || !creator.generation_readiness.ready} onClick={() => void buildPackage()} title={creator.generation_readiness.ready ? '生成签名试运行包' : '完成所有步骤后可试运行'}><PackageCheck />准备试运行</button>)}
         {creator && <button className="vip-pending-link" type="button" onClick={() => { setMiddleView('outline'); setWorkspacePane('outline') }}>{pendingNodes.length} 项待完成</button>}
       </div>
     </header>
@@ -1040,7 +1247,7 @@ export function IntentStudio({ projectId }: { projectId: string }) {
     </nav>
 
     <div className={`vip-workspace-body is-pane-${workspacePane}`}>
-      <CollaborationPanel creator={creator} goal={goal} selectedNode={selectedNode} busy={busy} composerError={composerError} stewardInput={stewardInput} stewardMessages={stewardMessages} clarification={clarification} threadRef={stewardThreadRef} onInput={(value) => { setStewardInput(value); setComposerError('') }} onSubmit={continueCoCreation} onClarification={answerClarification} onOpenDetail={() => openNodeDetail()} />
+      <CollaborationPanel creator={creator} goal={goal} selectedNode={selectedNode} busy={busy} composerError={composerError} stewardInput={stewardInput} stewardMessages={stewardMessages} clarification={clarification} guidance={guidance} threadRef={stewardThreadRef} composerRef={stewardComposerRef} onInput={(value) => { setStewardInput(value); setComposerError('') }} onSubmit={continueCoCreation} onClarification={answerClarification} onGuidanceAction={runGuidanceAction} onOpenDetail={() => openNodeDetail()} />
 
       <section className="vip-outline-panel" aria-label="项目与大纲">
         <header className="vip-panel-title"><strong>项目与大纲</strong></header>
@@ -1056,15 +1263,15 @@ export function IntentStudio({ projectId }: { projectId: string }) {
 
         {!creator ? <DirectionExplorer goal={goal} clarification={clarification} possibilities={possibilities} busy={busy} onChoose={chooseDirection} /> : middleView === 'outline' ? <div className="vip-outline-view">
           <div className="vip-outline-table" role="table" aria-label="节点大纲">
-            <div className="vip-outline-row is-head" role="row"><span>编号</span><span>节点名称</span><span>可信能力匹配</span><span>审核状态</span></div>
-            {creator?.trusted_recipe.nodes.map((node, index) => { const state = nodeReviewState(creator, node); const hasSuggestion = creator.pending_proposals.some((proposal) => proposal.changes.some((change) => change.target_id === node.id)); return <button className={`vip-outline-row ${node.id === selectedId ? 'is-selected' : ''}`} type="button" role="row" key={node.id} onClick={() => setSelectedId(node.id)} onDoubleClick={() => openNodeDetail(node.id)}><span>{String(index + 1).padStart(2, '0')}</span><strong>{node.label}</strong><span>{state === 'unresolved' ? node.resolution?.needed_capability || '待补齐能力' : node.resolution?.capability?.label || '可信能力'}</span><ReviewStatus state={state} showSuggestion={hasSuggestion} /></button> })}
+            <div className="vip-outline-row is-head" role="row"><span>编号</span><span>节点名称</span><span>可用做法</span><span>审核状态</span></div>
+            {creator?.trusted_recipe.nodes.map((node, index) => { const state = nodeReviewState(creator, node); const hasSuggestion = creator.pending_proposals.some((proposal) => proposal.changes.some((change) => change.target_id === node.id)); return <button className={`vip-outline-row ${node.id === selectedId ? 'is-selected' : ''}`} type="button" role="row" key={node.id} onClick={() => setSelectedId(node.id)} onDoubleClick={() => openNodeDetail(node.id)}><span>{String(index + 1).padStart(2, '0')}</span><strong>{node.label}</strong><span>{state === 'unresolved' ? node.resolution?.needed_capability || '需要补齐' : node.resolution?.capability?.label || '可用做法'}</span><ReviewStatus state={state} showSuggestion={hasSuggestion} /></button> })}
           </div>
-          <section className="vip-delivery-check"><header><strong>交付检查</strong><span>{reviewCount} 个待审核 · {unresolvedCount} 个能力缺口</span>{unresolvedCount > 0 && <button type="button" disabled={busy} title="重新检查可信能力" aria-label="重新检查可信能力" onClick={() => void refreshCapabilities()}>{busy ? <Loader2 className="spinning" /> : <RefreshCw />}</button>}</header><div>{pendingNodes.map((node) => { const state = nodeReviewState(creator, node); return <button className="vip-delivery-row" type="button" key={node.id} onClick={() => openNodeDetail(node.id)}><i className={`is-${state}`} /><span><strong>节点 {String(creator.trusted_recipe.nodes.indexOf(node) + 1).padStart(2, '0')} {node.label}：{state === 'review' ? '待审核' : '待补齐能力'}</strong><small>下一步：{state === 'review' ? '查看建议详情并决定是否应用' : '进入详情并深入制作缺失能力'}</small></span></button> })}</div></section>
+          <section className="vip-delivery-check"><header><strong>完成检查</strong><span>{reviewCount} 个待审核 · {unresolvedCount} 个步骤待补齐</span>{unresolvedCount > 0 && <button type="button" disabled={busy} title="重新检查可用做法" aria-label="重新检查可用做法" onClick={() => void refreshCapabilities()}>{busy ? <Loader2 className="spinning" /> : <RefreshCw />}</button>}</header><div>{pendingNodes.map((node) => { const state = nodeReviewState(creator, node); return <button className="vip-delivery-row" type="button" key={node.id} onClick={() => openNodeDetail(node.id)}><i className={`is-${state}`} /><span><strong>步骤 {String(creator.trusted_recipe.nodes.indexOf(node) + 1).padStart(2, '0')} {node.label}：{state === 'review' ? '待审核' : '需要补齐'}</strong><small>下一步：{state === 'review' ? '检查参数和结果界面后确认' : '进入工坊完成这一做法，发布后自动回填'}</small></span></button> })}</div></section>
         </div> : creator && selectedNode ? <NodeEditor key={`${selectedNode.id}:${creator.revision}:${creator.experience_revision}`} creator={creator} node={selectedNode} busy={busy} onCreatorChange={saveCreator} onNavigate={(nodeId) => { setSelectedId(nodeId); setMiddleView('detail') }} onReturnOutline={() => setMiddleView('outline')} onModelRequired={() => requestModelConnection('node')} /> : <div className="vip-detail-empty">选择一个节点查看详情</div>}
       </section>
 
       <section className="vip-canvas-panel" ref={canvasPanelRef} aria-label="语义画布">
-        <header className="vip-canvas-header"><div><strong>语义画布</strong><span title={canvasStatus}>当前焦点：{selectedNode ? `${String((creator?.trusted_recipe.nodes.indexOf(selectedNode) || 0) + 1).padStart(2, '0')} ${selectedNode.label}` : '整个大纲'}{selectedNode && creator && <> · <b>{nodeReviewState(creator, selectedNode) === 'confirmed' ? '已确认' : nodeReviewState(creator, selectedNode) === 'review' ? '待审核' : '待补齐能力'}</b></>}</span></div><div className="vip-canvas-toolbar"><button type="button" onClick={resetCanvasLayout}>布局：自动</button><button type="button" onClick={() => { setMiddleView('outline'); setWorkspacePane('outline') }}><List />列表视图</button><button className={canvasTool === 'lasso' ? 'is-active' : ''} type="button" title="框选讨论范围" onClick={() => { setCanvasTool('lasso'); setContextNodeIds([]) }}><Grid2X2 /></button><button className={canvasTool === 'pointer' ? 'is-active' : ''} type="button" title="指向一个节点" onClick={() => { setCanvasTool('pointer'); setContextNodeIds([]) }}><MousePointer2 /></button><button type="button" title="全屏画布" onClick={() => void toggleCanvasFullscreen()}><Maximize2 /></button></div></header>
+        <header className="vip-canvas-header"><div><strong>语义画布</strong><span title={canvasStatus}>当前焦点：{selectedNode ? `${String((creator?.trusted_recipe.nodes.indexOf(selectedNode) || 0) + 1).padStart(2, '0')} ${selectedNode.label}` : '整个大纲'}{selectedNode && creator && <> · <b>{nodeReviewState(creator, selectedNode) === 'confirmed' ? '已确认' : nodeReviewState(creator, selectedNode) === 'review' ? '待审核' : '需要补齐'}</b></>}</span></div><div className="vip-canvas-toolbar"><button type="button" onClick={resetCanvasLayout}>布局：自动</button><button type="button" onClick={() => { setMiddleView('outline'); setWorkspacePane('outline') }}><List />列表视图</button><button className={canvasTool === 'lasso' ? 'is-active' : ''} type="button" title="框选讨论范围" onClick={() => { setCanvasTool('lasso'); setContextNodeIds([]) }}><Grid2X2 /></button><button className={canvasTool === 'pointer' ? 'is-active' : ''} type="button" title="指向一个节点" onClick={() => { setCanvasTool('pointer'); setContextNodeIds([]) }}><MousePointer2 /></button><button type="button" title="全屏画布" onClick={() => void toggleCanvasFullscreen()}><Maximize2 /></button></div></header>
         {packageError && <div className="creator-package-error" role="alert"><strong>打包未完成</strong><span>{packageError}</span></div>}
         <div className={`creator-canvas vip-canvas-surface tool-${canvasTool}`}>
           <IntentCanvas key={canvasLayoutRevision} creator={creator} preview={recipePreview} draftGoal={goal} selectedId={selectedId} contextNodeIds={contextNodeIds} tool={canvasTool} onSelect={(nodeId) => { setSelectedId(nodeId); setMiddleView(nodeId ? 'detail' : 'outline'); if (nodeId) setWorkspacePane('outline') }} onContextChange={setContextNodeIds} />

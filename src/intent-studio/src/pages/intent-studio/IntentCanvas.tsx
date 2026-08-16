@@ -30,7 +30,7 @@ type CanvasNodeData = {
 type CanvasNode = Node<CanvasNodeData, 'creator'>
 
 function CreatorNode({ data, selected }: NodeProps<CanvasNode>) {
-  const stateLabel = data.state === 'confirmed' ? '已确认' : data.state === 'review' ? '待审核' : data.state === 'unresolved' ? '待补齐能力' : '空白画布'
+  const stateLabel = data.state === 'confirmed' ? '已确认' : data.state === 'review' ? '待审核' : data.state === 'unresolved' ? '需要补齐' : '空白画布'
   const icons = [Globe2, Filter, FilePlus2, FileText, UserRound, Send]
   const NodeIcon = icons[Math.max(0, data.order - 1) % icons.length] || FileText
   return <div className={`creator-node creator-node-${data.state} creator-node-order-${data.order} ${selected ? 'is-selected' : ''}`}>

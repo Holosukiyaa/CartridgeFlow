@@ -79,6 +79,7 @@ export interface CreatorProjection {
     freeze_revision: { source_freeze_ids: string[]; expected_revision: number }
   }>
   pending_proposals: CreatorProposal[]
+  history: Array<{ id: string; revision: number; summary: string }>
   generation_readiness: { ready: boolean }
   capability_resolution?: { resolved: number; unresolved: number; revision: number }
 }

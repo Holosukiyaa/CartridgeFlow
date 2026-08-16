@@ -26,6 +26,11 @@ const api = source.get('api.ts') || ''
 const workspace = source.get('pages/intent-studio/IntentStudio.tsx') || ''
 const canvas = source.get('pages/intent-studio/IntentCanvas.tsx') || ''
 const styles = source.get('styles/intent-studio.css') || ''
+const discoverStart = workspace.indexOf('const discover = async')
+const composeStart = workspace.indexOf('const compose = async', discoverStart)
+const discoverImplementation = discoverStart >= 0 && composeStart > discoverStart
+  ? workspace.slice(discoverStart, composeStart)
+  : ''
 
 check(source.has('pages/intent-studio/IntentStudio.tsx'), 'Intent Studio is the semantic product surface')
 check(source.has('pages/intent-studio/IntentCanvas.tsx'), 'Intent Studio owns one focused canvas implementation')
@@ -52,6 +57,10 @@ check(api.includes('/api/llm/detect') && api.includes('/api/llm/providers') && a
 check(!api.includes('/api/creator/starter-capabilities'), 'Creator does not inject a hardcoded capability after AI setup')
 check(workspace.includes('ModelConnectionPanel') && workspace.includes('aiConnectedRef.current === false'), 'AI actions resolve an unbound model before sending generation requests')
 check(workspace.includes('creator-clarification') && workspace.includes('suggested_answers'), 'AI discovery can clarify one decisive question before proposing directions')
+check(discoverImplementation.includes('discoverCreatorPossibilities') && !discoverImplementation.includes('composeCreatorRecipe'), 'AI discovery waits for an explicit direction choice before composing a recipe')
+check(workspace.includes('DirectionExplorer') && workspace.includes('onChoose={chooseDirection}'), 'real AI directions have an explicit selection step')
+check(workspace.includes("setWorkspacePane(discovery.possibilities.length ? 'outline' : 'collaboration')"), 'narrow screens reveal real directions as soon as discovery completes')
+check(!workspace.includes('立刻摆出一版大纲') && !canvas.includes('大纲会立刻出现在这里'), 'empty-state copy matches the clarify, choose, then compose sequence')
 check(api.includes("output_locale: 'zh-CN'") && workspace.includes('简体中文'), 'Creator requests and exposes the interface output language')
 check(workspace.includes('composerError') && workspace.includes('role="alert"'), 'Creator keeps AI failures visible on the canvas for retry')
 check((api.match(/timeoutMs: 135_000/g) || []).length >= 4, 'Creator waits for the configured AI response window')
@@ -64,6 +73,7 @@ check(canvas.includes('animated: false') && canvas.includes('MarkerType.ArrowClo
 check(canvas.includes("relation.relation === 'uses' ? relation.to_node_id") && canvas.includes("relation.relation === 'uses' ? relation.from_node_id"), 'dependency relationships point from the provider to the consuming step')
 check(canvas.includes('onInit={setFlow}') && canvas.includes('flow.fitView'), 'the canvas refits after an asynchronous semantic draft arrives')
 check(canvas.includes('timer = window.setTimeout'), 'the canvas waits for viewport resizing to settle before refitting')
+check(canvas.includes('new ResizeObserver') && canvas.includes('canvasHostRef'), 'the canvas reframes when a hidden narrow-screen pane becomes visible')
 check(canvas.includes('flow.setCenter(firstNode.position.x + NODE_WIDTH / 2'), 'mobile starts from a readable first node instead of shrinking the whole outline')
 check(workspace.includes('ProposalChanges') && workspace.includes('creator-review-changes'), 'node proposals expose their concrete Creator-safe field changes before acceptance')
 check(workspace.includes('creator-package-error'), 'Creator packaging failures remain visible on the canvas')
@@ -79,6 +89,8 @@ check(canvas.includes('nextNodeIds.length === currentNodeIds.length'), 'lasso se
 check(workspace.includes('creator-draft-review') && canvas.includes('preview: CreatorRecipePreview | null'), 'AI outline revisions remain visible and reviewable on the canvas')
 check(workspace.includes('if (creator) setGoal(creator.intent)') && workspace.includes('onClick={rejectRecipePreview}'), 'rejecting an outline revision restores the accepted intent')
 check(workspace.includes('vip-ai-panel') && workspace.includes('vip-outline-panel') && workspace.includes('vip-canvas-panel'), 'Creator renders the approved collaboration, outline, and semantic canvas panes')
+check(workspace.includes('creator?.history') && workspace.includes('syncLabel') && !workspace.includes('自动保存 10:'), 'history and save state come from real session activity')
+check(workspace.includes('vip-pane-nav') && styles.includes('.vip-workspace-body.is-pane-collaboration') && !styles.includes('.vip-ai-panel, .vip-outline-panel { display: none; }'), 'narrow screens retain access to collaboration, outline, and canvas')
 check(workspace.includes('data-view="outline"') && workspace.includes('data-view="detail"'), 'the middle pane switches in place between outline and node details')
 check(!canvas.includes('<MiniMap') && canvas.includes('<Panel className="creator-zoom-controls"'), 'Creator canvas uses the approved compact zoom strip without an overview map')
 check(canvas.includes('NODE_WIDTH = 204') && canvas.includes('NODE_HEIGHT = 174'), 'Creator nodes retain the approved reference dimensions')

@@ -135,6 +135,7 @@ export function IntentCanvas({ creator, preview, draftGoal, selectedId, contextN
 }) {
   const [flow, setFlow] = useState<ReactFlowInstance<CanvasNode, Edge> | null>(null)
   const [zoom, setZoom] = useState(1)
+  const canvasHostRef = useRef<HTMLDivElement>(null)
   const [vertical, setVertical] = useState(() => window.matchMedia('(max-width: 760px)').matches)
   useEffect(() => {
     const query = window.matchMedia('(max-width: 760px)')
@@ -153,7 +154,7 @@ export function IntentCanvas({ creator, preview, draftGoal, selectedId, contextN
         data: {
           order: 0,
           label: draftGoal.trim() ? '当前想法' : '从一句话开始',
-          description: draftGoal.trim() || '告诉 AI 你想得到什么，大纲会立刻出现在这里。',
+          description: draftGoal.trim() || '告诉 AI 你想得到什么；选定方向后，可审核大纲会出现在这里。',
           state: 'empty',
           targetPosition: vertical ? Position.Top : Position.Left,
           sourcePosition: vertical ? Position.Bottom : Position.Right,
@@ -207,6 +208,13 @@ export function IntentCanvas({ creator, preview, draftGoal, selectedId, contextN
       await flow.setViewport({ ...viewport, x: viewport.x - 9, y: viewport.y - 9 })
     }
   }, [activeFitOptions, flow, vertical])
+  const reframeCanvas = useCallback((duration: number) => {
+    if (!flow) return
+    const firstNode = flow.getNodes().find((node) => node.id !== 'empty')
+    if (vertical && creator && firstNode) {
+      void flow.setCenter(firstNode.position.x + NODE_WIDTH / 2, firstNode.position.y + NODE_HEIGHT / 2, { zoom: 0.82, duration })
+    } else void fitCanvas(duration)
+  }, [creator, fitCanvas, flow, vertical])
   useEffect(() => {
     const sameScope = layoutScopeRef.current === layoutScope
     const saved = readSavedPositions(layoutScope)
@@ -224,40 +232,34 @@ export function IntentCanvas({ creator, preview, draftGoal, selectedId, contextN
     if (!flow) return
     let frame = requestAnimationFrame(() => {
       frame = requestAnimationFrame(() => {
-        const firstNode = flow.getNodes().find((node) => node.id !== 'empty')
-        if (vertical && creator && firstNode) {
-          void flow.setCenter(firstNode.position.x + NODE_WIDTH / 2, firstNode.position.y + NODE_HEIGHT / 2, { zoom: 0.82, duration: 260 })
-        } else void fitCanvas(260)
+        reframeCanvas(260)
       })
     })
     return () => cancelAnimationFrame(frame)
-  }, [creator, fitCanvas, flow, layoutSignature, vertical])
+  }, [flow, layoutSignature, reframeCanvas])
 
   useEffect(() => {
-    if (!flow) return
-    let frame = 0
+    const host = canvasHostRef.current
+    if (!flow || !host) return
     let timer = 0
-    const refit = () => {
-      cancelAnimationFrame(frame)
+    let previousSize = ''
+    const observer = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect
+      if (width < 1 || height < 1) return
+      const nextSize = `${Math.round(width)}x${Math.round(height)}`
+      if (nextSize === previousSize) return
+      previousSize = nextSize
       window.clearTimeout(timer)
-      frame = requestAnimationFrame(() => {
-        timer = window.setTimeout(() => {
-          const firstNode = flow.getNodes().find((node) => node.id !== 'empty')
-          if (vertical && creator && firstNode) {
-            void flow.setCenter(firstNode.position.x + NODE_WIDTH / 2, firstNode.position.y + NODE_HEIGHT / 2, { zoom: 0.82, duration: 180 })
-          } else void fitCanvas(180)
-        }, 120)
-      })
-    }
-    window.addEventListener('resize', refit)
+      timer = window.setTimeout(() => reframeCanvas(180), 120)
+    })
+    observer.observe(host)
     return () => {
-      window.removeEventListener('resize', refit)
-      cancelAnimationFrame(frame)
+      observer.disconnect()
       window.clearTimeout(timer)
     }
-  }, [creator, fitCanvas, flow, vertical])
+  }, [flow, reframeCanvas])
 
-  return <ReactFlow
+  return <div className="vip-flow-host" ref={canvasHostRef}><ReactFlow
     nodes={nodes}
     edges={elements.edges}
     nodeTypes={nodeTypes}
@@ -306,5 +308,5 @@ export function IntentCanvas({ creator, preview, draftGoal, selectedId, contextN
       <button type="button" title="放大" aria-label="放大" onClick={() => void flow?.zoomIn({ duration: 150 })}><Plus /></button>
       <button type="button" title="适应画布" aria-label="适应画布" onClick={() => void fitCanvas(180)}><Maximize2 /></button>
     </Panel>
-  </ReactFlow>
+  </ReactFlow></div>
 }

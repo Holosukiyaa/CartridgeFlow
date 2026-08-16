@@ -18,6 +18,7 @@ import {
   Paperclip,
   Palette,
   Plus,
+  RefreshCw,
   Send,
   Search,
   Settings,
@@ -54,6 +55,7 @@ import {
   setCreatorExperience,
   type CreatorPackage,
   type CreatorClarification,
+  type CreatorPossibility,
   type CreatorProjection,
   type CreatorProposal,
   type CreatorRecipePreview,
@@ -90,10 +92,12 @@ type StewardMessage = {
   clarification?: CreatorClarification | null
 }
 
+type WorkspacePane = 'collaboration' | 'outline' | 'canvas'
+
 const STEWARD_WELCOME: StewardMessage = {
   id: 'welcome',
   role: 'assistant',
-  text: '先说你现在想到的结果。我会立刻摆出一版大纲；之后每次讨论都在这张图上继续，不把任何轮次当成最终答案。',
+  text: '先说你现在想得到的结果。我会先追问一个关键问题或给出少量方向；你选定方向后，我们再把它变成可审核的大纲。',
 }
 
 function readCreatorTheme(): CreatorTheme {
@@ -329,59 +333,76 @@ function CollaborationPanel({
   onOpenDetail: () => void
 }) {
   const confirmed = creator?.trusted_recipe.nodes.filter((node) => nodeReviewState(creator, node) === 'confirmed') || []
-  const audience = selectedNode?.values.audience || '管理层、行业分析师、研发与产品团队'
   const suggestion = selectedNode && creator?.pending_proposals.find((proposal) => proposal.changes.some((change) => change.target_id === selectedNode.id))
-  const now = new Date()
-  const time = (offset: number) => new Date(now.getTime() + offset * 60_000).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
+  const [auditExpanded, setAuditExpanded] = useState(false)
+  const auditItems = [
+    ...(creator?.history || []).map((item) => ({ id: item.id, label: `v${item.revision} ${item.summary}` })),
+    ...confirmed.map((node) => ({ id: `confirmed:${node.id}`, label: `已确认节点：${node.label}` })),
+  ]
+  const visibleAuditItems = auditExpanded ? auditItems : auditItems.slice(-3)
 
   return <aside className="vip-ai-panel" aria-label="AI 共创记录">
     <header className="vip-panel-title"><Sparkles /><strong>AI 共创记录</strong></header>
     <section className="vip-current-goal"><Target /><div><strong>当前目标</strong><p>{goal || '先描述你想得到的结果。'}</p></div></section>
     <div className="vip-collaboration-thread" ref={threadRef}>
-      {creator ? <>
-        <article className="vip-record-entry">
-          <time>{time(-2)}</time><span className="vip-record-avatar is-user">我</span><strong>补充说明</strong>
-          <p>这份简报的主要受众是谁？</p>
-          <b className="vip-record-confirmed"><CheckCircle2 />已确认结果</b>
-          <p>受众为{String(audience)}。</p>
-        </article>
-        <article className="vip-record-entry">
-          <time>{time(-2)}</time><span className="vip-record-avatar is-ai">AI</span><strong>判断</strong>
-          <p>本次简报聚焦哪个核心主题方向？</p>
-          <b className="vip-record-confirmed"><CheckCircle2 />已确认结果</b>
-          <p>核心主题方向为：技术趋势与创新。</p>
-        </article>
-        <article className="vip-record-entry">
-          <time>{time(-1)}</time><span className="vip-record-avatar is-user">我</span><strong>补充说明</strong>
-          <p>是否需要包含具体的落地建议？</p>
-          <b className="vip-record-confirmed"><CheckCircle2 />已确认结果</b>
-          <p>需要，包含可执行建议。</p>
-        </article>
-        <article className="vip-record-entry is-suggestion">
-          <time>{time(0)}</time><span className="vip-record-avatar is-ai">AI</span><strong>修改建议</strong><em>待预览</em>
-          <p>节点 {String(Math.max(1, (creator.trusted_recipe.nodes.findIndex((node) => node.id === selectedNode?.id) + 1))).padStart(2, '0')} {selectedNode?.label || '当前节点'}：{suggestion?.summary || selectedNode?.description || '继续完善当前步骤。'}</p>
-          <strong className="vip-suggestion-label">建议摘要：</strong>
-          <p>{suggestion?.summary || '保留当前结构，并进一步突出趋势、影响与建议。'}</p>
-          <strong className="vip-suggestion-label">影响范围：<span>{String(audience)}</span></strong>
-          <div className="vip-suggestion-actions"><button type="button" className="secondary-button" onClick={onOpenDetail}>查看变化</button><button type="button" onClick={onOpenDetail}>应用建议</button></div>
-        </article>
-        <section className="vip-recent-audit">
-          <header><strong>最近审核记录</strong><button type="button" onClick={onOpenDetail}>查看全部 <ChevronRight /></button></header>
-          <ul>{confirmed.slice(0, 3).map((node, index) => <li key={node.id}>节点 {String(index + 1).padStart(2, '0')} {node.label}：已确认</li>)}</ul>
-        </section>
-        {stewardMessages.filter((message) => !['welcome', 'loaded-outline'].includes(message.id)).map((message) => <article className={`vip-live-record is-${message.role}`} key={message.id}>
-          <span className={`vip-record-avatar is-${message.role === 'assistant' ? 'ai' : 'user'}`}>{message.role === 'assistant' ? 'AI' : '我'}</span>
-          <div><p>{message.text}</p>{message.clarification && clarification === message.clarification && <section className="creator-clarification"><small>{message.clarification.why_it_matters}</small><div>{message.clarification.suggested_answers.map((answer) => <button type="button" key={answer} disabled={busy} onClick={() => onClarification(answer)}>{answer}</button>)}</div></section>}</div>
-        </article>)}
-      </> : stewardMessages.map((message) => <article className={`vip-record-entry is-${message.role}`} key={message.id}><span className={`vip-record-avatar is-${message.role === 'assistant' ? 'ai' : 'user'}`}>{message.role === 'assistant' ? 'AI' : '我'}</span><p>{message.text}</p></article>)}
+      {stewardMessages.map((message) => <article className={`vip-live-record is-${message.role}`} key={message.id}>
+        <span className={`vip-record-avatar is-${message.role === 'assistant' ? 'ai' : 'user'}`}>{message.role === 'assistant' ? 'AI' : '我'}</span>
+        <div><p>{message.text}</p>{message.clarification && clarification === message.clarification && <section className="creator-clarification"><small>{message.clarification.why_it_matters}</small><div>{message.clarification.suggested_answers.map((answer) => <button type="button" key={answer} disabled={busy} onClick={() => onClarification(answer)}>{answer}</button>)}</div></section>}</div>
+      </article>)}
+      {suggestion && selectedNode && <article className="vip-record-entry is-suggestion">
+        <span className="vip-record-avatar is-ai">AI</span><strong>待审核建议</strong><em>未应用</em>
+        <p>节点 {String(Math.max(1, (creator!.trusted_recipe.nodes.findIndex((node) => node.id === selectedNode.id) + 1))).padStart(2, '0')} {selectedNode.label}</p>
+        <strong className="vip-suggestion-label">{suggestion.summary}</strong>
+        <strong className="vip-suggestion-label">影响范围：<span>{suggestion.changes.length} 项变更</span></strong>
+        <div className="vip-suggestion-actions"><button type="button" onClick={onOpenDetail}>查看并审核</button></div>
+      </article>}
+      {!!auditItems.length && <section className="vip-recent-audit">
+        <header><strong>审核记录</strong><button type="button" onClick={() => setAuditExpanded((value) => !value)}>{auditExpanded ? '收起' : '查看全部'} <ChevronRight /></button></header>
+        <ul>{visibleAuditItems.map((item) => <li key={item.id}>{item.label}</li>)}</ul>
+      </section>}
       {busy && <div className="creator-steward-loading"><i /><i /><i /><span>正在更新大纲</span></div>}
       {composerError && <div className="creator-steward-error" role="alert"><strong>这次没有完成</strong><span>{composerError}</span></div>}
     </div>
     <form className="vip-collaboration-composer" onSubmit={(event) => { event.preventDefault(); onSubmit(stewardInput) }}>
       <textarea value={stewardInput} disabled={busy} onChange={(event) => onInput(event.currentTarget.value)} placeholder="继续提问或补充说明需求..." />
-      <div><button className="vip-attachment" type="button" title="添加参考资料"><Paperclip /></button><button className="vip-language" type="button"><Globe2 />简体中文<ChevronDown /></button><button className="vip-send" type="submit" disabled={busy || stewardInput.trim().length < 3} title="发送" aria-label="发送">{busy ? <Loader2 className="spinning" /> : <Send />}</button></div>
+      <div><button className="vip-attachment" type="button" disabled={!selectedNode} title={selectedNode ? '在节点详情中添加资料来源' : '先选择一个节点'} onClick={onOpenDetail}><Paperclip /></button><span className="vip-language"><Globe2 />简体中文</span><button className="vip-send" type="submit" disabled={busy || stewardInput.trim().length < 3} title="发送" aria-label="发送">{busy ? <Loader2 className="spinning" /> : <Send />}</button></div>
     </form>
   </aside>
+}
+
+function DirectionExplorer({
+  goal,
+  clarification,
+  possibilities,
+  busy,
+  onChoose,
+}: {
+  goal: string
+  clarification: CreatorClarification | null
+  possibilities: CreatorPossibility[]
+  busy: boolean
+  onChoose: (possibility: CreatorPossibility) => void
+}) {
+  return <div className="vip-discovery-view" aria-label="AI 方向建议">
+    <header>
+      <small>方向探索</small>
+      <strong>{clarification ? '还需要确认一件事' : possibilities.length ? '选择一个方向生成方案' : '从真实目标开始'}</strong>
+      <p>{clarification
+        ? '请在左侧回答 AI 的问题。信息充分后才会生成候选方向。'
+        : possibilities.length
+          ? '这些方向来自已连接的 AI，选择后才会查询可信能力并生成可审核大纲。'
+          : goal.trim()
+            ? '发送左侧描述后，AI 会先判断是否需要澄清。'
+            : '在左侧描述想得到的结果，不需要先考虑模型、工具或流程。'}</p>
+    </header>
+    {possibilities.length ? <div className="vip-direction-list">{possibilities.map((item, index) => <article key={item.id}>
+      <span>方向 {String(index + 1).padStart(2, '0')}</span>
+      <h3>{item.title}</h3>
+      <p>{item.outcome}</p>
+      <small>{item.why_it_fits}</small>
+      <button type="button" disabled={busy} onClick={() => onChoose(item)}><CheckCircle2 />用这个方向生成方案</button>
+    </article>)}</div> : <div className="vip-discovery-empty"><Sparkles /><strong>{busy ? 'AI 正在理解目标' : clarification ? clarification.question : '等待你的目标描述'}</strong><span>{busy ? '只使用已连接的真实模型，不会生成占位方向。' : clarification?.why_it_matters || '候选方向出现前不会读取能力目录。'}</span></div>}
+  </div>
 }
 
 function NodeEditor({ creator, node, busy, onCreatorChange, onNavigate, onReturnOutline, onModelRequired }: {
@@ -648,7 +669,9 @@ export function IntentStudio({ projectId }: { projectId: string }) {
   const [creator, setCreator] = useState<CreatorProjection | null>(null)
   const [goal, setGoal] = useState('')
   const [selectedId, setSelectedId] = useState('')
+  const [possibilities, setPossibilities] = useState<CreatorPossibility[]>([])
   const [middleView, setMiddleView] = useState<'outline' | 'detail'>('outline')
+  const [workspacePane, setWorkspacePane] = useState<WorkspacePane>('collaboration')
   const [canvasLayoutRevision, setCanvasLayoutRevision] = useState(0)
   const [clarification, setClarification] = useState<CreatorClarification | null>(null)
   const [stewardInput, setStewardInput] = useState('')
@@ -664,6 +687,8 @@ export function IntentStudio({ projectId }: { projectId: string }) {
   const [composerError, setComposerError] = useState('')
   const [modelSetupOpen, setModelSetupOpen] = useState(false)
   const [projectMenuOpen, setProjectMenuOpen] = useState(false)
+  const [syncState, setSyncState] = useState<'loading' | 'loaded' | 'saved' | 'new' | 'error'>('loading')
+  const [savedAt, setSavedAt] = useState<Date | null>(null)
   const [projects, setProjects] = useState<Array<{ project_id: string; session_id: string; name: string; intent: string; revision: number }>>([])
   const [pendingAiAction, setPendingAiAction] = useState<'discover' | 'compose' | 'node' | null>(null)
   const stewardThreadRef = useRef<HTMLDivElement | null>(null)
@@ -679,18 +704,26 @@ export function IntentStudio({ projectId }: { projectId: string }) {
     let active = true
     fetchCreatorProject(projectId)
       .then(({ creator: value }) => {
-        if (!active || !value) return
+        if (!active) return
+        if (!value) {
+          setSyncState('new')
+          return
+        }
         setCreator(value)
         setGoal(value.intent)
         setSelectedId(value.trusted_recipe.nodes.find((node) => !value.frozen_steps.includes(node.id))?.id || value.trusted_recipe.nodes[0]?.id || '')
         setMiddleView('outline')
+        setSyncState('loaded')
         setStewardMessages([{
           id: 'loaded-outline',
           role: 'assistant',
-          text: '我先按目前的理解摆了一版大纲。它还不是最终答案，你可以继续描述，也可以直接指向或框选画布中的部分。',
+          text: '已加载当前项目大纲。它还不是最终答案，你可以继续描述，也可以直接指向或框选画布中的部分。',
         }])
       })
-      .catch(() => showToast({ title: '草稿读取失败', description: '请刷新页面后重试。', type: 'error' }))
+      .catch(() => {
+        setSyncState('error')
+        showToast({ title: '草稿读取失败', description: '请刷新页面后重试。', type: 'error' })
+      })
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false }
   }, [projectId])
@@ -709,8 +742,7 @@ export function IntentStudio({ projectId }: { projectId: string }) {
   }, [])
 
   useEffect(() => {
-    if (creator) stewardThreadRef.current?.scrollTo({ top: 0 })
-    else stewardThreadRef.current?.scrollTo({ top: stewardThreadRef.current.scrollHeight, behavior: 'smooth' })
+    stewardThreadRef.current?.scrollTo({ top: stewardThreadRef.current.scrollHeight, behavior: 'smooth' })
   }, [busy, creator, stewardMessages])
 
   useEffect(() => {
@@ -738,11 +770,13 @@ export function IntentStudio({ projectId }: { projectId: string }) {
     : creator
       ? `${creator.revision <= 1 ? '第一版大纲' : '当前大纲'} · 会随着讨论持续变化`
       : goal.trim()
-        ? '准备把当前想法摆成大纲'
+        ? '准备探索可选方向'
         : '先说一句现在的想法'
 
   const saveCreator = (next: CreatorProjection) => {
     setCreator(next)
+    setSyncState('saved')
+    setSavedAt(new Date())
     setPackageResult(null)
     setPackageError('')
   }
@@ -755,7 +789,7 @@ export function IntentStudio({ projectId }: { projectId: string }) {
     requestModelConnection(action)
     return true
   }
-  const discover = async (requestedContext = goal) => {
+  const discover = async (requestedContext = goal, visibleMessage = requestedContext) => {
     const context = requestedContext.trim()
     if (context.length < 3) return
     if (aiConnectedRef.current === false) {
@@ -764,24 +798,22 @@ export function IntentStudio({ projectId }: { projectId: string }) {
     }
     setBusy(true)
     setComposerError('')
+    setPossibilities([])
     setClarification(null)
-    setStewardMessages((current) => [...current, { id: `user.${Date.now()}`, role: 'user', text: context }])
+    setGoal(context)
+    setStewardMessages((current) => [...current, { id: `user.${Date.now()}`, role: 'user', text: visibleMessage.trim() }])
     try {
-      const discoveryPromise = discoverCreatorPossibilities(context).catch(() => null)
-      const result = await composeCreatorRecipe({ session_id: creatorId(), project_id: projectId, goal: context })
-      if (!result.creator) throw new Error('missing creator')
-      saveCreator(result.creator)
-      setGoal(result.creator.intent)
-      const discovery = await discoveryPromise
-      const nextClarification = discovery?.clarification || null
-      setClarification(nextClarification)
+      const discovery = await discoverCreatorPossibilities(context)
+      setPossibilities(discovery.possibilities)
+      setClarification(discovery.clarification)
+      setWorkspacePane(discovery.possibilities.length ? 'outline' : 'collaboration')
       setStewardMessages((current) => [...current, {
         id: `assistant.${Date.now()}`,
         role: 'assistant',
-        text: nextClarification
-          ? `我先按目前的理解摆了一版大纲。${nextClarification.question}`
-          : '第一版大纲已经摆出来了。它只是当前理解，你可以继续描述，也可以用指针或框选告诉我具体在说哪一部分。',
-        clarification: nextClarification,
+        text: discovery.clarification
+          ? discovery.clarification.question
+          : `我整理了 ${discovery.possibilities.length} 个可比较方向。选择一个方向后，我才会查询可信能力并生成大纲。`,
+        clarification: discovery.clarification,
       }])
     } catch (error) {
       if (isModelBlock(error, 'discover')) return
@@ -799,23 +831,17 @@ export function IntentStudio({ projectId }: { projectId: string }) {
     }
     setBusy(true)
     setComposerError('')
+    setPossibilities([])
     setClarification(null)
     try {
       if (creator) {
-        const discoveryPromise = discoverCreatorPossibilities(nextGoal).catch(() => null)
         const preview = await previewCreatorRecompose(creator.session_id, { goal: nextGoal, expected_revision: creator.revision })
         setRecipePreview(preview)
         setGoal(nextGoal)
-        const discovery = await discoveryPromise
-        const nextClarification = discovery?.clarification || null
-        setClarification(nextClarification)
         setStewardMessages((current) => [...current, {
           id: `assistant.${Date.now()}`,
           role: 'assistant',
-          text: nextClarification
-            ? `我已经把这次补充反映到新大纲里。${nextClarification.question}`
-            : '我已经把这次理解铺到画布上。先看变化是否接近你的意思，再决定应用或继续讨论。',
-          clarification: nextClarification,
+          text: '我已经把这次补充反映到新大纲预览里。先看变化是否接近你的意思，再决定应用或继续讨论。',
         }])
         return
       }
@@ -823,7 +849,10 @@ export function IntentStudio({ projectId }: { projectId: string }) {
       if (!result.creator) throw new Error('missing creator')
       saveCreator(result.creator)
       setGoal(result.creator.intent)
-      setSelectedId('')
+      setSelectedId(result.creator.trusted_recipe.nodes[0]?.id || '')
+      setMiddleView('outline')
+      setWorkspacePane('outline')
+      setStewardMessages((current) => [...current, { id: `assistant.${Date.now()}`, role: 'assistant', text: '已根据选定方向生成第一版大纲。请逐个审核节点、能力来源与业务参数。' }])
       showToast({ title: '整体草稿已生成', description: '你可以继续对话或直接指向大纲内容。', type: 'success' })
     } catch (error) {
       if (isModelBlock(error, 'compose')) return
@@ -871,6 +900,18 @@ export function IntentStudio({ projectId }: { projectId: string }) {
       setStewardMessages((current) => [...current, { id: `user.${Date.now()}`, role: 'user', text: feedback }])
       void compose(nextGoal)
     } else void discover(feedback)
+  }
+  const answerClarification = (answer: string) => {
+    const nextContext = `${goal.trim()}\n补充：${answer}`.trim()
+    setClarification(null)
+    void discover(nextContext, answer)
+  }
+  const chooseDirection = (possibility: CreatorPossibility) => {
+    const nextGoal = possibility.recipe.intent.trim()
+    setGoal(nextGoal)
+    setPossibilities([])
+    setStewardMessages((current) => [...current, { id: `user.${Date.now()}`, role: 'user', text: `采用方向：${possibility.title}` }])
+    void compose(nextGoal)
   }
   const buildPackage = async () => {
     if (!creator) return
@@ -925,20 +966,34 @@ export function IntentStudio({ projectId }: { projectId: string }) {
     if (!creator) return
     const name = window.prompt('项目名称', creator.project_name || creator.intent)
     if (!name?.trim()) return
-    const result = await renameCreatorProject(projectId, name.trim())
-    saveCreator(result.creator)
+    setBusy(true)
+    try {
+      const result = await renameCreatorProject(projectId, name.trim())
+      saveCreator(result.creator)
+      setProjectMenuOpen(false)
+      showToast({ title: '项目已重命名', type: 'success' })
+    } catch (error) {
+      showToast({ title: '项目重命名失败', description: friendlyError(error, 'compose'), type: 'error' })
+    } finally { setBusy(false) }
   }
   const removeProject = async () => {
     if (!creator || !window.confirm(`删除项目“${creator.project_name || creator.intent}”？`)) return
-    await deleteCreatorProject(projectId)
-    const next = projects.find((item) => item.project_id !== projectId)
-    if (next) window.location.assign(`/projects/${encodeURIComponent(next.project_id)}/studio`)
-    else createProject()
+    setBusy(true)
+    try {
+      await deleteCreatorProject(projectId)
+      const next = projects.find((item) => item.project_id !== projectId)
+      if (next) window.location.assign(`/projects/${encodeURIComponent(next.project_id)}/studio`)
+      else createProject()
+    } catch (error) {
+      showToast({ title: '项目删除失败', description: friendlyError(error, 'compose'), type: 'error' })
+      setBusy(false)
+    }
   }
 
   const openNodeDetail = (nodeId = selectedId) => {
     if (nodeId) setSelectedId(nodeId)
     setMiddleView('detail')
+    setWorkspacePane('outline')
   }
   const resetCanvasLayout = () => {
     localStorage.removeItem(`cartridgeflow.creator-layout.v2.${projectId}.horizontal`)
@@ -950,7 +1005,17 @@ export function IntentStudio({ projectId }: { projectId: string }) {
     else await canvasPanelRef.current?.requestFullscreen()
   }
   const pendingNodes = creator?.trusted_recipe.nodes.filter((node) => nodeReviewState(creator, node) !== 'confirmed') || []
-  const savedTime = new Date().toLocaleTimeString('zh-CN', { hour12: false })
+  const syncLabel = busy
+    ? '正在处理'
+    : syncState === 'saved' && savedAt
+      ? `已保存 ${savedAt.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}`
+      : syncState === 'loaded'
+        ? '项目已加载'
+        : syncState === 'new'
+          ? '新项目未保存'
+          : syncState === 'error'
+            ? '同步失败'
+            : '正在加载'
 
   return <main className="creator-workspace creator-workbench" style={themeVariables(theme)}>
     <header className="creator-topbar vip-topbar">
@@ -960,16 +1025,22 @@ export function IntentStudio({ projectId }: { projectId: string }) {
         <span className="vip-brand-divider" />
         <span className="vip-project-crumb">项目 <b>/</b> {creator?.project_name || creator?.intent || '新项目'} <ChevronDown /></span>
       </div>
-      <div className="vip-autosave" title={aiStatus?.has_key ? `AI 已连接：${aiStatus.model}` : 'AI 尚未连接'}><i />自动保存&nbsp; {savedTime}</div>
+      <div className={`vip-autosave is-${busy ? 'busy' : syncState}`} title={aiStatus?.has_key ? `AI 已连接：${aiStatus.model}` : 'AI 尚未连接'}><i />{syncLabel}</div>
       <div className="creator-top-actions">
         <button className="creator-theme-button" type="button" onClick={() => setThemePanelOpen(true)}><Sun />{theme.label}</button>
         {creator && (packageResult ? <a className="creator-package-download" href={packageResult.url} download><Download />下载卡带</a> : <button className="creator-package-button" type="button" disabled={busy || !creator.generation_readiness.ready} onClick={() => void buildPackage()} title={creator.generation_readiness.ready ? '生成可安装卡带' : '完成所有步骤后可交付'}><PackageCheck />生成卡带</button>)}
-        {creator && <button className="vip-pending-link" type="button" onClick={() => setMiddleView('outline')}>{pendingNodes.length} 项待完成</button>}
+        {creator && <button className="vip-pending-link" type="button" onClick={() => { setMiddleView('outline'); setWorkspacePane('outline') }}>{pendingNodes.length} 项待完成</button>}
       </div>
     </header>
 
-    <div className="vip-workspace-body">
-      <CollaborationPanel creator={creator} goal={goal} selectedNode={selectedNode} busy={busy} composerError={composerError} stewardInput={stewardInput} stewardMessages={stewardMessages} clarification={clarification} threadRef={stewardThreadRef} onInput={(value) => { setStewardInput(value); setComposerError('') }} onSubmit={continueCoCreation} onClarification={(answer) => { setClarification(null); continueCoCreation(answer) }} onOpenDetail={() => openNodeDetail()} />
+    <nav className="vip-pane-nav" aria-label="工作区视图">
+      <button type="button" className={workspacePane === 'collaboration' ? 'is-active' : ''} onClick={() => setWorkspacePane('collaboration')}><Sparkles />共创</button>
+      <button type="button" className={workspacePane === 'outline' ? 'is-active' : ''} onClick={() => setWorkspacePane('outline')}><List />{creator ? '大纲' : '方向'}</button>
+      <button type="button" className={workspacePane === 'canvas' ? 'is-active' : ''} onClick={() => setWorkspacePane('canvas')}><Grid2X2 />画布</button>
+    </nav>
+
+    <div className={`vip-workspace-body is-pane-${workspacePane}`}>
+      <CollaborationPanel creator={creator} goal={goal} selectedNode={selectedNode} busy={busy} composerError={composerError} stewardInput={stewardInput} stewardMessages={stewardMessages} clarification={clarification} threadRef={stewardThreadRef} onInput={(value) => { setStewardInput(value); setComposerError('') }} onSubmit={continueCoCreation} onClarification={answerClarification} onOpenDetail={() => openNodeDetail()} />
 
       <section className="vip-outline-panel" aria-label="项目与大纲">
         <header className="vip-panel-title"><strong>项目与大纲</strong></header>
@@ -979,24 +1050,24 @@ export function IntentStudio({ projectId }: { projectId: string }) {
           {projectMenuOpen && <div className="creator-project-menu vip-project-menu">{projects.map((project) => <a className={project.project_id === projectId ? 'is-current' : ''} href={`/projects/${encodeURIComponent(project.project_id)}/studio`} key={project.project_id}><span>{project.name}</span><small>v{project.revision}</small></a>)}{creator && <div className="creator-project-menu-actions"><button type="button" onClick={() => void renameProject()}>重命名</button><button className="danger" type="button" onClick={() => void removeProject()}>删除</button></div>}</div>}
         </div>
         <div className="vip-workspace-tabs" role="tablist" aria-label="项目内容">
-          <button type="button" role="tab" data-view="outline" aria-selected={middleView === 'outline'} className={middleView === 'outline' ? 'is-active' : ''} onClick={() => setMiddleView('outline')}>大纲</button>
+          <button type="button" role="tab" data-view="outline" aria-selected={middleView === 'outline'} className={middleView === 'outline' ? 'is-active' : ''} onClick={() => setMiddleView('outline')}>{creator ? '大纲' : '方向'}</button>
           <button type="button" role="tab" data-view="detail" aria-selected={middleView === 'detail'} disabled={!selectedNode} className={middleView === 'detail' ? 'is-active' : ''} onClick={() => openNodeDetail()}>详情</button>
         </div>
 
-        {middleView === 'outline' ? <div className="vip-outline-view">
+        {!creator ? <DirectionExplorer goal={goal} clarification={clarification} possibilities={possibilities} busy={busy} onChoose={chooseDirection} /> : middleView === 'outline' ? <div className="vip-outline-view">
           <div className="vip-outline-table" role="table" aria-label="节点大纲">
             <div className="vip-outline-row is-head" role="row"><span>编号</span><span>节点名称</span><span>可信能力匹配</span><span>审核状态</span></div>
             {creator?.trusted_recipe.nodes.map((node, index) => { const state = nodeReviewState(creator, node); const hasSuggestion = creator.pending_proposals.some((proposal) => proposal.changes.some((change) => change.target_id === node.id)); return <button className={`vip-outline-row ${node.id === selectedId ? 'is-selected' : ''}`} type="button" role="row" key={node.id} onClick={() => setSelectedId(node.id)} onDoubleClick={() => openNodeDetail(node.id)}><span>{String(index + 1).padStart(2, '0')}</span><strong>{node.label}</strong><span>{state === 'unresolved' ? node.resolution?.needed_capability || '待补齐能力' : node.resolution?.capability?.label || '可信能力'}</span><ReviewStatus state={state} showSuggestion={hasSuggestion} /></button> })}
           </div>
-          <section className="vip-delivery-check"><header><strong>交付检查</strong><span>{reviewCount} 个待审核 · {unresolvedCount} 个能力缺口</span></header><div>{pendingNodes.map((node) => { const state = nodeReviewState(creator!, node); return <button className="vip-delivery-row" type="button" key={node.id} onClick={() => state === 'unresolved' ? void refreshCapabilities() : openNodeDetail(node.id)}><i className={`is-${state}`} /><span><strong>节点 {String(creator!.trusted_recipe.nodes.indexOf(node) + 1).padStart(2, '0')} {node.label}：{state === 'review' ? '待审核' : '待补齐能力'}</strong><small>下一步：{state === 'review' ? '查看建议详情并决定是否应用' : '补齐报告打包与分发能力'}</small></span></button> })}</div></section>
+          <section className="vip-delivery-check"><header><strong>交付检查</strong><span>{reviewCount} 个待审核 · {unresolvedCount} 个能力缺口</span>{unresolvedCount > 0 && <button type="button" disabled={busy} title="重新检查可信能力" aria-label="重新检查可信能力" onClick={() => void refreshCapabilities()}>{busy ? <Loader2 className="spinning" /> : <RefreshCw />}</button>}</header><div>{pendingNodes.map((node) => { const state = nodeReviewState(creator, node); return <button className="vip-delivery-row" type="button" key={node.id} onClick={() => openNodeDetail(node.id)}><i className={`is-${state}`} /><span><strong>节点 {String(creator.trusted_recipe.nodes.indexOf(node) + 1).padStart(2, '0')} {node.label}：{state === 'review' ? '待审核' : '待补齐能力'}</strong><small>下一步：{state === 'review' ? '查看建议详情并决定是否应用' : '进入详情并深入制作缺失能力'}</small></span></button> })}</div></section>
         </div> : creator && selectedNode ? <NodeEditor key={`${selectedNode.id}:${creator.revision}:${creator.experience_revision}`} creator={creator} node={selectedNode} busy={busy} onCreatorChange={saveCreator} onNavigate={(nodeId) => { setSelectedId(nodeId); setMiddleView('detail') }} onReturnOutline={() => setMiddleView('outline')} onModelRequired={() => requestModelConnection('node')} /> : <div className="vip-detail-empty">选择一个节点查看详情</div>}
       </section>
 
       <section className="vip-canvas-panel" ref={canvasPanelRef} aria-label="语义画布">
-        <header className="vip-canvas-header"><div><strong>语义画布</strong><span title={canvasStatus}>当前焦点：{selectedNode ? `${String((creator?.trusted_recipe.nodes.indexOf(selectedNode) || 0) + 1).padStart(2, '0')} ${selectedNode.label}` : '整个大纲'}{selectedNode && <> · <b>{nodeReviewState(creator!, selectedNode) === 'confirmed' ? '已确认' : nodeReviewState(creator!, selectedNode) === 'review' ? '待审核' : '待补齐能力'}</b></>}</span></div><div className="vip-canvas-toolbar"><button type="button" onClick={resetCanvasLayout}>布局：自动</button><button type="button" onClick={() => setMiddleView('outline')}><List />列表视图</button><button className={canvasTool === 'lasso' ? 'is-active' : ''} type="button" title="框选讨论范围" onClick={() => { setCanvasTool('lasso'); setContextNodeIds([]) }}><Grid2X2 /></button><button className={canvasTool === 'pointer' ? 'is-active' : ''} type="button" title="指向一个节点" onClick={() => { setCanvasTool('pointer'); setContextNodeIds([]) }}><MousePointer2 /></button><button type="button" title="全屏画布" onClick={() => void toggleCanvasFullscreen()}><Maximize2 /></button></div></header>
+        <header className="vip-canvas-header"><div><strong>语义画布</strong><span title={canvasStatus}>当前焦点：{selectedNode ? `${String((creator?.trusted_recipe.nodes.indexOf(selectedNode) || 0) + 1).padStart(2, '0')} ${selectedNode.label}` : '整个大纲'}{selectedNode && creator && <> · <b>{nodeReviewState(creator, selectedNode) === 'confirmed' ? '已确认' : nodeReviewState(creator, selectedNode) === 'review' ? '待审核' : '待补齐能力'}</b></>}</span></div><div className="vip-canvas-toolbar"><button type="button" onClick={resetCanvasLayout}>布局：自动</button><button type="button" onClick={() => { setMiddleView('outline'); setWorkspacePane('outline') }}><List />列表视图</button><button className={canvasTool === 'lasso' ? 'is-active' : ''} type="button" title="框选讨论范围" onClick={() => { setCanvasTool('lasso'); setContextNodeIds([]) }}><Grid2X2 /></button><button className={canvasTool === 'pointer' ? 'is-active' : ''} type="button" title="指向一个节点" onClick={() => { setCanvasTool('pointer'); setContextNodeIds([]) }}><MousePointer2 /></button><button type="button" title="全屏画布" onClick={() => void toggleCanvasFullscreen()}><Maximize2 /></button></div></header>
         {packageError && <div className="creator-package-error" role="alert"><strong>打包未完成</strong><span>{packageError}</span></div>}
         <div className={`creator-canvas vip-canvas-surface tool-${canvasTool}`}>
-          <IntentCanvas key={canvasLayoutRevision} creator={creator} preview={recipePreview} draftGoal={goal} selectedId={selectedId} contextNodeIds={contextNodeIds} tool={canvasTool} onSelect={(nodeId) => { setSelectedId(nodeId); setMiddleView(nodeId ? 'detail' : 'outline') }} onContextChange={setContextNodeIds} />
+          <IntentCanvas key={canvasLayoutRevision} creator={creator} preview={recipePreview} draftGoal={goal} selectedId={selectedId} contextNodeIds={contextNodeIds} tool={canvasTool} onSelect={(nodeId) => { setSelectedId(nodeId); setMiddleView(nodeId ? 'detail' : 'outline'); if (nodeId) setWorkspacePane('outline') }} onContextChange={setContextNodeIds} />
           {recipePreview && <section className="creator-draft-review" aria-label="新大纲确认"><div><strong>新大纲已铺在画布上</strong><span>新增 {recipePreview.impact.added_node_ids.length} · 保留 {recipePreview.impact.retained_node_ids.length} · 移除 {recipePreview.impact.removed_node_ids.length}</span></div><button className="secondary-button" type="button" disabled={busy} onClick={rejectRecipePreview}>保留旧版</button><button type="button" disabled={busy} onClick={() => void applyRecipePreview()}><Check />应用这版</button></section>}
         </div>
         {loading && <div className="creator-loading"><Loader2 className="spinning" /><span>正在读取项目</span></div>}

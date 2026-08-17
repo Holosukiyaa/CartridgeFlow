@@ -700,6 +700,7 @@ export function IntentStudio({ projectId }: { projectId: string }) {
   const [restoredWorkspace] = useState(() => readCreatorWorkspace(projectId))
   const { theme, setTheme } = useAppTheme()
   const [themePanelOpen, setThemePanelOpen] = useState(false)
+  const themeButtonRef = useRef<HTMLButtonElement>(null)
   const [creator, setCreator] = useState<CreatorProjection | null>(null)
   const [goal, setGoal] = useState(restoredWorkspace?.goal || '')
   const [selectedId, setSelectedId] = useState(restoredWorkspace?.selectedId || '')
@@ -1256,7 +1257,7 @@ export function IntentStudio({ projectId }: { projectId: string }) {
       <div className={`vip-autosave is-${busy ? 'busy' : syncState}`} title={aiStatus?.has_key ? `AI 已连接：${aiStatus.model}` : 'AI 尚未连接'}><i />{syncLabel}</div>
       <div className="creator-top-actions">
         <button className={`creator-ai-button ${aiStatus?.has_key ? 'is-connected' : ''}`} type="button" onClick={() => requestModelConnection()}><Cloud />{aiStatus?.has_key ? `AI ${aiStatus.model || '已连接'}` : '连接 AI'}</button>
-        <button className="creator-theme-button" type="button" onClick={() => setThemePanelOpen(true)}><Sun />{theme.label}</button>
+        <button ref={themeButtonRef} className="creator-theme-button" type="button" onClick={() => setThemePanelOpen(true)}><Sun />{theme.label}</button>
         {creator && (packageResult ? <a className="creator-package-download" href={packageResult.url} download><Download />下载试运行包</a> : <button className="creator-package-button" type="button" disabled={busy || !creator.generation_readiness.ready} onClick={() => void buildPackage()} title={creator.generation_readiness.ready ? '生成签名试运行包' : '完成所有步骤后可试运行'}><PackageCheck />准备试运行</button>)}
         {creator && <button className="vip-pending-link" type="button" onClick={() => { setMiddleView('outline'); setWorkspacePane('outline') }}>{pendingNodes.length} 项待完成</button>}
       </div>
@@ -1318,7 +1319,10 @@ export function IntentStudio({ projectId }: { projectId: string }) {
     />
     <Suspense fallback={null}>
       {modelSetupOpen && <ModelConnectionDialog opened current={aiStatus} onConnect={connectModel} onClose={() => { setModelSetupOpen(false); setPendingAiAction(null) }} />}
-      {themePanelOpen && <ThemeDialog opened theme={theme} onChange={setTheme} onClose={() => setThemePanelOpen(false)} />}
+      {themePanelOpen && <ThemeDialog opened theme={theme} onChange={setTheme} onClose={() => {
+        setThemePanelOpen(false)
+        requestAnimationFrame(() => themeButtonRef.current?.focus())
+      }} />}
     </Suspense>
   </>
 }

@@ -1,0 +1,29 @@
+{
+  "name": "@cartridgeflow/delivery-workbench",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit --pretty false",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@mantine/core": "^9.5.1",
+    "@mantine/notifications": "^9.5.1",
+    "lucide-react": "^1.26.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "~6.0.2",
+    "vite": "^6.0.5"
+  }
+}

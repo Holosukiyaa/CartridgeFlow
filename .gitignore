@@ -18,6 +18,8 @@ node_modules/
 /src/intent-studio/dist-ssr/
 /src/capability-workshop/dist/
 /src/capability-workshop/dist-ssr/
+/src/delivery-workbench/dist/
+/src/delivery-workbench/dist-ssr/
 
 # Local secrets and legacy machine-owned configuration paths
 .env

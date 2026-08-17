@@ -1,4 +1,4 @@
-import { type CSSProperties, type FormEvent, type RefObject, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, type RefObject, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowLeft,
   Check,
@@ -17,7 +17,6 @@ import {
   MousePointer2,
   PackageCheck,
   Paperclip,
-  Palette,
   Plus,
   RefreshCw,
   Send,
@@ -27,7 +26,6 @@ import {
   Sun,
   Target,
   Wrench,
-  X,
 } from 'lucide-react'
 import {
   ApiError,
@@ -70,27 +68,13 @@ import {
   type DesktopRunnerStatus,
 } from '../../api.ts'
 import { showToast } from '../../toast.tsx'
+import { useAppTheme, WorkbenchShell } from '../../ui/index.ts'
 import { IntentCanvas, type CreatorCanvasTool } from './IntentCanvas.tsx'
 
+const ModelConnectionDialog = lazy(() => import('./ModelConnectionDialog.tsx').then((module) => ({ default: module.ModelConnectionDialog })))
+const ThemeDialog = lazy(() => import('./ThemeDialog.tsx').then((module) => ({ default: module.ThemeDialog })))
+
 const creatorId = () => `creator.${crypto.randomUUID()}`
-
-type CreatorTheme = {
-  id: string
-  label: string
-  accent: string
-  focus: string
-  page: string
-}
-
-const CREATOR_THEME_KEY = 'cartridgeflow.creator-theme'
-const CREATOR_THEME_PRESETS: CreatorTheme[] = [
-  { id: 'light-reference', label: '浅色主题', accent: '#075dff', focus: '#075dff', page: '#ffffff' },
-  { id: 'quiet-workbench', label: '静定工作台', accent: '#426b9b', focus: '#3f6ea8', page: '#f2f4f5' },
-  { id: 'clear-sky', label: '清透蓝', accent: '#176bff', focus: '#2563eb', page: '#f8fbff' },
-  { id: 'morning-mist', label: '晨雾青', accent: '#087f82', focus: '#0f9da0', page: '#f7faf9' },
-  { id: 'paper-ink', label: '纸张墨', accent: '#3c5360', focus: '#4f7180', page: '#faf9f6' },
-  { id: 'quiet-forest', label: '静谧林', accent: '#3f725d', focus: '#5d9b7d', page: '#f5f8f5' },
-]
 
 type StewardMessage = {
   id: string
@@ -218,52 +202,6 @@ const STEWARD_WELCOME: StewardMessage = {
   id: 'welcome',
   role: 'assistant',
   text: '先说你现在想得到的结果。我会先追问一个关键问题或给出少量方向；你选定方向后，我们再把它变成可审核的大纲。',
-}
-
-function readCreatorTheme(): CreatorTheme {
-  try {
-    const saved = JSON.parse(localStorage.getItem(CREATOR_THEME_KEY) || 'null') as Partial<CreatorTheme> | null
-    if (saved?.id && saved.accent && saved.focus && saved.page) return { ...CREATOR_THEME_PRESETS[0], ...saved }
-  } catch { /* use the bundled preset */ }
-  return CREATOR_THEME_PRESETS[0]
-}
-
-function themeVariables(theme: CreatorTheme): CSSProperties {
-  return {
-    '--intent-accent': theme.accent,
-    '--intent-accent-dark': `color-mix(in srgb, ${theme.accent} 78%, #152033)`,
-    '--intent-accent-soft': `color-mix(in srgb, ${theme.accent} 12%, ${theme.page})`,
-    '--intent-focus': theme.focus,
-    '--intent-focus-ring': `color-mix(in srgb, ${theme.focus} 24%, transparent)`,
-    '--intent-page': theme.page,
-    '--intent-surface-muted': `color-mix(in srgb, ${theme.page} 66%, #ffffff)`,
-  } as CSSProperties
-}
-
-function CreatorThemePanel({ theme, onChange, onClose }: {
-  theme: CreatorTheme
-  onChange: (theme: CreatorTheme) => void
-  onClose: () => void
-}) {
-  const update = (key: keyof Pick<CreatorTheme, 'accent' | 'focus' | 'page'>, value: string) => onChange({ ...theme, id: 'custom', label: '自定义主题', [key]: value })
-  return <aside className="creator-theme-panel" aria-label="全局视觉主题">
-    <header>
-      <div><span><Palette /> 全局视觉</span><h2>调整主题</h2></div>
-      <button className="icon-button" type="button" onClick={onClose} title="关闭主题设置"><X /></button>
-    </header>
-    <div className="creator-theme-panel-body">
-      <label><span>好看的预设</span><select value={theme.id} onChange={(event) => {
-        const preset = CREATOR_THEME_PRESETS.find((item) => item.id === event.currentTarget.value)
-        if (preset) onChange(preset)
-      }}><option value="custom">自定义主题</option>{CREATOR_THEME_PRESETS.map((preset) => <option value={preset.id} key={preset.id}>{preset.label}</option>)}</select></label>
-      <div className="creator-theme-color-grid">
-        <label><span>控件颜色</span><input type="color" value={theme.accent} onChange={(event) => update('accent', event.currentTarget.value)} /></label>
-        <label><span>焦点颜色</span><input type="color" value={theme.focus} onChange={(event) => update('focus', event.currentTarget.value)} /></label>
-        <label><span>背景颜色</span><input type="color" value={theme.page} onChange={(event) => update('page', event.currentTarget.value)} /></label>
-      </div>
-      <p>主题会应用到当前创作空间的按钮、焦点状态、画布和页面背景，并自动保存在本机。</p>
-    </div>
-  </aside>
 }
 
 function friendlyError(error: unknown, action: 'discover' | 'compose' | 'node' | 'package') {
@@ -758,64 +696,9 @@ function NodeEditor({ creator, node, busy, onCreatorChange, onNavigate, onReturn
   </aside>
 }
 
-function ModelConnectionPanel({ current, onConnect, onClose }: {
-  current: { provider: string; has_key: boolean; base_url: string; model: string } | null
-  onConnect: (connection: { base_url: string; api_key: string; model: string }) => Promise<void>
-  onClose: () => void
-}) {
-  const presets = [
-    { id: 'deepseek', label: 'DeepSeek', baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat' },
-    { id: 'openai', label: 'OpenAI', baseUrl: 'https://api.openai.com/v1', model: 'gpt-5-mini' },
-    { id: 'local', label: '本机兼容服务', baseUrl: 'http://127.0.0.1:11434/v1', model: '' },
-    { id: 'custom', label: '其他兼容服务', baseUrl: '', model: '' },
-  ]
-  const initialPreset = presets.find((item) => current?.base_url.startsWith(item.baseUrl) && item.baseUrl) || presets[0]
-  const [presetId, setPresetId] = useState(initialPreset.id)
-  const [baseUrl, setBaseUrl] = useState(current?.base_url || initialPreset.baseUrl)
-  const [apiKey, setApiKey] = useState('')
-  const [model, setModel] = useState(current?.model || initialPreset.model)
-  const [working, setWorking] = useState(false)
-  const [error, setError] = useState('')
-
-  const submit = async (event: FormEvent) => {
-    event.preventDefault()
-    if (!baseUrl.trim() || !apiKey.trim()) return
-    setWorking(true)
-    setError('')
-    try {
-      await onConnect({ base_url: baseUrl.trim(), api_key: apiKey.trim(), model: model.trim() })
-    } catch (reason) {
-      setError(reason instanceof ApiError ? reason.message : '连接没有通过测试，请检查后重试。')
-    } finally { setWorking(false) }
-  }
-
-  return <aside className="creator-model-setup" aria-label="连接 AI 共创">
-    <header>
-      <div><span>{current?.has_key ? `当前模型：${current.model}` : 'AI 共创尚未连接'}</span><h2>{current?.has_key ? '更新 AI 连接' : '连接 AI'}</h2></div>
-      <button className="icon-button" type="button" onClick={onClose} title="关闭"><X /></button>
-    </header>
-    <form onSubmit={submit}>
-      <label><span>服务</span><select value={presetId} disabled={working} onChange={(event) => {
-        const next = presets.find((item) => item.id === event.currentTarget.value) || presets[3]
-        setPresetId(next.id)
-        if (next.baseUrl) setBaseUrl(next.baseUrl)
-        setModel(next.model)
-      }}>{presets.map((preset) => <option value={preset.id} key={preset.id}>{preset.label}</option>)}</select></label>
-      <label><span>服务地址</span><input value={baseUrl} disabled={working} onChange={(event) => setBaseUrl(event.currentTarget.value)} /></label>
-      <label><span>API Key</span><input type="password" autoComplete="off" value={apiKey} disabled={working} onChange={(event) => setApiKey(event.currentTarget.value)} /></label>
-      <label><span>模型</span><input value={model} disabled={working} onChange={(event) => setModel(event.currentTarget.value)} /></label>
-      {error && <div className="creator-connection-error" role="alert">{error}</div>}
-      <div>
-        <button className="secondary-button" type="button" disabled={working} onClick={onClose}>取消</button>
-        <button type="submit" disabled={working || !baseUrl.trim() || !apiKey.trim()}>{working ? <Loader2 className="spinning" /> : <Check />}{current?.has_key ? '测试并更新' : '连接并继续'}</button>
-      </div>
-    </form>
-  </aside>
-}
-
 export function IntentStudio({ projectId }: { projectId: string }) {
   const [restoredWorkspace] = useState(() => readCreatorWorkspace(projectId))
-  const [theme, setTheme] = useState<CreatorTheme>(readCreatorTheme)
+  const { theme, setTheme } = useAppTheme()
   const [themePanelOpen, setThemePanelOpen] = useState(false)
   const [creator, setCreator] = useState<CreatorProjection | null>(null)
   const [goal, setGoal] = useState(restoredWorkspace?.goal || '')
@@ -854,10 +737,6 @@ export function IntentStudio({ projectId }: { projectId: string }) {
   const workspaceErrorShownRef = useRef(false)
   const resolutionCheckRef = useRef('')
   const canvasPanelRef = useRef<HTMLElement | null>(null)
-
-  useEffect(() => {
-    localStorage.setItem(CREATOR_THEME_KEY, JSON.stringify(theme))
-  }, [theme])
 
   useEffect(() => {
     const snapshot: CreatorWorkspaceSnapshot = {
@@ -1362,8 +1241,12 @@ export function IntentStudio({ projectId }: { projectId: string }) {
             ? '同步失败'
             : '正在加载'
 
-  return <main className="creator-workspace creator-workbench" style={themeVariables(theme)}>
-    <header className="creator-topbar vip-topbar">
+  return <>
+    <WorkbenchShell
+      storageKey="cartridgeflow.intent-studio.panes.v1"
+      activePane={workspacePane}
+      onActivePaneChange={setWorkspacePane}
+      header={<header className="creator-topbar vip-topbar">
       <div className="creator-brand">
         <span className="creator-brand-mark" aria-hidden="true">C</span>
         <strong>CartridgeFlow</strong>
@@ -1377,18 +1260,23 @@ export function IntentStudio({ projectId }: { projectId: string }) {
         {creator && (packageResult ? <a className="creator-package-download" href={packageResult.url} download><Download />下载试运行包</a> : <button className="creator-package-button" type="button" disabled={busy || !creator.generation_readiness.ready} onClick={() => void buildPackage()} title={creator.generation_readiness.ready ? '生成签名试运行包' : '完成所有步骤后可试运行'}><PackageCheck />准备试运行</button>)}
         {creator && <button className="vip-pending-link" type="button" onClick={() => { setMiddleView('outline'); setWorkspacePane('outline') }}>{pendingNodes.length} 项待完成</button>}
       </div>
-    </header>
-
-    <nav className="vip-pane-nav" aria-label="工作区视图">
-      <button type="button" className={workspacePane === 'collaboration' ? 'is-active' : ''} onClick={() => setWorkspacePane('collaboration')}><Sparkles />共创</button>
-      <button type="button" className={workspacePane === 'outline' ? 'is-active' : ''} onClick={() => setWorkspacePane('outline')}><List />{creator ? '大纲' : '方向'}</button>
-      <button type="button" className={workspacePane === 'canvas' ? 'is-active' : ''} onClick={() => setWorkspacePane('canvas')}><Grid2X2 />画布</button>
-    </nav>
-
-    <div className={`vip-workspace-body is-pane-${workspacePane}`}>
-      <CollaborationPanel creator={creator} goal={goal} selectedNode={selectedNode} busy={busy} composerError={composerError} stewardInput={stewardInput} stewardMessages={stewardMessages} clarification={clarification} guidance={guidance} runnerUrl={runnerDelivery?.delivery.runner_url || runnerStatus?.url || 'http://127.0.0.1:18990/'} threadRef={stewardThreadRef} composerRef={stewardComposerRef} onInput={(value) => { setStewardInput(value); setComposerError('') }} onSubmit={continueCoCreation} onClarification={answerClarification} onGuidanceAction={runGuidanceAction} onOpenDetail={() => openNodeDetail()} />
-
-      <section className="vip-outline-panel" aria-label="项目与大纲">
+    </header>}
+      panes={[
+        {
+          id: 'collaboration',
+          label: '共创',
+          icon: Sparkles,
+          minSize: 288,
+          preferredSize: 320,
+          content: <CollaborationPanel creator={creator} goal={goal} selectedNode={selectedNode} busy={busy} composerError={composerError} stewardInput={stewardInput} stewardMessages={stewardMessages} clarification={clarification} guidance={guidance} runnerUrl={runnerDelivery?.delivery.runner_url || runnerStatus?.url || 'http://127.0.0.1:18990/'} threadRef={stewardThreadRef} composerRef={stewardComposerRef} onInput={(value) => { setStewardInput(value); setComposerError('') }} onSubmit={continueCoCreation} onClarification={answerClarification} onGuidanceAction={runGuidanceAction} onOpenDetail={() => openNodeDetail()} />,
+        },
+        {
+          id: 'outline',
+          label: creator ? '大纲' : '方向',
+          icon: List,
+          minSize: 368,
+          preferredSize: 416,
+          content: <section className="vip-outline-panel" aria-label="项目与大纲">
         <header className="vip-panel-title"><strong>项目与大纲</strong></header>
         <div className="vip-project-picker">
           <button className="vip-current-project" type="button" onClick={() => setProjectMenuOpen((value) => !value)}><FileText /><span>{projectDisplayName}</span><ChevronDown /></button>
@@ -1407,9 +1295,15 @@ export function IntentStudio({ projectId }: { projectId: string }) {
           </div>
           <section className="vip-delivery-check"><header><strong>完成检查</strong><span>{reviewCount} 个待审核 · {unresolvedCount} 个步骤待补齐</span>{unresolvedCount > 0 && <button type="button" disabled={busy} title="重新检查可用做法" aria-label="重新检查可用做法" onClick={() => void refreshCapabilities()}>{busy ? <Loader2 className="spinning" /> : <RefreshCw />}</button>}</header><div>{pendingNodes.map((node) => { const state = nodeReviewState(creator, node); return <button className="vip-delivery-row" type="button" key={node.id} onClick={() => openNodeDetail(node.id)}><i className={`is-${state}`} /><span><strong>步骤 {String(creator.trusted_recipe.nodes.indexOf(node) + 1).padStart(2, '0')} {node.label}：{state === 'review' ? '待审核' : '需要补齐'}</strong><small>下一步：{state === 'review' ? '检查参数和结果界面后确认' : '进入工坊完成这一做法，发布后自动回填'}</small></span></button> })}</div></section>
         </div> : creator && selectedNode ? <NodeEditor key={`${selectedNode.id}:${creator.revision}:${creator.experience_revision}`} creator={creator} node={selectedNode} busy={busy} onCreatorChange={saveCreator} onNavigate={(nodeId) => { setSelectedId(nodeId); setMiddleView('detail') }} onReturnOutline={() => setMiddleView('outline')} onModelRequired={() => requestModelConnection('node')} /> : <div className="vip-detail-empty">选择一个节点查看详情</div>}
-      </section>
-
-      <section className="vip-canvas-panel" ref={canvasPanelRef} aria-label="语义画布">
+          </section>,
+        },
+        {
+          id: 'canvas',
+          label: '画布',
+          icon: Grid2X2,
+          minSize: 420,
+          preferredSize: 864,
+          content: <section className="vip-canvas-panel" ref={canvasPanelRef} aria-label="语义画布">
         <header className="vip-canvas-header"><div><strong>语义画布</strong><span title={canvasStatus}>当前焦点：{selectedNode ? `${String((creator?.trusted_recipe.nodes.indexOf(selectedNode) || 0) + 1).padStart(2, '0')} ${selectedNode.label}` : '整个大纲'}{selectedNode && creator && <> · <b>{nodeReviewState(creator, selectedNode) === 'confirmed' ? '已确认' : nodeReviewState(creator, selectedNode) === 'review' ? '待审核' : '需要补齐'}</b></>}</span></div><div className="vip-canvas-toolbar"><button type="button" onClick={resetCanvasLayout}>布局：自动</button><button type="button" onClick={() => { setMiddleView('outline'); setWorkspacePane('outline') }}><List />列表视图</button><button className={canvasTool === 'lasso' ? 'is-active' : ''} type="button" title="框选讨论范围" onClick={() => { setCanvasTool('lasso'); setContextNodeIds([]) }}><Grid2X2 /></button><button className={canvasTool === 'pointer' ? 'is-active' : ''} type="button" title="指向一个节点" onClick={() => { setCanvasTool('pointer'); setContextNodeIds([]) }}><MousePointer2 /></button><button type="button" title="全屏画布" onClick={() => void toggleCanvasFullscreen()}><Maximize2 /></button></div></header>
         {packageError && <div className="creator-package-error" role="alert"><strong>打包未完成</strong><span>{packageError}</span></div>}
         {runnerError && <div className="creator-package-error creator-runner-error" role="alert"><strong>Runner 未接收</strong><span>{runnerError}</span></div>}
@@ -1418,10 +1312,13 @@ export function IntentStudio({ projectId }: { projectId: string }) {
           {recipePreview && <section className="creator-draft-review" aria-label="新大纲确认"><div><strong>新大纲已铺在画布上</strong><span>新增 {recipePreview.impact.added_node_ids.length} · 保留 {recipePreview.impact.retained_node_ids.length} · 移除 {recipePreview.impact.removed_node_ids.length}</span></div><button className="secondary-button" type="button" disabled={busy} onClick={rejectRecipePreview}>保留旧版</button><button type="button" disabled={busy} onClick={() => void applyRecipePreview()}><Check />应用这版</button></section>}
         </div>
         {loading && <div className="creator-loading"><Loader2 className="spinning" /><span>正在读取项目</span></div>}
-      </section>
-    </div>
-
-    {modelSetupOpen && <><div className="creator-overlay" aria-hidden="true" /><ModelConnectionPanel current={aiStatus} onConnect={connectModel} onClose={() => { setModelSetupOpen(false); setPendingAiAction(null) }} /></>}
-    {themePanelOpen && <><div className="creator-overlay" aria-hidden="true" /><CreatorThemePanel theme={theme} onChange={setTheme} onClose={() => setThemePanelOpen(false)} /></>}
-  </main>
+          </section>,
+        },
+      ]}
+    />
+    <Suspense fallback={null}>
+      {modelSetupOpen && <ModelConnectionDialog opened current={aiStatus} onConnect={connectModel} onClose={() => { setModelSetupOpen(false); setPendingAiAction(null) }} />}
+      {themePanelOpen && <ThemeDialog opened theme={theme} onChange={setTheme} onClose={() => setThemePanelOpen(false)} />}
+    </Suspense>
+  </>
 }

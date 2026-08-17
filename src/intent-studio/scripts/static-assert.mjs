@@ -25,6 +25,11 @@ const app = source.get('App.tsx') || ''
 const api = source.get('api.ts') || ''
 const workspace = source.get('pages/intent-studio/IntentStudio.tsx') || ''
 const canvas = source.get('pages/intent-studio/IntentCanvas.tsx') || ''
+const modelDialog = source.get('pages/intent-studio/ModelConnectionDialog.tsx') || ''
+const themeDialog = source.get('pages/intent-studio/ThemeDialog.tsx') || ''
+const themeProvider = source.get('ui/AppThemeProvider.tsx') || ''
+const workbench = source.get('ui/workbench.tsx') || ''
+const uiEntry = source.get('ui/index.ts') || ''
 const styles = source.get('styles/intent-studio.css') || ''
 const discoverStart = workspace.indexOf('const discover = async')
 const composeStart = workspace.indexOf('const compose = async', discoverStart)
@@ -34,6 +39,8 @@ const discoverImplementation = discoverStart >= 0 && composeStart > discoverStar
 
 check(source.has('pages/intent-studio/IntentStudio.tsx'), 'Intent Studio is the semantic product surface')
 check(source.has('pages/intent-studio/IntentCanvas.tsx'), 'Intent Studio owns one focused canvas implementation')
+check(source.has('ui/AppThemeProvider.tsx') && source.has('ui/controls.tsx') && source.has('ui/workbench.tsx'), 'Intent Studio owns one local UI boundary')
+check(uiEntry.includes('WorkbenchShell') && uiEntry.includes('Dialog') && uiEntry.includes('ScrollArea'), 'pages consume the bounded UI public entry')
 check(app.includes('<IntentStudio projectId={projectId} />'), 'the application renders only IntentStudio')
 check(!app.includes('/api/lab') && !app.includes('FlowWorkbench'), 'startup is independent from Lab Flow and the old workbench')
 
@@ -55,7 +62,7 @@ check(api.includes('/package') && workspace.includes('packageCreatorProject'), '
 check(api.includes('/possibilities') && api.includes('/compose-recipe') && api.includes('/recompose'), 'both discovery and whole-draft collaboration are wired')
 check(api.includes('/api/llm/detect') && api.includes('/api/llm/providers') && api.includes('/api/llm/test'), 'AI connection is completed from the Creator canvas')
 check(!api.includes('/api/creator/starter-capabilities'), 'Creator does not inject a hardcoded capability after AI setup')
-check(workspace.includes('ModelConnectionPanel') && workspace.includes('aiConnectedRef.current === false'), 'AI actions resolve an unbound model before sending generation requests')
+check(workspace.includes('ModelConnectionDialog') && workspace.includes('aiConnectedRef.current === false'), 'AI actions resolve an unbound model before sending generation requests')
 check(workspace.includes('creator-clarification') && workspace.includes('suggested_answers'), 'AI discovery can clarify one decisive question before proposing directions')
 check(discoverImplementation.includes('discoverCreatorPossibilities') && !discoverImplementation.includes('composeCreatorRecipe'), 'AI discovery waits for an explicit direction choice before composing a recipe')
 check(workspace.includes('DirectionExplorer') && workspace.includes('onChoose={chooseDirection}'), 'real AI directions have an explicit selection step')
@@ -77,11 +84,11 @@ check(canvas.includes('new ResizeObserver') && canvas.includes('canvasHostRef'),
 check(canvas.includes('flow.setCenter(firstNode.position.x + NODE_WIDTH / 2'), 'mobile starts from a readable first node instead of shrinking the whole outline')
 check(workspace.includes('ProposalChanges') && workspace.includes('creator-review-changes'), 'node proposals expose their concrete Creator-safe field changes before acceptance')
 check(workspace.includes('creator-package-error'), 'Creator packaging failures remain visible on the canvas')
-check(workspace.includes('CREATOR_THEME_PRESETS') && workspace.includes('quiet-workbench') && workspace.includes('morning-mist') && workspace.includes('paper-ink') && workspace.includes('quiet-forest'), 'Creator ships the neutral workbench and alternate visual presets')
-check(workspace.includes("localStorage.setItem(CREATOR_THEME_KEY") && workspace.includes("localStorage.getItem(CREATOR_THEME_KEY"), 'Creator persists the selected visual theme locally')
-check(workspace.includes('控件颜色') && workspace.includes('焦点颜色') && workspace.includes('背景颜色'), 'Creator exposes the three user-adjustable theme colors')
+check(themeProvider.includes('APP_THEME_PRESETS') && themeProvider.includes('quiet-workbench') && themeProvider.includes('morning-mist') && themeProvider.includes('paper-ink') && themeProvider.includes('quiet-forest'), 'Creator ships the neutral workbench and alternate visual presets')
+check(themeProvider.includes('localStorage.setItem(APP_THEME_KEY') && themeProvider.includes('localStorage.getItem(APP_THEME_KEY'), 'Creator persists the selected visual theme locally')
+check(themeDialog.includes('控件颜色') && themeDialog.includes('焦点颜色') && themeDialog.includes('背景颜色'), 'Creator exposes the three user-adjustable theme colors')
 check(styles.includes('--intent-accent') && styles.includes('--intent-focus') && styles.includes('--intent-page'), 'Creator routes controls, focus, and page background through theme variables')
-check(!workspace.includes('creator-mode-switch') && workspace.includes('vip-workspace-body'), 'Creator keeps outlining and refinement on one continuous work surface')
+check(!workspace.includes('creator-mode-switch') && workspace.includes('WorkbenchShell'), 'Creator keeps outlining and refinement on one continuous work surface')
 check(workspace.includes('AI 共创记录') && workspace.includes('仍然不是终稿'), 'Creator never treats an accepted revision as final user intent')
 check(canvas.includes("CreatorCanvasTool = 'inspect' | 'pointer' | 'lasso'") && canvas.includes('selectionOnDrag={tool === \'lasso\'}'), 'Creator supports pointer and lasso context selection')
 check(canvas.includes('onSelectionEnd={() =>') && canvas.includes('flow.getNodes().filter((node) => node.selected)'), 'lasso updates the discussion range only after the gesture ends')
@@ -97,7 +104,11 @@ check(workspace.includes("stage: 'connect-ai'") && workspace.includes("action: '
 check(workspace.includes('capabilityWorkshopUrl') && workspace.includes('开始补齐'), 'an unresolved step opens its scoped Capability Workshop directly')
 check(workspace.includes('下载试运行包') && workspace.includes('runnerUrl'), 'reviewed projects hand a real signed package to the discovered Desktop Runner')
 check(api.includes('/desktop-runner') && workspace.includes('deliverCreatorProject') && workspace.includes("action: 'deliver-runner'") && workspace.includes("status === 'trust_required'"), 'reviewed projects can deliver a real signed package with explicit Runner publisher approval and download fallback')
-check(workspace.includes('vip-pane-nav') && styles.includes('.vip-workspace-body.is-pane-collaboration') && !styles.includes('.vip-ai-panel, .vip-outline-panel { display: none; }'), 'narrow screens retain access to collaboration, outline, and canvas')
+check(workspace.includes('WorkbenchShell') && workbench.includes('workbench-pane-tabs') && styles.includes('.workbench-pane-tabs'), 'narrow screens retain access to collaboration, outline, and canvas')
+check(workbench.includes("from 'allotment'") && workbench.includes('onDragEnd={saveSizes}') && workbench.includes('localStorage.setItem(storageKey'), 'desktop panes persist only user-driven size changes')
+check(workbench.includes('getInitialValueInEffect: false'), 'compact workbench mode is selected before the first browser paint')
+check(workbench.includes('compactPane && <WorkbenchPane'), 'compact mode mounts only its active pane')
+check(!workspace.includes('creator-overlay') && workspace.includes('ModelConnectionDialog') && workspace.includes('ThemeDialog'), 'page overlays use the shared dialog boundary')
 check(workspace.includes('data-view="outline"') && workspace.includes('data-view="detail"'), 'the middle pane switches in place between outline and node details')
 check(!canvas.includes('<MiniMap') && canvas.includes('<Panel className="creator-zoom-controls"'), 'Creator canvas uses the approved compact zoom strip without an overview map')
 check(canvas.includes('NODE_WIDTH = 204') && canvas.includes('NODE_HEIGHT = 174'), 'Creator nodes retain the approved reference dimensions')
@@ -114,9 +125,12 @@ const visibleForbidden = ['Developer', '工程语义', '运行测试', '调试',
 for (const phrase of visibleForbidden) check(!workspace.includes(phrase), `Creator UI omits ${phrase}`)
 
 const cssFiles = files.filter((file) => file.endsWith('.css'))
+const pageFiles = [...source.entries()].filter(([path]) => path.startsWith('pages/'))
+const directLibraryImports = pageFiles.filter(([, content]) => content.includes("from '@mantine/") || content.includes("from 'allotment'"))
 const importantCount = cssFiles.reduce((count, file) => count + (readFileSync(file, 'utf8').match(/!important/g) || []).length, 0)
 check(cssFiles.length === 2, `Creator uses one local stylesheet plus the CSS entry (${cssFiles.length} found)`)
 check(importantCount === 0, 'Creator CSS has no !important overrides')
+check(directLibraryImports.length === 0, 'domain pages do not bypass the local UI boundary')
 check(existsSync(join(root, 'src/styles/intent-studio.css')), 'Intent Studio layout stylesheet exists')
 
 console.log('=== Creator static contract ===')

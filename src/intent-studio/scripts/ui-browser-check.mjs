@@ -46,7 +46,7 @@ async function assertViewport(browser, viewport) {
   await page.goto(baseUrl, { waitUntil: 'domcontentloaded' })
   await page.locator('main.creator-workbench').waitFor({ state: 'visible' })
 
-  const compact = viewport.width <= 1120
+  const compact = viewport.width <= 1280
   const visiblePanes = page.locator('.workbench-pane:visible')
   assert.equal(await visiblePanes.count(), compact ? 1 : 3, `unexpected pane count at ${viewport.width}x${viewport.height}`)
 
@@ -57,6 +57,20 @@ async function assertViewport(browser, viewport) {
     await tabs.getByRole('tab', { name: '画布' }).click()
     await page.getByRole('region', { name: '语义画布' }).waitFor({ state: 'visible' })
     assert.equal(await visiblePanes.count(), 1, 'compact mode must mount only the active pane')
+    const activeTabContrast = await tabs.getByRole('tab', { name: '画布' }).evaluate((element) => {
+      const channels = (value) => {
+        const parsed = value.match(/[\d.]+/g)?.slice(0, 3).map(Number) || [0, 0, 0]
+        return value.startsWith('color(srgb') ? parsed.map((channel) => channel * 255) : parsed
+      }
+      const luminance = (value) => {
+        if (value.startsWith('oklab')) return Number(value.match(/[\d.]+/)?.[0] || 0) ** 3
+        return channels(value).map((channel) => channel / 255).map((channel) => channel <= .03928 ? channel / 12.92 : ((channel + .055) / 1.055) ** 2.4).reduce((sum, channel, index) => sum + channel * [.2126, .7152, .0722][index], 0)
+      }
+      const style = getComputedStyle(element)
+      const values = [luminance(style.color), luminance(style.backgroundColor)].sort((left, right) => right - left)
+      return (values[0] + .05) / (values[1] + .05)
+    })
+    assert.ok(activeTabContrast >= 4.5, `compact active tab contrast is too low: ${activeTabContrast.toFixed(2)}`)
     const tabLayout = await page.locator('.workbench-pane-tabs .mantine-Tabs-tab').evaluateAll((elements) => elements.map((element) => {
       const tab = element.getBoundingClientRect()
       const icon = element.querySelector('.mantine-Tabs-tabSection')?.getBoundingClientRect()
@@ -98,11 +112,32 @@ async function assertViewport(browser, viewport) {
       horizontalOverflow: root.scrollWidth - root.clientWidth,
       canvas: canvas ? { width: canvas.width, height: canvas.height } : null,
       clippedControls,
+      visual: (() => {
+        const brand = document.querySelector('.creator-brand-mark')
+        const canvasSurface = document.querySelector('.vip-canvas-surface')
+        const canvasHeader = document.querySelector('.vip-canvas-header')
+        const canvasTitle = canvasHeader?.querySelector('strong')
+        const node = document.querySelector('.creator-node')
+        return {
+          brandRadius: brand ? Number.parseFloat(getComputedStyle(brand).borderRadius) : 0,
+          canvasPattern: canvasSurface ? getComputedStyle(canvasSurface).backgroundImage : 'none',
+          canvasColor: canvasSurface ? getComputedStyle(canvasSurface).backgroundColor : '',
+          canvasHeaderColor: canvasHeader ? getComputedStyle(canvasHeader).backgroundColor : '',
+          canvasTitleSingleLine: canvasTitle ? canvasTitle.getBoundingClientRect().height <= Number.parseFloat(getComputedStyle(canvasTitle).fontSize) * 1.8 : false,
+          nodeRadius: node ? Number.parseFloat(getComputedStyle(node).borderRadius) : 0,
+          nodeColor: node ? getComputedStyle(node).backgroundColor : '',
+        }
+      })(),
     }
   })
   assert.ok(geometry.horizontalOverflow <= 1, `horizontal overflow at ${viewport.width}x${viewport.height}: ${geometry.horizontalOverflow}px`)
   assert.ok(geometry.canvas && geometry.canvas.width >= 300 && geometry.canvas.height >= 300, `canvas is not stably framed at ${viewport.width}x${viewport.height}`)
   assert.deepEqual(geometry.clippedControls, [], `controls are clipped at ${viewport.width}x${viewport.height}`)
+  assert.ok(geometry.visual.brandRadius >= 6 && geometry.visual.nodeRadius >= 6, `visual hierarchy lost at ${viewport.width}x${viewport.height}`)
+  assert.notEqual(geometry.visual.canvasPattern, 'none', `canvas structure lost at ${viewport.width}x${viewport.height}`)
+  assert.notEqual(geometry.visual.canvasColor, geometry.visual.nodeColor, `canvas and nodes must remain distinct at ${viewport.width}x${viewport.height}`)
+  assert.notEqual(geometry.visual.canvasColor, geometry.visual.canvasHeaderColor, `canvas header and work surface must remain distinct at ${viewport.width}x${viewport.height}`)
+  assert.equal(geometry.visual.canvasTitleSingleLine, true, `canvas title wrapped at ${viewport.width}x${viewport.height}`)
   assert.deepEqual(browserErrors, [], `unexpected browser errors at ${viewport.width}x${viewport.height}`)
 
   mkdirSync(outputRoot, { recursive: true })
@@ -117,6 +152,7 @@ try {
   for (const viewport of [
     { width: 1920, height: 1080 },
     { width: 1536, height: 864 },
+    { width: 1229, height: 691 },
     { width: 1120, height: 800 },
     { width: 390, height: 844 },
   ]) await assertViewport(browser, viewport)
@@ -131,7 +167,7 @@ try {
   await page.getByRole('dialog').waitFor({ state: 'hidden' })
   await page.waitForFunction((element) => element === document.activeElement, await themeButton.elementHandle(), { timeout: 3000 })
   await context.close()
-  console.log('Intent Studio browser UI acceptance passed for 4 viewports and dialog focus behavior.')
+  console.log('Intent Studio browser UI acceptance passed for 5 viewports and dialog focus behavior.')
 } finally {
   if (browser) await browser.close()
   server.kill()

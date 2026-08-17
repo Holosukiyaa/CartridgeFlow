@@ -34,7 +34,7 @@ function readSizes(storageKey: string, panes: WorkbenchPaneDefinition[]) {
 }
 
 export function WorkbenchShell({ header, panes, activePane, onActivePaneChange, storageKey }: WorkbenchShellProps) {
-  const compact = useMediaQuery('(max-width: 1120px)', false, { getInitialValueInEffect: false })
+  const compact = useMediaQuery('(max-width: 1280px)', false, { getInitialValueInEffect: false })
   const [sizes, setSizes] = useState(() => readSizes(storageKey, panes))
 
   useEffect(() => {

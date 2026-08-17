@@ -50,10 +50,10 @@
         "hardcodedColors": 0
       },
       "src/styles/intent-studio.css": {
-        "bytes": 23134,
-        "lines": 281,
+        "bytes": 22342,
+        "lines": 276,
         "mediaQueries": 2,
-        "hardcodedColors": 54
+        "hardcodedColors": 53
       }
     },
     "forbiddenTokens": [

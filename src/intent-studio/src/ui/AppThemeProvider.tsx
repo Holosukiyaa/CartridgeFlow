@@ -11,7 +11,7 @@ export type AppThemePreset = {
 }
 
 export const APP_THEME_PRESETS: AppThemePreset[] = [
-  { id: 'light-reference', label: '浅色主题', accent: '#075dff', focus: '#075dff', page: '#ffffff' },
+  { id: 'light-reference', label: '浅色主题', accent: '#0b5bd3', focus: '#0b5bd3', page: '#eef2f6' },
   { id: 'quiet-workbench', label: '静定工作台', accent: '#426b9b', focus: '#3f6ea8', page: '#f2f4f5' },
   { id: 'clear-sky', label: '清透蓝', accent: '#176bff', focus: '#2563eb', page: '#f8fbff' },
   { id: 'morning-mist', label: '晨雾青', accent: '#087f82', focus: '#0f9da0', page: '#f7faf9' },
@@ -63,7 +63,7 @@ export function AppThemeProvider({ children }: { children: ReactNode }) {
     colors: { brand: colorScale(theme) },
     fontFamily: '"Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI Variable Text", "Segoe UI", sans-serif',
     headings: { fontFamily: 'inherit' },
-    defaultRadius: 4,
+    defaultRadius: 6,
     focusRing: 'auto',
     cursorType: 'pointer',
     components: {
@@ -72,7 +72,7 @@ export function AppThemeProvider({ children }: { children: ReactNode }) {
       TextInput: { defaultProps: { size: 'sm' } },
       Textarea: { defaultProps: { size: 'sm' } },
       Select: { defaultProps: { size: 'sm' } },
-      Modal: { defaultProps: { radius: 4, centered: true } },
+      Modal: { defaultProps: { radius: 6, centered: true } },
     },
   }), [theme])
 

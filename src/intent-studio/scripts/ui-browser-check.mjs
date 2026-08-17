@@ -57,6 +57,16 @@ async function assertViewport(browser, viewport) {
     await tabs.getByRole('tab', { name: '画布' }).click()
     await page.getByRole('region', { name: '语义画布' }).waitFor({ state: 'visible' })
     assert.equal(await visiblePanes.count(), 1, 'compact mode must mount only the active pane')
+    const tabLayout = await page.locator('.workbench-pane-tabs .mantine-Tabs-tab').evaluateAll((elements) => elements.map((element) => {
+      const tab = element.getBoundingClientRect()
+      const icon = element.querySelector('.mantine-Tabs-tabSection')?.getBoundingClientRect()
+      const label = element.querySelector('.mantine-Tabs-tabLabel')?.getBoundingClientRect()
+      if (!icon || !label) return false
+      const groupCenter = (Math.min(icon.left, label.left) + Math.max(icon.right, label.right)) / 2
+      return Math.abs(groupCenter - (tab.left + tab.width / 2)) <= 2 && getComputedStyle(element.querySelector('.mantine-Tabs-tabLabel')).flexGrow === '0'
+    }))
+    assert.deepEqual(tabLayout, [true, true, true], 'compact tabs must keep icon and label grouped')
+    assert.equal(await page.locator('.vip-project-crumb:visible').count(), 0, 'compact topbar must not clip the project breadcrumb')
   } else {
     assert.equal(await page.locator('.split-view').count(), 1, 'desktop mode must use the resizable workbench')
   }

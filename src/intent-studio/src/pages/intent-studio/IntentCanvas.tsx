@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import dagre from '@dagrejs/dagre'
 import {
   Handle,
@@ -13,24 +13,31 @@ import {
   type ReactFlowInstance,
   useNodesState,
 } from '@xyflow/react'
-import { CheckCircle2, Circle, FilePlus2, FileText, Filter, Globe2, Maximize2, Minus, Plus, Send, UserRound } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Eye, FilePlus2, FileText, Filter, Globe2, Maximize2, Minus, Plus, Puzzle, Send, UserRound } from 'lucide-react'
 import type { CreatorProjection, CreatorRecipePreview } from '../../api.types.ts'
+import { IconButton } from '../../ui/index.ts'
 
 export type CreatorCanvasTool = 'inspect' | 'pointer' | 'lasso'
+export type CreatorRelationKind = 'control' | 'data' | 'dependency'
 
 type CanvasNodeData = {
+  nodeId: string
   order: number
   label: string
   description: string
   state: 'empty' | 'review' | 'confirmed' | 'unresolved'
+  kind: 'start' | 'end' | 'step'
+  hasNestedCartridge: boolean
   targetPosition: Position
   sourcePosition: Position
+  onOpenLayer: (nodeId: string) => void
+  onPreviewLayer: (nodeId: string) => void
 }
 
 type CanvasNode = Node<CanvasNodeData, 'creator'>
 
 function CreatorNode({ data, selected }: NodeProps<CanvasNode>) {
-  const stateLabel = data.state === 'confirmed' ? '已确认' : data.state === 'review' ? '待审核' : data.state === 'unresolved' ? '需要补齐' : '空白画布'
+  const stateLabel = data.state === 'confirmed' ? '可信' : data.state === 'empty' ? '等待编排' : '未可信'
   const icons = [Globe2, Filter, FilePlus2, FileText, UserRound, Send]
   const NodeIcon = icons[Math.max(0, data.order - 1) % icons.length] || FileText
   return <div className={`creator-node creator-node-${data.state} creator-node-order-${data.order} ${selected ? 'is-selected' : ''}`}>
@@ -39,11 +46,15 @@ function CreatorNode({ data, selected }: NodeProps<CanvasNode>) {
       <span className="creator-node-order">{data.order ? String(data.order).padStart(2, '0') : 'AI'}</span>
       {data.order > 0 && <NodeIcon className="creator-node-kind" />}
       <span className="creator-node-title"><strong title={data.label}>{data.label}</strong></span>
+      {data.kind === 'step' && <span className="creator-node-layer-actions">
+        <IconButton label="进入第二层语义" variant="subtle" size="sm" onClick={(event) => { event.stopPropagation(); data.onOpenLayer(data.nodeId) }}><Puzzle /></IconButton>
+        {data.hasNestedCartridge && <IconButton label="查看内部逻辑" variant="subtle" size="sm" onClick={(event) => { event.stopPropagation(); data.onPreviewLayer(data.nodeId) }}><Eye /></IconButton>}
+      </span>}
     </header>
     <div className="creator-node-body">
       <p title={data.description}>{data.description}</p>
     </div>
-    <footer className="creator-node-footer"><strong>{data.state === 'confirmed' ? <CheckCircle2 /> : <Circle />}{stateLabel}</strong></footer>
+    <footer className="creator-node-footer"><strong>{data.state === 'confirmed' ? <CheckCircle2 /> : <AlertTriangle />}{stateLabel}</strong></footer>
     <Handle type="source" position={data.sourcePosition} />
   </div>
 }
@@ -53,7 +64,7 @@ const NODE_WIDTH = 204
 const NODE_HEIGHT = 174
 const CREATOR_LAYOUT_KEY = 'cartridgeflow.creator-layout.v2'
 const fitOptions = {
-  padding: { x: 0.04, top: '7%', bottom: '7%' },
+  padding: { x: 0.18, top: '7%', bottom: '7%' },
   minZoom: 0.7,
   maxZoom: 1,
 } as const
@@ -63,7 +74,7 @@ const compactFitOptions = {
   maxZoom: 0.9,
 } as const
 const multiRowFitOptions = {
-  padding: { x: 0.025, top: '7%', bottom: '5%' },
+  padding: { x: 0.12, top: '7%', bottom: '5%' },
   minZoom: 0.64,
   maxZoom: 1,
 } as const
@@ -123,15 +134,19 @@ function layout(nodes: CanvasNode[], edges: Edge[], vertical: boolean) {
   })
 }
 
-export function IntentCanvas({ creator, preview, draftGoal, selectedId, contextNodeIds, tool, onSelect, onContextChange }: {
+export function IntentCanvas({ creator, preview, draftGoal, selectedId, contextNodeIds, tool, visibleRelations, toolbar, onSelect, onContextChange, onOpenLayer, onPreviewLayer }: {
   creator: CreatorProjection | null
   preview: CreatorRecipePreview | null
   draftGoal: string
   selectedId: string
   contextNodeIds: string[]
   tool: CreatorCanvasTool
+  visibleRelations: CreatorRelationKind[]
+  toolbar?: ReactNode
   onSelect: (nodeId: string) => void
   onContextChange: (nodeIds: string[]) => void
+  onOpenLayer: (nodeId: string) => void
+  onPreviewLayer: (nodeId: string) => void
 }) {
   const [flow, setFlow] = useState<ReactFlowInstance<CanvasNode, Edge> | null>(null)
   const [zoom, setZoom] = useState(1)
@@ -146,22 +161,48 @@ export function IntentCanvas({ creator, preview, draftGoal, selectedId, contextN
   const elements = useMemo(() => {
     if (!creator) {
       const nodes: CanvasNode[] = [{
-        id: 'empty',
+        id: 'placeholder-start',
         type: 'creator',
         width: NODE_WIDTH,
         height: NODE_HEIGHT,
         position: { x: 0, y: 0 },
         data: {
-          order: 0,
-          label: draftGoal.trim() ? '当前想法' : '从一句话开始',
-          description: draftGoal.trim() || '告诉 AI 你想得到什么；选定方向后，可审核大纲会出现在这里。',
-          state: 'empty',
+          nodeId: 'placeholder-start',
+          order: 1,
+          label: '开始',
+          description: draftGoal.trim() || '等待目标描述和语义编排。',
+          state: 'unresolved',
+          kind: 'start',
+          hasNestedCartridge: false,
           targetPosition: vertical ? Position.Top : Position.Left,
           sourcePosition: vertical ? Position.Bottom : Position.Right,
+          onOpenLayer,
+          onPreviewLayer,
+        },
+        selectable: false,
+      }, {
+        id: 'placeholder-end',
+        type: 'creator',
+        width: NODE_WIDTH,
+        height: NODE_HEIGHT,
+        position: { x: 0, y: 0 },
+        data: {
+          nodeId: 'placeholder-end',
+          order: 2,
+          label: '结束',
+          description: '最终结果会在语义方案确认后落到这里。',
+          state: 'unresolved',
+          kind: 'end',
+          hasNestedCartridge: false,
+          targetPosition: vertical ? Position.Top : Position.Left,
+          sourcePosition: vertical ? Position.Bottom : Position.Right,
+          onOpenLayer,
+          onPreviewLayer,
         },
         selectable: false,
       }]
-      return { nodes: layout(nodes, [], vertical), edges: [] as Edge[] }
+      const edges: Edge[] = visibleRelations.includes('control') ? [{ id: 'placeholder-flow', source: 'placeholder-start', target: 'placeholder-end', type: 'bezier', className: 'creator-edge is-control' }] : []
+      return { nodes: layout(nodes, edges, vertical), edges }
     }
     const confirmed = new Set(preview ? [] : creator.frozen_steps)
     const recipeNodes = preview?.nodes || creator.trusted_recipe.nodes
@@ -174,26 +215,36 @@ export function IntentCanvas({ creator, preview, draftGoal, selectedId, contextN
       position: { x: 0, y: 0 },
       selected: tool === 'inspect' ? node.id === selectedId : contextNodeIds.includes(node.id),
       data: {
+        nodeId: node.id,
         order: index + 1,
         label: node.label,
         description: node.description,
         state: (typeof node.resolution === 'string' ? node.resolution : node.resolution?.status) === 'unresolved' ? 'unresolved' : confirmed.has(node.id) ? 'confirmed' : 'review',
+        kind: 'step',
+        hasNestedCartridge: Boolean(typeof node.resolution === 'object' && node.resolution?.capability),
         targetPosition: vertical ? Position.Top : recipeNodes.length <= 3 || index < 3 ? Position.Left : index === 3 ? Position.Top : Position.Right,
         sourcePosition: vertical ? Position.Bottom : recipeNodes.length <= 3 || index < 2 ? Position.Right : index === 2 || index === 3 ? Position.Bottom : Position.Left,
+        onOpenLayer,
+        onPreviewLayer,
       },
     }))
-    const edges: Edge[] = recipeRelations.map((relation) => ({
+    const edges: Edge[] = recipeRelations.flatMap((relation) => {
+      const kind: CreatorRelationKind = relation.relation === 'uses' ? 'dependency' : relation.relation === 'produces' ? 'data' : 'control'
+      if (!visibleRelations.includes(kind)) return []
+      return [{
       id: relation.id,
       source: relation.relation === 'uses' ? relation.to_node_id : relation.from_node_id,
       target: relation.relation === 'uses' ? relation.from_node_id : relation.to_node_id,
       label: relation.relation === 'produces' ? '产出' : relation.relation === 'uses' ? '提供' : '提供信息',
-      type: 'smoothstep',
+      type: 'bezier',
       animated: false,
       markerEnd: { type: MarkerType.ArrowClosed, color: '#9aa5af', width: 14, height: 14 },
-      className: 'creator-edge',
-    }))
+      className: `creator-edge is-${kind}`,
+      data: { kind },
+    }]
+    })
     return { nodes: layout(nodes, edges, vertical), edges }
-  }, [contextNodeIds, creator, draftGoal, preview, selectedId, tool, vertical])
+  }, [contextNodeIds, creator, draftGoal, onOpenLayer, onPreviewLayer, preview, selectedId, tool, vertical, visibleRelations])
 
   const layoutScope = creator?.project_id ? `${creator.project_id}.${vertical ? 'vertical' : 'horizontal'}` : ''
   const layoutScopeRef = useRef(layoutScope)
@@ -205,7 +256,7 @@ export function IntentCanvas({ creator, preview, draftGoal, selectedId, contextN
     await flow.fitView({ ...activeFitOptions, duration })
     if (!vertical) {
       const viewport = flow.getViewport()
-      await flow.setViewport({ ...viewport, x: viewport.x - 9, y: viewport.y - 9 })
+      await flow.setViewport({ ...viewport, x: viewport.x + 11, y: viewport.y - 9 }, { duration: 0 })
     }
   }, [activeFitOptions, flow, vertical])
   const reframeCanvas = useCallback((duration: number) => {
@@ -239,6 +290,12 @@ export function IntentCanvas({ creator, preview, draftGoal, selectedId, contextN
   }, [flow, layoutSignature, reframeCanvas])
 
   useEffect(() => {
+    if (!flow || !selectedId) return
+    const selected = flow.getNode(selectedId)
+    if (selected) void flow.setCenter(selected.position.x + NODE_WIDTH / 2, selected.position.y + NODE_HEIGHT / 2, { zoom: Math.max(flow.getZoom(), 0.85), duration: 220 })
+  }, [flow, selectedId])
+
+  useEffect(() => {
     const host = canvasHostRef.current
     if (!flow || !host) return
     let timer = 0
@@ -259,7 +316,9 @@ export function IntentCanvas({ creator, preview, draftGoal, selectedId, contextN
     }
   }, [flow, reframeCanvas])
 
-  return <div className="vip-flow-host" ref={canvasHostRef}><ReactFlow
+  return <div className="vip-flow-host" ref={canvasHostRef}>
+    {toolbar && <div className="semantic-canvas-tools">{toolbar}</div>}
+    <ReactFlow
     nodes={nodes}
     edges={elements.edges}
     nodeTypes={nodeTypes}
@@ -303,10 +362,10 @@ export function IntentCanvas({ creator, preview, draftGoal, selectedId, contextN
     proOptions={{ hideAttribution: true }}
   >
     <Panel className="creator-zoom-controls" position="bottom-left">
-      <button type="button" title="缩小" aria-label="缩小" onClick={() => void flow?.zoomOut({ duration: 150 })}><Minus /></button>
+      <IconButton label="缩小" variant="subtle" onClick={() => void flow?.zoomOut({ duration: 150 })}><Minus /></IconButton>
       <span>{Math.round(zoom * 100)}%</span>
-      <button type="button" title="放大" aria-label="放大" onClick={() => void flow?.zoomIn({ duration: 150 })}><Plus /></button>
-      <button type="button" title="适应画布" aria-label="适应画布" onClick={() => void fitCanvas(180)}><Maximize2 /></button>
+      <IconButton label="放大" variant="subtle" onClick={() => void flow?.zoomIn({ duration: 150 })}><Plus /></IconButton>
+      <IconButton label="适应画布" variant="subtle" onClick={() => void fitCanvas(180)}><Maximize2 /></IconButton>
     </Panel>
   </ReactFlow></div>
 }

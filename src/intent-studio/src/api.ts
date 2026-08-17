@@ -1,11 +1,13 @@
 import type {
   CreatorDiscoveryResult,
+  CreatorLlmProvider,
   CreatorPackage,
   CreatorProjection,
   CreatorProposal,
   CreatorProposalPreview,
   CreatorRecipePreview,
   CreatorSourceCandidate,
+  CreatorStudioResources,
 } from './api.types.ts'
 
 export type * from './api.types.ts'
@@ -152,6 +154,32 @@ export async function connectCreatorAi(body: { base_url: string; api_key: string
   })
   return { ready: true as const }
 }
+
+export const listCreatorLlmProviders = () =>
+  api<{ providers: CreatorLlmProvider[] }>('/api/llm/providers')
+
+export const saveCreatorLlmProvider = (provider: Record<string, unknown>) =>
+  api<{ ok: boolean; provider: CreatorLlmProvider }>(provider.id ? `/api/llm/providers/${encodeURIComponent(String(provider.id))}` : '/api/llm/providers', {
+    method: provider.id ? 'PUT' : 'POST', body: JSON.stringify(provider),
+  })
+
+export const removeCreatorLlmProvider = (providerId: string) =>
+  api<{ ok: boolean }>(`/api/llm/providers/${encodeURIComponent(providerId)}`, { method: 'DELETE' })
+
+export const activateCreatorLlmProvider = (providerId: string) =>
+  api<{ ok: boolean; provider: CreatorLlmProvider }>(`/api/llm/providers/${encodeURIComponent(providerId)}/activate`, { method: 'POST' })
+
+export const testCreatorLlmProvider = (providerId: string, model: string) =>
+  api<{ ok: boolean; content?: string }>('/api/llm/test', {
+    method: 'POST', body: JSON.stringify({ provider_id: providerId, model, prompt: 'Reply with OK.', vision: false }), timeoutMs: 45_000,
+  })
+
+export const fetchCreatorStudioResources = () => api<CreatorStudioResources>('/api/studio/resources')
+
+export const saveCreatorStudioResources = (resources: Omit<CreatorStudioResources, 'builtin_tools'>) =>
+  api<{ ok: boolean; resources: Omit<CreatorStudioResources, 'builtin_tools'> }>('/api/studio/resources', {
+    method: 'PUT', body: JSON.stringify(resources),
+  })
 
 export const discoverCreatorPossibilities = (context: string) =>
   api<CreatorDiscoveryResult>('/api/creator/possibilities', {

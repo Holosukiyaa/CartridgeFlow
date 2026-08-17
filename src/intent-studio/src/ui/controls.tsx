@@ -15,7 +15,7 @@ import {
   type ButtonProps as MantineButtonProps,
   type ModalProps,
 } from '@mantine/core'
-import type { ButtonHTMLAttributes, ReactNode } from 'react'
+import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from 'react'
 
 export type ButtonProps = MantineButtonProps & ButtonHTMLAttributes<HTMLButtonElement>
 
@@ -23,11 +23,13 @@ export function Button({ children, type = 'button', ...props }: ButtonProps) {
   return <MantineButton type={type} {...props}>{children}</MantineButton>
 }
 
-export function IconButton({ label, children, ...props }: ActionIconProps & { label: string; children: ReactNode }) {
+type IconButtonProps = ActionIconProps & Omit<ButtonHTMLAttributes<HTMLButtonElement>, keyof ActionIconProps> & { label: string; children: ReactNode }
+
+export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconButton({ label, children, ...props }, ref) {
   return <MantineTooltip label={label} openDelay={400}>
-    <ActionIcon aria-label={label} {...props}>{children}</ActionIcon>
+    <ActionIcon ref={ref} aria-label={label} {...props}>{children}</ActionIcon>
   </MantineTooltip>
-}
+})
 
 export const Field = {
   Text: TextInput,

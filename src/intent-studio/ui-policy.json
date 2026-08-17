@@ -21,7 +21,7 @@
   ],
   "legacyNativeBaseline": {
     "src/pages/intent-studio/IntentCanvas.tsx": {
-      "button": 3,
+      "button": 0,
       "input": 0,
       "textarea": 0,
       "select": 0,
@@ -29,7 +29,7 @@
       "inlineStyle": 0
     },
     "src/pages/intent-studio/IntentStudio.tsx": {
-      "button": 43,
+      "button": 23,
       "input": 3,
       "textarea": 3,
       "select": 1,
@@ -50,10 +50,10 @@
         "hardcodedColors": 0
       },
       "src/styles/intent-studio.css": {
-        "bytes": 22341,
-        "lines": 276,
+        "bytes": 22323,
+        "lines": 221,
         "mediaQueries": 2,
-        "hardcodedColors": 52
+        "hardcodedColors": 47
       }
     },
     "forbiddenTokens": [

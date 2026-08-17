@@ -1,8 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { Circle } from 'lucide-react'
-import { AppThemeProvider, Button, Dialog, StageRail, useAppTheme, WorkbenchShell } from './index.ts'
+import { AppThemeProvider, Button, Dialog, SemanticWorkbench, useAppTheme } from './index.ts'
 
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
@@ -71,25 +70,21 @@ describe('UI boundary', () => {
     expect(JSON.parse(localStorage.getItem('cartridgeflow.creator-theme') || '{}').accent).toBe('#123456')
   })
 
-  it('shows only panes relevant to the current authoring stage', () => {
-    const panes = [
-      { id: 'collaboration' as const, label: '目标', icon: Circle, minSize: 320, content: <div>goal content</div> },
-      { id: 'outline' as const, label: '方向', icon: Circle, minSize: 320, content: <div>direction content</div> },
-      { id: 'canvas' as const, label: '画布', icon: Circle, minSize: 320, content: <div>canvas content</div> },
-    ]
-    renderWithTheme(<WorkbenchShell
+  it('keeps the canvas primary while detail and AI panels can open together', () => {
+    renderWithTheme(<SemanticWorkbench
       header={<div>header</div>}
-      contextBar={<StageRail stages={[{ id: 'goal', label: '目标' }, { id: 'outline', label: '大纲' }]} activeId="goal" />}
-      panes={panes}
-      visiblePaneIds={['collaboration', 'outline']}
-      activePane="canvas"
-      onActivePaneChange={() => undefined}
-      storageKey="test.stage-layout"
+      commandBar={<div>commands</div>}
+      canvas={<div>canvas content</div>}
+      detail={<div>detail content</div>}
+      ai={<div>ai content</div>}
+      detailOpen
+      aiOpen
+      activePanel="canvas"
+      onActivePanelChange={() => undefined}
     />)
 
-    expect(screen.getByRole('navigation', { name: '卡带创作阶段' })).toBeTruthy()
-    expect(screen.getByText('goal content')).toBeTruthy()
-    expect(screen.getByText('direction content')).toBeTruthy()
-    expect(screen.queryByText('canvas content')).toBeNull()
+    expect(screen.getByRole('region', { name: '语义画布工作区' })).toBeTruthy()
+    const panels = screen.getAllByRole('complementary')
+    expect(panels.map((panel) => panel.getAttribute('aria-label'))).toEqual(['节点详情', 'AI 管家'])
   })
 })

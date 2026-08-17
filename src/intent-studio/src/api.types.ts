@@ -143,3 +143,53 @@ export interface CreatorPackage {
   url: string
   signature_verified: boolean
 }
+
+export interface CreatorLlmProvider {
+  id: string
+  name: string
+  api_type: string
+  base_url?: string
+  default_model?: string
+  wire_api?: string
+  available_models?: string[]
+  enabled?: boolean
+  timeout?: number
+  has_key?: boolean
+  key_preview?: string
+  tested_ok?: boolean
+  tested_at?: string
+  runtime_supported?: boolean
+  runtime_issue?: string
+}
+
+export interface CreatorToolResource {
+  id: string
+  name: string
+  kind: string
+  description?: string
+  server?: string
+  tool?: string
+  endpoint?: string
+  command?: string
+  args?: string
+  openapi_url?: string
+  http_method?: string
+  auth_env?: string
+  auth_header?: string
+  auth_scheme?: string
+  capabilities?: string[]
+  read_only?: boolean
+  package_mode?: string
+  enabled?: boolean
+  locked?: boolean
+}
+
+export interface CreatorStudioResources {
+  version: number
+  tools: CreatorToolResource[]
+  builtin_tools: CreatorToolResource[]
+  bindings: {
+    roles?: Record<string, Record<string, string>>
+    tools?: Record<string, string[]>
+  }
+}

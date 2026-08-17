@@ -1,31 +1,39 @@
-import { lazy, Suspense, type RefObject, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, type ReactNode, type RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowLeft,
+  Bot,
   Check,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
   Cloud,
-  Download,
   FileText,
   Globe2,
-  Grid2X2,
+  History,
   Info,
-  List,
   Loader2,
   Maximize2,
   MousePointer2,
+  Package,
   PackageCheck,
   Paperclip,
+  Pause,
+  PencilRuler,
+  Play,
   Plus,
+  Puzzle,
   RefreshCw,
+  RotateCcw,
+  ScanLine,
   Send,
   Search,
   Settings,
   Sparkles,
+  Square,
   Sun,
   Target,
   Wrench,
+  X,
 } from 'lucide-react'
 import {
   ApiError,
@@ -68,10 +76,11 @@ import {
   type DesktopRunnerStatus,
 } from '../../api.ts'
 import { showToast } from '../../toast.tsx'
-import { StageRail, useAppTheme, WorkbenchShell } from '../../ui/index.ts'
-import { IntentCanvas, type CreatorCanvasTool } from './IntentCanvas.tsx'
+import { Button, Dialog, Field, IconButton, SemanticWorkbench, useAppTheme, type SemanticPanelId } from '../../ui/index.ts'
+import { IntentCanvas, type CreatorCanvasTool, type CreatorRelationKind } from './IntentCanvas.tsx'
 
 const ModelConnectionDialog = lazy(() => import('./ModelConnectionDialog.tsx').then((module) => ({ default: module.ModelConnectionDialog })))
+const ResourceManagerDialog = lazy(() => import('./ResourceManagerDialog.tsx').then((module) => ({ default: module.ResourceManagerDialog })))
 const ThemeDialog = lazy(() => import('./ThemeDialog.tsx').then((module) => ({ default: module.ThemeDialog })))
 
 const creatorId = () => `creator.${crypto.randomUUID()}`
@@ -84,17 +93,6 @@ type StewardMessage = {
 }
 
 type WorkspacePane = 'collaboration' | 'outline' | 'canvas'
-
-type CreatorStageId = 'goal' | 'direction' | 'outline' | 'capability' | 'review' | 'trial'
-
-const CREATOR_STAGES: Array<{ id: CreatorStageId; label: string }> = [
-  { id: 'goal', label: '目标' },
-  { id: 'direction', label: '方向' },
-  { id: 'outline', label: '大纲' },
-  { id: 'capability', label: '能力' },
-  { id: 'review', label: '审核' },
-  { id: 'trial', label: '试运行' },
-]
 
 type GuidanceAction = 'connect-ai' | 'focus-composer' | 'show-directions' | 'open-node' | 'build-package' | 'deliver-runner' | 'open-runner' | 'download-package'
 
@@ -390,6 +388,8 @@ function CollaborationPanel({
   onClarification,
   onGuidanceAction,
   onOpenDetail,
+  onClose,
+  directions,
 }: {
   creator: CreatorProjection | null
   goal: string
@@ -408,6 +408,8 @@ function CollaborationPanel({
   onClarification: (value: string) => void
   onGuidanceAction: () => void
   onOpenDetail: () => void
+  onClose: () => void
+  directions?: ReactNode
 }) {
   const confirmed = creator?.trusted_recipe.nodes.filter((node) => nodeReviewState(creator, node) === 'confirmed') || []
   const suggestion = selectedNode && creator?.pending_proposals.find((proposal) => proposal.changes.some((change) => change.target_id === selectedNode.id))
@@ -418,8 +420,8 @@ function CollaborationPanel({
   ]
   const visibleAuditItems = auditExpanded ? auditItems : auditItems.slice(-3)
 
-  return <aside className="vip-ai-panel" aria-label="AI 共创记录">
-    <header className="vip-panel-title"><Sparkles /><strong>AI 共创记录</strong></header>
+  return <section className="vip-ai-panel" aria-label="AI 共创记录">
+    <header className="vip-panel-title"><Sparkles /><strong>AI 管家</strong><IconButton label="折叠 AI 管家" variant="subtle" size="sm" onClick={onClose}><X /></IconButton></header>
     {(creator || goal) && <section className="vip-current-goal"><Target /><div><strong>当前目标</strong><p>{goal}</p></div></section>}
     <div className="vip-collaboration-thread" ref={threadRef}>
       <section className={`vip-next-action is-${guidance.stage}`} aria-label="当前下一步">
@@ -433,6 +435,7 @@ function CollaborationPanel({
         <span className={`vip-record-avatar is-${message.role === 'assistant' ? 'ai' : 'user'}`}>{message.role === 'assistant' ? 'AI' : '我'}</span>
         <div><p>{message.text}</p>{message.clarification && clarification?.question === message.clarification.question && <section className="creator-clarification"><small>{message.clarification.why_it_matters}</small><div>{message.clarification.suggested_answers.map((answer) => <button type="button" key={answer} disabled={busy} onClick={() => onClarification(answer)}>{answer}</button>)}</div></section>}</div>
       </article>)}
+      {directions}
       {suggestion && selectedNode && <article className="vip-record-entry is-suggestion">
         <span className="vip-record-avatar is-ai">AI</span><strong>待审核建议</strong><em>未应用</em>
         <p>节点 {String(Math.max(1, (creator!.trusted_recipe.nodes.findIndex((node) => node.id === selectedNode.id) + 1))).padStart(2, '0')} {selectedNode.label}</p>
@@ -451,7 +454,7 @@ function CollaborationPanel({
       <textarea ref={composerRef} value={stewardInput} disabled={busy} onChange={(event) => onInput(event.currentTarget.value)} placeholder={creator ? '继续提问或补充说明需求...' : '描述你想得到的结果和使用场景...'} />
       <div>{creator && <button className="vip-attachment" type="button" disabled={!selectedNode} title={selectedNode ? '在节点详情中添加资料来源' : '先选择一个节点'} onClick={onOpenDetail}><Paperclip /></button>}<span className="vip-language"><Globe2 />简体中文</span><button className="vip-send" type="submit" disabled={busy || stewardInput.trim().length < 3} title="发送" aria-label="发送">{busy ? <Loader2 className="spinning" /> : <Send />}</button></div>
     </form>
-  </aside>
+  </section>
 }
 
 function DirectionExplorer({
@@ -672,7 +675,7 @@ function NodeEditor({ creator, node, busy, onCreatorChange, onNavigate, onReturn
   }
 
   return <aside className="creator-node-editor vip-detail-panel" aria-label={`调整 ${node.label}`}>
-    <header className="vip-detail-heading">
+    <header className="semantic-side-head vip-detail-heading">
       <div><strong>{String(nodeIndex + 1).padStart(2, '0')}</strong><h2>{node.label}</h2></div>
       <ReviewStatus state={nodeReviewState(creator, node)} />
     </header>
@@ -718,6 +721,12 @@ export function IntentStudio({ projectId }: { projectId: string }) {
   const [possibilities, setPossibilities] = useState<CreatorPossibility[]>(restoredWorkspace?.possibilities || [])
   const [middleView, setMiddleView] = useState<'outline' | 'detail'>(restoredWorkspace?.middleView || 'outline')
   const [workspacePane, setWorkspacePane] = useState<WorkspacePane>(restoredWorkspace?.workspacePane || 'collaboration')
+  const [detailOpen, setDetailOpen] = useState(restoredWorkspace?.middleView === 'detail')
+  const [aiPanelOpen, setAiPanelOpen] = useState(true)
+  const [activePanel, setActivePanel] = useState<SemanticPanelId>('canvas')
+  const [visibleRelations, setVisibleRelations] = useState<CreatorRelationKind[]>(['control', 'data', 'dependency'])
+  const [resourceManager, setResourceManager] = useState<'models' | 'tools' | null>(null)
+  const [nestedNode, setNestedNode] = useState<{ node: CreatorRecipeNode; mode: 'edit' | 'preview' } | null>(null)
   const [canvasLayoutRevision, setCanvasLayoutRevision] = useState(0)
   const [clarification, setClarification] = useState<CreatorClarification | null>(restoredWorkspace?.clarification || null)
   const [stewardInput, setStewardInput] = useState('')
@@ -1183,27 +1192,33 @@ export function IntentStudio({ projectId }: { projectId: string }) {
   const openNodeDetail = (nodeId = selectedId) => {
     if (nodeId) setSelectedId(nodeId)
     setMiddleView('detail')
-    setWorkspacePane('outline')
+    setDetailOpen(true)
+    setActivePanel('detail')
   }
+  const openNestedLayer = useCallback((nodeId: string, mode: 'edit' | 'preview' = 'edit') => {
+    const node = creator?.trusted_recipe.nodes.find((item) => item.id === nodeId)
+    if (node) setNestedNode({ node, mode })
+  }, [creator])
   const runGuidanceAction = () => {
     if (guidance.action === 'connect-ai') {
       requestModelConnection()
       return
     }
     if (guidance.action === 'focus-composer') {
-      setWorkspacePane('collaboration')
+      setAiPanelOpen(true)
+      setActivePanel('ai')
       requestAnimationFrame(() => stewardComposerRef.current?.focus())
       return
     }
     if (guidance.action === 'show-directions') {
-      setMiddleView('outline')
-      setWorkspacePane('outline')
+      setAiPanelOpen(true)
+      setActivePanel('ai')
       return
     }
     if (guidance.action === 'open-node' && creator && guidance.nodeId) {
       const node = creator.trusted_recipe.nodes.find((item) => item.id === guidance.nodeId)
       if (node?.resolution?.status === 'unresolved') {
-        window.location.assign(capabilityWorkshopUrl(creator, node))
+        openNestedLayer(node.id)
         return
       }
       openNodeDetail(guidance.nodeId)
@@ -1238,16 +1253,6 @@ export function IntentStudio({ projectId }: { projectId: string }) {
     else await canvasPanelRef.current?.requestFullscreen()
   }
   const pendingNodes = creator?.trusted_recipe.nodes.filter((node) => nodeReviewState(creator, node) !== 'confirmed') || []
-  const activeStage: CreatorStageId = !creator
-    ? clarification || possibilities.length ? 'direction' : 'goal'
-    : packageResult || creator.generation_readiness.ready
-      ? 'trial'
-      : middleView === 'detail' && selectedNode
-        ? nodeReviewState(creator, selectedNode) === 'unresolved' ? 'capability' : 'review'
-        : unresolvedCount ? 'capability' : pendingNodes.length ? 'review' : 'outline'
-  const visiblePaneIds: WorkspacePane[] = !creator
-    ? ['collaboration', 'outline']
-    : middleView === 'detail' ? ['outline', 'canvas'] : ['collaboration', 'outline', 'canvas']
   const projectDisplayName = creator?.project_name || creator?.intent || (projectId.startsWith('project.') ? '未命名项目' : projectId)
   const syncLabel = busy
     ? '正在处理'
@@ -1262,91 +1267,90 @@ export function IntentStudio({ projectId }: { projectId: string }) {
           : syncState === 'error'
             ? '同步失败'
             : '正在加载'
+  const routeNodes = creator?.trusted_recipe.nodes || []
+  const toggleRelation = (kind: CreatorRelationKind) => setVisibleRelations((current) => current.includes(kind) ? current.filter((item) => item !== kind) : [...current, kind])
+  const canvasToolbar = <nav className="semantic-canvas-toolstack" aria-label="画布工具">
+    <IconButton label="选择节点" variant={canvasTool === 'inspect' ? 'filled' : 'subtle'} onClick={() => { setCanvasTool('inspect'); setContextNodeIds([]) }}><MousePointer2 /></IconButton>
+    <IconButton label="指向 AI 讨论对象" variant={canvasTool === 'pointer' ? 'filled' : 'subtle'} onClick={() => { setCanvasTool('pointer'); setContextNodeIds([]) }}><Target /></IconButton>
+    <IconButton label="框选 AI 讨论范围" variant={canvasTool === 'lasso' ? 'filled' : 'subtle'} onClick={() => { setCanvasTool('lasso'); setContextNodeIds([]) }}><ScanLine /></IconButton>
+    <i />
+    <IconButton label="模型配置" variant="subtle" onClick={() => setResourceManager('models')}><Cloud /></IconButton>
+    <IconButton label="工具配置" variant="subtle" onClick={() => setResourceManager('tools')}><Wrench /></IconButton>
+    <IconButton label="重新检查可用能力" variant="subtle" disabled={!unresolvedCount || busy} onClick={() => void refreshCapabilities()}><RefreshCw /></IconButton>
+    <IconButton label="打包与交付" variant="subtle" disabled={!creator?.generation_readiness.ready} onClick={() => void buildPackage()}><Package /></IconButton>
+    <i />
+    <IconButton label="重新自动布局" variant="subtle" onClick={resetCanvasLayout}><RotateCcw /></IconButton>
+    <IconButton label="全屏画布" variant="subtle" onClick={() => void toggleCanvasFullscreen()}><Maximize2 /></IconButton>
+  </nav>
 
   return <>
-    <WorkbenchShell
-      storageKey={`cartridgeflow.intent-studio.panes.v2.${visiblePaneIds.join('.')}`}
-      className={`is-stage-${activeStage}${!creator ? ' is-intent-entry' : ''}${middleView === 'detail' ? ' is-node-review' : ''}`}
-      contextBar={<StageRail stages={CREATOR_STAGES} activeId={activeStage} />}
-      visiblePaneIds={visiblePaneIds}
-      activePane={workspacePane}
-      onActivePaneChange={setWorkspacePane}
+    <SemanticWorkbench
+      detailOpen={detailOpen}
+      aiOpen={aiPanelOpen}
+      activePanel={activePanel}
+      onActivePanelChange={setActivePanel}
       header={<header className="creator-topbar vip-topbar">
       <div className="creator-brand">
         <span className="creator-brand-mark" aria-hidden="true">C</span>
         <strong>CartridgeFlow</strong>
         <span className="vip-brand-divider" />
-        <span className="vip-project-crumb">项目 <b>/</b> {projectDisplayName} <ChevronDown /></span>
+        <Button className="vip-project-crumb" variant="subtle" onClick={() => setProjectMenuOpen((value) => !value)}>项目 <b>/</b> {projectDisplayName} <ChevronDown /></Button>
+        {projectMenuOpen && <div className="creator-project-menu semantic-project-menu">{projects.map((project) => <a className={project.project_id === projectId ? 'is-current' : ''} href={`/projects/${encodeURIComponent(project.project_id)}/studio`} key={project.project_id}><span>{project.name}</span><small>v{project.revision}</small></a>)}<div className="creator-project-menu-actions"><Button variant="subtle" onClick={createProject}><Plus />新建</Button>{creator && <><Button variant="subtle" onClick={() => void renameProject()}>重命名</Button><Button color="red" variant="subtle" onClick={() => void removeProject()}>删除</Button></>}</div></div>}
       </div>
-      <div className={`vip-autosave is-${busy ? 'busy' : syncState}`} title={aiStatus?.has_key ? `AI 已连接：${aiStatus.model}` : 'AI 尚未连接'}><i />{syncLabel}</div>
+      <div className="semantic-runtime-bar" aria-label="设计与运行">
+        <Button variant="default" className="is-active" leftSection={<PencilRuler />}>设计</Button>
+        <Button variant="subtle" leftSection={<Play />} disabled={!creator?.generation_readiness.ready}>运行</Button>
+        <IconButton label="暂停" variant="subtle" disabled><Pause /></IconButton>
+        <IconButton label="停止" variant="subtle" disabled><Square /></IconButton>
+        <IconButton label="历史" variant="subtle" onClick={() => { setAiPanelOpen(true); setActivePanel('ai') }}><History /></IconButton>
+      </div>
       <div className="creator-top-actions">
-        <button className={`creator-ai-button ${aiStatus?.has_key ? 'is-connected' : ''}`} type="button" onClick={() => requestModelConnection()}><Cloud />{aiStatus?.has_key ? `AI ${aiStatus.model || '已连接'}` : '连接 AI'}</button>
-        <button ref={themeButtonRef} className="creator-theme-button" type="button" onClick={() => setThemePanelOpen(true)}><Sun />{theme.label}</button>
-        {creator && (packageResult ? <a className="creator-package-download" href={packageResult.url} download><Download />下载试运行包</a> : creator.generation_readiness.ready && <button className="creator-package-button" type="button" disabled={busy} onClick={() => void buildPackage()} title="生成签名试运行包"><PackageCheck />准备试运行</button>)}
-        {!!pendingNodes.length && <button className="vip-pending-link" type="button" onClick={() => { setMiddleView('outline'); setWorkspacePane('outline') }}>{pendingNodes.length} 项待完成</button>}
+        <div className={`vip-autosave is-${busy ? 'busy' : syncState}`} title={aiStatus?.has_key ? `AI 已连接：${aiStatus.model}` : 'AI 尚未连接'}><i />{syncLabel}</div>
+        <Button className={`creator-ai-button ${aiStatus?.has_key ? 'is-connected' : ''}`} variant="default" onClick={() => setResourceManager('models')} leftSection={<Cloud />}>{aiStatus?.has_key ? aiStatus.model || 'AI 已连接' : '连接 AI'}</Button>
+        <IconButton ref={themeButtonRef} label={`外观：${theme.label}`} variant="subtle" onClick={() => setThemePanelOpen(true)}><Sun /></IconButton>
       </div>
     </header>}
-      panes={[
-        {
-          id: 'collaboration',
-          label: creator ? '共创' : '目标',
-          icon: Sparkles,
-          minSize: creator ? 288 : 480,
-          preferredSize: creator ? 320 : 640,
-          content: <CollaborationPanel creator={creator} goal={goal} selectedNode={selectedNode} busy={busy} composerError={composerError} stewardInput={stewardInput} stewardMessages={stewardMessages} clarification={clarification} guidance={guidance} runnerUrl={runnerDelivery?.delivery.runner_url || runnerStatus?.url || 'http://127.0.0.1:18990/'} threadRef={stewardThreadRef} composerRef={stewardComposerRef} onInput={(value) => { setStewardInput(value); setComposerError('') }} onSubmit={continueCoCreation} onClarification={answerClarification} onGuidanceAction={runGuidanceAction} onOpenDetail={() => openNodeDetail()} />,
-        },
-        {
-          id: 'outline',
-          label: creator ? '大纲' : '方向',
-          icon: List,
-          minSize: !creator ? 480 : middleView === 'detail' ? 520 : 368,
-          preferredSize: !creator ? 760 : middleView === 'detail' ? 640 : 416,
-          content: <section className="vip-outline-panel" aria-label={creator ? '项目与大纲' : '方向探索'}>
-        <header className="vip-panel-title"><strong>{creator ? '项目与大纲' : '方向探索'}</strong></header>
-        <div className="vip-project-picker">
-          <button className="vip-current-project" type="button" onClick={() => setProjectMenuOpen((value) => !value)}><FileText /><span>{projectDisplayName}</span><ChevronDown /></button>
-          <button className="vip-new-project" type="button" title="新建项目" aria-label="新建项目" onClick={createProject}><Plus /></button>
-          {projectMenuOpen && <div className="creator-project-menu vip-project-menu">{projects.map((project) => <a className={project.project_id === projectId ? 'is-current' : ''} href={`/projects/${encodeURIComponent(project.project_id)}/studio`} key={project.project_id}><span>{project.name}</span><small>v{project.revision}</small></a>)}{creator && <div className="creator-project-menu-actions"><button type="button" onClick={() => void renameProject()}>重命名</button><button className="danger" type="button" onClick={() => void removeProject()}>删除</button></div>}</div>}
+      commandBar={<header className="semantic-commandbar">
+        <div className="semantic-relation-filters" aria-label="语义关系显示">
+          <Field.Checkbox label="主流程" checked={visibleRelations.includes('control')} onChange={() => toggleRelation('control')} />
+          <Field.Checkbox label="数据流" checked={visibleRelations.includes('data')} onChange={() => toggleRelation('data')} />
+          <Field.Checkbox label="资源依赖" checked={visibleRelations.includes('dependency')} onChange={() => toggleRelation('dependency')} />
+          <span>{routeNodes.length || 2} 节点 · {confirmedCount} 可信 · {reviewCount} 待审核 · {unresolvedCount || (!creator ? 2 : 0)} 待补齐</span>
         </div>
-        {creator && <div className="vip-workspace-tabs" role="tablist" aria-label="项目内容">
-          <button type="button" role="tab" data-view="outline" aria-selected={middleView === 'outline'} className={middleView === 'outline' ? 'is-active' : ''} onClick={() => setMiddleView('outline')}>{creator ? '大纲' : '方向'}</button>
-          <button type="button" role="tab" data-view="detail" aria-selected={middleView === 'detail'} disabled={!selectedNode} className={middleView === 'detail' ? 'is-active' : ''} onClick={() => openNodeDetail()}>详情</button>
-        </div>}
-
-        {!creator ? <DirectionExplorer goal={goal} clarification={clarification} possibilities={possibilities} busy={busy} onChoose={chooseDirection} /> : middleView === 'outline' ? <div className="vip-outline-view">
-          <div className="vip-outline-table" role="table" aria-label="节点大纲">
-            <div className="vip-outline-row is-head" role="row"><span>编号</span><span>节点名称</span><span>可用做法</span><span>审核状态</span></div>
-            {creator?.trusted_recipe.nodes.map((node, index) => { const state = nodeReviewState(creator, node); const hasSuggestion = creator.pending_proposals.some((proposal) => proposal.changes.some((change) => change.target_id === node.id)); return <button className={`vip-outline-row ${node.id === selectedId ? 'is-selected' : ''}`} type="button" role="row" key={node.id} onClick={() => setSelectedId(node.id)} onDoubleClick={() => openNodeDetail(node.id)}><span>{String(index + 1).padStart(2, '0')}</span><strong>{node.label}</strong><span>{state === 'unresolved' ? node.resolution?.needed_capability || '需要补齐' : node.resolution?.capability?.label || '可用做法'}</span><ReviewStatus state={state} showSuggestion={hasSuggestion} /></button> })}
-          </div>
-          <section className="vip-delivery-check"><header><strong>完成检查</strong><span>{reviewCount} 个待审核 · {unresolvedCount} 个步骤待补齐</span>{unresolvedCount > 0 && <button type="button" disabled={busy} title="重新检查可用做法" aria-label="重新检查可用做法" onClick={() => void refreshCapabilities()}>{busy ? <Loader2 className="spinning" /> : <RefreshCw />}</button>}</header><div>{pendingNodes.map((node) => { const state = nodeReviewState(creator, node); return <button className="vip-delivery-row" type="button" key={node.id} onClick={() => openNodeDetail(node.id)}><i className={`is-${state}`} /><span><strong>步骤 {String(creator.trusted_recipe.nodes.indexOf(node) + 1).padStart(2, '0')} {node.label}：{state === 'review' ? '待审核' : '需要补齐'}</strong><small>下一步：{state === 'review' ? '检查参数和结果界面后确认' : '进入工坊完成这一做法，发布后自动回填'}</small></span></button> })}</div></section>
-        </div> : creator && selectedNode ? <NodeEditor key={`${selectedNode.id}:${creator.revision}:${creator.experience_revision}`} creator={creator} node={selectedNode} busy={busy} onCreatorChange={saveCreator} onNavigate={(nodeId) => { setSelectedId(nodeId); setMiddleView('detail') }} onReturnOutline={() => setMiddleView('outline')} onModelRequired={() => requestModelConnection('node')} /> : <div className="vip-detail-empty">选择一个节点查看详情</div>}
-          </section>,
-        },
-        {
-          id: 'canvas',
-          label: '画布',
-          icon: Grid2X2,
-          minSize: 480,
-          preferredSize: middleView === 'detail' ? 760 : 864,
-          content: <section className="vip-canvas-panel" ref={canvasPanelRef} aria-label="语义画布">
-        <header className="vip-canvas-header"><div><strong>语义画布</strong><span title={canvasStatus}>当前焦点：{selectedNode ? `${String((creator?.trusted_recipe.nodes.indexOf(selectedNode) || 0) + 1).padStart(2, '0')} ${selectedNode.label}` : '整个大纲'}{selectedNode && creator && <> · <b>{nodeReviewState(creator, selectedNode) === 'confirmed' ? '已确认' : nodeReviewState(creator, selectedNode) === 'review' ? '待审核' : '需要补齐'}</b></>}</span></div><div className="vip-canvas-toolbar"><button type="button" onClick={resetCanvasLayout}>布局：自动</button><button type="button" onClick={() => { setMiddleView('outline'); setWorkspacePane('outline') }}><List />列表视图</button><button className={canvasTool === 'lasso' ? 'is-active' : ''} type="button" title="框选讨论范围" onClick={() => { setCanvasTool('lasso'); setContextNodeIds([]) }}><Grid2X2 /></button><button className={canvasTool === 'pointer' ? 'is-active' : ''} type="button" title="指向一个节点" onClick={() => { setCanvasTool('pointer'); setContextNodeIds([]) }}><MousePointer2 /></button><button type="button" title="全屏画布" onClick={() => void toggleCanvasFullscreen()}><Maximize2 /></button></div></header>
+        <nav className="semantic-node-route" aria-label="节点快速导航">
+          {(routeNodes.length ? routeNodes : [{ id: 'placeholder-start', label: '开始' }, { id: 'placeholder-end', label: '结束' }]).map((node, index, nodes) => {
+            const trusted = creator ? creator.frozen_steps.includes(node.id) : false
+            return <span key={node.id}><Button variant="subtle" className={`${trusted ? 'is-trusted' : 'is-untrusted'}${selectedId === node.id ? ' is-current' : ''}`} title={node.label} onClick={() => { if (creator) setSelectedId(node.id); setActivePanel('canvas') }}><i />{String(index + 1).padStart(2, '0')}</Button>{index < nodes.length - 1 && <b />}</span>
+          })}
+        </nav>
+        <div className="semantic-panel-actions">
+          <Button variant={detailOpen ? 'light' : 'default'} disabled={!selectedNode} onClick={() => { setDetailOpen((value) => !value); setActivePanel(detailOpen ? 'canvas' : 'detail') }} leftSection={<FileText />}>详情</Button>
+          <Button variant={aiPanelOpen ? 'light' : 'default'} onClick={() => { setAiPanelOpen((value) => !value); setActivePanel(aiPanelOpen ? 'canvas' : 'ai') }} leftSection={<Bot />}>AI 管家</Button>
+        </div>
+      </header>}
+      canvas={<section className="vip-canvas-panel" ref={canvasPanelRef} aria-label="语义画布">
+        <header className="vip-canvas-header"><div><strong>{projectDisplayName}</strong><span title={canvasStatus}>{selectedNode ? `当前焦点：${selectedNode.label}` : creator ? '整个语义流程' : '等待 AI 编排节点'}</span></div><span className="semantic-trust-summary">{creator?.generation_readiness.ready ? <><CheckCircle2 />可试运行</> : <><Puzzle />{unresolvedCount ? `${unresolvedCount} 项能力待补齐` : `${pendingNodes.length || 2} 个节点未可信`}</>}</span></header>
         {packageError && <div className="creator-package-error" role="alert"><strong>打包未完成</strong><span>{packageError}</span></div>}
         {runnerError && <div className="creator-package-error creator-runner-error" role="alert"><strong>Runner 未接收</strong><span>{runnerError}</span></div>}
         <div className={`creator-canvas vip-canvas-surface tool-${canvasTool}`}>
-          <IntentCanvas key={canvasLayoutRevision} creator={creator} preview={recipePreview} draftGoal={goal} selectedId={selectedId} contextNodeIds={contextNodeIds} tool={canvasTool} onSelect={(nodeId) => { setSelectedId(nodeId); setMiddleView(nodeId ? 'detail' : 'outline'); if (nodeId) setWorkspacePane('outline') }} onContextChange={setContextNodeIds} />
-          {recipePreview && <section className="creator-draft-review" aria-label="新大纲确认"><div><strong>新大纲已铺在画布上</strong><span>新增 {recipePreview.impact.added_node_ids.length} · 保留 {recipePreview.impact.retained_node_ids.length} · 移除 {recipePreview.impact.removed_node_ids.length}</span></div><button className="secondary-button" type="button" disabled={busy} onClick={rejectRecipePreview}>保留旧版</button><button type="button" disabled={busy} onClick={() => void applyRecipePreview()}><Check />应用这版</button></section>}
+          <IntentCanvas key={canvasLayoutRevision} creator={creator} preview={recipePreview} draftGoal={goal} selectedId={selectedId} contextNodeIds={contextNodeIds} tool={canvasTool} visibleRelations={visibleRelations} toolbar={canvasToolbar} onSelect={(nodeId) => { setSelectedId(nodeId); if (nodeId) { setMiddleView('detail'); setDetailOpen(true); setActivePanel('detail') } }} onContextChange={setContextNodeIds} onOpenLayer={(nodeId) => openNestedLayer(nodeId)} onPreviewLayer={(nodeId) => openNestedLayer(nodeId, 'preview')} />
+          {recipePreview && <section className="creator-draft-review" aria-label="新大纲确认"><div><strong>新大纲已铺在画布上</strong><span>新增 {recipePreview.impact.added_node_ids.length} · 保留 {recipePreview.impact.retained_node_ids.length} · 移除 {recipePreview.impact.removed_node_ids.length}</span></div><Button variant="default" disabled={busy} onClick={rejectRecipePreview}>保留旧版</Button><Button disabled={busy} onClick={() => void applyRecipePreview()} leftSection={<Check />}>应用这版</Button></section>}
         </div>
         {loading && <div className="creator-loading"><Loader2 className="spinning" /><span>正在读取项目</span></div>}
-          </section>,
-        },
-      ]}
+      </section>}
+      detail={selectedNode && creator ? <div className="semantic-detail-stack"><header className="semantic-side-head"><div><FileText /><strong>详情</strong><span>{selectedNode.label}</span></div><IconButton label="折叠详情" variant="subtle" onClick={() => { setDetailOpen(false); setActivePanel('canvas') }}><X /></IconButton></header><NodeEditor key={`${selectedNode.id}:${creator.revision}:${creator.experience_revision}`} creator={creator} node={selectedNode} busy={busy} onCreatorChange={saveCreator} onNavigate={(nodeId) => { setSelectedId(nodeId); setMiddleView('detail') }} onReturnOutline={() => { setDetailOpen(false); setActivePanel('canvas') }} onModelRequired={() => requestModelConnection('node')} /></div> : undefined}
+      ai={<CollaborationPanel creator={creator} goal={goal} selectedNode={selectedNode} busy={busy} composerError={composerError} stewardInput={stewardInput} stewardMessages={stewardMessages} clarification={clarification} guidance={guidance} runnerUrl={runnerDelivery?.delivery.runner_url || runnerStatus?.url || 'http://127.0.0.1:18990/'} threadRef={stewardThreadRef} composerRef={stewardComposerRef} onInput={(value) => { setStewardInput(value); setComposerError('') }} onSubmit={continueCoCreation} onClarification={answerClarification} onGuidanceAction={runGuidanceAction} onOpenDetail={() => openNodeDetail()} onClose={() => { setAiPanelOpen(false); setActivePanel('canvas') }} directions={(possibilities.length || clarification) ? <DirectionExplorer goal={goal} clarification={clarification} possibilities={possibilities} busy={busy} onChoose={chooseDirection} /> : undefined} />}
     />
     <Suspense fallback={null}>
       {modelSetupOpen && <ModelConnectionDialog opened current={aiStatus} onConnect={connectModel} onClose={() => { setModelSetupOpen(false); setPendingAiAction(null) }} />}
+      {resourceManager && <ResourceManagerDialog opened initialTab={resourceManager} projectId={projectId} onClose={() => { setResourceManager(null); fetchCreatorAiStatus().then(setAiStatus).catch(() => null) }} />}
       {themePanelOpen && <ThemeDialog opened theme={theme} onChange={setTheme} onClose={() => {
         setThemePanelOpen(false)
         requestAnimationFrame(() => themeButtonRef.current?.focus())
       }} />}
     </Suspense>
+    {nestedNode && creator && <Dialog opened size="calc(100vw - 80px)" title={`${nestedNode.mode === 'preview' ? '查看内部逻辑' : '第二层语义'} · ${nestedNode.node.label}`} onClose={() => setNestedNode(null)} aria-label="子卡带语义层">
+      <section className="nested-cartridge-shell"><header><span><Puzzle />母节点</span><strong>{nestedNode.node.label}</strong><small>{nestedNode.node.resolution?.capability?.label || '待补齐子卡带'}</small></header><iframe title={`${nestedNode.node.label} 第二层语义`} src={capabilityWorkshopUrl(creator, nestedNode.node)} /></section>
+    </Dialog>}
   </>
 }

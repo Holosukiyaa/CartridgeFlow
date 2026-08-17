@@ -101,10 +101,13 @@ check(workspace.includes('vip-pane-nav') && styles.includes('.vip-workspace-body
 check(workspace.includes('data-view="outline"') && workspace.includes('data-view="detail"'), 'the middle pane switches in place between outline and node details')
 check(!canvas.includes('<MiniMap') && canvas.includes('<Panel className="creator-zoom-controls"'), 'Creator canvas uses the approved compact zoom strip without an overview map')
 check(canvas.includes('NODE_WIDTH = 204') && canvas.includes('NODE_HEIGHT = 174'), 'Creator nodes retain the approved reference dimensions')
+check(styles.includes('--studio-collaboration-width: clamp(') && styles.includes('--studio-outline-width: clamp('), 'Creator pane widths scale continuously instead of jumping at a desktop breakpoint')
+check(/\.creator-node\s*\{[^}]*\bwidth:\s*100%;[^}]*\bheight:\s*100%;/.test(styles) && !/\.creator-node\.is-selected\s*\{[^}]*\b(?:width|height)\s*:/.test(styles), 'Creator node visuals inherit the React Flow geometry without resizing selected nodes')
+check(!styles.includes('is-co-create') && !styles.includes('--workbench-header') && !styles.includes('Final home prototype'), 'retired Creator layout generations stay removed from the active stylesheet')
 check(workspace.includes('项目与大纲') && workspace.includes('vip-current-project'), 'project and outline navigation remains available in the middle pane')
 check(styles.includes('font-family: "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI Variable Text", "Segoe UI", sans-serif;'), 'Creator uses the Windows-hinted Chinese UI font stack')
-check(styles.includes('--vip-surface-ai: #f3f5f8') && styles.includes('--vip-surface-outline: #f6f7f9') && styles.includes('--vip-surface-canvas: #fafbfc'), 'Creator panes retain distinct neutral surface levels')
-check(/\.vip-ai-panel\s*\{[^}]*grid-template-rows:\s*64px 76px minmax\(0, 1fr\) 104px;/.test(styles) && /\.vip-collaboration-composer > div\s*\{[^}]*padding:\s*4px 14px 6px;/.test(styles), 'Creator composer reserves internal and external bottom breathing room')
+check(styles.split('\n').length <= 300 && (styles.match(/@media\s/g) || []).length <= 2, 'Creator CSS stays within the skeleton-level size and breakpoint budget')
+check(!styles.includes('box-shadow') && !styles.includes('transform:') && !styles.includes('.creator-node-order-'), 'Creator skeleton excludes decorative shadows, positional patches, and per-node layout exceptions')
 check(/\.vip-outline-row\s*\{[^}]*gap:\s*0;/.test(styles) && !styles.includes('min-height: 49.5px'), 'Creator outline columns align on an integer-pixel grid without inherited button gaps')
 
 const visibleForbidden = ['Developer', '工程语义', '运行测试', '调试', '调优', '版本切换', '执行映射', '配置模型', '配置工具', '权限设置']

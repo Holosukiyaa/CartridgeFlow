@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { useCallback, type ReactNode } from 'react'
 import { useMediaQuery } from '@mantine/hooks'
 import { Tabs } from '@mantine/core'
 import { Allotment } from 'allotment'
@@ -17,10 +17,13 @@ export type WorkbenchPaneDefinition = {
 
 type WorkbenchShellProps = {
   header: ReactNode
+  contextBar?: ReactNode
   panes: WorkbenchPaneDefinition[]
+  visiblePaneIds?: WorkbenchPaneId[]
   activePane: WorkbenchPaneId
   onActivePaneChange: (pane: WorkbenchPaneId) => void
   storageKey: string
+  className?: string
 }
 
 function readSizes(storageKey: string, panes: WorkbenchPaneDefinition[]) {
@@ -33,44 +36,46 @@ function readSizes(storageKey: string, panes: WorkbenchPaneDefinition[]) {
   return undefined
 }
 
-export function WorkbenchShell({ header, panes, activePane, onActivePaneChange, storageKey }: WorkbenchShellProps) {
+export function WorkbenchShell({ header, contextBar, panes, visiblePaneIds, activePane, onActivePaneChange, storageKey, className = '' }: WorkbenchShellProps) {
   const compact = useMediaQuery('(max-width: 1280px)', false, { getInitialValueInEffect: false })
-  const [sizes, setSizes] = useState(() => readSizes(storageKey, panes))
-
-  useEffect(() => {
-    setSizes(readSizes(storageKey, panes))
-  }, [storageKey, panes.length])
+  const visiblePanes = visiblePaneIds?.length ? panes.filter((pane) => visiblePaneIds.includes(pane.id)) : panes
+  const paneKey = visiblePanes.map((pane) => pane.id).join('.')
+  const layoutKey = `${storageKey}:${paneKey}`
 
   const saveSizes = useCallback((next: number[]) => {
-    if (next.length !== panes.length || next.some((size) => !Number.isFinite(size) || size <= 0)) return
-    setSizes(next)
+    if (next.length !== visiblePanes.length || next.some((size) => !Number.isFinite(size) || size <= 0)) return
     localStorage.setItem(storageKey, JSON.stringify(next))
-  }, [panes.length, storageKey])
+  }, [visiblePanes.length, storageKey])
 
-  const defaultSizes = sizes || (() => {
-    const available = window.innerWidth
-    const collaboration = panes[0]?.preferredSize || 320
-    const canvasMinimum = panes[2]?.minSize || 420
-    const outline = Math.min(panes[1]?.preferredSize || 416, Math.max(panes[1]?.minSize || 368, available - collaboration - canvasMinimum))
-    return [collaboration, outline, Math.max(canvasMinimum, available - collaboration - outline)]
-  })()
-  const compactPane = panes.find((pane) => pane.id === activePane) || panes[0]
+  const defaultSizes = readSizes(storageKey, visiblePanes) || visiblePanes.map((pane) => pane.preferredSize || pane.minSize)
+  const compactPane = visiblePanes.find((pane) => pane.id === activePane) || visiblePanes[0]
 
-  return <main className="creator-workspace creator-workbench">
+  return <main className={`creator-workspace creator-workbench ${className}`.trim()}>
     {header}
-    {compact && <Tabs value={activePane} onChange={(value) => value && onActivePaneChange(value as WorkbenchPaneId)} className="workbench-pane-tabs">
+    {contextBar}
+    {compact && compactPane && <Tabs value={compactPane.id} onChange={(value) => value && onActivePaneChange(value as WorkbenchPaneId)} className="workbench-pane-tabs">
       <Tabs.List grow aria-label="工作区视图">
-        {panes.map(({ id, label, icon: Icon }) => <Tabs.Tab key={id} value={id} leftSection={<Icon size={16} />}>{label}</Tabs.Tab>)}
+        {visiblePanes.map(({ id, label, icon: Icon }) => <Tabs.Tab key={id} value={id} leftSection={<Icon size={16} />}>{label}</Tabs.Tab>)}
       </Tabs.List>
     </Tabs>}
     <div className="workbench-panes">
-      {compact ? compactPane && <WorkbenchPane id={compactPane.id}>{compactPane.content}</WorkbenchPane> : <Allotment defaultSizes={defaultSizes} onDragEnd={saveSizes} separator>
-        {panes.map((pane) => <Allotment.Pane key={pane.id} minSize={pane.minSize} preferredSize={pane.preferredSize} snap>
+      {compact ? compactPane && <WorkbenchPane id={compactPane.id}>{compactPane.content}</WorkbenchPane> : <Allotment key={layoutKey} defaultSizes={defaultSizes} onDragEnd={saveSizes} separator>
+        {visiblePanes.map((pane) => <Allotment.Pane key={pane.id} minSize={pane.minSize} preferredSize={pane.preferredSize} snap>
           <WorkbenchPane id={pane.id}>{pane.content}</WorkbenchPane>
         </Allotment.Pane>)}
       </Allotment>}
     </div>
   </main>
+}
+
+export function StageRail({ stages, activeId }: { stages: Array<{ id: string; label: string }>; activeId: string }) {
+  const activeIndex = Math.max(0, stages.findIndex((stage) => stage.id === activeId))
+  return <nav className="creator-stage-rail" aria-label="卡带创作阶段">
+    <ol>{stages.map((stage, index) => {
+      const state = index < activeIndex ? 'completed' : index === activeIndex ? 'current' : 'upcoming'
+      return <li key={stage.id} data-state={state} aria-current={state === 'current' ? 'step' : undefined}>{stage.label}</li>
+    })}</ol>
+  </nav>
 }
 
 export function WorkbenchPane({ id, hidden = false, children }: { id: WorkbenchPaneId; hidden?: boolean; children: ReactNode }) {

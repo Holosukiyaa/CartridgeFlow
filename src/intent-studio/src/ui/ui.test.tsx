@@ -1,7 +1,8 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { AppThemeProvider, Button, Dialog, useAppTheme } from './index.ts'
+import { Circle } from 'lucide-react'
+import { AppThemeProvider, Button, Dialog, StageRail, useAppTheme, WorkbenchShell } from './index.ts'
 
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
@@ -68,5 +69,27 @@ describe('UI boundary', () => {
     await user.click(screen.getByRole('button', { name: '浅色主题' }))
     expect(screen.getByRole('button', { name: '测试主题' })).toBeTruthy()
     expect(JSON.parse(localStorage.getItem('cartridgeflow.creator-theme') || '{}').accent).toBe('#123456')
+  })
+
+  it('shows only panes relevant to the current authoring stage', () => {
+    const panes = [
+      { id: 'collaboration' as const, label: '目标', icon: Circle, minSize: 320, content: <div>goal content</div> },
+      { id: 'outline' as const, label: '方向', icon: Circle, minSize: 320, content: <div>direction content</div> },
+      { id: 'canvas' as const, label: '画布', icon: Circle, minSize: 320, content: <div>canvas content</div> },
+    ]
+    renderWithTheme(<WorkbenchShell
+      header={<div>header</div>}
+      contextBar={<StageRail stages={[{ id: 'goal', label: '目标' }, { id: 'outline', label: '大纲' }]} activeId="goal" />}
+      panes={panes}
+      visiblePaneIds={['collaboration', 'outline']}
+      activePane="canvas"
+      onActivePaneChange={() => undefined}
+      storageKey="test.stage-layout"
+    />)
+
+    expect(screen.getByRole('navigation', { name: '卡带创作阶段' })).toBeTruthy()
+    expect(screen.getByText('goal content')).toBeTruthy()
+    expect(screen.getByText('direction content')).toBeTruthy()
+    expect(screen.queryByText('canvas content')).toBeNull()
   })
 })

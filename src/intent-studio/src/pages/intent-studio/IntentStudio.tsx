@@ -68,7 +68,7 @@ import {
   type DesktopRunnerStatus,
 } from '../../api.ts'
 import { showToast } from '../../toast.tsx'
-import { useAppTheme, WorkbenchShell } from '../../ui/index.ts'
+import { StageRail, useAppTheme, WorkbenchShell } from '../../ui/index.ts'
 import { IntentCanvas, type CreatorCanvasTool } from './IntentCanvas.tsx'
 
 const ModelConnectionDialog = lazy(() => import('./ModelConnectionDialog.tsx').then((module) => ({ default: module.ModelConnectionDialog })))
@@ -84,6 +84,17 @@ type StewardMessage = {
 }
 
 type WorkspacePane = 'collaboration' | 'outline' | 'canvas'
+
+type CreatorStageId = 'goal' | 'direction' | 'outline' | 'capability' | 'review' | 'trial'
+
+const CREATOR_STAGES: Array<{ id: CreatorStageId; label: string }> = [
+  { id: 'goal', label: '目标' },
+  { id: 'direction', label: '方向' },
+  { id: 'outline', label: '大纲' },
+  { id: 'capability', label: '能力' },
+  { id: 'review', label: '审核' },
+  { id: 'trial', label: '试运行' },
+]
 
 type GuidanceAction = 'connect-ai' | 'focus-composer' | 'show-directions' | 'open-node' | 'build-package' | 'deliver-runner' | 'open-runner' | 'download-package'
 
@@ -409,10 +420,10 @@ function CollaborationPanel({
 
   return <aside className="vip-ai-panel" aria-label="AI 共创记录">
     <header className="vip-panel-title"><Sparkles /><strong>AI 共创记录</strong></header>
-    <section className="vip-current-goal"><Target /><div><strong>当前目标</strong><p>{goal || '先描述你想得到的结果。'}</p></div></section>
+    {(creator || goal) && <section className="vip-current-goal"><Target /><div><strong>当前目标</strong><p>{goal}</p></div></section>}
     <div className="vip-collaboration-thread" ref={threadRef}>
       <section className={`vip-next-action is-${guidance.stage}`} aria-label="当前下一步">
-        <header><span>第 {guidance.step} 步</span><small>{guidance.step}/5</small></header>
+        <header><span>{creator ? '项目推进' : guidance.stage === 'connect-ai' ? '创作准备' : '目标与方向'}</span><small>当前任务</small></header>
         <strong>{guidance.title}</strong>
         <p>{guidance.detail}</p>
         <button type="button" disabled={busy} onClick={onGuidanceAction}>{['build-package', 'deliver-runner', 'download-package'].includes(guidance.action) ? <PackageCheck /> : guidance.action === 'open-node' || guidance.action === 'open-runner' ? <ChevronRight /> : <Sparkles />}{guidance.actionLabel}</button>
@@ -437,8 +448,8 @@ function CollaborationPanel({
       {composerError && <div className="creator-steward-error" role="alert"><strong>这次没有完成</strong><span>{composerError}</span></div>}
     </div>
     <form className="vip-collaboration-composer" onSubmit={(event) => { event.preventDefault(); onSubmit(stewardInput) }}>
-      <textarea ref={composerRef} value={stewardInput} disabled={busy} onChange={(event) => onInput(event.currentTarget.value)} placeholder="继续提问或补充说明需求..." />
-      <div><button className="vip-attachment" type="button" disabled={!selectedNode} title={selectedNode ? '在节点详情中添加资料来源' : '先选择一个节点'} onClick={onOpenDetail}><Paperclip /></button><span className="vip-language"><Globe2 />简体中文</span><button className="vip-send" type="submit" disabled={busy || stewardInput.trim().length < 3} title="发送" aria-label="发送">{busy ? <Loader2 className="spinning" /> : <Send />}</button></div>
+      <textarea ref={composerRef} value={stewardInput} disabled={busy} onChange={(event) => onInput(event.currentTarget.value)} placeholder={creator ? '继续提问或补充说明需求...' : '描述你想得到的结果和使用场景...'} />
+      <div>{creator && <button className="vip-attachment" type="button" disabled={!selectedNode} title={selectedNode ? '在节点详情中添加资料来源' : '先选择一个节点'} onClick={onOpenDetail}><Paperclip /></button>}<span className="vip-language"><Globe2 />简体中文</span><button className="vip-send" type="submit" disabled={busy || stewardInput.trim().length < 3} title="发送" aria-label="发送">{busy ? <Loader2 className="spinning" /> : <Send />}</button></div>
     </form>
   </aside>
 }
@@ -1227,6 +1238,16 @@ export function IntentStudio({ projectId }: { projectId: string }) {
     else await canvasPanelRef.current?.requestFullscreen()
   }
   const pendingNodes = creator?.trusted_recipe.nodes.filter((node) => nodeReviewState(creator, node) !== 'confirmed') || []
+  const activeStage: CreatorStageId = !creator
+    ? clarification || possibilities.length ? 'direction' : 'goal'
+    : packageResult || creator.generation_readiness.ready
+      ? 'trial'
+      : middleView === 'detail' && selectedNode
+        ? nodeReviewState(creator, selectedNode) === 'unresolved' ? 'capability' : 'review'
+        : unresolvedCount ? 'capability' : pendingNodes.length ? 'review' : 'outline'
+  const visiblePaneIds: WorkspacePane[] = !creator
+    ? ['collaboration', 'outline']
+    : middleView === 'detail' ? ['outline', 'canvas'] : ['collaboration', 'outline', 'canvas']
   const projectDisplayName = creator?.project_name || creator?.intent || (projectId.startsWith('project.') ? '未命名项目' : projectId)
   const syncLabel = busy
     ? '正在处理'
@@ -1237,14 +1258,17 @@ export function IntentStudio({ projectId }: { projectId: string }) {
       : syncState === 'loaded'
         ? '项目已加载'
         : syncState === 'new'
-          ? '正在建立项目草稿'
+          ? aiStatus?.has_key ? '等待目标描述' : '等待连接 AI'
           : syncState === 'error'
             ? '同步失败'
             : '正在加载'
 
   return <>
     <WorkbenchShell
-      storageKey="cartridgeflow.intent-studio.panes.v1"
+      storageKey={`cartridgeflow.intent-studio.panes.v2.${visiblePaneIds.join('.')}`}
+      className={`is-stage-${activeStage}${!creator ? ' is-intent-entry' : ''}${middleView === 'detail' ? ' is-node-review' : ''}`}
+      contextBar={<StageRail stages={CREATOR_STAGES} activeId={activeStage} />}
+      visiblePaneIds={visiblePaneIds}
       activePane={workspacePane}
       onActivePaneChange={setWorkspacePane}
       header={<header className="creator-topbar vip-topbar">
@@ -1258,36 +1282,36 @@ export function IntentStudio({ projectId }: { projectId: string }) {
       <div className="creator-top-actions">
         <button className={`creator-ai-button ${aiStatus?.has_key ? 'is-connected' : ''}`} type="button" onClick={() => requestModelConnection()}><Cloud />{aiStatus?.has_key ? `AI ${aiStatus.model || '已连接'}` : '连接 AI'}</button>
         <button ref={themeButtonRef} className="creator-theme-button" type="button" onClick={() => setThemePanelOpen(true)}><Sun />{theme.label}</button>
-        {creator && (packageResult ? <a className="creator-package-download" href={packageResult.url} download><Download />下载试运行包</a> : <button className="creator-package-button" type="button" disabled={busy || !creator.generation_readiness.ready} onClick={() => void buildPackage()} title={creator.generation_readiness.ready ? '生成签名试运行包' : '完成所有步骤后可试运行'}><PackageCheck />准备试运行</button>)}
-        {creator && <button className="vip-pending-link" type="button" onClick={() => { setMiddleView('outline'); setWorkspacePane('outline') }}>{pendingNodes.length} 项待完成</button>}
+        {creator && (packageResult ? <a className="creator-package-download" href={packageResult.url} download><Download />下载试运行包</a> : creator.generation_readiness.ready && <button className="creator-package-button" type="button" disabled={busy} onClick={() => void buildPackage()} title="生成签名试运行包"><PackageCheck />准备试运行</button>)}
+        {!!pendingNodes.length && <button className="vip-pending-link" type="button" onClick={() => { setMiddleView('outline'); setWorkspacePane('outline') }}>{pendingNodes.length} 项待完成</button>}
       </div>
     </header>}
       panes={[
         {
           id: 'collaboration',
-          label: '共创',
+          label: creator ? '共创' : '目标',
           icon: Sparkles,
-          minSize: 288,
-          preferredSize: 320,
+          minSize: creator ? 288 : 480,
+          preferredSize: creator ? 320 : 640,
           content: <CollaborationPanel creator={creator} goal={goal} selectedNode={selectedNode} busy={busy} composerError={composerError} stewardInput={stewardInput} stewardMessages={stewardMessages} clarification={clarification} guidance={guidance} runnerUrl={runnerDelivery?.delivery.runner_url || runnerStatus?.url || 'http://127.0.0.1:18990/'} threadRef={stewardThreadRef} composerRef={stewardComposerRef} onInput={(value) => { setStewardInput(value); setComposerError('') }} onSubmit={continueCoCreation} onClarification={answerClarification} onGuidanceAction={runGuidanceAction} onOpenDetail={() => openNodeDetail()} />,
         },
         {
           id: 'outline',
           label: creator ? '大纲' : '方向',
           icon: List,
-          minSize: 368,
-          preferredSize: 416,
-          content: <section className="vip-outline-panel" aria-label="项目与大纲">
-        <header className="vip-panel-title"><strong>项目与大纲</strong></header>
+          minSize: !creator ? 480 : middleView === 'detail' ? 520 : 368,
+          preferredSize: !creator ? 760 : middleView === 'detail' ? 640 : 416,
+          content: <section className="vip-outline-panel" aria-label={creator ? '项目与大纲' : '方向探索'}>
+        <header className="vip-panel-title"><strong>{creator ? '项目与大纲' : '方向探索'}</strong></header>
         <div className="vip-project-picker">
           <button className="vip-current-project" type="button" onClick={() => setProjectMenuOpen((value) => !value)}><FileText /><span>{projectDisplayName}</span><ChevronDown /></button>
           <button className="vip-new-project" type="button" title="新建项目" aria-label="新建项目" onClick={createProject}><Plus /></button>
           {projectMenuOpen && <div className="creator-project-menu vip-project-menu">{projects.map((project) => <a className={project.project_id === projectId ? 'is-current' : ''} href={`/projects/${encodeURIComponent(project.project_id)}/studio`} key={project.project_id}><span>{project.name}</span><small>v{project.revision}</small></a>)}{creator && <div className="creator-project-menu-actions"><button type="button" onClick={() => void renameProject()}>重命名</button><button className="danger" type="button" onClick={() => void removeProject()}>删除</button></div>}</div>}
         </div>
-        <div className="vip-workspace-tabs" role="tablist" aria-label="项目内容">
+        {creator && <div className="vip-workspace-tabs" role="tablist" aria-label="项目内容">
           <button type="button" role="tab" data-view="outline" aria-selected={middleView === 'outline'} className={middleView === 'outline' ? 'is-active' : ''} onClick={() => setMiddleView('outline')}>{creator ? '大纲' : '方向'}</button>
           <button type="button" role="tab" data-view="detail" aria-selected={middleView === 'detail'} disabled={!selectedNode} className={middleView === 'detail' ? 'is-active' : ''} onClick={() => openNodeDetail()}>详情</button>
-        </div>
+        </div>}
 
         {!creator ? <DirectionExplorer goal={goal} clarification={clarification} possibilities={possibilities} busy={busy} onChoose={chooseDirection} /> : middleView === 'outline' ? <div className="vip-outline-view">
           <div className="vip-outline-table" role="table" aria-label="节点大纲">
@@ -1302,8 +1326,8 @@ export function IntentStudio({ projectId }: { projectId: string }) {
           id: 'canvas',
           label: '画布',
           icon: Grid2X2,
-          minSize: 420,
-          preferredSize: 864,
+          minSize: 480,
+          preferredSize: middleView === 'detail' ? 760 : 864,
           content: <section className="vip-canvas-panel" ref={canvasPanelRef} aria-label="语义画布">
         <header className="vip-canvas-header"><div><strong>语义画布</strong><span title={canvasStatus}>当前焦点：{selectedNode ? `${String((creator?.trusted_recipe.nodes.indexOf(selectedNode) || 0) + 1).padStart(2, '0')} ${selectedNode.label}` : '整个大纲'}{selectedNode && creator && <> · <b>{nodeReviewState(creator, selectedNode) === 'confirmed' ? '已确认' : nodeReviewState(creator, selectedNode) === 'review' ? '待审核' : '需要补齐'}</b></>}</span></div><div className="vip-canvas-toolbar"><button type="button" onClick={resetCanvasLayout}>布局：自动</button><button type="button" onClick={() => { setMiddleView('outline'); setWorkspacePane('outline') }}><List />列表视图</button><button className={canvasTool === 'lasso' ? 'is-active' : ''} type="button" title="框选讨论范围" onClick={() => { setCanvasTool('lasso'); setContextNodeIds([]) }}><Grid2X2 /></button><button className={canvasTool === 'pointer' ? 'is-active' : ''} type="button" title="指向一个节点" onClick={() => { setCanvasTool('pointer'); setContextNodeIds([]) }}><MousePointer2 /></button><button type="button" title="全屏画布" onClick={() => void toggleCanvasFullscreen()}><Maximize2 /></button></div></header>
         {packageError && <div className="creator-package-error" role="alert"><strong>打包未完成</strong><span>{packageError}</span></div>}

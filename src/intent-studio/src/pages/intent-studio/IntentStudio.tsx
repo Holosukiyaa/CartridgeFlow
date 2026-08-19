@@ -722,7 +722,7 @@ export function IntentStudio({ projectId }: { projectId: string }) {
   const [middleView, setMiddleView] = useState<'outline' | 'detail'>(restoredWorkspace?.middleView || 'outline')
   const [workspacePane, setWorkspacePane] = useState<WorkspacePane>(restoredWorkspace?.workspacePane || 'collaboration')
   const [detailOpen, setDetailOpen] = useState(restoredWorkspace?.middleView === 'detail')
-  const [aiPanelOpen, setAiPanelOpen] = useState(true)
+  const [aiPanelOpen, setAiPanelOpen] = useState(false)
   const [activePanel, setActivePanel] = useState<SemanticPanelId>('canvas')
   const [visibleRelations, setVisibleRelations] = useState<CreatorRelationKind[]>(['control', 'data', 'dependency'])
   const [resourceManager, setResourceManager] = useState<'models' | 'tools' | null>(null)
@@ -920,14 +920,6 @@ export function IntentStudio({ projectId }: { projectId: string }) {
   const unresolvedCount = creator?.trusted_recipe.nodes.filter((node) => node.resolution?.status === 'unresolved').length || 0
   const reviewCount = Math.max(0, totalCount - confirmedCount - unresolvedCount)
   const contextNodes = useMemo(() => (recipePreview?.nodes || creator?.trusted_recipe.nodes || []).filter((node) => contextNodeIds.includes(node.id)), [contextNodeIds, creator, recipePreview])
-  const canvasStatus = recipePreview
-    ? '新大纲 · 正在等你确认'
-    : creator
-      ? `${creator.revision <= 1 ? '第一版大纲' : '当前大纲'} · 会随着讨论持续变化`
-      : goal.trim()
-        ? '准备探索可选方向'
-        : '先说一句现在的想法'
-
   const saveCreator = (next: CreatorProjection) => {
     setCreator(next)
     setSyncState('saved')
@@ -1252,7 +1244,6 @@ export function IntentStudio({ projectId }: { projectId: string }) {
     if (document.fullscreenElement) await document.exitFullscreen()
     else await canvasPanelRef.current?.requestFullscreen()
   }
-  const pendingNodes = creator?.trusted_recipe.nodes.filter((node) => nodeReviewState(creator, node) !== 'confirmed') || []
   const projectDisplayName = creator?.project_name || creator?.intent || (projectId.startsWith('project.') ? '未命名项目' : projectId)
   const syncLabel = busy
     ? '正在处理'
@@ -1311,6 +1302,7 @@ export function IntentStudio({ projectId }: { projectId: string }) {
       </div>
     </header>}
       commandBar={<header className="semantic-commandbar">
+        <div className="semantic-command-main">
         <div className="semantic-relation-filters" aria-label="语义关系显示">
           <Field.Checkbox label="主流程" checked={visibleRelations.includes('control')} onChange={() => toggleRelation('control')} />
           <Field.Checkbox label="数据流" checked={visibleRelations.includes('data')} onChange={() => toggleRelation('data')} />
@@ -1323,13 +1315,13 @@ export function IntentStudio({ projectId }: { projectId: string }) {
             return <span key={node.id}><Button variant="subtle" className={`${trusted ? 'is-trusted' : 'is-untrusted'}${selectedId === node.id ? ' is-current' : ''}`} title={node.label} onClick={() => { if (creator) setSelectedId(node.id); setActivePanel('canvas') }}><i />{String(index + 1).padStart(2, '0')}</Button>{index < nodes.length - 1 && <b />}</span>
           })}
         </nav>
+        </div>
         <div className="semantic-panel-actions">
           <Button variant={detailOpen ? 'light' : 'default'} disabled={!selectedNode} onClick={() => { setDetailOpen((value) => !value); setActivePanel(detailOpen ? 'canvas' : 'detail') }} leftSection={<FileText />}>详情</Button>
           <Button variant={aiPanelOpen ? 'light' : 'default'} onClick={() => { setAiPanelOpen((value) => !value); setActivePanel(aiPanelOpen ? 'canvas' : 'ai') }} leftSection={<Bot />}>AI 管家</Button>
         </div>
       </header>}
       canvas={<section className="vip-canvas-panel" ref={canvasPanelRef} aria-label="语义画布">
-        <header className="vip-canvas-header"><div><strong>{projectDisplayName}</strong><span title={canvasStatus}>{selectedNode ? `当前焦点：${selectedNode.label}` : creator ? '整个语义流程' : '等待 AI 编排节点'}</span></div><span className="semantic-trust-summary">{creator?.generation_readiness.ready ? <><CheckCircle2 />可试运行</> : <><Puzzle />{unresolvedCount ? `${unresolvedCount} 项能力待补齐` : `${pendingNodes.length || 2} 个节点未可信`}</>}</span></header>
         {packageError && <div className="creator-package-error" role="alert"><strong>打包未完成</strong><span>{packageError}</span></div>}
         {runnerError && <div className="creator-package-error creator-runner-error" role="alert"><strong>Runner 未接收</strong><span>{runnerError}</span></div>}
         <div className={`creator-canvas vip-canvas-surface tool-${canvasTool}`}>

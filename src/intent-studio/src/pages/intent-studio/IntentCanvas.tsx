@@ -60,13 +60,17 @@ function CreatorNode({ data, selected }: NodeProps<CanvasNode>) {
 }
 
 const nodeTypes = { creator: CreatorNode }
-const NODE_WIDTH = 204
-const NODE_HEIGHT = 174
-const CREATOR_LAYOUT_KEY = 'cartridgeflow.creator-layout.v2'
+const NODE_WIDTH = 240
+const STEP_NODE_WIDTH = 260
+const NESTED_NODE_WIDTH = 280
+const MAX_STEP_NODE_WIDTH = 400
+const NODE_HEIGHT = 220
+const MAX_NODE_HEIGHT = 300
+const CREATOR_LAYOUT_KEY = 'cartridgeflow.creator-layout.v3'
 const fitOptions = {
-  padding: { x: 0.18, top: '7%', bottom: '7%' },
-  minZoom: 0.7,
-  maxZoom: 1,
+  padding: { x: 0.08, top: '6%', bottom: '6%' },
+  minZoom: 0.52,
+  maxZoom: 1.12,
 } as const
 const compactFitOptions = {
   padding: 0.1,
@@ -74,9 +78,9 @@ const compactFitOptions = {
   maxZoom: 0.9,
 } as const
 const multiRowFitOptions = {
-  padding: { x: 0.12, top: '7%', bottom: '5%' },
-  minZoom: 0.64,
-  maxZoom: 1,
+  padding: { x: 0.08, top: '6%', bottom: '5%' },
+  minZoom: 0.52,
+  maxZoom: 1.08,
 } as const
 const emptyFitOptions = {
   padding: 0.35,
@@ -105,32 +109,54 @@ function savePositions(projectId: string, nodes: CanvasNode[]) {
   localStorage.setItem(`${CREATOR_LAYOUT_KEY}.${projectId}`, JSON.stringify(positions))
 }
 
+function nodeWidth(node: CanvasNode) {
+  return typeof node.width === 'number' ? node.width : NODE_WIDTH
+}
+
+function stepNodeWidth(label: string, hasNestedCartridge: boolean) {
+  const baseWidth = hasNestedCartridge ? NESTED_NODE_WIDTH : STEP_NODE_WIDTH
+  const actionReserve = hasNestedCartridge ? 92 : 58
+  const estimatedTitleWidth = Math.max(112, visualLength(label) * 9)
+  return Math.min(MAX_STEP_NODE_WIDTH, Math.max(baseWidth, actionReserve + estimatedTitleWidth))
+}
+
+function visualLength(value: string) {
+  return Array.from(value).reduce((length, character) => length + (/\p{Script=Han}/u.test(character) ? 1 : 0.56), 0)
+}
+
+function contentNodeHeight(label: string, description: string, width: number) {
+  const titleLines = Math.min(2, Math.max(1, Math.ceil(visualLength(label) / Math.max(8, (width - 120) / 11))))
+  const bodyLines = Math.min(4, Math.max(2, Math.ceil(visualLength(description) / Math.max(12, (width - 32) / 11))))
+  return Math.min(MAX_NODE_HEIGHT, NODE_HEIGHT + (titleLines - 1) * 24 + (bodyLines - 2) * 18)
+}
+
 function layout(nodes: CanvasNode[], edges: Edge[], vertical: boolean) {
   if (!vertical && nodes.length > 1 && nodes.length <= 8) {
+    const referencePositions = nodes.length === 2
+      ? [{ x: 300, y: 210 }, { x: 760, y: 230 }]
+      : [{ x: 140, y: 250 }, { x: 500, y: 135 }, { x: 1010, y: 0 }, { x: 790, y: 380 }, { x: 1290, y: 430 }, { x: 1660, y: 240 }, { x: 1970, y: 470 }, { x: 2320, y: 180 }]
     const columns = nodes.length > 6 ? 4 : 3
-    const columnGap = nodes.length <= 3 ? 90 : nodes.length <= 6 ? 90 : 38
+    const columnGap = nodes.length <= 3 ? 72 : nodes.length <= 6 ? 64 : 38
+    const columnWidth = Math.max(...nodes.map(nodeWidth))
+    const rowHeight = Math.max(...nodes.map((node) => node.height || NODE_HEIGHT))
     return nodes.map((node, index) => ({
       ...node,
       position: {
-        x: index < columns
-          ? index * (NODE_WIDTH + columnGap)
-          : index === columns && columns === 3
-            ? 557
-            : index === columns + 1 && columns === 3
-              ? 280
-              : (columns - 1 - ((index - columns) % columns)) * (NODE_WIDTH + columnGap),
-        y: index < columns ? 0 : index === columns ? 294 : 460,
+        x: referencePositions[index]?.x ?? (index < columns
+          ? index * (columnWidth + columnGap)
+          : (columns - 1 - ((index - columns) % columns)) * (columnWidth + columnGap)),
+        y: referencePositions[index]?.y ?? (index < columns ? 0 : rowHeight + 120),
       },
     }))
   }
   const graph = new dagre.graphlib.Graph().setDefaultEdgeLabel(() => ({}))
   graph.setGraph({ rankdir: vertical ? 'TB' : 'LR', ranksep: vertical ? 54 : 66, nodesep: 48, marginx: 32, marginy: 36, acyclicer: 'greedy' })
-  nodes.forEach((node) => graph.setNode(node.id, { width: NODE_WIDTH, height: NODE_HEIGHT }))
+  nodes.forEach((node) => graph.setNode(node.id, { width: nodeWidth(node), height: node.height || NODE_HEIGHT }))
   edges.forEach((edge) => graph.setEdge(edge.source, edge.target))
   dagre.layout(graph)
   return nodes.map((node) => {
     const point = graph.node(node.id)
-    return { ...node, position: { x: point.x - NODE_WIDTH / 2, y: point.y - NODE_HEIGHT / 2 } }
+    return { ...node, position: { x: point.x - nodeWidth(node) / 2, y: point.y - (node.height || NODE_HEIGHT) / 2 } }
   })
 }
 
@@ -164,7 +190,7 @@ export function IntentCanvas({ creator, preview, draftGoal, selectedId, contextN
         id: 'placeholder-start',
         type: 'creator',
         width: NODE_WIDTH,
-        height: NODE_HEIGHT,
+        height: contentNodeHeight(draftGoal.trim() || '开始', draftGoal.trim() || '等待目标描述和语义编排。', NODE_WIDTH),
         position: { x: 0, y: 0 },
         data: {
           nodeId: 'placeholder-start',
@@ -184,7 +210,7 @@ export function IntentCanvas({ creator, preview, draftGoal, selectedId, contextN
         id: 'placeholder-end',
         type: 'creator',
         width: NODE_WIDTH,
-        height: NODE_HEIGHT,
+        height: contentNodeHeight('结束', '最终结果会在语义方案确认后落到这里。', NODE_WIDTH),
         position: { x: 0, y: 0 },
         data: {
           nodeId: 'placeholder-end',
@@ -207,27 +233,31 @@ export function IntentCanvas({ creator, preview, draftGoal, selectedId, contextN
     const confirmed = new Set(preview ? [] : creator.frozen_steps)
     const recipeNodes = preview?.nodes || creator.trusted_recipe.nodes
     const recipeRelations = preview?.relations || creator.trusted_recipe.relations
-    const nodes: CanvasNode[] = recipeNodes.map((node, index) => ({
-      id: node.id,
-      type: 'creator',
-      width: NODE_WIDTH,
-      height: NODE_HEIGHT,
-      position: { x: 0, y: 0 },
-      selected: tool === 'inspect' ? node.id === selectedId : contextNodeIds.includes(node.id),
-      data: {
-        nodeId: node.id,
-        order: index + 1,
-        label: node.label,
-        description: node.description,
-        state: (typeof node.resolution === 'string' ? node.resolution : node.resolution?.status) === 'unresolved' ? 'unresolved' : confirmed.has(node.id) ? 'confirmed' : 'review',
-        kind: 'step',
-        hasNestedCartridge: Boolean(typeof node.resolution === 'object' && node.resolution?.capability),
-        targetPosition: vertical ? Position.Top : recipeNodes.length <= 3 || index < 3 ? Position.Left : index === 3 ? Position.Top : Position.Right,
-        sourcePosition: vertical ? Position.Bottom : recipeNodes.length <= 3 || index < 2 ? Position.Right : index === 2 || index === 3 ? Position.Bottom : Position.Left,
-        onOpenLayer,
-        onPreviewLayer,
-      },
-    }))
+    const nodes: CanvasNode[] = recipeNodes.map((node, index) => {
+      const hasNestedCartridge = typeof node.resolution === 'object' && Boolean(node.resolution?.capability)
+      const width = stepNodeWidth(node.label, hasNestedCartridge)
+      return {
+        id: node.id,
+        type: 'creator',
+        width,
+        height: contentNodeHeight(node.label, node.description, width),
+        position: { x: 0, y: 0 },
+        selected: tool === 'inspect' ? node.id === selectedId : contextNodeIds.includes(node.id),
+        data: {
+          nodeId: node.id,
+          order: index + 1,
+          label: node.label,
+          description: node.description,
+          state: (typeof node.resolution === 'string' ? node.resolution : node.resolution?.status) === 'unresolved' ? 'unresolved' : confirmed.has(node.id) ? 'confirmed' : 'review',
+          kind: 'step',
+          hasNestedCartridge,
+          targetPosition: vertical ? Position.Top : recipeNodes.length <= 3 || index < 3 ? Position.Left : index === 3 ? Position.Top : Position.Right,
+          sourcePosition: vertical ? Position.Bottom : recipeNodes.length <= 3 || index < 2 ? Position.Right : index === 2 || index === 3 ? Position.Bottom : Position.Left,
+          onOpenLayer,
+          onPreviewLayer,
+        },
+      }
+    })
     const edges: Edge[] = recipeRelations.flatMap((relation) => {
       const kind: CreatorRelationKind = relation.relation === 'uses' ? 'dependency' : relation.relation === 'produces' ? 'data' : 'control'
       if (!visibleRelations.includes(kind)) return []
@@ -235,8 +265,11 @@ export function IntentCanvas({ creator, preview, draftGoal, selectedId, contextN
       id: relation.id,
       source: relation.relation === 'uses' ? relation.to_node_id : relation.from_node_id,
       target: relation.relation === 'uses' ? relation.from_node_id : relation.to_node_id,
+      /*
       label: relation.relation === 'produces' ? '产出' : relation.relation === 'uses' ? '提供' : '提供信息',
+      */
       type: 'bezier',
+      label: '\u4EA7\u51FA',
       animated: false,
       markerEnd: { type: MarkerType.ArrowClosed, color: '#9aa5af', width: 14, height: 14 },
       className: `creator-edge is-${kind}`,
@@ -251,19 +284,47 @@ export function IntentCanvas({ creator, preview, draftGoal, selectedId, contextN
   const [nodes, setNodes, onNodesChange] = useNodesState<CanvasNode>(elements.nodes)
   const layoutSignature = `${elements.nodes.map((node) => node.id).join(':')}|${elements.edges.map((edge) => `${edge.source}>${edge.target}`).join(':')}`
   const activeFitOptions = !creator ? emptyFitOptions : vertical ? compactFitOptions : elements.nodes.length > 3 ? multiRowFitOptions : fitOptions
+  const correctHorizontalBounds = useCallback(async () => {
+    if (!flow || vertical) return
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+    const host = canvasHostRef.current
+    const frame = host?.closest('.vip-canvas-surface')?.getBoundingClientRect() || host?.getBoundingClientRect()
+    if (!frame) return
+    const toolstack = host?.querySelector('.semantic-canvas-toolstack')?.getBoundingClientRect()
+    const nodeRects = [...(host?.querySelectorAll('.react-flow__node') || [])]
+      .map((node) => node.getBoundingClientRect())
+      .filter((rect) => rect.width > 0 && rect.height > 0)
+    if (!nodeRects.length) return
+    const left = Math.max(frame.left + 16, (toolstack?.right || frame.left) + 12)
+    const right = frame.right - 16
+    const currentLeft = Math.min(...nodeRects.map((rect) => rect.left))
+    const currentRight = Math.max(...nodeRects.map((rect) => rect.right))
+    const available = right - left
+    const span = currentRight - currentLeft
+    const viewport = flow.getViewport()
+    const zoom = span > available && available > 0 ? Math.max(0.35, viewport.zoom * (available / span) * 0.98) : viewport.zoom
+    const currentCenter = (currentLeft + currentRight) / 2
+    const targetCenter = (left + right) / 2
+    const flowCenter = (currentCenter - viewport.x) / viewport.zoom
+    const nextX = targetCenter - flowCenter * zoom
+    if (Math.abs(nextX - viewport.x) > 0.5 || Math.abs(zoom - viewport.zoom) > 0.005) {
+      await flow.setViewport({ x: nextX, y: viewport.y, zoom }, { duration: 0 })
+    }
+  }, [flow, vertical])
   const fitCanvas = useCallback(async (duration: number) => {
     if (!flow) return
     await flow.fitView({ ...activeFitOptions, duration })
     if (!vertical) {
       const viewport = flow.getViewport()
-      await flow.setViewport({ ...viewport, x: viewport.x + 11, y: viewport.y - 9 }, { duration: 0 })
+      await flow.setViewport({ ...viewport, y: viewport.y - 9 }, { duration: 0 })
     }
-  }, [activeFitOptions, flow, vertical])
+    await correctHorizontalBounds()
+  }, [activeFitOptions, correctHorizontalBounds, flow, vertical])
   const reframeCanvas = useCallback((duration: number) => {
     if (!flow) return
     const firstNode = flow.getNodes().find((node) => node.id !== 'empty')
     if (vertical && creator && firstNode) {
-      void flow.setCenter(firstNode.position.x + NODE_WIDTH / 2, firstNode.position.y + NODE_HEIGHT / 2, { zoom: 0.82, duration })
+      void flow.setCenter(firstNode.position.x + nodeWidth(firstNode) / 2, firstNode.position.y + (firstNode.height || NODE_HEIGHT) / 2, { zoom: 0.82, duration })
     } else void fitCanvas(duration)
   }, [creator, fitCanvas, flow, vertical])
   useEffect(() => {
@@ -292,7 +353,7 @@ export function IntentCanvas({ creator, preview, draftGoal, selectedId, contextN
   useEffect(() => {
     if (!flow || !selectedId) return
     const selected = flow.getNode(selectedId)
-    if (selected) void flow.setCenter(selected.position.x + NODE_WIDTH / 2, selected.position.y + NODE_HEIGHT / 2, { zoom: Math.max(flow.getZoom(), 0.85), duration: 220 })
+    if (selected) void flow.setCenter(selected.position.x + nodeWidth(selected) / 2, selected.position.y + (selected.height || NODE_HEIGHT) / 2, { zoom: Math.max(flow.getZoom(), 0.85), duration: 220 })
   }, [flow, selectedId])
 
   useEffect(() => {
@@ -357,7 +418,7 @@ export function IntentCanvas({ creator, preview, draftGoal, selectedId, contextN
     deleteKeyCode={null}
     fitView
     fitViewOptions={activeFitOptions}
-    minZoom={0.5}
+    minZoom={0.35}
     maxZoom={1.35}
     proOptions={{ hideAttribution: true }}
   >

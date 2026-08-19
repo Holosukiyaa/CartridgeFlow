@@ -31,7 +31,7 @@ const entryProjectId = 'ui-semantic-entry'
 const fixtureNodes = [
   ['collect', 'Collect requirements', 'Gather the release requirements.', true],
   ['verify', 'Verify sources', 'Review public sources and constraints.', false],
-  ['deliver', 'Deliver package', 'Prepare a reviewed package.', false],
+  ['deliver', 'Prepare the final reviewed delivery package', 'Prepare a reviewed package with the selected source summary and delivery checks.', false],
 ].map(([id, label, description, trusted], index) => ({
   id, label, description, values: { instruction: description },
   editable_fields: [{ id: 'instruction', label: 'Instruction', value_type: 'string', required: true, default: description }],
@@ -111,6 +111,8 @@ async function setupPage(browser, viewport, projectId) {
 
 async function assertCommon(page, viewport, errors) {
   const result = await geometry(page)
+  assert.equal(await page.locator('.semantic-commandbar > *').count(), 2, 'command bar must remain a dense two-column layout')
+  assert.equal(await page.locator('.semantic-command-context').count(), 0, 'duplicated goal context must stay out of the command bar')
   assert.ok(result.canvas && result.canvas.width >= 300 && result.canvas.height >= 300, `canvas is not stably framed at ${viewport.width}x${viewport.height}`)
   assert.ok(result.overflow <= 1, `horizontal overflow at ${viewport.width}x${viewport.height}: ${result.overflow}px`)
   assert.deepEqual(result.controls, [], `controls are clipped at ${viewport.width}x${viewport.height}`)
@@ -143,6 +145,14 @@ async function assertMature(browser, viewport) {
   assert.equal(await page.locator('.semantic-node-route button').count(), 3, 'route strip must expose one point per node')
   assert.equal(await page.locator('.creator-node-confirmed').count(), 1, 'trusted node must retain the confirmed state')
   assert.equal(await page.locator('.creator-node-review').count(), 2, 'untrusted review nodes must remain visibly distinct')
+  const longTitle = await page.locator('.creator-node-title strong').nth(2).evaluate((title) => {
+    const titleRect = title.getBoundingClientRect()
+    const actionsRect = title.closest('header')?.querySelector('.creator-node-layer-actions')?.getBoundingClientRect()
+    return { height: titleRect.height, right: titleRect.right, actionsLeft: actionsRect?.left || innerWidth }
+  })
+  assert.ok(longTitle.height > 20 && longTitle.right <= longTitle.actionsLeft, `long node titles must wrap without colliding with actions: ${JSON.stringify(longTitle)}`)
+  const nodeHeights = await page.locator('.creator-node').evaluateAll((nodes) => nodes.map((node) => Math.round(node.getBoundingClientRect().height)))
+  assert.ok(new Set(nodeHeights).size > 1, `semantic nodes should size themselves from their content: ${JSON.stringify(nodeHeights)}`)
   const trustSurfaces = await page.locator('.creator-node').evaluateAll((nodes) => nodes.map((node) => ({ background: getComputedStyle(node).backgroundColor, status: getComputedStyle(node.querySelector('.creator-node-footer strong')).color })))
   assert.notEqual(trustSurfaces[0].background, trustSurfaces[1].background, 'trusted and untrusted node surfaces must differ')
   assert.notEqual(trustSurfaces[0].status, trustSurfaces[1].status, 'trusted and untrusted status colors must differ')
@@ -155,6 +165,10 @@ async function assertMature(browser, viewport) {
     await routePoint.hover()
     const after = await routePoint.boundingBox()
     assert.ok(before && after && after.width > before.width, 'route points must enlarge on hover')
+  }
+  if (await page.locator('.semantic-ai-panel:visible').count() === 0) {
+    await page.locator('.semantic-panel-actions button').nth(1).click()
+    assert.equal(await page.locator('.semantic-ai-panel:visible').count(), 1, 'AI panel can open from the canvas-first default')
   }
   await page.locator('.semantic-panel-actions button').nth(0).click()
   assert.equal(await page.locator('.semantic-detail-panel:visible').count(), 1, 'detail panel toggle must be independent')

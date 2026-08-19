@@ -235,7 +235,7 @@ export function ResourceManagerDialog({ opened, initialTab, projectId, onClose }
         <div className="resource-manager-layout">
           <nav className="resource-manager-list" aria-label="模型连接">
             <Button variant="light" onClick={() => { setModel(emptyModel()); setDeleteConfirm('') }} leftSection={<CirclePlus />}>新增连接</Button>
-            {providers.map((provider) => <Button key={provider.id} variant={model.id === provider.id ? 'light' : 'subtle'} onClick={() => { setModel(modelDraft(provider)); setDeleteConfirm('') }} className="resource-list-item"><span><i className={provider.tested_ok ? 'is-ready' : ''} /><strong>{provider.name}</strong><small>{provider.default_model || '未设置模型'}</small></span>{provider.enabled && <em>当前</em>}</Button>)}
+            {providers.map((provider) => <Button key={provider.id} variant={model.id === provider.id ? 'light' : 'subtle'} onClick={() => { setModel(modelDraft(provider)); setDeleteConfirm('') }} className="resource-list-item"><span><i className={provider.tested_ok ? 'is-ready' : ''} /><strong title={provider.name}>{provider.name}</strong><small title={provider.default_model || '未设置模型'}>{provider.default_model || '未设置模型'}</small></span>{provider.enabled && <em>当前</em>}</Button>)}
           </nav>
           <form className="resource-manager-form" onSubmit={saveModel}>
             <header><div><Cable /><strong>{model.id ? '编辑模型连接' : '新增模型连接'}</strong></div>{model.id && <code>{model.id}</code>}</header>
@@ -258,7 +258,7 @@ export function ResourceManagerDialog({ opened, initialTab, projectId, onClose }
         <div className="resource-manager-layout">
           <nav className="resource-manager-list" aria-label="工具资源">
             <Button variant="light" onClick={() => { setTool(emptyTool()); setDeleteConfirm('') }} leftSection={<CirclePlus />}>新增工具</Button>
-            {allTools.map((item) => <div className="resource-tool-row" key={item.id}><Button variant={tool.id === item.id ? 'light' : 'subtle'} onClick={() => !item.locked && setTool(toolDraft(item))} disabled={item.locked} className="resource-list-item"><span><i className={item.enabled === false ? '' : 'is-ready'} /><strong>{item.name}</strong><small>{item.kind} · {item.server || item.id}</small></span>{item.locked && <em>内置</em>}</Button><Field.Checkbox aria-label={`${item.name}用于当前卡带`} checked={selectedToolIds.has(item.id)} disabled={Boolean(busy)} onChange={() => void toggleToolBinding(item.id)} /></div>)}
+            {allTools.map((item) => <div className="resource-tool-row" key={item.id}><Button variant={tool.id === item.id ? 'light' : 'subtle'} onClick={() => !item.locked && setTool(toolDraft(item))} disabled={item.locked} className="resource-list-item"><span><i className={item.enabled === false ? '' : 'is-ready'} /><strong title={item.name}>{item.name}</strong><small title={`${item.kind} · ${item.server || item.id}`}>{item.kind} · {item.server || item.id}</small></span>{item.locked && <em>内置</em>}</Button><Field.Checkbox aria-label={`${item.name}用于当前卡带`} checked={selectedToolIds.has(item.id)} disabled={Boolean(busy)} onChange={() => void toggleToolBinding(item.id)} /></div>)}
           </nav>
           <form className="resource-manager-form" onSubmit={saveTool}>
             <header><div><Wrench /><strong>{tool.id ? '编辑本机工具' : '新增本机工具'}</strong></div>{tool.id && <code>{tool.id}</code>}</header>

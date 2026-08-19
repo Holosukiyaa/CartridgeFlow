@@ -13,7 +13,7 @@ import {
   type ReactFlowInstance,
   useNodesState,
 } from '@xyflow/react'
-import { AlertTriangle, CheckCircle2, Eye, FilePlus2, FileText, Filter, Globe2, Maximize2, Minus, Plus, Puzzle, Send, UserRound } from 'lucide-react'
+import { AlertCircle, CheckCircle2, CircleDot, Eye, FilePlus2, FileText, Filter, Globe2, Maximize2, Minus, Plus, Puzzle, Send, UserRound } from 'lucide-react'
 import type { CreatorProjection, CreatorRecipePreview } from '../../api.types.ts'
 import { IconButton } from '../../ui/index.ts'
 
@@ -37,7 +37,8 @@ type CanvasNodeData = {
 type CanvasNode = Node<CanvasNodeData, 'creator'>
 
 function CreatorNode({ data, selected }: NodeProps<CanvasNode>) {
-  const stateLabel = data.state === 'confirmed' ? '可信' : data.state === 'empty' ? '等待编排' : '未可信'
+  const stateLabel = data.state === 'confirmed' ? '已确认' : data.state === 'unresolved' ? '待补齐' : data.state === 'empty' ? '等待编排' : '待审核'
+  const StateIcon = data.state === 'confirmed' ? CheckCircle2 : data.state === 'unresolved' ? AlertCircle : CircleDot
   const icons = [Globe2, Filter, FilePlus2, FileText, UserRound, Send]
   const NodeIcon = icons[Math.max(0, data.order - 1) % icons.length] || FileText
   return <div className={`creator-node creator-node-${data.state} creator-node-order-${data.order} ${selected ? 'is-selected' : ''}`}>
@@ -54,18 +55,18 @@ function CreatorNode({ data, selected }: NodeProps<CanvasNode>) {
     <div className="creator-node-body">
       <p title={data.description}>{data.description}</p>
     </div>
-    <footer className="creator-node-footer"><strong>{data.state === 'confirmed' ? <CheckCircle2 /> : <AlertTriangle />}{stateLabel}</strong></footer>
+    <footer className="creator-node-footer"><strong><StateIcon />{stateLabel}</strong></footer>
     <Handle type="source" position={data.sourcePosition} />
   </div>
 }
 
 const nodeTypes = { creator: CreatorNode }
-const NODE_WIDTH = 240
-const STEP_NODE_WIDTH = 260
-const NESTED_NODE_WIDTH = 280
-const MAX_STEP_NODE_WIDTH = 400
-const NODE_HEIGHT = 220
-const MAX_NODE_HEIGHT = 300
+const NODE_WIDTH = 280
+const STEP_NODE_WIDTH = 300
+const NESTED_NODE_WIDTH = 320
+const MAX_STEP_NODE_WIDTH = 440
+const NODE_HEIGHT = 168
+const MAX_NODE_HEIGHT = 252
 const CREATOR_LAYOUT_KEY = 'cartridgeflow.creator-layout.v3'
 const fitOptions = {
   padding: { x: 0.08, top: '6%', bottom: '6%' },
@@ -133,8 +134,8 @@ function contentNodeHeight(label: string, description: string, width: number) {
 function layout(nodes: CanvasNode[], edges: Edge[], vertical: boolean) {
   if (!vertical && nodes.length > 1 && nodes.length <= 8) {
     const referencePositions = nodes.length === 2
-      ? [{ x: 300, y: 210 }, { x: 760, y: 230 }]
-      : [{ x: 140, y: 250 }, { x: 500, y: 135 }, { x: 1010, y: 0 }, { x: 790, y: 380 }, { x: 1290, y: 430 }, { x: 1660, y: 240 }, { x: 1970, y: 470 }, { x: 2320, y: 180 }]
+      ? [{ x: 260, y: 220 }, { x: 760, y: 190 }]
+      : [{ x: 80, y: 340 }, { x: 520, y: 170 }, { x: 1000, y: 20 }, { x: 690, y: 470 }, { x: 1160, y: 440 }, { x: 1510, y: 210 }, { x: 1840, y: 470 }, { x: 2170, y: 150 }]
     const columns = nodes.length > 6 ? 4 : 3
     const columnGap = nodes.length <= 3 ? 72 : nodes.length <= 6 ? 64 : 38
     const columnWidth = Math.max(...nodes.map(nodeWidth))

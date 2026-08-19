@@ -17,9 +17,6 @@ import {
   Package,
   PackageCheck,
   Paperclip,
-  Pause,
-  PencilRuler,
-  Play,
   Plus,
   Puzzle,
   RefreshCw,
@@ -29,10 +26,10 @@ import {
   Search,
   Settings,
   Sparkles,
-  Square,
   Sun,
   Target,
   Wrench,
+  Workflow,
   X,
 } from 'lucide-react'
 import {
@@ -674,6 +671,12 @@ function NodeEditor({ creator, node, busy, onCreatorChange, onNavigate, onReturn
     } catch (error) { fail(error) } finally { setWorking(false) }
   }
 
+  const hasBusinessFields = node.editable_fields.length > 0
+  const sourceSectionNumber = hasBusinessFields ? 4 : 3
+  const presentationSectionNumber = sourceSectionNumber + 1
+  const previewSectionNumber = presentationSectionNumber + 1
+  const confirmSectionNumber = previewSectionNumber + 1
+
   return <aside className="creator-node-editor vip-detail-panel" aria-label={`调整 ${node.label}`}>
     <header className="semantic-side-head vip-detail-heading">
       <div><strong>{String(nodeIndex + 1).padStart(2, '0')}</strong><h2>{node.label}</h2></div>
@@ -688,23 +691,23 @@ function NodeEditor({ creator, node, busy, onCreatorChange, onNavigate, onReturn
         {unresolved && <a className="vip-capability-link" href={capabilityWorkshopUrl(creator, node)}><Wrench />补齐这个步骤</a>}
       </div></section>
 
-      <section className="vip-detail-section"><span className="vip-detail-number">3</span><div className="vip-detail-wide"><strong>业务参数</strong><div className="vip-detail-fields"><FieldEditor node={node} values={values} onChange={setValues} disabled={isBusy} /></div>{changed && <button className="vip-save-fields" type="button" disabled={isBusy} onClick={() => void stage()}><Check />保存参数修改</button>}</div></section>
+      {hasBusinessFields && <section className="vip-detail-section"><span className="vip-detail-number">3</span><div className="vip-detail-wide"><strong>业务参数</strong><div className="vip-detail-fields"><FieldEditor node={node} values={values} onChange={setValues} disabled={isBusy} /></div>{changed && <button className="vip-save-fields" type="button" disabled={isBusy} onClick={() => void stage()}><Check />保存参数修改</button>}</div></section>}
 
-      <details className="vip-detail-section vip-source-section"><summary><span className="vip-detail-number">4</span><div><strong>资料来源</strong><p>{sourceNode ? <>来自节点：{String(creator.trusted_recipe.nodes.indexOf(sourceNode) + 1).padStart(2, '0')} {sourceNode.label}<span>{sourceNode.description}</span></> : '使用当前项目已审核的资料来源'}</p></div></summary>
+      <details className="vip-detail-section vip-source-section"><summary><span className="vip-detail-number">{sourceSectionNumber}</span><div><strong>资料来源</strong><p>{sourceNode ? <>来自节点：{String(creator.trusted_recipe.nodes.indexOf(sourceNode) + 1).padStart(2, '0')} {sourceNode.label}<span>{sourceNode.description}</span></> : '使用当前项目已审核的资料来源'}</p></div></summary>
         <div className="creator-source-query"><input value={sourceRequest} disabled={isBusy} onChange={(event) => setSourceRequest(event.currentTarget.value)} placeholder="查找并审核新的公开来源" /><button type="button" disabled={isBusy || sourceRequest.trim().length < 3} onClick={() => void discoverSources()}><Search />查找</button></div>
         {sourceCandidates.map((candidate) => { const inspection = sourceInspections[candidate.id]; return <article key={candidate.id}><div><strong>{candidate.name}</strong><p>{candidate.provides}</p></div><div><button className="secondary-button" type="button" disabled={isBusy} onClick={() => void inspectSource(candidate)}>{inspection ? '重新检查' : '检查可达性'}</button><button type="button" disabled={isBusy || !inspection} onClick={() => void adoptSource(candidate)}>采用来源</button></div></article> })}
       </details>
 
-      <section className="vip-detail-section"><span className="vip-detail-number">5</span><div className="vip-detail-wide"><strong>可选择呈现方式</strong>{presentationSlots.length ? presentationSlots.map((slot) => <div className="vip-presentation-options" key={slot.id}>{slot.components.map((component) => <button type="button" className={slot.selected_component_id === component.id ? 'is-selected' : ''} disabled={isBusy || !component.available} key={component.id} onClick={() => void choosePresentation(slot.id, component.id)}>{component.label}</button>)}</div>) : <p>使用卡带默认呈现方式</p>}
+      <section className="vip-detail-section"><span className="vip-detail-number">{presentationSectionNumber}</span><div className="vip-detail-wide"><strong>可选择呈现方式</strong>{presentationSlots.length ? presentationSlots.map((slot) => <div className="vip-presentation-options" key={slot.id}>{slot.components.map((component) => <button type="button" className={slot.selected_component_id === component.id ? 'is-selected' : ''} disabled={isBusy || !component.available} key={component.id} onClick={() => void choosePresentation(slot.id, component.id)}>{component.label}</button>)}</div>) : <p>使用卡带默认呈现方式</p>}
         {presentationSlots.some((slot) => slot.components.some((component) => component.fields.length > 0)) && <ExperienceEditor creator={creator} node={node} disabled={isBusy} onChange={onCreatorChange} onBusy={setWorking} />}
       </div></section>
 
-      <section className="vip-detail-section vip-ai-preview"><span className="vip-detail-number">6</span><div className="vip-detail-wide"><strong>AI 修改预览</strong>{proposal ? <>
+      <section className="vip-detail-section vip-ai-preview"><span className="vip-detail-number">{previewSectionNumber}</span><div className="vip-detail-wide"><strong>AI 修改预览</strong>{proposal ? <>
         <div className="vip-preview-compare"><article><small>原始内容（当前版本）</small><p>{node.description}</p></article><ChevronRight /><article><small>AI 建议（预览）</small><p>{proposal.summary}</p>{!impact && <button className="vip-view-all-changes" type="button" disabled={isBusy} onClick={() => void preview()}>查看全部修改 ({proposal.changes.length}) <ChevronRight /></button>}</article></div>
         {impact && <div className="vip-expanded-review"><ProposalChanges node={node} proposal={proposal} /><p className="vip-impact-copy">{impact}</p><div className="vip-preview-actions"><button className="secondary-button" type="button" disabled={isBusy} onClick={() => void reject()}>放弃建议</button><button type="button" disabled={isBusy} onClick={() => void accept()}><Check />应用建议</button></div></div>}
       </> : <div className="vip-ai-refine"><textarea value={prompt} disabled={isBusy || changed} onChange={(event) => setPrompt(event.currentTarget.value)} placeholder="继续说明你希望如何调整这个节点" /><button type="button" disabled={isBusy || changed || !prompt.trim()} onClick={() => void ask()}><Sparkles />生成调整建议</button></div>}</div></section>
 
-      <section className="vip-detail-section vip-confirm-copy"><span className="vip-detail-number">7</span><div><strong>确认节点</strong><p>确认后将进入下一节点，并影响后续输出与交付。</p></div></section>
+      <section className="vip-detail-section vip-confirm-copy"><span className="vip-detail-number">{confirmSectionNumber}</span><div><strong>确认节点</strong><p>确认后将进入下一节点，并影响后续输出与交付。</p></div></section>
     </div>
     <footer className="vip-detail-actions"><button className="secondary-button" type="button" disabled={!previousNode} onClick={() => previousNode && onNavigate(previousNode.id)}><ArrowLeft />返回上一节点</button><button className="secondary-button" type="button" onClick={onReturnOutline}>暂不确认</button><button type="button" disabled={isBusy || trusted || changed || unresolved} onClick={() => void confirm()}><Check />{capabilityConfirmed ? '节点已确认' : nextNode ? '确认并进入下一节点' : '确认节点'}</button></footer>
   </aside>
@@ -718,6 +721,7 @@ export function IntentStudio({ projectId }: { projectId: string }) {
   const [creator, setCreator] = useState<CreatorProjection | null>(null)
   const [goal, setGoal] = useState(restoredWorkspace?.goal || '')
   const [selectedId, setSelectedId] = useState(restoredWorkspace?.selectedId || '')
+  const [nodeQuery, setNodeQuery] = useState('')
   const [possibilities, setPossibilities] = useState<CreatorPossibility[]>(restoredWorkspace?.possibilities || [])
   const [middleView, setMiddleView] = useState<'outline' | 'detail'>(restoredWorkspace?.middleView || 'outline')
   const [workspacePane, setWorkspacePane] = useState<WorkspacePane>(restoredWorkspace?.workspacePane || 'collaboration')
@@ -1259,6 +1263,18 @@ export function IntentStudio({ projectId }: { projectId: string }) {
             ? '同步失败'
             : '正在加载'
   const routeNodes = creator?.trusted_recipe.nodes || []
+  const locateNode = () => {
+    const query = nodeQuery.trim().toLocaleLowerCase('zh-CN')
+    if (!query) return
+    const match = routeNodes.find((node) => `${node.label} ${node.description}`.toLocaleLowerCase('zh-CN').includes(query))
+    if (!match) {
+      showToast({ title: '没有找到匹配节点', description: '请尝试节点名称或描述中的其他关键词。', type: 'info' })
+      return
+    }
+    setSelectedId(match.id)
+    setActivePanel('canvas')
+    setDetailOpen(false)
+  }
   const toggleRelation = (kind: CreatorRelationKind) => setVisibleRelations((current) => current.includes(kind) ? current.filter((item) => item !== kind) : [...current, kind])
   const canvasToolbar = <nav className="semantic-canvas-toolstack" aria-label="画布工具">
     <IconButton label="选择节点" variant={canvasTool === 'inspect' ? 'filled' : 'subtle'} onClick={() => { setCanvasTool('inspect'); setContextNodeIds([]) }}><MousePointer2 /></IconButton>
@@ -1282,43 +1298,50 @@ export function IntentStudio({ projectId }: { projectId: string }) {
       onActivePanelChange={setActivePanel}
       header={<header className="creator-topbar vip-topbar">
       <div className="creator-brand">
-        <span className="creator-brand-mark" aria-hidden="true">C</span>
-        <strong>CartridgeFlow</strong>
+        <span className="creator-brand-mark" aria-hidden="true"><Workflow /></span>
+        <strong>语义工作流编辑器</strong>
         <span className="vip-brand-divider" />
-        <Button className="vip-project-crumb" variant="subtle" onClick={() => setProjectMenuOpen((value) => !value)}>项目 <b>/</b> {projectDisplayName} <ChevronDown /></Button>
+        <Button className="vip-project-crumb" title={projectDisplayName} variant="subtle" onClick={() => setProjectMenuOpen((value) => !value)}>{projectDisplayName} <ChevronDown /></Button>
         {projectMenuOpen && <div className="creator-project-menu semantic-project-menu">{projects.map((project) => <a className={project.project_id === projectId ? 'is-current' : ''} href={`/projects/${encodeURIComponent(project.project_id)}/studio`} key={project.project_id}><span>{project.name}</span><small>v{project.revision}</small></a>)}<div className="creator-project-menu-actions"><Button variant="subtle" onClick={createProject}><Plus />新建</Button>{creator && <><Button variant="subtle" onClick={() => void renameProject()}>重命名</Button><Button color="red" variant="subtle" onClick={() => void removeProject()}>删除</Button></>}</div></div>}
       </div>
-      <div className="semantic-runtime-bar" aria-label="设计与运行">
-        <Button variant="default" className="is-active" leftSection={<PencilRuler />}>设计</Button>
-        <Button variant="subtle" leftSection={<Play />} disabled={!creator?.generation_readiness.ready}>运行</Button>
-        <IconButton label="暂停" variant="subtle" disabled><Pause /></IconButton>
-        <IconButton label="停止" variant="subtle" disabled><Square /></IconButton>
-        <IconButton label="历史" variant="subtle" onClick={() => { setAiPanelOpen(true); setActivePanel('ai') }}><History /></IconButton>
+      <div className={`vip-autosave is-${busy ? 'busy' : syncState}`} title={aiStatus?.has_key ? `AI 已连接：${aiStatus.model}` : 'AI 尚未连接'}>
+        {syncState === 'error' ? <X /> : <CheckCircle2 />}{syncLabel}
       </div>
       <div className="creator-top-actions">
-        <div className={`vip-autosave is-${busy ? 'busy' : syncState}`} title={aiStatus?.has_key ? `AI 已连接：${aiStatus.model}` : 'AI 尚未连接'}><i />{syncLabel}</div>
-        <Button className={`creator-ai-button ${aiStatus?.has_key ? 'is-connected' : ''}`} variant="default" onClick={() => setResourceManager('models')} leftSection={<Cloud />}>{aiStatus?.has_key ? aiStatus.model || 'AI 已连接' : '连接 AI'}</Button>
+        <Field.Text className="semantic-node-search" aria-label="搜索节点" placeholder="搜索节点..." leftSection={<Search />} value={nodeQuery} disabled={!routeNodes.length} onChange={(event) => setNodeQuery(event.currentTarget.value)} onKeyDown={(event) => { if (event.key === 'Enter') locateNode() }} />
+        <IconButton label="定位节点" variant="subtle" disabled={!nodeQuery.trim()} onClick={locateNode}><Target /></IconButton>
+        <Button className={`creator-ai-button ${aiStatus?.has_key ? 'is-connected' : ''}`} title={aiStatus?.has_key ? `AI 已连接：${aiStatus.model || '当前模型'}` : '连接 AI'} variant="default" onClick={() => setResourceManager('models')} leftSection={<Cloud />}>{aiStatus?.has_key ? aiStatus.model || 'AI 已连接' : '连接 AI'}</Button>
+        <IconButton label="工具资源" variant="subtle" onClick={() => setResourceManager('tools')}><Settings /></IconButton>
+        <IconButton label="历史与共创记录" variant="subtle" onClick={() => { setAiPanelOpen(true); setActivePanel('ai') }}><History /></IconButton>
         <IconButton ref={themeButtonRef} label={`外观：${theme.label}`} variant="subtle" onClick={() => setThemePanelOpen(true)}><Sun /></IconButton>
       </div>
     </header>}
       commandBar={<header className="semantic-commandbar">
         <div className="semantic-command-main">
         <div className="semantic-relation-filters" aria-label="语义关系显示">
+          <strong>关系类型</strong>
           <Field.Checkbox label="主流程" checked={visibleRelations.includes('control')} onChange={() => toggleRelation('control')} />
           <Field.Checkbox label="数据流" checked={visibleRelations.includes('data')} onChange={() => toggleRelation('data')} />
           <Field.Checkbox label="资源依赖" checked={visibleRelations.includes('dependency')} onChange={() => toggleRelation('dependency')} />
-          <span>{routeNodes.length || 2} 节点 · {confirmedCount} 可信 · {reviewCount} 待审核 · {unresolvedCount || (!creator ? 2 : 0)} 待补齐</span>
         </div>
         <nav className="semantic-node-route" aria-label="节点快速导航">
+          <strong>节点导航</strong>
           {(routeNodes.length ? routeNodes : [{ id: 'placeholder-start', label: '开始' }, { id: 'placeholder-end', label: '结束' }]).map((node, index, nodes) => {
             const trusted = creator ? creator.frozen_steps.includes(node.id) : false
-            return <span key={node.id}><Button variant="subtle" className={`${trusted ? 'is-trusted' : 'is-untrusted'}${selectedId === node.id ? ' is-current' : ''}`} title={node.label} onClick={() => { if (creator) setSelectedId(node.id); setActivePanel('canvas') }}><i />{String(index + 1).padStart(2, '0')}</Button>{index < nodes.length - 1 && <b />}</span>
+            return <span key={node.id}><Button variant="subtle" className={`${trusted ? 'is-trusted' : 'is-untrusted'}${selectedId === node.id ? ' is-current' : ''}`} aria-label={`第${index + 1}个节点：${node.label}`} title={node.label} onClick={() => { if (creator) setSelectedId(node.id); setActivePanel('canvas') }}><i />{String(index + 1).padStart(2, '0')}</Button>{index < nodes.length - 1 && <b />}</span>
           })}
         </nav>
+        <div className="semantic-status-summary" aria-label="审核状态统计">
+          <span className="is-confirmed"><i />可信 {confirmedCount}</span>
+          <span className="is-review"><i />待审核 {reviewCount}</span>
+          <span className="is-unresolved"><i />待补齐 {unresolvedCount || (!creator ? 2 : 0)}</span>
+          <span>全部 {routeNodes.length || 2}</span>
+        </div>
         </div>
         <div className="semantic-panel-actions">
-          <Button variant={detailOpen ? 'light' : 'default'} disabled={!selectedNode} onClick={() => { setDetailOpen((value) => !value); setActivePanel(detailOpen ? 'canvas' : 'detail') }} leftSection={<FileText />}>详情</Button>
-          <Button variant={aiPanelOpen ? 'light' : 'default'} onClick={() => { setAiPanelOpen((value) => !value); setActivePanel(aiPanelOpen ? 'canvas' : 'ai') }} leftSection={<Bot />}>AI 管家</Button>
+          <Button className="semantic-next-action" aria-label={guidance.actionLabel} title={guidance.actionLabel} disabled={busy} onClick={runGuidanceAction} leftSection={['build-package', 'deliver-runner', 'download-package'].includes(guidance.action) ? <PackageCheck /> : guidance.action === 'open-node' || guidance.action === 'open-runner' ? <ChevronRight /> : <Sparkles />}>{guidance.actionLabel}</Button>
+          <Button variant={detailOpen ? 'light' : 'default'} aria-label="节点详情" title="节点详情" disabled={!selectedNode} onClick={() => { setDetailOpen((value) => !value); setActivePanel(detailOpen ? 'canvas' : 'detail') }} leftSection={<FileText />}>详情</Button>
+          <Button variant={aiPanelOpen ? 'light' : 'default'} aria-label="AI Steward" title="AI Steward" onClick={() => { setAiPanelOpen((value) => !value); setActivePanel(aiPanelOpen ? 'canvas' : 'ai') }} leftSection={<Bot />}>AI Steward</Button>
         </div>
       </header>}
       canvas={<section className="vip-canvas-panel" ref={canvasPanelRef} aria-label="语义画布">
@@ -1330,7 +1353,7 @@ export function IntentStudio({ projectId }: { projectId: string }) {
         </div>
         {loading && <div className="creator-loading"><Loader2 className="spinning" /><span>正在读取项目</span></div>}
       </section>}
-      detail={selectedNode && creator ? <div className="semantic-detail-stack"><header className="semantic-side-head"><div><FileText /><strong>详情</strong><span>{selectedNode.label}</span></div><IconButton label="折叠详情" variant="subtle" onClick={() => { setDetailOpen(false); setActivePanel('canvas') }}><X /></IconButton></header><NodeEditor key={`${selectedNode.id}:${creator.revision}:${creator.experience_revision}`} creator={creator} node={selectedNode} busy={busy} onCreatorChange={saveCreator} onNavigate={(nodeId) => { setSelectedId(nodeId); setMiddleView('detail') }} onReturnOutline={() => { setDetailOpen(false); setActivePanel('canvas') }} onModelRequired={() => requestModelConnection('node')} /></div> : undefined}
+      detail={selectedNode && creator ? <div className="semantic-detail-stack"><header className="semantic-side-head"><div><FileText /><strong>详情</strong><span title={selectedNode.label}>{selectedNode.label}</span></div><IconButton label="折叠详情" variant="subtle" onClick={() => { setDetailOpen(false); setActivePanel('canvas') }}><X /></IconButton></header><NodeEditor key={`${selectedNode.id}:${creator.revision}:${creator.experience_revision}`} creator={creator} node={selectedNode} busy={busy} onCreatorChange={saveCreator} onNavigate={(nodeId) => { setSelectedId(nodeId); setMiddleView('detail') }} onReturnOutline={() => { setDetailOpen(false); setActivePanel('canvas') }} onModelRequired={() => requestModelConnection('node')} /></div> : undefined}
       ai={<CollaborationPanel creator={creator} goal={goal} selectedNode={selectedNode} busy={busy} composerError={composerError} stewardInput={stewardInput} stewardMessages={stewardMessages} clarification={clarification} guidance={guidance} runnerUrl={runnerDelivery?.delivery.runner_url || runnerStatus?.url || 'http://127.0.0.1:18990/'} threadRef={stewardThreadRef} composerRef={stewardComposerRef} onInput={(value) => { setStewardInput(value); setComposerError('') }} onSubmit={continueCoCreation} onClarification={answerClarification} onGuidanceAction={runGuidanceAction} onOpenDetail={() => openNodeDetail()} onClose={() => { setAiPanelOpen(false); setActivePanel('canvas') }} directions={(possibilities.length || clarification) ? <DirectionExplorer goal={goal} clarification={clarification} possibilities={possibilities} busy={busy} onChoose={chooseDirection} /> : undefined} />}
     />
     <Suspense fallback={null}>

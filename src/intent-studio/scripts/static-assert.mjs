@@ -99,7 +99,8 @@ check(workspace.includes('vip-ai-panel') && workspace.includes('semantic-detail-
 check(workspace.includes('creator?.history') && workspace.includes('syncLabel') && !workspace.includes('自动保存 10:'), 'history and save state come from real session activity')
 check(api.includes('/workspace') && workspace.includes('fetchCreatorWorkspace') && workspace.includes('saveCreatorWorkspace') && workspace.includes('workspaceRevisionRef'), 'Creator persists bounded project conversation in the server workspace without adding it to authoring facts')
 check(workspace.includes('CREATOR_WORKSPACE_KEY') && workspace.includes('messages: stewardMessages.slice(-80)'), 'Creator retains a bounded local fallback when the server workspace cannot be recovered')
-check(workspace.includes('creatorGuidance') && workspace.includes('runGuidanceAction') && workspace.includes('vip-next-action'), 'Creator derives one visible next action from the current project state')
+check(workspace.includes('creatorGuidance') && workspace.includes('runGuidanceAction') && workspace.includes('semantic-next-action'), 'Creator derives one visible next action from the current project state')
+check(workspace.includes('nodeQuery') && workspace.includes('locateNode') && workspace.includes('semantic-node-search'), 'Creator can locate a semantic node by its authored content')
 check(workspace.includes("stage: 'connect-ai'") && workspace.includes("action: 'connect-ai'") && workspace.includes('creator-ai-button'), 'a new creator is guided through a tested AI connection before generation')
 check(workspace.includes('capabilityWorkshopUrl') && workspace.includes('开始补齐'), 'an unresolved step opens its scoped Capability Workshop directly')
 check(workspace.includes('下载试运行包') && workspace.includes('runnerUrl'), 'reviewed projects hand a real signed package to the discovered Desktop Runner')
@@ -111,7 +112,7 @@ check(workbench.includes("visiblePanel === 'canvas'") && workbench.includes("vis
 check(!workspace.includes('creator-overlay') && workspace.includes('ModelConnectionDialog') && workspace.includes('ThemeDialog'), 'page overlays use the shared dialog boundary')
 check(workspace.includes('detailOpen={detailOpen}') && workspace.includes('aiOpen={aiPanelOpen}') && workspace.includes('setDetailOpen') && workspace.includes('setAiPanelOpen'), 'detail and AI panels open and collapse independently')
 check(!canvas.includes('<MiniMap') && canvas.includes('<Panel className="creator-zoom-controls"'), 'Creator canvas uses the approved compact zoom strip without an overview map')
-check(canvas.includes('NODE_WIDTH = 240') && canvas.includes('STEP_NODE_WIDTH = 260') && canvas.includes('NESTED_NODE_WIDTH = 280') && canvas.includes('NODE_HEIGHT = 220') && canvas.includes('contentNodeHeight'), 'Creator nodes size themselves from content while retaining readable boundary dimensions')
+check(canvas.includes('NODE_WIDTH = 280') && canvas.includes('STEP_NODE_WIDTH = 300') && canvas.includes('NESTED_NODE_WIDTH = 320') && canvas.includes('NODE_HEIGHT = 168') && canvas.includes('MAX_NODE_HEIGHT = 252') && canvas.includes('contentNodeHeight'), 'Creator nodes size themselves from content while retaining readable boundary dimensions')
 check(styles.includes('.semantic-workbench.has-detail.has-ai') && styles.includes('grid-template-columns:minmax('), 'Creator panel widths preserve a usable canvas when both side panels are open')
 check(/\.creator-node\s*\{[^}]*\bwidth:\s*100%;[^}]*\bheight:\s*100%;/.test(styles) && !/\.creator-node\.is-selected\s*\{[^}]*\b(?:width|height)\s*:/.test(styles), 'Creator node visuals inherit the React Flow geometry without resizing selected nodes')
 check(!styles.includes('is-co-create') && !styles.includes('--workbench-header') && !styles.includes('Final home prototype'), 'retired Creator layout generations stay removed from the active stylesheet')
@@ -123,7 +124,7 @@ check(!styles.includes('.creator-stage-rail') && !styles.includes('.vip-outline-
 check(canvas.includes("kind: 'start'") && canvas.includes("kind: 'end'") && canvas.includes("type: 'bezier'"), 'empty projects expose start and end placeholders and semantic links use curves')
 check(workspace.includes("'control', 'data', 'dependency'") && workspace.includes('semantic-relation-filters'), 'the semantic canvas retains control, data, and dependency relation filters')
 check(workspace.includes('semantic-command-main') && !workspace.includes('semantic-command-context'), 'the command bar keeps only dense relation navigation and panel actions')
-check(canvas.includes('creator-node-${data.state}') && canvas.includes('AlertTriangle') && canvas.includes('CheckCircle2'), 'node trust is visible as warning or confirmed status')
+check(canvas.includes('creator-node-${data.state}') && canvas.includes('AlertCircle') && canvas.includes('CircleDot') && canvas.includes('CheckCircle2') && canvas.includes("'待审核'") && canvas.includes("'待补齐'"), 'node review state is visible without a dominant warning surface')
 check(workspace.includes('nested-cartridge-shell') && workspace.includes('capabilityWorkshopUrl') && !workspace.includes('/api/lab'), 'nested cartridges open through the public Capability Workshop owner')
 
 const visibleForbidden = ['Developer', '工程语义', '运行测试', '调试', '调优', '版本切换', '执行映射', '配置模型', '配置工具', '权限设置']

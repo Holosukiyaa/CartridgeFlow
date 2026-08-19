@@ -118,7 +118,7 @@ async function assertCommon(page, viewport, errors) {
   assert.deepEqual(result.controls, [], `controls are clipped at ${viewport.width}x${viewport.height}`)
   assert.notEqual(result.pattern, 'none', `canvas grid is missing at ${viewport.width}x${viewport.height}`)
   assert.notEqual(result.canvasColor, result.nodeColor, `canvas and node surfaces collapse at ${viewport.width}x${viewport.height}`)
-  assert.ok(result.nodeRadius >= 6, `node surface hierarchy is missing at ${viewport.width}x${viewport.height}`)
+  assert.ok(result.nodeRadius >= 4 && result.nodeRadius <= 8, `node surface hierarchy is missing at ${viewport.width}x${viewport.height}`)
   assert.deepEqual(errors, [], `browser errors at ${viewport.width}x${viewport.height}`)
 }
 
@@ -128,7 +128,9 @@ async function assertEntry(browser, viewport) {
   assert.equal(await page.locator('.creator-node').count(), 2, 'empty projects must expose only start and end placeholders')
   assert.deepEqual(await page.locator('.creator-node-title strong').allTextContents(), ['开始', '结束'])
   assert.equal(await page.locator('.creator-stage-rail').count(), 0, 'stage concept must stay absent')
-  assert.equal(await page.locator('.semantic-runtime-bar').count(), 1, 'runtime bar must remain visible')
+  assert.equal(await page.locator('.semantic-runtime-bar').count(), 0, 'unsupported runtime controls must stay absent from Creator')
+  assert.equal(await page.locator('.vip-autosave').count(), 1, 'real project save state must remain visible')
+  assert.equal(await page.locator('.semantic-next-action').count(), 1, 'the current real workflow action must remain visible')
   await assertCommon(page, viewport, errors)
   mkdirSync(outputRoot, { recursive: true })
   await page.screenshot({ path: join(outputRoot, `intent-ui-semantic-entry-${viewport.width}x${viewport.height}.png`) })
@@ -143,6 +145,10 @@ async function assertMature(browser, viewport) {
   assert.equal(await page.locator('.creator-edge.is-dependency').count(), 1, 'dependency relation must render as a curved edge')
   assert.match(await page.locator('.creator-edge.is-control path').first().getAttribute('d') || '', /C/, 'semantic relations must use bezier curves')
   assert.equal(await page.locator('.semantic-node-route button').count(), 3, 'route strip must expose one point per node')
+  if (viewport.width > 1280) {
+    assert.deepEqual(await page.locator('.semantic-node-route button').allTextContents(), ['01', '02', '03'], 'route strip must expose readable node numbers')
+    assert.notEqual(await page.locator('.semantic-node-route button').first().evaluate((button) => getComputedStyle(button).color), 'rgba(0, 0, 0, 0)', 'route numbers must not be visually hidden')
+  }
   assert.equal(await page.locator('.creator-node-confirmed').count(), 1, 'trusted node must retain the confirmed state')
   assert.equal(await page.locator('.creator-node-review').count(), 2, 'untrusted review nodes must remain visibly distinct')
   const longTitle = await page.locator('.creator-node-title strong').nth(2).evaluate((title) => {
@@ -154,23 +160,38 @@ async function assertMature(browser, viewport) {
   const nodeHeights = await page.locator('.creator-node').evaluateAll((nodes) => nodes.map((node) => Math.round(node.getBoundingClientRect().height)))
   assert.ok(new Set(nodeHeights).size > 1, `semantic nodes should size themselves from their content: ${JSON.stringify(nodeHeights)}`)
   const trustSurfaces = await page.locator('.creator-node').evaluateAll((nodes) => nodes.map((node) => ({ background: getComputedStyle(node).backgroundColor, status: getComputedStyle(node.querySelector('.creator-node-footer strong')).color })))
-  assert.notEqual(trustSurfaces[0].background, trustSurfaces[1].background, 'trusted and untrusted node surfaces must differ')
+  assert.equal(trustSurfaces[0].background, trustSurfaces[1].background, 'review states must keep the same restrained node surface')
   assert.notEqual(trustSurfaces[0].status, trustSurfaces[1].status, 'trusted and untrusted status colors must differ')
+  mkdirSync(outputRoot, { recursive: true })
+  await page.screenshot({ path: join(outputRoot, `intent-ui-semantic-default-${viewport.width}x${viewport.height}.png`) })
   await page.locator('.semantic-relation-filters input').nth(2).click()
   assert.equal(await page.locator('.creator-edge.is-dependency').count(), 0, 'dependency filter must hide dependency relations')
   await page.locator('.semantic-relation-filters input').nth(2).click()
   if (viewport.width > 1280) {
+    if (viewport.width === 1536) {
+      await page.getByRole('button', { name: /外观/ }).click()
+      await page.getByRole('combobox', { name: '主题预设' }).click()
+      await page.getByRole('option', { name: '静谧林' }).click()
+      assert.equal(await page.evaluate(() => document.documentElement.style.getPropertyValue('--intent-accent')), '#3f725d', 'alternate theme accent must reach the live workbench')
+      await page.getByRole('combobox', { name: '主题预设' }).click()
+      await page.getByRole('option', { name: '浅色主题' }).click()
+      assert.equal(await page.evaluate(() => document.documentElement.style.getPropertyValue('--intent-accent')), '#0b7f80', 'reference theme must restore its own accent')
+      await page.getByRole('button', { name: '完成' }).click()
+    }
     const routePoint = page.locator('.semantic-node-route button').first()
     const before = await routePoint.boundingBox()
     await routePoint.hover()
     const after = await routePoint.boundingBox()
     assert.ok(before && after && after.width > before.width, 'route points must enlarge on hover')
+    await page.locator('.semantic-node-search input').fill('final reviewed')
+    await page.locator('.semantic-node-search input').press('Enter')
+    assert.match(await page.locator('.creator-node.is-selected .creator-node-title').innerText(), /Prepare the final reviewed delivery package/, 'node search must locate authored title and description content')
   }
   if (await page.locator('.semantic-ai-panel:visible').count() === 0) {
-    await page.locator('.semantic-panel-actions button').nth(1).click()
+    await page.locator('.semantic-panel-actions button:not(.semantic-next-action)').nth(1).click()
     assert.equal(await page.locator('.semantic-ai-panel:visible').count(), 1, 'AI panel can open from the canvas-first default')
   }
-  await page.locator('.semantic-panel-actions button').nth(0).click()
+  await page.locator('.semantic-panel-actions button:not(.semantic-next-action)').nth(0).click()
   assert.equal(await page.locator('.semantic-detail-panel:visible').count(), 1, 'detail panel toggle must be independent')
   if (viewport.width > 1280) {
     assert.equal(await page.locator('.semantic-side-panel:visible').count(), 2, 'details and AI may be open together')
@@ -195,6 +216,9 @@ async function assertMature(browser, viewport) {
     await page.locator('.semantic-side-panel.semantic-detail-panel button').first().click()
     assert.equal(await page.locator('.semantic-side-panel:visible').count(), 1, 'detail panel must collapse independently')
   } else {
+    const nextAction = page.locator('.semantic-next-action')
+    assert.ok((await nextAction.innerText()).trim().length > 0, 'compact workflow action must retain its visible label')
+    assert.ok(Number.parseFloat(await nextAction.evaluate((button) => getComputedStyle(button).fontSize)) >= 12, 'compact workflow action text must remain readable')
     const tabs = page.locator('.semantic-panel-tabs')
     assert.equal(await tabs.getByRole('tab').count(), 3, 'compact mode must expose canvas, detail, and AI tabs')
     await tabs.getByRole('tab', { name: '详情' }).click()

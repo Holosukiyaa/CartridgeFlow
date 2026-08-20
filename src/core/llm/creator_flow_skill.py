@@ -17,6 +17,23 @@ class CreatorFlowSkillError(ValueError):
     pass
 
 
+def _load_json_payload(content: str) -> Any:
+    text = str(content or "").strip()
+    if text.startswith("```"):
+        text = text.split("\n", 1)[-1]
+        fence = text.rfind("```")
+        if fence >= 0:
+            text = text[:fence].strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        start = text.find("{")
+        end = text.rfind("}")
+        if start >= 0 and end > start:
+            return json.loads(text[start:end + 1])
+        raise
+
+
 def _creator_safe_capability(item: dict) -> dict:
     if item.get("schema") != "cartridgeflow.trusted_node_preset.v1":
         return creator_capability_projection(item)
@@ -61,9 +78,23 @@ def build_creator_flow_messages(goal: str, capabilities: list[dict]) -> list[dic
     ]
 
 
+def build_creator_flow_repair_messages(goal: str, capabilities: list[dict], invalid_content: str, reason: str) -> list[dict]:
+    messages = build_creator_flow_messages(goal, capabilities)
+    messages.append({"role": "assistant", "content": str(invalid_content or "")[:12_000]})
+    messages.append({
+        "role": "user",
+        "content": (
+            f"The previous response was rejected because: {str(reason or 'invalid output')[:300]} "
+            "Return JSON only. The object must contain exactly nodes and relations, matching response_contract. "
+            "Do not wrap the JSON in markdown."
+        ),
+    })
+    return messages
+
+
 def parse_creator_flow_result(content: str, goal: str, recipe_id: str, capabilities: list[dict]) -> tuple[dict, dict[str, dict]]:
     try:
-        value: Any = json.loads(str(content or ""))
+        value: Any = _load_json_payload(content)
     except json.JSONDecodeError as exc:
         raise CreatorFlowSkillError("Whole-flow AI response must be JSON.") from exc
     if isinstance(value, dict) and set(value) == {"recipe"}:

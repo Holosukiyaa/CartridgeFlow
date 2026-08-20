@@ -48,6 +48,21 @@ textarea { min-height: 78px; padding: 8px; resize: vertical; font-family: "SFMon
 input:focus-visible, textarea:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible { outline: 2px solid rgba(7, 138, 156, .24); outline-offset: 2px; }
 
 .workshop { width: 100%; height: 100%; display: grid; grid-template-rows: 58px minmax(0, 1fr); overflow: hidden; background: #f5f8f9; }
+.workshop.is-embedded {
+  display: flex;
+  flex-direction: column;
+}
+.workshop.is-embedded .creator-handoff,
+.workshop.is-embedded .empty-workshop,
+.workshop.is-embedded .workshop-product {
+  flex: 1;
+  min-height: 0;
+  margin-top: 20px;
+}
+.workshop.is-embedded .workshop-product { margin-top: 0; }
+.guided-note { margin: 0 0 8px; color: var(--workshop-muted); font-size: 12px; line-height: 1.55; }
+.advanced-json { margin-top: 6px; }
+.advanced-json summary { cursor: pointer; color: var(--workshop-muted); font-size: 12px; }
 .topbar { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 0 18px; background: #fff; border-bottom: 1px solid var(--workshop-line); }
 .workshop-brand { min-width: 0; display: flex; align-items: center; gap: 8px; white-space: nowrap; }
 .workshop-brand b { color: #12191d; font-size: 15px; }

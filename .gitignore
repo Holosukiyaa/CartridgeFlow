@@ -14,6 +14,9 @@ __pycache__/
 
 # JavaScript dependencies and build output
 node_modules/
+/src/studio/dist/
+/src/studio/dist-ssr/
+/src/creation-workspace/
 /src/intent-studio/dist/
 /src/intent-studio/dist-ssr/
 /src/capability-workshop/dist/
@@ -36,6 +39,9 @@ node_modules/
 /skills-lock.json
 /test_output/
 /output/
+/src/studio/.data/
+/src/studio/test-results/
+/src/studio/test/diff/
 /\.reasonix/
 /logs/
 /temp/

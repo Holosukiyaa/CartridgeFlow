@@ -39,8 +39,7 @@ class LaunchTests(unittest.TestCase):
 
         self.assertEqual(
             [
-                call(["npm.cmd", "run", "build"], cwd=LAUNCH.FRONTEND_DIRS["Intent Studio"], check=True),
-                call(["npm.cmd", "run", "build"], cwd=LAUNCH.FRONTEND_DIRS["Capability Workshop"], check=True),
+                call(["npm.cmd", "run", "build"], cwd=LAUNCH.FRONTEND_DIRS["Studio"], check=True),
             ],
             run.call_args_list,
         )

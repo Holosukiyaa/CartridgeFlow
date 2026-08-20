@@ -17,8 +17,7 @@ from urllib.parse import quote
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE_DIR = ROOT / "src"
 FRONTEND_DIRS = {
-    "Intent Studio": SOURCE_DIR / "intent-studio",
-    "Capability Workshop": SOURCE_DIR / "capability-workshop",
+    "Studio": SOURCE_DIR / "studio",
 }
 PORT = 8765
 

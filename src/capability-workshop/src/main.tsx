@@ -24,6 +24,12 @@ const array = (value: unknown) => Array.isArray(value) ? value as AnyRecord[] : 
 const object = (value: unknown) => value && typeof value === 'object' && !Array.isArray(value) ? value as AnyRecord : {}
 const pretty = (value: unknown) => JSON.stringify(value, null, 2)
 const slug = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 70)
+const WORKSHOP_HOST = 'cartridgeflow.workshop'
+const embeddedMode = () => new URLSearchParams(location.search).get('embedded') === '1'
+function notifyHost(message: Record<string, unknown>) {
+  if (window.parent === window) return
+  window.parent.postMessage({ source: WORKSHOP_HOST, ...message }, '*')
+}
 
 function withExecutionEdges(detail: AnyRecord, filesResponse: AnyRecord): AnyRecord {
   const graph = { ...object(detail.graph) }
@@ -36,7 +42,7 @@ function withExecutionEdges(detail: AnyRecord, filesResponse: AnyRecord): AnyRec
   return { ...detail, graph }
 }
 
-function graphNodes(graph: AnyRecord): Node[] {
+function graphNodes(graph: AnyRecord, plain = false): Node[] {
   const sourceNodes = array(graph.nodes)
   const storedPositions = new Map(sourceNodes.map((node, index) => {
     const position = object(node.position)
@@ -79,7 +85,7 @@ function graphNodes(graph: AnyRecord): Node[] {
       id: String(node.id),
       position: projectedPositions.get(String(node.id)) || { x: 70, y: 70 },
       data: {
-        label: <div className="flow-node-label"><strong>{String(node.title || node.label || node.id)}</strong><small>{String(node.kind || node.type || 'state')} · {String(node.executor || 'lifecycle')}</small></div>,
+        label: <div className="flow-node-label"><strong>{String(node.title || node.label || node.id)}</strong>{plain ? null : <small>{String(node.kind || node.type || 'state')} · {String(node.executor || 'lifecycle')}</small>}</div>,
       },
       className: `flow-node ${node.type === 'terminal' ? 'terminal' : ''} ${node.locked ? 'locked' : ''}`,
       sourcePosition: Position.Right,
@@ -102,12 +108,12 @@ function graphEdges(graph: AnyRecord): Edge[] {
   })
 }
 
-function Graph({ flowId, graph, selected, onSelect, onReload }: {
-  flowId: string; graph: AnyRecord; selected: string; onSelect: (id: string) => void; onReload: () => Promise<void>
+function Graph({ flowId, graph, selected, onSelect, onReload, plain }: {
+  flowId: string; graph: AnyRecord; selected: string; onSelect: (id: string) => void; onReload: () => Promise<void>; plain?: boolean
 }) {
-  const [nodes, setNodes] = useState<Node[]>(() => graphNodes(graph))
+  const [nodes, setNodes] = useState<Node[]>(() => graphNodes(graph, plain))
   const [edges, setEdges] = useState<Edge[]>(() => graphEdges(graph))
-  useEffect(() => { setNodes(graphNodes(graph)); setEdges(graphEdges(graph)) }, [graph])
+  useEffect(() => { setNodes(graphNodes(graph, plain)); setEdges(graphEdges(graph)) }, [graph, plain])
 
   const persistEdges = async (next: Edge[]) => {
     await capabilityApi.saveEdges(flowId, next.map((edge) => ({ from: edge.source, to: edge.target, scope: 'root', ...(edge.label ? { label: String(edge.label) } : {}) })))
@@ -152,8 +158,8 @@ function Graph({ flowId, graph, selected, onSelect, onReload }: {
   </section>
 }
 
-function CapabilityNodeEditor({ flowId, node, tools, manifestInputs, files, onSaved, onClose }: {
-  flowId: string; node: AnyRecord; tools: AnyRecord[]; manifestInputs: AnyRecord[]; files: PresentationFiles; onSaved: () => Promise<void>; onClose: () => void
+function CapabilityNodeEditor({ flowId, node, tools, manifestInputs, files, onSaved, onClose, guided }: {
+  flowId: string; node: AnyRecord; tools: AnyRecord[]; manifestInputs: AnyRecord[]; files: PresentationFiles; onSaved: () => Promise<void>; onClose: () => void; guided?: boolean
 }) {
   const [title, setTitle] = useState(String(node.title || node.label || node.id || ''))
   const [endpoint, setEndpoint] = useState(String(node.endpoint || ''))
@@ -224,22 +230,26 @@ function CapabilityNodeEditor({ flowId, node, tools, manifestInputs, files, onSa
     <nav className="node-editor-tabs" aria-label="节点编辑区"><button className={editorTab === 'config' ? 'is-active' : ''} type="button" onClick={() => setEditorTab('config')}>配置</button><button className={editorTab === 'contract' ? 'is-active' : ''} type="button" onClick={() => setEditorTab('contract')}>契约</button><button className={editorTab === 'run' ? 'is-active' : ''} type="button" onClick={() => setEditorTab('run')}>运行</button></nav>
     <div className="node-editor-content">
       {editorTab === 'config' && <>
-        <label><span>节点名称</span><input value={title} onChange={(event) => setTitle(event.currentTarget.value)} /></label>
-        <div className="execution-contract"><span><small>类型</small><strong>{String(node.kind || 'process')}</strong></span><span><small>执行器</small><strong>{String(node.executor || 'runtime')}</strong></span><span><small>动作</small><strong>{String(node.action || 'none')}</strong></span></div>
-        {(node.action === 'remote_call' || endpoint) && <label><span>远程服务地址</span><input value={endpoint} onChange={(event) => setEndpoint(event.currentTarget.value)} placeholder="https://api.example.com/v1/action" /></label>}
-        <fieldset className="tool-binding"><legend>允许调用的工具</legend>{tools.length === 0 ? <p>先在“工具与资源”中声明可调用接口。</p> : tools.map((tool) => <label key={String(tool.id)}><input type="checkbox" checked={allowedTools.includes(String(tool.id))} onChange={(event) => setAllowedTools((current) => event.currentTarget.checked ? [...current, String(tool.id)] : current.filter((id) => id !== String(tool.id)))} /><span>{String(tool.name || tool.id)}</span></label>)}</fieldset>
+        <label><span>这一步叫什么</span><input value={title} onChange={(event) => setTitle(event.currentTarget.value)} /></label>
+        {guided ? <p className="guided-note">这里只改这一步给人看的做法。运行细节留在高级里。</p> : <div className="execution-contract"><span><small>类型</small><strong>{String(node.kind || 'process')}</strong></span><span><small>执行器</small><strong>{String(node.executor || 'runtime')}</strong></span><span><small>动作</small><strong>{String(node.action || 'none')}</strong></span></div>}
+        {(node.action === 'remote_call' || endpoint) && <label><span>{guided ? '外部服务' : '远程服务地址'}</span><input value={endpoint} onChange={(event) => setEndpoint(event.currentTarget.value)} placeholder="https://api.example.com/v1/action" /></label>}
+        <fieldset className="tool-binding"><legend>{guided ? '用到的本机工具' : '允许调用的工具'}</legend>{tools.length === 0 ? <p>{guided ? '还没有可用的本机工具。到第一层的资源池里添加。' : '先在“工具与资源”中声明可调用接口。'}</p> : tools.map((tool) => <label key={String(tool.id)}><input type="checkbox" checked={allowedTools.includes(String(tool.id))} onChange={(event) => setAllowedTools((current) => event.currentTarget.checked ? [...current, String(tool.id)] : current.filter((id) => id !== String(tool.id)))} /><span>{String(tool.name || tool.id)}</span></label>)}</fieldset>
       </>}
-      {editorTab === 'contract' && <div className="contract-json-fields"><label><span>能力运行输入 JSON</span><textarea value={flowInputs} onChange={(event) => setFlowInputs(event.currentTarget.value)} spellCheck={false} /></label><label><span>输入端口 JSON</span><textarea value={inputs} onChange={(event) => setInputs(event.currentTarget.value)} spellCheck={false} /></label><label><span>输出端口 JSON</span><textarea value={outputs} onChange={(event) => setOutputs(event.currentTarget.value)} spellCheck={false} /></label></div>}
-      {editorTab === 'run' && <div className="run-config"><label><span>执行参数 JSON</span><textarea value={params} onChange={(event) => {
-        const value = event.currentTarget.value
-        setParams(value)
-        try {
-          const parsed = parseObject('执行参数', value)
-          const currentByParam = new Map(settingDrafts.map((item) => [item.param, item]))
-          const next = nodeSettingDrafts(files, String(node.id), parsed).drafts.map((item) => currentByParam.get(item.param) || item)
-          setSettingDrafts(next)
-        } catch { /* Save reports malformed JSON; keep the last valid setting selection. */ }
-      }} spellCheck={false} /></label><p>选择要交给卡带使用者调整的参数；控件随 CF-CRE@2 进入 Desktop Runner。</p><CartridgeSettingsEditor drafts={settingDrafts} params={(() => { try { return parseObject('执行参数', params) } catch { return {} } })()} errors={initialSettings.errors} onChange={setSettingDrafts} /></div>}
+      {editorTab === 'contract' && (guided ? <details className="advanced-json"><summary>高级：输入输出合同</summary><div className="contract-json-fields"><label><span>能力运行输入 JSON</span><textarea value={flowInputs} onChange={(event) => setFlowInputs(event.currentTarget.value)} spellCheck={false} /></label><label><span>输入端口 JSON</span><textarea value={inputs} onChange={(event) => setInputs(event.currentTarget.value)} spellCheck={false} /></label><label><span>输出端口 JSON</span><textarea value={outputs} onChange={(event) => setOutputs(event.currentTarget.value)} spellCheck={false} /></label></div></details> : <div className="contract-json-fields"><label><span>能力运行输入 JSON</span><textarea value={flowInputs} onChange={(event) => setFlowInputs(event.currentTarget.value)} spellCheck={false} /></label><label><span>输入端口 JSON</span><textarea value={inputs} onChange={(event) => setInputs(event.currentTarget.value)} spellCheck={false} /></label><label><span>输出端口 JSON</span><textarea value={outputs} onChange={(event) => setOutputs(event.currentTarget.value)} spellCheck={false} /></label></div>)}
+      {editorTab === 'run' && <div className="run-config">
+        {guided ? null : <label><span>执行参数 JSON</span><textarea value={params} onChange={(event) => {
+          const value = event.currentTarget.value
+          setParams(value)
+          try {
+            const parsed = parseObject('执行参数', value)
+            const currentByParam = new Map(settingDrafts.map((item) => [item.param, item]))
+            const next = nodeSettingDrafts(files, String(node.id), parsed).drafts.map((item) => currentByParam.get(item.param) || item)
+            setSettingDrafts(next)
+          } catch { /* Save reports malformed JSON; keep the last valid setting selection. */ }
+        }} spellCheck={false} /></label>}
+        <p>{guided ? '交给使用者调整的参数会出现在试运行里。' : '选择要交给卡带使用者调整的参数；控件随 CF-CRE@2 进入 Desktop Runner。'}</p>
+        <CartridgeSettingsEditor drafts={settingDrafts} params={(() => { try { return parseObject('执行参数', params) } catch { return {} } })()} errors={initialSettings.errors} onChange={setSettingDrafts} />
+      </div>}
       {error && <p className="error"><CircleAlert />{error}</p>}
     </div>
     <div className="editor-actions"><button id="capability-node-save" type="button" onClick={() => void save()} disabled={working}><Save />保存节点</button><button className="danger" type="button" onClick={() => void remove()} disabled={working} title="删除节点"><Trash2 /></button></div>
@@ -552,8 +562,12 @@ function PublishPanel({ flowId, flowName, goal, projectId, nodeId, guided, verif
       setDone(`已发布 ${String(release.id)} v${String(release.revision)}，创作空间会重新检查原节点。`)
       await onPublished()
       if (projectId && nodeId) {
-        const query = new URLSearchParams({ capabilityPublished: String(release.id), nodeId })
-        window.location.assign(`/projects/${encodeURIComponent(projectId)}/studio?${query.toString()}`)
+        if (embeddedMode()) {
+          notifyHost({ type: 'published', nodeId, projectId, capabilityId: String(release.id) })
+        } else {
+          const query = new URLSearchParams({ capabilityPublished: String(release.id), nodeId })
+          window.location.assign(`/projects/${encodeURIComponent(projectId)}/studio?${query.toString()}`)
+        }
       }
     } catch (reason) { setError(reason instanceof Error ? reason.message : '能力发布失败。') } finally { setWorking(false) }
   }
@@ -586,6 +600,7 @@ function Workshop() {
   const query = useMemo(() => new URLSearchParams(location.search), [])
   const queryStage = query.get('stage')
   const creatorGoal = query.get('goal') || ''
+  const inspect = query.get('mode') === 'inspect'
   const projectId = query.get('projectId') || ''
   const targetNodeId = query.get('nodeId') || ''
   const targetNodeLabel = query.get('nodeLabel') || ''
@@ -663,6 +678,7 @@ function Workshop() {
       window.history.replaceState(null, '', `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`)
       await loadFlows(nextFlowId)
       if (starterId) setSelected(starterId)
+      notifyHost({ type: 'opened', flowId: nextFlowId, nodeId: targetNodeId })
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Flow 创建失败。') }
     finally { setCreating(false) }
   }
@@ -711,9 +727,19 @@ function Workshop() {
   const filteredCapabilities = capabilities.filter((item) => `${String(item.id)} ${String(object(item.creator).label || '')}`.toLowerCase().includes(capabilitySearch.toLowerCase()))
   const findingCount = array(validation.findings).length
   const hasCreatorContext = Boolean(projectId && targetNodeId)
+  const embedded = embeddedMode()
   const nextTab = workspaceTab === 'design' ? 'experience' : workspaceTab === 'experience' ? 'verify' : 'publish'
-  return <main className="workshop">
-    <header className="topbar">
+  useEffect(() => {
+    if (embedded && flowId && targetNodeId) notifyHost({ type: 'opened', flowId, nodeId: targetNodeId })
+  }, [embedded, flowId, targetNodeId])
+  useEffect(() => {
+    if (!embedded) return
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') notifyHost({ type: 'close', nodeId: targetNodeId, projectId }) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [embedded, projectId, targetNodeId])
+  return <main className={embedded ? 'workshop is-embedded' : 'workshop'}>
+    {embedded ? null : <header className="topbar">
       <div className="workshop-brand"><b>CartridgeFlow</b><span>/</span><strong>能力工坊</strong></div>
       <div className="header-actions">
         {projectId && <a className="return-to-creator" href={`/projects/${encodeURIComponent(projectId)}/studio`}><ArrowLeft />返回原方案</a>}
@@ -721,15 +747,15 @@ function Workshop() {
           <select aria-label="选择 Flow" value={flowId} onChange={(event) => { setFlowId(event.target.value); void load(event.target.value) }}><option value="">选择 Flow</option>{flows.map((flow) => <option key={String(flow.id)} value={String(flow.id)}>{String(flow.name || flow.id)}</option>)}</select>
           <span className="workshop-user">CF</span></>}
       </div>
-    </header>
+    </header>}
     {error && <p className="page-error"><CircleAlert />{error}</p>}
     {!flowId ? hasCreatorContext ? <section className="creator-handoff">
-      <div className="handoff-intro"><span><Wrench />深入制作</span><h1>为原方案补齐一个子能力</h1><p>外层方案已经保留。这里只制作当前步骤的内部做法，发布后会自动回填。</p></div>
+      <div className="handoff-intro"><span><Wrench />深入制作</span><h1>{inspect ? '查看或替换这一步的内部做法' : '为原方案补齐一个子能力'}</h1><p>外层方案已经保留。这里只制作当前步骤的内部做法，发布后会自动回填。</p></div>
       <div className="handoff-path" aria-label="从原目标进入子能力"><div><small>原方案目标</small><p>{creatorGoal}</p></div><span aria-hidden="true"></span><div><small>当前要补齐</small><strong>{targetNodeLabel || newName}</strong></div></div>
       <form onSubmit={(event) => { event.preventDefault(); void createFlow() }}><label><span>子能力名称</span><input autoFocus value={newName} disabled={creating} onChange={(event) => setNewName(event.currentTarget.value)} /></label><button type="submit" disabled={creating || !newName.trim()}>{creating ? <Loader2 className="spinning" /> : <FilePlus2 />}{creating ? '正在准备可运行草稿' : '生成可运行草稿'}</button></form>
-      <small className="handoff-return-note"><CheckCircle2 />完成发布后返回原方案，当前步骤会直接获得这个能力</small>
+      <small className="handoff-return-note"><CheckCircle2 />{embedded ? '完成发布后会回到原步骤，方案不会离开当前界面' : '完成发布后返回原方案，当前步骤会直接获得这个能力'}</small>
     </section> : <section className="empty-workshop"><Wrench /><span>高级制作</span><h1>{newName || '新建能力卡带'}</h1><label><span>能力名称</span><input value={newName} onChange={(event) => setNewName(event.currentTarget.value)} /></label><button type="button" onClick={() => void createFlow()} disabled={!newName.trim()}><FilePlus2 />进入内部流程</button></section> : <div className="workshop-product">
-      {hasCreatorContext && <section className="creator-handoff-banner"><div><span>正在深入一个子能力</span><strong>{targetNodeLabel || String(cartridge.name || flowId)}</strong><p>{creatorGoal}</p></div><div><small>外层方案已安全保留</small><a href={`/projects/${encodeURIComponent(projectId)}/studio`}><ArrowLeft />退出内部制作</a></div></section>}
+      {hasCreatorContext && <section className="creator-handoff-banner"><div><span>正在深入一个子能力</span><strong>{targetNodeLabel || String(cartridge.name || flowId)}</strong><p>{creatorGoal}</p></div><div><small>外层方案就在后面</small>{embedded ? <button type="button" onClick={() => notifyHost({ type: 'close', nodeId: targetNodeId, projectId })}><ArrowLeft />回到第一层</button> : <a href={`/projects/${encodeURIComponent(projectId)}/studio`}><ArrowLeft />退出内部制作</a>}</div></section>}
       <section className="capability-header">
         <div className="capability-identity"><Box /><div><strong>{String(cartridge.name || flowId)}</strong><span>{hasCreatorContext ? '子能力内部流程' : '独立能力'} · v{String(cartridge.version || '1.0.0')}</span></div><small className={validation.valid ? 'is-valid' : ''}><CheckCircle2 />{validation.valid ? '结构完整' : `${findingCount} 项待处理`}</small></div>
         <nav className="workshop-tabs" aria-label="能力制作阶段"><button className={workspaceTab === 'design' ? 'is-active' : ''} type="button" onClick={() => setWorkspaceTab('design')}><span>1</span><GitBranch />内部流程</button><button className={workspaceTab === 'experience' ? 'is-active' : ''} type="button" onClick={() => setWorkspaceTab('experience')}><span>2</span><Box />结果界面</button><button className={workspaceTab === 'verify' ? 'is-active' : ''} type="button" onClick={() => setWorkspaceTab('verify')}><span>3</span><Play />实际验证</button><button className={workspaceTab === 'publish' ? 'is-active' : ''} type="button" onClick={() => setWorkspaceTab('publish')}><span>4</span><PackageCheck />发布回填</button></nav>
@@ -738,16 +764,16 @@ function Workshop() {
 
       <div className="workshop-shell">
         {workspaceTab === 'design' && <aside className="workshop-sidebar">
-          <details open><summary>节点库<ChevronDown /></summary><div className="node-library"><button type="button" disabled><Play /><span>开始</span></button><button type="button" onClick={() => void addNode('interaction')}><Box /><span>展示结果</span></button><button type="button" onClick={() => void addNode('checkpoint')}><User /><span>人工审核</span></button><button type="button" onClick={() => void addNode('runtime')}><GitBranch /><span>数据处理</span></button><button type="button" onClick={() => void addNode('tool_call')}><Plug /><span>调用工具</span></button><button type="button" onClick={() => void addNode('prompt')}><Bot /><span>AI 处理</span></button></div><div className="node-library-footer"><button type="button" onClick={() => void addNode('remote_call')}>服务节点</button><button type="button" onClick={() => setWorkspaceTab('experience')}>设计展示</button></div></details>
+          <details open><summary>这一步可以怎么做<ChevronDown /></summary><div className="node-library"><button type="button" disabled><Play /><span>开始</span></button><button type="button" onClick={() => void addNode('interaction')}><Box /><span>展示结果</span></button><button type="button" onClick={() => void addNode('checkpoint')}><User /><span>人工审核</span></button><button type="button" onClick={() => void addNode('runtime')}><GitBranch /><span>整理内容</span></button><button type="button" onClick={() => void addNode('tool_call')}><Plug /><span>调用本机工具</span></button><button type="button" onClick={() => void addNode('prompt')}><Bot /><span>AI 处理</span></button></div><div className="node-library-footer">{hasCreatorContext ? null : <button type="button" onClick={() => void addNode('remote_call')}>服务节点</button>}<button type="button" onClick={() => setWorkspaceTab('experience')}>设计展示</button></div></details>
           <details open><summary>可复用能力<ChevronDown /></summary><label className="capability-search"><Search /><input value={capabilitySearch} onChange={(event) => setCapabilitySearch(event.currentTarget.value)} placeholder="搜索可复用能力" /></label><div className="reusable-capabilities">{filteredCapabilities.length ? filteredCapabilities.map((item) => <button type="button" key={String(item.id)} title={String(item.id)}><strong>{String(object(item.creator).label || item.id)}</strong><small>v{String(item.revision)} · {String(item.trust_scope || 'workspace')}</small></button>) : <p>没有匹配的已发布能力。</p>}</div></details>
-          <AssistantPanel flowId={flowId} selectedId={selected} />
+          {hasCreatorContext ? null : <><AssistantPanel flowId={flowId} selectedId={selected} />
           <ToolResourcePanel flowId={flowId} tools={tools} catalog={resourceCatalog} onChanged={() => load(flowId)} />
           <DlcPanel flowId={flowId} onChanged={() => load(flowId)} />
-          <details open className="proof-library"><summary>基础运行证明<ChevronDown /></summary>{capabilities.slice(0, 3).map((item) => <div key={String(item.id)}><ShieldCheck /><span><strong>{String(object(item.creator).label || item.id)}</strong><small>workspace · v{String(item.revision)}</small></span></div>)}</details>
+          <details open className="proof-library"><summary>基础运行证明<ChevronDown /></summary>{capabilities.slice(0, 3).map((item) => <div key={String(item.id)}><ShieldCheck /><span><strong>{String(object(item.creator).label || item.id)}</strong><small>workspace · v{String(item.revision)}</small></span></div>)}</details></>}
         </aside>}
 
         <section className={`workshop-stage is-${workspaceTab}`}>
-          {workspaceTab === 'design' && <div className="workshop-body"><Graph flowId={flowId} graph={graph} selected={selected} onSelect={setSelected} onReload={() => load(flowId)} />{selectedNode ? <CapabilityNodeEditor key={`${flowId}:${selected}`} flowId={flowId} node={selectedNode} tools={tools} manifestInputs={array(cartridge.inputs)} files={flowFiles} onSaved={() => load(flowId)} onClose={() => setSelected('')} /> : <aside className="node-editor boundary-editor"><div className="boundary-copy"><GitBranch /><p>选择一个节点后在这里配置实现、契约和运行参数。</p></div></aside>}</div>}
+          {workspaceTab === 'design' && <div className="workshop-body"><Graph flowId={flowId} graph={graph} selected={selected} onSelect={setSelected} onReload={() => load(flowId)} plain={hasCreatorContext} />{selectedNode ? <CapabilityNodeEditor key={`${flowId}:${selected}`} flowId={flowId} node={selectedNode} tools={tools} manifestInputs={array(cartridge.inputs)} files={flowFiles} onSaved={() => load(flowId)} onClose={() => setSelected('')} guided={hasCreatorContext} /> : <aside className="node-editor boundary-editor"><div className="boundary-copy"><GitBranch /><p>{hasCreatorContext ? '点内部流程里的一步，改它对人怎么做。' : '选择一个节点后在这里配置实现、契约和运行参数。'}</p></div></aside>}</div>}
           {workspaceTab === 'experience' && <DisplayComponentWorkshop flowId={flowId} graph={graph} manifestInputs={array(cartridge.inputs)} components={components} onCreateDisplayNode={() => addNode('interaction')} onSaved={() => load(flowId)} />}
           {workspaceTab === 'verify' && <div className="phase-workspace verification-workspace"><header><div><span>运行验证</span><h2>用真实成功与失败路径证明能力边界</h2></div><small>{verificationToken ? <><CheckCircle2 />运行证据已登记</> : verification.status === 'stale' ? '源码变化，证明已失效' : '需要 2 个互补用例'}</small></header><VerificationPanel flowId={flowId} inputs={array(cartridge.inputs)} verification={verification} deliveryLevel={String(object(cartridge.delivery_readiness).level || 'dev')} onVerified={setVerification} onPromoted={() => load(flowId)} onAddInput={addVerificationInput} /></div>}
           {workspaceTab === 'publish' && <div className="phase-workspace publish-workspace"><div className="publish-primary">{hasCreatorContext ? <details className="guided-release-options"><summary>高级交付选项</summary><ReleasePanel flowId={flowId} verification={verification} /></details> : <ReleasePanel flowId={flowId} verification={verification} />}<PublishPanel flowId={flowId} flowName={String(cartridge.name || flowId)} goal={creatorGoal} projectId={projectId} nodeId={targetNodeId} guided={hasCreatorContext} verificationToken={verificationToken} validation={validation} capabilities={capabilities} onPublished={loadRegistry} /></div><details className="workbench-panel capability-registry"><summary><Boxes />已发布能力与版本</summary>{capabilityEntries.length === 0 ? <p>还没有发布过能力。</p> : capabilityEntries.map((entry) => <div key={String(entry.id)}><span><strong>{String(object(entry.current).creator ? object(object(entry.current).creator).label : entry.id)}</strong><small>{String(entry.id)} · {String(entry.status)} · {array(entry.revisions).length || 1} 个版本</small></span><button type="button" onClick={async () => { await capabilityApi.activateCapability(String(entry.id), entry.status !== 'active'); await loadRegistry() }}><Power />{entry.status === 'active' ? '停用' : '启用'}</button></div>)}</details></div>}

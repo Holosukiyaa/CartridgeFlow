@@ -47,6 +47,8 @@ class TrustedNodeRecipeContractV14Tests(unittest.TestCase):
         messages = build_creator_flow_messages("制作 AI 日报", [preset()])
         self.assertNotIn("source.rss.v1", messages[1]["content"])
         recipe, _ = parse_creator_flow_result('{"recipe":{"nodes":[{"id":"sources","preset_id":"rss-source","values":{"topics":["AI"]}}],"relations":[]}}', "制作 AI 日报", "recipe.daily", [preset()])
+        fenced, _ = parse_creator_flow_result('```json\n{"recipe":{"nodes":[{"id":"sources","preset_id":"rss-source","values":{"topics":["AI"]}}],"relations":[]}}\n```', "制作 AI 日报", "recipe.daily", [preset()])
+        self.assertEqual(recipe["nodes"][0]["id"], fenced["nodes"][0]["id"])
         node = recipe["nodes"][0]
         node_messages = build_creator_node_messages(node, preset(), "增加模型主题")
         self.assertNotIn("source.rss.v1", node_messages[1]["content"])

@@ -10,7 +10,7 @@ where node >nul 2>nul || goto missing_node
 where npm >nul 2>nul || goto missing_node
 
 python -c "import uvicorn" >nul 2>nul || goto bootstrap
-if not exist "%ROOT%src\intent-studio\node_modules\.bin\vite.cmd" goto bootstrap
+if not exist "%ROOT%src\studio\node_modules\.bin\vite.cmd" goto bootstrap
 
 :launch
 python "%ROOT%scripts\launch.py"

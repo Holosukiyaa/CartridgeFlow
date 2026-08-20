@@ -1,0 +1,146 @@
+import { useEffect, useState } from 'react'
+import { copy } from '../copy.ts'
+import { visualFrame } from '../visualFixture.ts'
+import { ConnectDialog } from './ConnectDialog.tsx'
+import { Canvas } from './Canvas.tsx'
+import { NodeDetail } from './NodeDetail.tsx'
+import { Layer2Overlay } from '../layer2/Overlay.tsx'
+import { ResourcePool } from './ResourcePool.tsx'
+import { NarrowTabs, NextBar, ProjectMenu, Shell, WorkspaceHeader } from './Shell.tsx'
+import { StageLayer } from './stages.tsx'
+import { Steward } from './Steward.tsx'
+import { TrialRun } from './TrialRun.tsx'
+import { useWorkspace } from './useWorkspace.ts'
+
+export function WorkspaceApp({ projectId }: { projectId: string }) {
+  const workspace = useWorkspace(projectId)
+  const [trialOpen, setTrialOpen] = useState(false)
+  const showSteward = Boolean(workspace.creator && (workspace.stewardOpen || (workspace.narrow && workspace.tab === 'steward')))
+
+  useEffect(() => {
+    const visual = new URLSearchParams(window.location.search).get('visual')
+    if (visual === 'frame2') workspace.setConnectOpen(true)
+    if (visual === 'frame3') workspace.setSettingsOpen(true)
+  }, [])
+  useEffect(() => {
+    const visual = new URLSearchParams(window.location.search).get('visual')
+    if ((visual === 'frame4' || visual === 'frame5') && workspace.creator) {
+      const gap = workspace.creator.trusted_recipe.nodes.find((node) => node.resolution?.status === 'unresolved')
+      if (gap) workspace.openLayer2(gap.id)
+    }
+  }, [workspace.creator])
+
+  return <>
+    <Shell
+      narrow={workspace.narrow}
+      header={<WorkspaceHeader
+        projectName={workspace.narrow && /日报/.test(workspace.projectName) ? '中文AI日报' : workspace.projectName}
+        projectMenu={workspace.projectMenuOpen ? <ProjectMenu projectId={projectId} projects={workspace.projects} /> : null}
+        syncLabel={workspace.syncLabel}
+        connected={workspace.connected}
+        connectionLabel={visualFrame() === 'frame2' ? '共创AI未连接' : workspace.connectionLabel}
+        onConnect={() => workspace.setConnectOpen(true)}
+        onOpenSettings={() => workspace.setSettingsOpen(true)}
+        onToggleSteward={workspace.creator ? () => {
+          if (workspace.narrow) workspace.setTab('steward')
+          else workspace.setStewardOpen((open) => !open)
+        } : undefined}
+        stewardOn={workspace.stewardOpen}
+        onToggleProjectMenu={() => workspace.setProjectMenuOpen((open) => !open)}
+      />}
+      next={<NextBar
+        guidance={workspace.guidance}
+        stats={workspace.stats}
+        narrow={workspace.narrow}
+        stewardOn={workspace.stewardOpen}
+        onAction={workspace.runPrimaryAction}
+        onTrialRun={workspace.creator ? () => setTrialOpen(true) : undefined}
+        onToggleSteward={workspace.creator ? () => {
+          if (workspace.narrow) workspace.setTab('steward')
+          else workspace.setStewardOpen((open) => !open)
+        } : undefined}
+      />}
+      tabs={<NarrowTabs tab={workspace.tab} onTab={workspace.setTab} />}
+    >
+      <div className={`body${showSteward && !workspace.narrow ? ' has-steward' : ''}${workspace.showDetail && !workspace.narrow ? ' has-detail' : ''}`}>
+        {showSteward && (!workspace.narrow || workspace.tab === 'steward') ? <Steward
+          messages={workspace.messages}
+          input={workspace.input}
+          busy={workspace.busy}
+          error={workspace.error}
+          scope={workspace.stewardScope}
+          contextNodes={workspace.contextNodes}
+          preview={workspace.recipePreview}
+          onInput={workspace.setInput}
+          onSubmit={workspace.submitComposer}
+          onScope={workspace.setStewardScope}
+          onApplyPreview={() => void workspace.applyRecipePreview()}
+          onRejectPreview={workspace.rejectRecipePreview}
+          onClearContext={workspace.clearContext}
+          onRemoveContext={workspace.removeContext}
+          onClose={workspace.narrow ? undefined : () => workspace.setStewardOpen(false)}
+        /> : null}
+        <section className={`canvas-region${workspace.narrow && workspace.tab !== 'canvas' ? ' is-hidden' : ''}`} aria-label="语义画布">
+          <div className="canvas-surface">
+            <Canvas
+              creator={workspace.creator}
+              selectedId={workspace.selectedId}
+              contextIds={workspace.contextIds}
+              preview={workspace.recipePreview}
+              vertical={workspace.narrow}
+              onSelect={workspace.selectCanvasNode}
+              onOpenLayer={workspace.openLayer2}
+              onApplyPreview={() => void workspace.applyRecipePreview()}
+              onRejectPreview={workspace.rejectRecipePreview}
+            />
+            <StageLayer
+              creator={workspace.creator}
+              goal={workspace.goal}
+              stage={workspace.guidance.stage}
+              busy={workspace.busy}
+              error={workspace.error}
+              input={workspace.input}
+              clarification={workspace.clarification}
+              possibilities={workspace.possibilities}
+              packageResult={workspace.packageResult}
+              packageError={workspace.packageError}
+              runnerDelivery={workspace.runnerDelivery}
+              onInput={workspace.setInput}
+              onSubmit={workspace.submitComposer}
+              onClarify={workspace.clarify}
+              onChoose={workspace.chooseDirection}
+              onSkip={workspace.skipDirections}
+              onRetry={workspace.retryDiscover}
+            />
+            {workspace.loading ? <div className="loading">{copy.loadingProject}</div> : null}
+          </div>
+        </section>
+        {workspace.showDetail && workspace.creator && workspace.selectedNode && (!workspace.narrow || workspace.tab === 'detail') ? <section className={`detail-region${workspace.narrow && workspace.tab !== 'detail' ? ' is-hidden' : ''}`}>
+          <NodeDetail
+            creator={workspace.creator}
+            node={workspace.selectedNode}
+            busy={workspace.busy}
+            returned={workspace.returnedFromWorkshop}
+            onCreatorChange={workspace.saveCreator}
+            onClose={workspace.closeDetail}
+            onOpenNode={workspace.openNode}
+            onOpenLayer={workspace.openLayer2}
+            onModelRequired={workspace.requireModel}
+          />
+        </section> : null}
+      </div>
+    </Shell>
+    {workspace.connectOpen ? <ConnectDialog current={workspace.aiStatus} onConnect={workspace.connect} onClose={() => workspace.setConnectOpen(false)} /> : null}
+    {workspace.settingsOpen ? <ResourcePool onClose={() => workspace.setSettingsOpen(false)} /> : null}
+    {workspace.layer2Node && workspace.creator ? <Layer2Overlay
+      creator={workspace.creator}
+      node={workspace.layer2Node}
+      flowId={workspace.layer2Flows[workspace.layer2Node.id]}
+      onClose={workspace.closeLayer2}
+      onPublished={(nodeId) => void workspace.finishLayer2(nodeId, true)}
+      onOpened={workspace.rememberLayer2}
+      onTrialRun={() => setTrialOpen(true)}
+    /> : null}
+    {trialOpen ? <TrialRun onClose={() => setTrialOpen(false)} /> : null}
+  </>
+}

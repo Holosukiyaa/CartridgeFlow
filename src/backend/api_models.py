@@ -194,6 +194,14 @@ class CreatorSourceInspectPayload(BaseModel):
     url: str = Field(min_length=8, max_length=2000)
 
 
+class CreatorTrialFetchPayload(BaseModel):
+    feed_url: str | None = Field(default=None, max_length=2000)
+
+
+class CreatorTrialComposePayload(BaseModel):
+    items: list[dict] = Field(default_factory=list)
+
+
 class CreatorNodeRefinementPayload(BaseModel):
     prompt: str = Field(min_length=1, max_length=4000)
     expected_revision: int

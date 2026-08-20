@@ -46,6 +46,8 @@ from backend.api_models import (
     VerifiedProductionReleasePayload,
     CreatorProjectRenamePayload,
     CreatorSourceInspectPayload,
+    CreatorTrialFetchPayload,
+    CreatorTrialComposePayload,
     TrustedNodePublishFromFlowPayload,
     CreatorSourceDiscoveryPayload,
     CreatorWorkspaceSavePayload,
@@ -3235,23 +3237,46 @@ async def _compose_trusted_creator_recipe(goal: str, recipe_id: str) -> tuple[di
     """Return a complete semantic recipe plus any resolved capability releases."""
     from core.llm import chat
     from core.llm.config_manager import resolve_model
-    from core.llm.creator_flow_skill import CreatorFlowSkillError, build_creator_flow_messages, parse_creator_flow_result
+    from core.llm.creator_flow_skill import (
+        CreatorFlowSkillError,
+        build_creator_flow_messages,
+        build_creator_flow_repair_messages,
+        parse_creator_flow_result,
+    )
     capabilities = _all_capability_releases()
     model = resolve_model("mentor")
     if not str(model.api_key or "").strip():
         raise AuthoringServiceError("AI_CREATOR_FLOW_MODEL_UNBOUND", "No configured whole-flow model is available.", status=409)
+    messages = build_creator_flow_messages(goal, capabilities)
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + _creator_ai_timeout(model)
     try:
         response = await asyncio.wait_for(
-            chat(model, build_creator_flow_messages(goal, capabilities), agent_name="creator_flow_skill", phase="semantic_recipe_composition"),
-            timeout=_creator_ai_timeout(model),
+            chat(model, messages, agent_name="creator_flow_skill", phase="semantic_recipe_composition"),
+            timeout=max(0.001, deadline - loop.time()),
         )
     except TimeoutError as exc:
         raise AuthoringServiceError("AI_CREATOR_FLOW_TIMEOUT", "The whole-flow AI service did not respond in time.", status=504) from exc
+    content = str(response.get("content") or "")
     try:
-        recipe, publications = parse_creator_flow_result(str(response.get("content") or ""), goal, recipe_id, capabilities)
-    except CreatorFlowSkillError as exc:
-        raise AuthoringServiceError("AI_CREATOR_FLOW_OUTPUT_INVALID", str(exc), status=502) from exc
-    return recipe, publications
+        return parse_creator_flow_result(content, goal, recipe_id, capabilities)
+    except CreatorFlowSkillError as first_error:
+        try:
+            repaired = await asyncio.wait_for(
+                chat(
+                    model,
+                    build_creator_flow_repair_messages(goal, capabilities, content, str(first_error)),
+                    agent_name="creator_flow_skill",
+                    phase="output_contract_repair",
+                ),
+                timeout=max(0.001, deadline - loop.time()),
+            )
+        except TimeoutError as exc:
+            raise AuthoringServiceError("AI_CREATOR_FLOW_TIMEOUT", "The whole-flow AI repair did not respond in time.", status=504) from exc
+        try:
+            return parse_creator_flow_result(str(repaired.get("content") or ""), goal, recipe_id, capabilities)
+        except CreatorFlowSkillError as exc:
+            raise AuthoringServiceError("AI_CREATOR_FLOW_OUTPUT_INVALID", str(exc), status=502) from exc
 
 
 @app.post("/api/creator/compose-recipe")
@@ -3463,6 +3488,34 @@ async def discover_creator_source_candidates(session_id: str, payload: CreatorSo
         _authoring_error(AuthoringServiceError("AI_CREATOR_SOURCE_DISCOVERY_MODEL_UNBOUND", str(exc), status=409))
     except Exception as exc:
         _authoring_error(AuthoringServiceError("AI_CREATOR_SOURCE_DISCOVERY_FAILED", str(exc), status=502))
+
+
+@app.post("/api/creator/trial-run/fetch")
+def fetch_creator_trial_sources(payload: CreatorTrialFetchPayload):
+    from core.studio.rss_daily_trial import TrialRunError, fetch_feeds
+    try:
+        return fetch_feeds(payload.feed_url)
+    except TrialRunError as exc:
+        raise HTTPException(status_code=exc.status, detail={"code": exc.code, "message": str(exc)}) from exc
+
+
+@app.post("/api/creator/trial-run/compose")
+async def compose_creator_trial_digest(payload: CreatorTrialComposePayload):
+    from core.studio.rss_daily_trial import TrialRunError, compose_digest
+    try:
+        digest = await compose_digest(payload.items)
+        return {"schema": "cartridgeflow.creator_trial_digest.v1", "digest": digest}
+    except TrialRunError as exc:
+        raise HTTPException(status_code=exc.status, detail={"code": exc.code, "message": str(exc)}) from exc
+
+
+@app.post("/api/creator/trial-run")
+async def run_creator_trial(payload: CreatorTrialFetchPayload):
+    from core.studio.rss_daily_trial import TrialRunError, run_trial
+    try:
+        return await run_trial(payload.feed_url)
+    except TrialRunError as exc:
+        raise HTTPException(status_code=exc.status, detail={"code": exc.code, "message": str(exc)}) from exc
 
 
 @app.post("/api/creator/source-inspections")
@@ -5939,8 +5992,8 @@ def serve_package_file(filename: str):
     return FileResponse(target, media_type="application/zip", filename=target.name)
 
 
-static_dir = ROOT / "src" / "intent-studio" / "dist"
-capability_static_dir = ROOT / "src" / "capability-workshop" / "dist"
+static_dir = ROOT / "src" / "studio" / "dist"
+capability_static_dir = ROOT / "src" / "studio" / "dist"
 if static_dir.exists():
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
     assets_dir = static_dir / "assets"
@@ -6011,7 +6064,7 @@ def service_root():
         "service": "CartridgeFlow API",
         "docs": "/docs",
         "health": "/api/health",
-        "intent_studio": "Build src/intent-studio or run the Intent Studio development server.",
+        "intent_studio": "Build src/studio or run the studio development server.",
     }
 
 

@@ -241,14 +241,19 @@ class McpContext:
         return {"ok": True, "content": content, "outputs": data, "operation_trace": trace}
 
 
-def inspect_public_https_url(url: str) -> dict:
-    """Use the same SSRF-safe network broker for a read-only Creator source review."""
+def fetch_public_https_url(url: str, *, operation_id: str = "creator.source.fetch") -> dict:
+    """SSRF-safe public HTTPS GET used by Creator source review and trial runs."""
     context = McpContext()
-    context._active_operation = _Operation("creator.source.inspect", "network", "network.fetch")
+    context._active_operation = _Operation(operation_id, "network", "network.fetch")
     try:
-        result = context.network._fetch(str(url), "creator.source.inspect")
+        return context.network._fetch(str(url), operation_id)
     finally:
         context._active_operation = None
+
+
+def inspect_public_https_url(url: str) -> dict:
+    """Use the same SSRF-safe network broker for a read-only Creator source review."""
+    result = fetch_public_https_url(url, operation_id="creator.source.inspect")
     content = str(result.pop("content", ""))
     result["content_digest"] = hashlib.sha256(content.encode("utf-8")).hexdigest()
     result["sample"] = " ".join(content[:12000].split())[:1000]

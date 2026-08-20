@@ -186,8 +186,6 @@ class CleanBaseHygieneTests(unittest.TestCase):
             "/config/studio/credentials.json*",
             "/config/studio/resources.json*",
             "/src/studio/dist/",
-            "/src/intent-studio/dist/",
-            "/src/capability-workshop/dist/",
             "/temp/",
             "Thumbs.db",
         ):
@@ -354,9 +352,9 @@ class CleanBaseHygieneTests(unittest.TestCase):
             }), encoding="utf-8")
             (root / "src" / "core").mkdir(parents=True)
             (root / "src" / "backend").mkdir(parents=True)
-            (root / "src" / "intent-studio" / "src").mkdir(parents=True)
+            (root / "src" / "studio" / "src").mkdir(parents=True)
             (root / "src" / "core" / "leak.py").write_text("TOOL = 'render_acme_video'\n", encoding="utf-8")
-            (root / "src" / "intent-studio" / "src" / "branch.tsx").write_text(
+            (root / "src" / "studio" / "src" / "branch.tsx").write_text(
                 "if (cartridgeId === 'dev.acme_video') return <AcmeVideo />\n",
                 encoding="utf-8",
             )
@@ -372,7 +370,7 @@ class CleanBaseHygieneTests(unittest.TestCase):
     def test_base_runtime_contains_no_vendor_specific_adapter(self):
         vendor_markers = ("comfyui", "comfy_ui", "krea", "runway", "pika", "godot")
         findings = []
-        for relative in ("src/core", "src/backend", "src/studio/src", "src/intent-studio/src", "src/capability-workshop/src"):
+        for relative in ("src/core", "src/backend", "src/studio/src"):
             source_root = ROOT / relative
             for path in source_root.rglob("*"):
                 if not path.is_file() or path.suffix.lower() not in {".py", ".ts", ".tsx", ".js", ".jsx", ".css", ".html"}:

@@ -455,7 +455,7 @@ def _audit_product_bindings(root: Path, catalog, errors: list[str], *, clean: bo
     _require_text(root / "src/core/lab/dev_flow.py", "self.default_protocol_version", errors)
     _require_text(root / "src/backend/main.py", "protocol_catalog", errors)
     _require_text(root / "src/core/studio/creator_runtime_bridge.py", 'CREATOR_PACKAGE_PROTOCOL = {"id": "CF-FARP", "version": "1.6"}', errors)
-    _require_text(root / "src/intent-studio/src/pages/intent-studio/IntentStudio.tsx", "packageCreatorProject", errors)
+    _require_text(root / "src/studio/src/api/client.ts", "packageCreatorProject", errors)
     _require_text(root / "README.md", "protocol-registry", errors)
 
     known = {(item["id"], item["version"]) for item in catalog.releases}

@@ -32,10 +32,9 @@ run.bat
 ```powershell
 python scripts/run_conformance.py --quiet
 python scripts/audit_protocol_registry.py
-npm --prefix src/intent-studio run build
-npm --prefix src/intent-studio run test
-npm --prefix src/capability-workshop run build
-npm --prefix src/capability-workshop run test
+npm --prefix src/studio run build
+npm --prefix src/studio run typecheck
+npm --prefix src/studio run test:click
 trufflehog filesystem . --results=verified --exclude-detectors=Lob --fail --fail-on-scan-errors --no-update --exclude-paths=config/trufflehog-filesystem-exclude.txt
 trufflehog git file://. --results=verified --exclude-detectors=Lob --fail --fail-on-scan-errors --no-update
 ```
@@ -46,8 +45,7 @@ trufflehog git file://. --results=verified --exclude-detectors=Lob --fail --fail
 
 - `src/backend/`：共享 HTTP 应用与 API 路由。
 - `src/core/`：卡带、运行时、协议适配、实验室和工作室核心逻辑。
-- `src/intent-studio/`：方向发现与语义组合。
-- `src/capability-workshop/`：可执行能力设计、验证与发布。
+- `src/studio/`：唯一创作工作台（语义方案、能力补齐、试运行）。旧 Intent Studio、Capability Workshop、Delivery Workbench 源码已移出本仓库归档。
 - `config/protocol/`：产品锁定的只读 `protocol-registry.sqlite` 和协议锁。
 - `scripts/`：启动、构建、发布、审计和产品验收工具。
 

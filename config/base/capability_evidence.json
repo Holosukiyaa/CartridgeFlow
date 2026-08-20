@@ -446,7 +446,7 @@
       "implementation": ["src/core/protocol/trusted_node_recipes.py", "src/core/studio/trusted_node_presets.py", "src/core/llm/creator_flow_skill.py", "src/core/llm/creator_node_skill.py", "src/core/studio/authoring_service.py#AuthoringSessionStore.create_from_recipe", "src/core/studio/creator_runtime_bridge.py#CreatorRuntimeBridge"],
       "positive_tests": ["test_trusted_node_recipe_contract_v14.TrustedNodeRecipeContractV14Tests.test_dynamic_recipe_resolves_mapping_only_from_registry", "test_trusted_node_authoring.TrustedNodeAuthoringTests.test_creator_package_boundary_builds_signed_archive_without_project_confirmation", "test_trusted_creator_api.TrustedCreatorApiTests.test_creator_package_is_the_only_creator_materialization_route"],
       "failure_tests": ["test_trusted_node_recipe_contract_v14.TrustedNodeRecipeContractV14Tests.test_unknown_preset_field_and_cycle_fail_closed", "test_trusted_node_authoring.TrustedNodeAuthoringTests.test_creator_projection_is_safe_and_topology_mutation_is_blocked"],
-      "ui": {"status": "visible", "entries": ["src/intent-studio/src/pages/intent-studio/IntentStudio.tsx"]},
+      "ui": {"status": "visible", "entries": ["src/studio/src/api/client.ts"]},
       "notes": "Base ships no business presets. Whole-flow composition resolves mappings server-side; node refinement is field-scoped; the sole Creator package endpoint atomically validates mappings and signs an archive without exposing engineering UI."
     },
     "release_envelope": {

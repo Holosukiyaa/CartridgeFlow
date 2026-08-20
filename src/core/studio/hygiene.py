@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 
 
-SOURCE_DIRS = ("src/core", "src/backend", "src/studio/src", "src/intent-studio/src", "src/capability-workshop/src")
+SOURCE_DIRS = ("src/core", "src/backend", "src/studio/src")
 SOURCE_SUFFIXES = {".py", ".ts", ".tsx", ".js", ".jsx", ".css", ".html"}
 
 # These release-tree shelves are legacy/prohibited locations, not runtime inputs.

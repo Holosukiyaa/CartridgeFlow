@@ -19,7 +19,7 @@ import {
   type CreatorSourceCandidate,
 } from '../api/client.ts'
 import { copy } from '../copy.ts'
-import { Button, StatusBadge } from '../ui/index.ts'
+import { Button, Dialog, StatusBadge } from '../ui/index.ts'
 import { stepContract } from './graph.ts'
 import { nodeReviewState, requiredFieldsEmpty, trustCopy } from './model.ts'
 
@@ -62,6 +62,7 @@ export function NodeDetail({
   const [inspection, setInspection] = useState<SourceInspection | null>(null)
   const [sourceError, setSourceError] = useState('')
   const [experienceDrafts, setExperienceDrafts] = useState<Record<string, ExperienceDraft>>({})
+  const [leaveDialogOpen, setLeaveDialogOpen] = useState(false)
   const state = nodeReviewState(creator, node)
   const unresolved = state === 'unresolved'
   const changed = JSON.stringify(values) !== JSON.stringify(node.values)
@@ -80,7 +81,15 @@ export function NodeDetail({
   })
 
   const close = () => {
-    if ((changed || experienceDirty) && !window.confirm('有未保存的字段修改，确定放弃并离开吗？')) return
+    if (changed || experienceDirty) {
+      setLeaveDialogOpen(true)
+      return
+    }
+    onClose()
+  }
+
+  const discardAndClose = () => {
+    setLeaveDialogOpen(false)
     onClose()
   }
 
@@ -230,7 +239,7 @@ export function NodeDetail({
     } catch (error) { fail(error) } finally { setWorking(false) }
   }
 
-  return <aside className="detail" aria-label={`审核 ${node.label}`}>
+  return <><aside className="detail" aria-label={`审核 ${node.label}`}>
     <header className="detail-head">
       <div>
         <small>{String(index + 1).padStart(2, '0')}</small>
@@ -369,4 +378,18 @@ export function NodeDetail({
       </Button>
     </footer>
   </aside>
+    {leaveDialogOpen ? <Dialog
+      title="放弃未保存的修改？"
+      description="字段或结果呈现中有尚未保存的修改。离开后，这些修改将丢失。"
+      onClose={() => setLeaveDialogOpen(false)}
+    >
+      <form onSubmit={(event) => { event.preventDefault(); discardAndClose() }}>
+        <div className="dialog-foot">
+          <span />
+          <Button autoFocus variant="ghost" onClick={() => setLeaveDialogOpen(false)}>取消</Button>
+          <Button type="submit">放弃修改</Button>
+        </div>
+      </form>
+    </Dialog> : null}
+  </>
 }

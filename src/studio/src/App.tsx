@@ -13,10 +13,12 @@ function projectIdFromLocation() {
 }
 
 export default function App() {
-  const [projectId, setProjectId] = useState(projectIdFromLocation)
+  const locationProjectId = projectIdFromLocation()
+  const [projectId, setProjectId] = useState(locationProjectId)
   const [loadingProjects, setLoadingProjects] = useState(!projectId)
   const [projectLoadError, setProjectLoadError] = useState('')
   const isCapabilities = window.location.pathname.startsWith('/capabilities')
+  const capabilitiesBackPath = locationProjectId ? projectStudioPath(locationProjectId) : '/studio'
 
   useEffect(() => {
     if (projectId) {
@@ -27,6 +29,10 @@ export default function App() {
           window.history.replaceState(null, '', next)
         }
       }
+      return
+    }
+    if (isCapabilities) {
+      setLoadingProjects(false)
       return
     }
     let active = true
@@ -50,8 +56,20 @@ export default function App() {
   }
 
   return <ThemeProvider>
-    {projectId ? <WorkspaceApp projectId={projectId} /> : <ProjectHub loading={loadingProjects} error={projectLoadError} onCreate={createProject} />}
+    {isCapabilities ? <CapabilitiesPlaceholder backPath={capabilitiesBackPath} /> : projectId ? <WorkspaceApp projectId={projectId} /> : <ProjectHub loading={loadingProjects} error={projectLoadError} onCreate={createProject} />}
   </ThemeProvider>
+}
+
+function CapabilitiesPlaceholder({ backPath }: { backPath: string }) {
+  return <main className="workspace">
+    <header className="topbar"><strong className="brand-name">{copy.brand}</strong></header>
+    <div className="overlay">
+      <section className="dialog" role="status" aria-label="能力工坊">
+        <header><div><h2>能力工坊</h2><p>能力工坊还不是独立产品，缺口步骤请从方案里打开第二层.</p></div></header>
+        <div className="dialog-foot"><span /> <Button onClick={() => window.location.assign(backPath)}>返回方案</Button></div>
+      </section>
+    </div>
+  </main>
 }
 
 function ProjectHub({ loading, error, onCreate }: { loading: boolean; error: string; onCreate: () => void }) {

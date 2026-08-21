@@ -1,5 +1,5 @@
-import type { ReactNode } from 'react'
-import { ChevronRight, Sparkles } from 'lucide-react'
+import { useState, type ReactNode } from 'react'
+import { ChevronDown, ChevronRight, ChevronUp, Package as PackageIcon, Sparkles } from 'lucide-react'
 import type { CreatorRunnerDelivery } from '../api/client.ts'
 import type { CreatorClarification, CreatorPackage, CreatorPossibility, CreatorProjection } from '../api/types.ts'
 import { COMPOSE_INPUT_ID, MIN_GOAL_LENGTH } from '../config.ts'
@@ -93,6 +93,7 @@ function DirectionsStage({ goal, possibilities, onChoose, onSkip }: StageContext
 }
 
 function PackageStage({ creator, packageResult, packageError, runnerDelivery, busy, onOpenGap }: StageContext) {
+  const [expanded, setExpanded] = useState(false)
   if (!creator) return null
   const blockers = creator.trusted_recipe.nodes.filter((node) => nodeReviewState(creator, node) === 'unresolved')
   const heading = packageError
@@ -117,10 +118,34 @@ function PackageStage({ creator, packageResult, packageError, runnerDelivery, bu
         : packageResult
           ? copy.package.signedBody
           : copy.package.notReadyBody
-  return <div className="pack-inner" role={packageError ? 'alert' : undefined}>
-    <div className="pack-scroll">
-      <strong>{packageError || heading}</strong>
-      {blockers.length ? <ul>{blockers.map((node, index) => <li key={node.id}><em>{String(index + 1).padStart(2, '0')}</em><button type="button" className="runtime-text-link" onClick={() => onOpenGap?.(node.id)}>{node.label}</button></li>)}</ul> : body ? <p className="pack-body">{body}</p> : null}
+  const packing = !packageError && !blockers.length && !runnerDelivery && !packageResult && busy
+  const forcedOpen = Boolean(packageError) || packing
+  const open = forcedOpen || expanded
+
+  if (!open) {
+    return <Button
+      variant="ghost"
+      className="pack-corner"
+      aria-expanded="false"
+      title="查看发行包状态"
+      onClick={() => setExpanded(true)}
+      style={{ display: 'inline-flex', flexDirection: 'row', width: 'auto', maxWidth: 240, minHeight: 36, height: 36, maxHeight: 36, padding: '0 12px', background: '#fff' }}
+    >
+      <PackageIcon size={14} />
+      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{heading}</span>
+      <ChevronUp size={14} />
+    </Button>
+  }
+
+  return <div className="pack-corner" role={packageError ? 'alert' : undefined}>
+    <div className="pack-inner">
+      <div className="pack-scroll">
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+          <strong style={{ flex: 1 }}>{packageError || heading}</strong>
+          {!forcedOpen ? <button type="button" className="runtime-text-link" aria-expanded="true" title="收起发行包状态" onClick={() => setExpanded(false)} style={{ marginTop: 0 }}><ChevronDown size={14} /></button> : null}
+        </div>
+        {blockers.length ? <ul>{blockers.map((node, index) => <li key={node.id}><em>{String(index + 1).padStart(2, '0')}</em><button type="button" className="runtime-text-link" onClick={() => onOpenGap?.(node.id)}>{node.label}</button></li>)}</ul> : body ? <p className="pack-body">{body}</p> : null}
+      </div>
     </div>
   </div>
 }
@@ -133,7 +158,7 @@ const beforeRecipe: Partial<Record<StageId, (ctx: StageContext) => ReactNode>> =
 
 export function StageLayer(ctx: StageContext) {
   if (ctx.creator) {
-    return <div className="stage-layer is-docked"><div className="pack-corner"><PackageStage {...ctx} /></div></div>
+    return <div className="stage-layer is-docked"><PackageStage {...ctx} /></div>
   }
 
   const overlay = ctx.busy

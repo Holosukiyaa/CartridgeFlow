@@ -308,13 +308,11 @@ export function Layer2Overlay({
           description={goal}
           published={Boolean(layer.published)}
           missing={missing}
-          busy={busy || proving}
           error={error}
           layer={layer}
           advanced={publishAdvanced}
           onAdvanced={() => setPublishAdvanced(true)}
           onName={(value) => setLayer((current) => ({ ...current, step_name: value }))}
-          onPublish={() => void publish()}
         /> : null}
       </div> : <div className="layer2-body">
         <aside className="l2-palette">
@@ -416,6 +414,9 @@ export function Layer2Overlay({
         {stage !== 'flow' ? <>
           <span className={hasPath ? 'l2-foot-ok' : 'l2-foot-wait'}>{hasPath ? '结构完整' : '结构不完整'}</span>
           <span className={proof.success && proof.safe_fail ? 'l2-foot-ok' : 'l2-foot-wait'}>{proof.success && proof.safe_fail ? '验证成功与失败均通过' : '验证尚未完成'}</span>
+          {stage === 'result' ? <Button onClick={() => setStage('prove')}>下一步：{nextLabel}</Button> : null}
+          {stage === 'prove' ? <Button disabled={!(proof.success && proof.safe_fail)} onClick={() => setStage('publish')}>下一步：{nextLabel}</Button> : null}
+          {stage === 'publish' ? <Button disabled={busy || proving || missing.length > 0 || Boolean(layer.published)} onClick={() => void publish()}>发布并回到原步骤</Button> : null}
         </> : <>
           <span>当前进度：搭建内部做法</span>
           <span className={hasPath ? 'l2-foot-ok' : 'l2-foot-wait'}>{hasPath ? '结构完整' : '结构不完整'}</span>
@@ -533,19 +534,17 @@ function ProveColumn({ layer, proving, note, infra, prodLevel, onProdLevel, onPr
 }
 
 function PublishColumn({
-  name, description, published, missing, busy, error, layer, advanced, onAdvanced, onName, onPublish,
+  name, description, published, missing, error, layer, advanced, onAdvanced, onName,
 }: {
   name: string
   description: string
   published: boolean
   missing: string[]
-  busy: boolean
   error: string
   layer: StudioLayer2
   advanced: boolean
   onAdvanced: () => void
   onName: (value: string) => void
-  onPublish: () => void
 }) {
   return <section className="layer2-col is-publish">
     <h3>发布回第一层</h3>
@@ -562,7 +561,6 @@ function PublishColumn({
       <strong>还差</strong>
       {missing.map((item) => <p key={item}>{item}</p>)}
     </div> : null}
-    <Button disabled={busy || missing.length > 0 || published} onClick={onPublish}>发布并回到原步骤</Button>
     <p className="hint">第一层那张卡会变成已有做法，方案不离开当前界面</p>
     {published ? <div className="l2-published">
       <p><b>已发布</b> {name}</p>

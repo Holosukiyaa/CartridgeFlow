@@ -67,11 +67,14 @@ export function WorkspaceHeader({
     <div className="topbar-meta">
       <span>{syncLabel}</span>
       <Button variant="icon" aria-label={copy.settings} title={copy.settings} onClick={onOpenSettings}><Settings size={14} /></Button>
-      {onToggleSteward ? <button type="button" className="btn-steward" aria-label={copy.toggleSteward} onClick={onToggleSteward}>
-        <Bot size={11} />
-        {copy.steward}
-        {stewardOn ? <i className="dot" /> : null}
-      </button> : null}
+      {onToggleSteward ? <Button
+        variant="icon"
+        className={stewardOn ? 'is-on' : undefined}
+        aria-label={copy.toggleSteward}
+        aria-pressed={stewardOn}
+        title={copy.steward}
+        onClick={onToggleSteward}
+      ><Bot size={14} /></Button> : null}
       <ThemeToggle />
       <button type="button" className={cx('connection', connected && 'is-on')} onClick={onConnect}>
         <b />
@@ -132,18 +135,34 @@ function ThemeToggle() {
 export function ProjectMenu({
   projectId,
   projects,
+  onSelect,
   onNew,
   onRename,
   onDelete,
 }: {
   projectId: string
   projects: Array<{ project_id: string; name: string; revision: number }>
+  onSelect: (project: { project_id: string; name: string }) => void
   onNew: () => void
   onRename: (name: string) => void
   onDelete: (name: string) => void
 }) {
   return <div className="project-menu">
-    {projects.map((project) => <a className={project.project_id === projectId ? 'is-current' : ''} href={`/projects/${encodeURIComponent(project.project_id)}/studio`} key={project.project_id}>
+    {projects.map((project) => <a
+      className={project.project_id === projectId ? 'is-current' : ''}
+      key={project.project_id}
+      role="button"
+      tabIndex={0}
+      onClick={(event) => {
+        event.preventDefault()
+        if (project.project_id !== projectId) onSelect(project)
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return
+        event.preventDefault()
+        if (project.project_id !== projectId) onSelect(project)
+      }}
+    >
       <span>{shortProjectName(project.name)}</span>
       <small>v{project.revision}</small>
     </a>)}

@@ -18,7 +18,22 @@ export function WorkspaceApp({ projectId }: { projectId: string }) {
   const [runtimeOpen, setRuntimeOpen] = useState(false)
   const [reviewFilter, setReviewFilter] = useState<ReviewState | ''>('')
   const [projectAction, setProjectAction] = useState<{ kind: 'rename' | 'delete'; name: string } | null>(null)
+  const [pendingProject, setPendingProject] = useState<{ project_id: string; name: string } | null>(null)
   const showSteward = Boolean(workspace.creator && (workspace.stewardOpen || (workspace.narrow && workspace.tab === 'steward')))
+  const draftNeedsSwitchConfirmation = workspace.syncLabel === '正在保存草稿'
+    || workspace.syncLabel === '同步失败'
+    || workspace.syncLabel === 'REVISION_CONFLICT'
+    || workspace.syncIssue === 'save'
+    || workspace.syncIssue === 'conflict'
+
+  const switchProject = (project: { project_id: string; name: string }) => {
+    workspace.setProjectMenuOpen(false)
+    if (draftNeedsSwitchConfirmation) {
+      setPendingProject(project)
+      return
+    }
+    navigateToProject(project.project_id)
+  }
 
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get('runtime') === '1') setRuntimeOpen(true)
@@ -33,6 +48,7 @@ export function WorkspaceApp({ projectId }: { projectId: string }) {
         projectMenu={workspace.projectMenuOpen ? <ProjectMenu
           projectId={projectId}
           projects={workspace.projects}
+          onSelect={switchProject}
           onNew={workspace.startNewProject}
           onRename={(name) => setProjectAction({ kind: 'rename', name })}
           onDelete={(name) => setProjectAction({ kind: 'delete', name })}
@@ -155,6 +171,11 @@ export function WorkspaceApp({ projectId }: { projectId: string }) {
       onClose={() => setProjectAction(null)}
       onDelete={workspace.deleteProject}
     /> : null}
+    {pendingProject ? <ProjectSwitchDialog
+      projectName={pendingProject.name}
+      onClose={() => setPendingProject(null)}
+      onConfirm={() => navigateToProject(pendingProject.project_id)}
+    /> : null}
     {workspace.layer2Node && workspace.creator ? <Layer2Overlay
       creator={workspace.creator}
       node={workspace.layer2Node}
@@ -188,6 +209,34 @@ export function WorkspaceApp({ projectId }: { projectId: string }) {
       onReload={() => void workspace.reloadServerDraft()}
     /> : null}
   </>
+}
+
+function navigateToProject(projectId: string) {
+  window.location.assign(`/projects/${encodeURIComponent(projectId)}/studio`)
+}
+
+function ProjectSwitchDialog({
+  projectName,
+  onClose,
+  onConfirm,
+}: {
+  projectName: string
+  onClose: () => void
+  onConfirm: () => void
+}) {
+  return <Dialog
+    title="草稿尚未保存"
+    description={`切换到「${projectName}」可能会丢失当前草稿中尚未保存的内容。`}
+    onClose={onClose}
+  >
+    <form onSubmit={(event) => { event.preventDefault(); onConfirm() }}>
+      <div className="dialog-foot">
+        <span />
+        <Button autoFocus variant="ghost" onClick={onClose}>{copy.cancel}</Button>
+        <Button type="submit">仍要切换</Button>
+      </div>
+    </form>
+  </Dialog>
 }
 
 function SyncRecoveryDialog({

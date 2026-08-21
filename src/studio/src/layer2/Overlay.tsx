@@ -8,32 +8,78 @@ import { copy } from '../copy.ts'
 import { Button, cx } from '../ui/index.ts'
 
 const KIND_CHIPS = ['开始', '展示结果', '人工审核', '整理内容', '调用本机工具', 'AI处理']
-const HOST_TOOLS = [
-  { id: 'rss', label: 'RSS订阅读取' },
-  { id: 'web', label: '公开网页抓取' },
-  { id: 'file', label: '读取本机文件' },
-]
+
+function fieldKind(schema: Record<string, unknown> | undefined) {
+  if (schema?.type === 'array') return '列表'
+  if (schema?.type === 'boolean') return '是/否'
+  if (schema?.type === 'string' && (schema.format === 'uri' || schema.format === 'url')) return '链接'
+  return '文本'
+}
+
+function nodeFields(node: CreatorRecipeNode): StudioLayer2Field[] {
+  const fields: StudioLayer2Field[] = []
+  const usedIds = new Set<string>()
+  for (const slot of node.experience?.slots || []) {
+    const component = slot.components.find((item) => item.id === slot.selected_component_id)
+    const contracted = component?.fields.map((field) => {
+      const sourceId = slot.field_sources[field.id] || field.id
+      const source = slot.sources.find((item) => item.id === sourceId)
+      return { id: field.id, label: field.label || field.id, schema: source?.schema, sourceId }
+    }) || slot.sources.map((source) => ({ ...source, sourceId: source.id }))
+    for (const field of contracted) {
+      let id = field.id
+      while (usedIds.has(id)) id = `${slot.id}_${id}`
+      usedIds.add(id)
+      fields.push({ id, label: field.label || field.id, kind: fieldKind(field.schema), source: `结果.${field.sourceId}` })
+    }
+  }
+  return fields
+}
+
+function panelName(node: CreatorRecipeNode) {
+  for (const slot of node.experience?.slots || []) {
+    const component = slot.components.find((item) => item.id === slot.selected_component_id)
+    if (component?.label) return component.label
+  }
+  return node.experience?.slots[0]?.label || '结果面板'
+}
 
 function emptyLayer(node: CreatorRecipeNode): StudioLayer2 {
   return node.studio_layer2 || {
     step_name: node.label,
-    params: [{ id: 'sources', label: '来源列表', value_type: 'string_list', required: true, default: [] }],
-    fields: [
-      { id: 'date', label: '日期', kind: '文本', source: '运行输入.date' },
-      { id: 'result_items', label: '要点', kind: '列表', source: '结果.result_items' },
-      { id: 'source_url', label: '来源链接', kind: '链接', source: '结果.source_url' },
-      { id: 'approved', label: '已确认', kind: '是/否', source: '结果.approved' },
-    ],
-    template: '摘要',
+    params: node.editable_fields.map((field) => ({
+      ...field,
+      default: Object.prototype.hasOwnProperty.call(node.values, field.id) ? node.values[field.id] : field.default,
+    })),
+    fields: nodeFields(node),
+    template: '列表',
     preview: '正常',
-    panel_name: '日报结果面板',
-    deliver: '把当天筛选后的中文AI日报清楚地交给使用者',
-    tools: ['rss'],
-    handoff_in: '已审核来源列表',
-    handoff_out: '当天原始材料清单',
+    panel_name: panelName(node),
+    deliver: node.resolution?.needed_capability || node.description || node.label,
+    tools: [],
+    handoff_in: '',
+    handoff_out: '',
     internal_steps: ['开始', node.label, '完成'],
     proof: {},
   }
+}
+
+function hasSampleValue(value: unknown) {
+  if (value === undefined || value === null) return false
+  if (typeof value === 'string') return value.trim().length > 0
+  if (Array.isArray(value)) return value.length > 0 && value.every(hasSampleValue)
+  if (typeof value === 'object') return Object.keys(value).length > 0
+  return true
+}
+
+function sampleValue(param: StudioLayer2['params'][number]) {
+  return hasSampleValue(param.default) ? param.default : undefined
+}
+
+function displaySample(value: unknown) {
+  if (Array.isArray(value)) return value.map(String).join('、')
+  if (typeof value === 'object' && value !== null) return JSON.stringify(value)
+  return String(value)
 }
 
 export function Layer2Overlay({
@@ -141,26 +187,23 @@ export function Layer2Overlay({
     finally { setBusy(false) }
   }
 
-  const sampleValue = (param: StudioLayer2['params'][number]) => {
-    const value = param.default
-    if (value == null || value === '' || (Array.isArray(value) && value.length === 0)) {
-      if (param.value_type === 'string_list') return ['https://example.com/ai.rss']
-      if (param.id === 'date' || param.label === '运行日期') return new Date().toISOString().slice(0, 10)
-      return '示例'
-    }
-    return value
-  }
-
   const prove = async () => {
     setProving(true)
     setError('')
     setProveNote('')
     setInfraNote('')
     try {
-      const latest = await persist()
+      const missingSamples = layer.params.filter((param) => param.required && !hasSampleValue(param.default))
+      if (missingSamples.length) {
+        setError(`请先为必填参数「${missingSamples.map((param) => param.label || param.id).join('、')}」填写真实样本，再运行证明`)
+        return
+      }
       const values: Record<string, unknown> = {}
-      const params = latest.trusted_recipe.nodes.find((item) => item.id === node.id)?.studio_layer2?.params || layer.params
-      for (const param of params) values[param.id] = sampleValue(param)
+      for (const param of layer.params) {
+        const value = sampleValue(param)
+        if (value !== undefined) values[param.id] = value
+      }
+      const latest = await persist()
       const ok = await proveStudioLayer2(latest.session_id, node.id, latest.revision, 'success', values)
       const failInputs: Record<string, unknown> = {}
       const fail = await proveStudioLayer2(ok.creator.session_id, node.id, ok.creator.revision, 'omit_required', failInputs)
@@ -193,6 +236,7 @@ export function Layer2Overlay({
 
   const filteredReusable = reusable.filter((item) => !search || item.name.includes(search))
   const columns = stage !== 'flow'
+  const selectedToolLabel = layer.tools.length ? `调用本机工具（已选 ${layer.tools.length} 项）` : '调用本机工具'
 
   return <div className="layer2-backdrop" role="presentation">
     <div className="layer2" role="dialog" aria-label={`${copy.layer2Kicker} ${node.label}`}>
@@ -301,7 +345,7 @@ export function Layer2Overlay({
         </aside>
         <div className="layer2-canvas">
           <div className="l2-graph">
-            {layer.tools.includes('rss') ? <button type="button" className={cx('l2-card', 'is-tool', selected === 'tool' && 'is-selected')} onClick={() => setSelected('tool')}>调用本机工具（RSS订阅读取）</button> : null}
+            {layer.tools.map((toolId) => <button type="button" key={toolId} className={cx('l2-card', 'is-tool', selected === 'tool' && 'is-selected')} onClick={() => setSelected('tool')}>调用本机工具（{toolId}）</button>)}
             <span className="l2-dash" aria-hidden="true" />
             <div className="l2-row">
               <button type="button" className={cx('l2-pill', selected === 'start' && 'is-selected')} onClick={() => setSelected('start')}>开始</button>
@@ -322,7 +366,7 @@ export function Layer2Overlay({
           <div className="l2-insp-body">
             {inspectorTab === 'approach' ? <>
               <label>这一步叫什么
-                <input value={selected === 'main' || selected === 'start' || selected === 'end' || selected === 'tool' ? (selected === 'main' ? layer.step_name : selected === 'start' ? '开始' : selected === 'end' ? '完成' : '调用本机工具（RSS订阅读取）') : selected} onChange={(event) => {
+                <input value={selected === 'main' || selected === 'start' || selected === 'end' || selected === 'tool' ? (selected === 'main' ? layer.step_name : selected === 'start' ? '开始' : selected === 'end' ? '完成' : selectedToolLabel) : selected} onChange={(event) => {
                   const value = event.currentTarget.value
                   if (selected === 'main') setLayer((current) => ({ ...current, step_name: value }))
                   else if (selected !== 'start' && selected !== 'end' && selected !== 'tool') {
@@ -333,9 +377,9 @@ export function Layer2Overlay({
               </label>
               <p className="hint">这里只改这一步给人看的做法。运行细节留在高级里。</p>
               <strong>用到的本机工具</strong>
-              {HOST_TOOLS.map((item) => <label className="l2-check" key={item.id}>
-                <input type="checkbox" checked={layer.tools.includes(item.id)} onChange={() => setLayer((current) => ({ ...current, tools: current.tools.includes(item.id) ? current.tools.filter((id) => id !== item.id) : [...current.tools, item.id] }))} />
-                {item.label}
+              {layer.tools.map((toolId) => <label className="l2-check" key={toolId}>
+                <input type="checkbox" checked onChange={() => setLayer((current) => ({ ...current, tools: current.tools.filter((id) => id !== toolId) }))} />
+                {toolId}
               </label>)}
               {layer.tools.length ? null : <button type="button" className="l2-text-link" onClick={() => onOpenResources?.()}>还没有可用的本机工具。到第一层的资源池里添加。</button>}
               <strong>使用者参数</strong>
@@ -404,7 +448,7 @@ function ResultColumn({ layer, onChange, onSave, onBindResult }: { layer: Studio
     <strong className="l2-kicker">展示组件</strong>
     <p className="hint">试运行时人在 Runner 里看见的就是这里</p>
     <div className="l2-panel-pick">
-      <button type="button" className="is-on">{layer.panel_name || '日报结果面板'} <em>v1</em></button>
+      <button type="button" className="is-on">{layer.panel_name || '结果面板'} <em>v1</em></button>
       <button type="button" onClick={() => onChange({ ...layer, panel_name: '自定义结果面板' })}>新建</button>
     </div>
     {layer.panel_name === '自定义结果面板' ? null : <p className="hint">当前还没有自定义展示组件</p>}
@@ -436,11 +480,11 @@ function ResultPreview({ fields, preview, template }: { fields: StudioLayer2Fiel
   return <div className={cx('runtime-result-widgets', template === '数据面板' && 'is-grid')}>
     {fields.map((field) => {
       if (field.kind === '是/否') return <label key={field.id} className="runtime-check"><input type="checkbox" defaultChecked /> {field.label}</label>
-      if (field.kind === '链接') return <p key={field.id} className="runtime-result-field"><span>{field.label}</span><small>https://example.com/rss</small></p>
+      if (field.kind === '链接') return <p key={field.id} className="runtime-result-field"><span>{field.label}</span><small>待提供链接</small></p>
       if (field.source.includes('date') || field.label === '日期') return <p key={field.id} className="runtime-result-field"><span>{field.label}</span><small>{new Date().toISOString().slice(0, 10)}</small></p>
       return <div key={field.id} className="runtime-result-field">
         <span>{field.label}{template === '列表' ? ' · 列表' : template === '数据面板' ? ' · 面板' : ''}</span>
-        {template === '摘要' && !long ? <small>中文AI新闻条目一；中文AI新闻条目二</small> : <ul>{['中文AI新闻条目一', '中文AI新闻条目二', ...(long ? ['中文AI新闻条目三', '中文AI新闻条目四'] : [])].map((item) => <li key={item}>{item}</li>)}</ul>}
+        {template === '摘要' && !long ? <small>示例内容一；示例内容二</small> : <ul>{['示例内容一', '示例内容二', ...(long ? ['示例内容三', '示例内容四'] : [])].map((item) => <li key={item}>{item}</li>)}</ul>}
       </div>
     })}
   </div>
@@ -448,8 +492,11 @@ function ResultPreview({ fields, preview, template }: { fields: StudioLayer2Fiel
 
 function ProveColumn({ layer, proving, note, infra, prodLevel, onProdLevel, onProve }: { layer: StudioLayer2; proving: boolean; note: string; infra: string; prodLevel: boolean; onProdLevel: (on: boolean) => void; onProve: () => void }) {
   const proof = layer.proof || {}
-  const sources = layer.params.find((item) => item.id === 'sources' || item.label === '来源列表')
-  const sample = Array.isArray(sources?.default) && sources.default.length ? String(sources.default[0]) : 'https://example.com/ai.rss'
+  const samples = layer.params.flatMap((param) => {
+    const value = sampleValue(param)
+    return value === undefined ? [] : [`${param.label || param.id} = ${displaySample(value)}`]
+  })
+  const missingSamples = layer.params.filter((param) => param.required && !hasSampleValue(param.default))
   const ready = Boolean(proof.success && proof.safe_fail)
   return <section className="layer2-col is-prove">
     <div className="l2-prove-head">
@@ -463,16 +510,16 @@ function ProveColumn({ layer, proving, note, infra, prodLevel, onProdLevel, onPr
       </div>
     </div>
     <div className="l2-check-row">
-      <span>✓ 补输入条 {layer.params.map((item) => item.label).join(' · ')}</span>
-      <em>{layer.params.length ? '已完成' : '未完成'}</em>
+      <span>✓ 准备真实样本 {layer.params.map((item) => item.label).join(' · ') || '无需公开参数'}</span>
+      <em>{missingSamples.length ? '未完成' : '已完成'}</em>
     </div>
     {proof.success ? <article className="l2-run is-ok">
-      <div className="l2-run-top"><span>来源列表 = {sample}</span><span className="l2-tag is-ok">运行成功路径</span></div>
-      <p className="l2-run-result">✓ 成功 已拿到可展示的日报草稿</p>
+      <div className="l2-run-top"><span>{samples.join(' · ') || '无需公开参数'}</span><span className="l2-tag is-ok">运行成功路径</span></div>
+      <p className="l2-run-result">✓ 成功 已拿到可展示结果</p>
     </article> : <article className="l2-run"><p className="hint">还没有成功路径。点「跑一次」会用声明的输入真跑。</p></article>}
     {proof.safe_fail ? <article className="l2-run is-fail">
       <div className="l2-run-top"><span>主动省略输入内容</span><span className="l2-tag is-fail">运行安全失败</span></div>
-      <p className="l2-run-result is-fail">缺少必填 已停住 · 没写半份日报</p>
+      <p className="l2-run-result is-fail">缺少必填 已停住 · 未生成不完整结果</p>
     </article> : null}
     <p className="hint">两次都成功不算过</p>
     {proof.success && proof.safe_fail ? <article className="l2-run is-ok">
@@ -485,7 +532,7 @@ function ProveColumn({ layer, proving, note, infra, prodLevel, onProdLevel, onPr
     {infra ? <article className="l2-run is-fail">
       <p className="l2-run-result is-fail">不算安全失败 / 成功路径自己挂了</p>
       <p className="hint">{infra}</p>
-      <p className="hint">来源地址拒绝连接 · 这不是安全失败</p>
+      <p className="hint">请检查真实样本或运行环境 · 这不是安全失败</p>
     </article> : null}
     <button type="button" className="l2-run-again" disabled={proving} onClick={onProve}>跑一次</button>
   </section>
@@ -512,10 +559,10 @@ function PublishColumn({
     <label>说明<textarea rows={3} value={description} readOnly /></label>
     <button type="button" className="l2-text-link" onClick={onAdvanced}>匹配词 → 进高级</button>
     {advanced ? <dl>
-      <div><dt>公开输入</dt><dd>{layer.handoff_in || '原始来源列表'}</dd></div>
-      <div><dt>输出</dt><dd>{layer.handoff_out || '带链接最新内容'}</dd></div>
-      <div><dt>可编辑</dt><dd>{layer.params.map((item) => item.label).join('、') || '来源列表'}</dd></div>
-      <div><dt>依赖</dt><dd>{layer.internal_steps.filter((item) => item !== '开始' && item !== '完成').join('、') || 'AI内容处理'}</dd></div>
+      <div><dt>公开输入</dt><dd>{layer.handoff_in || '未声明'}</dd></div>
+      <div><dt>输出</dt><dd>{layer.handoff_out || '未声明'}</dd></div>
+      <div><dt>可编辑</dt><dd>{layer.params.map((item) => item.label).join('、') || '无'}</dd></div>
+      <div><dt>依赖</dt><dd>{layer.internal_steps.filter((item) => item !== '开始' && item !== '完成').join('、') || '无'}</dd></div>
     </dl> : null}
     {missing.length && !published ? <div className="l2-gaps">
       <strong>还差</strong>

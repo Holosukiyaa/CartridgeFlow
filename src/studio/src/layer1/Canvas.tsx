@@ -9,7 +9,7 @@ import {
   type NodeProps,
   type ReactFlowInstance,
 } from '@xyflow/react'
-import { Minus, Plus, Puzzle } from 'lucide-react'
+import { Minus, Plus, Puzzle, Search, X } from 'lucide-react'
 import type { CreatorProjection, CreatorRecipeNode, CreatorRecipePreview } from '../api/types.ts'
 import { LAYOUT_KEY, RELATION_KIND_FILTERS } from '../config.ts'
 import { copy } from '../copy.ts'
@@ -47,6 +47,46 @@ type CanvasData = {
 }
 
 type CanvasNode = Node<CanvasData, 'step'>
+
+function SearchBox({
+  value,
+  hitCount,
+  onChange,
+  onActivate,
+  fullWidth = false,
+}: {
+  value: string
+  hitCount: number
+  onChange: (value: string) => void
+  onActivate: () => void
+  fullWidth?: boolean
+}) {
+  return <form
+    className="l2-search nodrag nowheel"
+    role="search"
+    style={{ width: fullWidth ? '100%' : 'min(260px, calc(100% - 32px))', background: 'var(--color-surface)' }}
+    onSubmit={(event) => { event.preventDefault(); onActivate() }}
+  >
+    <Search size={15} aria-hidden="true" />
+    <input
+      type="search"
+      aria-label="搜索画布节点"
+      placeholder="搜索节点"
+      value={value}
+      onChange={(event) => onChange(event.currentTarget.value)}
+    />
+    {value ? <>
+      <span aria-live="polite">{hitCount}</span>
+      <button
+        type="button"
+        aria-label="清除搜索"
+        title="清除搜索"
+        style={{ display: 'flex', border: 0, padding: 2, background: 'transparent' }}
+        onClick={() => onChange('')}
+      ><X size={14} /></button>
+    </> : null}
+  </form>
+}
 
 function StepNode({ data, selected }: NodeProps<CanvasNode>) {
   return <div className={`creator-node is-${data.state}${selected ? ' is-selected' : ''}${data.impact ? ` is-${data.impact}` : ''}${data.dim ? ' is-dim' : ''}`}>
@@ -135,9 +175,11 @@ export function Canvas({
   const [flow, setFlow] = useState<ReactFlowInstance<CanvasNode, Edge> | null>(null)
   const [zoom, setZoom] = useState(1)
   const [visible, setVisible] = useState<RelationKind[]>(['control', 'data', 'uses'])
+  const [search, setSearch] = useState('')
   const { theme } = useTheme()
   const layoutScope = creator?.project_id || ''
   const savedRef = useRef(readSavedPositions(layoutScope))
+  const normalizedSearch = search.trim().toLocaleLowerCase()
 
   const elements = useMemo(() => {
     if (!creator) return { nodes: [] as CanvasNode[], edges: [] as Edge[] }
@@ -164,6 +206,7 @@ export function Canvas({
       const size = stepNodeSize(drawn, state === 'unresolved')
       const contract = stepContract(recipe, drawn)
       const impact = added.has(node.id) ? 'added' as const : removed.has(node.id) ? 'removed' as const : preview ? 'kept' as const : undefined
+      const searchMatch = !normalizedSearch || `${drawn.label}\n${drawn.description}`.toLocaleLowerCase().includes(normalizedSearch)
       return {
         id: node.id,
         type: 'step',
@@ -186,7 +229,7 @@ export function Canvas({
           dim: Boolean(reviewFilter && state !== reviewFilter),
           onOpenLayer: () => onOpenLayer(node.id),
         },
-        hidden: Boolean(reviewFilter && state !== reviewFilter),
+        hidden: !searchMatch || Boolean(reviewFilter && state !== reviewFilter),
       }
     })
     const grid = [
@@ -218,7 +261,7 @@ export function Canvas({
       }
     })
     return { nodes: placed, edges }
-  }, [contextIds, creator, onOpenLayer, preview, reviewFilter, selectedId, vertical, visible])
+  }, [contextIds, creator, normalizedSearch, onOpenLayer, preview, reviewFilter, selectedId, vertical, visible])
 
   const [nodes, setNodes, onNodesChange] = useNodesState<CanvasNode>([])
   useEffect(() => { setNodes(elements.nodes) }, [elements.nodes, setNodes])
@@ -231,6 +274,13 @@ export function Canvas({
     savedRef.current = readSavedPositions(layoutScope)
   }, [layoutScope])
 
+  const searchHits = useMemo(() => elements.nodes.filter((node) => !node.hidden).map((node) => node.id), [elements.nodes])
+
+  const activateSearchHit = useCallback((nodeId: string) => {
+    if (!nodeId) return
+    onSelect(nodeId)
+    void flow?.fitView({ nodes: [{ id: nodeId }], padding: 0.8, duration: 180, maxZoom: 1.1 })
+  }, [flow, onSelect])
 
   const toggleKind = (kind: RelationKind) => {
     setVisible((current) => current.includes(kind)
@@ -240,21 +290,31 @@ export function Canvas({
 
   if (!creator) return null
   if (vertical) {
+    const mobileNodes = creator.trusted_recipe.nodes.filter((node) => !normalizedSearch
+      || `${node.label}\n${node.description}`.toLocaleLowerCase().includes(normalizedSearch))
     return <div className="mobile-wrap">
     <div className="mobile-list">
       <div className="legend-row">
         {RELATION_KIND_FILTERS.map((item) => <span key={item.id} className={`is-${item.id}`}><i />{item.label}</span>)}
       </div>
-      {creator.trusted_recipe.nodes.map((node, index) => {
+      <SearchBox
+        value={search}
+        hitCount={mobileNodes.length}
+        onChange={setSearch}
+        onActivate={() => activateSearchHit(mobileNodes[0]?.id || '')}
+        fullWidth
+      />
+      {mobileNodes.map((node, index) => {
+        const originalIndex = creator.trusted_recipe.nodes.findIndex((item) => item.id === node.id)
         const state = nodeReviewState(creator, node)
         return <div key={node.id}>
           {index ? <div className="mobile-link">↓</div> : null}
           <article className={`mobile-card is-${state}${selectedId === node.id ? ' is-selected' : ''}`} onClick={() => onSelect(node.id)}>
             <header>
-              <span className="order">{String(index + 1).padStart(2, '0')}</span>
+              <span className="order">{String(originalIndex + 1).padStart(2, '0')}</span>
               <StatusBadge state={state} />
               <span className="topbar-spacer" />
-              {index === 0 ? <button type="button" className="node-layer" aria-label={copy.openLayer2} onClick={(event) => { event.stopPropagation(); onOpenLayer(node.id) }}><Puzzle size={14} /></button> : null}
+              {originalIndex === 0 ? <button type="button" className="node-layer" aria-label={copy.openLayer2} onClick={(event) => { event.stopPropagation(); onOpenLayer(node.id) }}><Puzzle size={14} /></button> : null}
             </header>
             <h3>{node.label}</h3>
             <p>{node.description}</p>
@@ -296,6 +356,14 @@ export function Canvas({
       <button type="button" onClick={onRejectPreview}>{copy.stewardReject}</button>
       <button type="button" className="is-apply" onClick={onApplyPreview}>{copy.stewardApply}</button>
     </Panel> : null}
+    <Panel position="top-right">
+      <SearchBox
+        value={search}
+        hitCount={searchHits.length}
+        onChange={setSearch}
+        onActivate={() => activateSearchHit(searchHits[0] || '')}
+      />
+    </Panel>
     <Panel className="relation-filters" position="top-left">
       {RELATION_KIND_FILTERS.map((item) => <button
         key={item.id}

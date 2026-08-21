@@ -590,7 +590,7 @@ export function useWorkspace(projectId: string) {
     guidance,
     stats,
     showDetail: Boolean(detailOpen && selectedNode && creator),
-    projectName: creator?.short_name || creator?.project_name || creator?.intent || projects.find((project) => project.project_id === projectId)?.name || copy.unnamedProject,
+    projectName: creator?.short_name || creator?.project_name || projects.find((project) => project.project_id === projectId)?.name || copy.unnamedProject,
     connectionLabel: aiStatus.has_key ? (aiStatus.model || copy.connected) : copy.disconnected,
     connected: aiStatus.has_key,
     setInput: (value: string) => { setInput(value); setError('') },

@@ -20,8 +20,7 @@ export function WorkspaceApp({ projectId }: { projectId: string }) {
   const [projectAction, setProjectAction] = useState<{ kind: 'rename' | 'delete'; name: string } | null>(null)
   const [pendingProject, setPendingProject] = useState<{ project_id: string; name: string } | null>(null)
   const showSteward = Boolean(workspace.creator && (workspace.stewardOpen || (workspace.narrow && workspace.tab === 'steward')))
-  const draftNeedsSwitchConfirmation = workspace.syncLabel === '正在保存草稿'
-    || workspace.syncLabel === '同步失败'
+  const draftNeedsSwitchConfirmation = workspace.syncLabel === '同步失败'
     || workspace.syncLabel === 'REVISION_CONFLICT'
     || workspace.syncIssue === 'save'
     || workspace.syncIssue === 'conflict'
@@ -44,7 +43,7 @@ export function WorkspaceApp({ projectId }: { projectId: string }) {
       narrow={workspace.narrow}
       header={<WorkspaceHeader
         projectName={workspace.projectName}
-        section={runtimeOpen ? copy.runtimeDesk : workspace.layer2Node ? copy.layer2Kicker : undefined}
+        section={runtimeOpen ? '试运行' : workspace.layer2Node ? copy.layer2Kicker : undefined}
         projectMenu={workspace.projectMenuOpen ? <ProjectMenu
           projectId={projectId}
           projects={workspace.projects}

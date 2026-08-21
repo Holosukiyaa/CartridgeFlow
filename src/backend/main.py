@@ -17,6 +17,7 @@ SOURCE_ROOT = ROOT / "src"
 sys.path.insert(0, str(SOURCE_ROOT))
 
 from fastapi import FastAPI, HTTPException, Request
+from starlette.concurrency import run_in_threadpool
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
@@ -38,6 +39,9 @@ from backend.api_models import (
     CreatorRunnerDeliveryPayload,
     CreatorNodeRefinementPayload,
     CreatorExperienceMappingPayload,
+    StudioLayer2Payload,
+    StudioLayer2ProofPayload,
+    StudioRunApprovePayload,
     DeveloperMaterializationPayload,
     TrustedNodePresetPayload,
     TrustedNodeActivationPayload,
@@ -48,6 +52,9 @@ from backend.api_models import (
     CreatorSourceInspectPayload,
     CreatorTrialFetchPayload,
     CreatorTrialComposePayload,
+    StudioReleaseRunPayload,
+    StudioInstallPackagePayload,
+    StudioRunJobPayload,
     TrustedNodePublishFromFlowPayload,
     CreatorSourceDiscoveryPayload,
     CreatorWorkspaceSavePayload,
@@ -103,6 +110,13 @@ from core.studio.authoring_service import AuthoringServiceError, AuthoringSessio
 from core.studio.creator_workspace import CreatorWorkspaceError, CreatorWorkspaceStore
 from backend.desktop_runner import DesktopRunnerClient, DesktopRunnerError
 from core.studio.creator_runtime_bridge import CreatorRuntimeBridge, CreatorRuntimeBridgeError
+from core.studio.release_runtime import (
+    ReleaseRuntimeError,
+    bind_studio_runtime_models,
+    install_daily_brief,
+    run_daily_brief_release,
+)
+from core.studio.run_desk import approve_run, desk_snapshot, enqueue_run, install_signed_package, job_status
 from core.studio.trusted_node_presets import TrustedNodePresetStore, build_trusted_node_mapping
 from core.studio.capability_cartridges import CapabilityCartridgeStore
 from core.protocol.capability_cartridges import (
@@ -203,7 +217,7 @@ app.add_middleware(
         "http://localhost:5181",
     ],
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Accept", "Content-Type"],
+    allow_headers=["Accept", "Content-Type", "Authorization"],
 )
 app.add_middleware(
     TrustedHostMiddleware,
@@ -3441,6 +3455,33 @@ def reject_creator_capability(session_id: str, node_id: str, payload: AuthoringR
         _authoring_error(exc)
 
 
+@app.put("/api/creator/authoring-sessions/{session_id}/nodes/{node_id}/studio-layer2")
+def put_studio_layer2(session_id: str, node_id: str, payload: StudioLayer2Payload):
+    try:
+        return {"creator": authoring_sessions.set_studio_layer2(session_id, node_id, payload.layer, expected_revision=payload.expected_revision)}
+    except AuthoringServiceError as exc:
+        _authoring_error(exc)
+
+
+@app.post("/api/creator/authoring-sessions/{session_id}/nodes/{node_id}/studio-layer2/prove")
+def prove_studio_layer2(session_id: str, node_id: str, payload: StudioLayer2ProofPayload):
+    try:
+        from core.studio.studio_layer2_prove import run_studio_proof
+        proof = run_studio_proof(authoring_sessions, session_id, node_id, payload.mode, payload.inputs)
+        creator = authoring_sessions.record_studio_proof(session_id, node_id, proof, expected_revision=payload.expected_revision)
+        return {"creator": creator, "proof": proof}
+    except AuthoringServiceError as exc:
+        _authoring_error(exc)
+
+
+@app.post("/api/creator/authoring-sessions/{session_id}/nodes/{node_id}/studio-layer2/publish")
+def publish_studio_layer2(session_id: str, node_id: str, payload: StudioLayer2Payload):
+    try:
+        return {"creator": authoring_sessions.publish_studio_layer2(session_id, node_id, expected_revision=payload.expected_revision)}
+    except AuthoringServiceError as exc:
+        _authoring_error(exc)
+
+
 @app.put("/api/creator/authoring-sessions/{session_id}/nodes/{node_id}/experience")
 def set_creator_experience_mapping(session_id: str, node_id: str, payload: CreatorExperienceMappingPayload):
     try:
@@ -3516,6 +3557,90 @@ async def run_creator_trial(payload: CreatorTrialFetchPayload):
         return await run_trial(payload.feed_url)
     except TrialRunError as exc:
         raise HTTPException(status_code=exc.status, detail={"code": exc.code, "message": str(exc)}) from exc
+
+
+def _studio_runtime_error(exc: ReleaseRuntimeError):
+    raise HTTPException(status_code=exc.status, detail=exc.as_dict()) from exc
+
+
+@app.get("/api/studio/runtime")
+def get_studio_runtime(project_id: str = "", cartridge_id: str = ""):
+    return desk_snapshot(registry, runner, project_id=project_id, cartridge_id=cartridge_id)
+
+
+@app.post("/api/studio/runtime/install-package")
+def install_studio_package(payload: StudioInstallPackagePayload):
+    try:
+        return install_signed_package(ROOT, payload.filename)
+    except ReleaseRuntimeError as exc:
+        _studio_runtime_error(exc)
+    except ReleaseBuildError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post("/api/studio/runtime/install-daily-brief")
+def install_studio_daily_brief():
+    """Pack, independently unpack, and activate the daily-brief cartridge in Studio."""
+    try:
+        return install_daily_brief(ROOT)
+    except ReleaseRuntimeError as exc:
+        _studio_runtime_error(exc)
+
+
+@app.post("/api/studio/runtime/jobs")
+def enqueue_studio_runtime_job(payload: StudioRunJobPayload):
+    try:
+        return enqueue_run(
+            runner, registry, payload.cartridge_id, payload.inputs,
+            label=payload.label, project_id=payload.project_id,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ReleaseRuntimeError as exc:
+        _studio_runtime_error(exc)
+
+
+@app.get("/api/studio/runtime/jobs/{run_id}")
+def get_studio_runtime_job(run_id: str):
+    try:
+        return job_status(runner, run_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/api/studio/runtime/jobs/{run_id}/approve")
+def approve_studio_runtime_job(run_id: str, payload: StudioRunApprovePayload):
+    try:
+        return approve_run(runner, run_id, payload.approved)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/api/studio/runtime/run")
+async def run_studio_runtime(payload: CartridgeRunCreate):
+    try:
+        bind_studio_runtime_models(payload.cartridge_id, registry=registry)
+        return await run_in_threadpool(
+            runner.create_run,
+            payload.cartridge_id,
+            payload.inputs,
+            test_mode=payload.test_mode,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except CompatibilityBlockedError as exc:
+        raise HTTPException(status_code=400, detail=_compatibility_blocked_detail(exc.report)) from exc
+    except RuntimeFailure as exc:
+        raise HTTPException(status_code=409, detail=exc.envelope) from exc
+
+
+@app.post("/api/studio/runtime/run-daily-brief")
+async def run_studio_daily_brief(payload: StudioReleaseRunPayload):
+    """Pack a signed CF-CRE, unpack it, then execute it on Studio's own runtime."""
+    try:
+        return await run_in_threadpool(run_daily_brief_release, ROOT, runner, feed_url=payload.feed_url)
+    except ReleaseRuntimeError as exc:
+        _studio_runtime_error(exc)
 
 
 @app.post("/api/creator/source-inspections")
@@ -3782,15 +3907,28 @@ def get_creator_generation_readiness(session_id: str, payload: AuthoringReadines
 def package_creator_project(session_id: str, payload: CreatorPackagePayload):
     """The sole Creator boundary that maps reviewed design facts into a signed package."""
     try:
+        from core.studio.release_runtime import package_studio_project
+        from core.studio.studio_layer2 import gaps_cleared
+        state = authoring_sessions.get(session_id)
+        authoring_sessions._require_revision(state, payload.expected_revision)
+        if gaps_cleared(state):
+            return package_studio_project(ROOT, state, packages_dir=ROOT / PACKAGES_DIR)
         bridge = CreatorRuntimeBridge(ROOT, ROOT / PACKAGES_DIR, capability_cartridges)
         result = bridge.package(authoring_sessions, session_id, expected_revision=payload.expected_revision)
+        fingerprint = str(result.get("release_id") or result.get("filename") or "")
+        if ":" in fingerprint:
+            fingerprint = fingerprint.split("+")[-1][:12] or fingerprint[-12:]
         return {
             "schema": "cartridgeflow.creator_package.v1",
             "status": "ready",
             "filename": result["filename"],
             "url": f"/packages/{result['filename']}",
             "signature_verified": bool((result.get("signature") or {}).get("verified")),
+            "fingerprint": fingerprint[-12:],
+            "issued_at": datetime.now().strftime("%Y-%m-%d"),
         }
+    except ReleaseRuntimeError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.as_dict()) from exc
     except CreatorRuntimeBridgeError as exc:
         raise HTTPException(status_code=exc.status, detail=exc.as_dict()) from exc
     except AuthoringServiceError as exc:

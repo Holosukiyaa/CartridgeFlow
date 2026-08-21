@@ -202,6 +202,21 @@ class CreatorTrialComposePayload(BaseModel):
     items: list[dict] = Field(default_factory=list)
 
 
+class StudioReleaseRunPayload(BaseModel):
+    feed_url: str | None = Field(default=None, max_length=2000)
+
+
+class StudioInstallPackagePayload(BaseModel):
+    filename: str = Field(min_length=1, max_length=240)
+
+
+class StudioRunJobPayload(BaseModel):
+    cartridge_id: str = Field(min_length=1, max_length=200)
+    inputs: dict = Field(default_factory=dict)
+    label: str = ""
+    project_id: str = ""
+
+
 class CreatorNodeRefinementPayload(BaseModel):
     prompt: str = Field(min_length=1, max_length=4000)
     expected_revision: int
@@ -215,6 +230,21 @@ class CreatorExperienceMappingPayload(BaseModel):
     slot_id: str = Field(min_length=1, max_length=120)
     component_id: str = Field(min_length=1, max_length=200)
     field_sources: dict[str, str] = Field(default_factory=dict)
+
+
+class StudioLayer2Payload(BaseModel):
+    expected_revision: int = Field(ge=1)
+    layer: dict = Field(default_factory=dict)
+
+
+class StudioLayer2ProofPayload(BaseModel):
+    expected_revision: int = Field(ge=1)
+    mode: str = Field(min_length=1, max_length=40)
+    inputs: dict = Field(default_factory=dict)
+
+
+class StudioRunApprovePayload(BaseModel):
+    approved: bool = True
 
 
 class DeveloperMaterializationPayload(BaseModel):

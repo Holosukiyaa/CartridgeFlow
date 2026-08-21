@@ -42,13 +42,15 @@ type CanvasData = {
   counts: PortCounts
   vertical: boolean
   impact?: 'added' | 'removed' | 'kept'
+  params: string[]
+  dim?: boolean
   onOpenLayer: () => void
 }
 
 type CanvasNode = Node<CanvasData, 'step'>
 
 function StepNode({ data, selected }: NodeProps<CanvasNode>) {
-  return <div className={`creator-node is-${data.state}${selected ? ' is-selected' : ''}${data.impact ? ` is-${data.impact}` : ''}`}>
+  return <div className={`creator-node is-${data.state}${selected ? ' is-selected' : ''}${data.impact ? ` is-${data.impact}` : ''}${data.dim ? ' is-dim' : ''}`}>
     <StepPorts counts={data.counts} vertical={data.vertical} />
     <header>
       <span className="order">{String(data.order).padStart(2, '0')}</span>
@@ -65,7 +67,8 @@ function StepNode({ data, selected }: NodeProps<CanvasNode>) {
     <p>{data.description}</p>
     {data.state === 'unresolved'
       ? <div className="need-chip">需求：{data.need}</div>
-      : <div className="approach-chip">做法：{data.need} · 可信</div>}
+      : <div className="approach-chip">做法：{data.need}</div>}
+    {data.params.length ? <p className="node-params">使用者参数 {data.params.join('、')}</p> : null}
   </div>
 }
 
@@ -117,6 +120,7 @@ export function Canvas({
   onOpenLayer,
   onApplyPreview,
   onRejectPreview,
+  reviewFilter,
 }: {
   creator: CreatorProjection | null
   selectedId: string
@@ -127,6 +131,7 @@ export function Canvas({
   onOpenLayer: (nodeId: string) => void
   onApplyPreview?: () => void
   onRejectPreview?: () => void
+  reviewFilter?: string
 }) {
   const [flow, setFlow] = useState<ReactFlowInstance<CanvasNode, Edge> | null>(null)
   const [zoom, setZoom] = useState(1)
@@ -172,14 +177,17 @@ export function Canvas({
           label: drawn.label,
           description: drawn.description,
           state,
-          need: state === 'unresolved' ? contract.need : (contract.capabilityLabel || 'AI内容处理'),
+          need: state === 'unresolved' ? contract.need : (live?.studio_layer2?.step_name || contract.capabilityLabel || live?.resolution?.capability?.label || '已有做法'),
           inputs: contract.inputs.map((item) => item.label),
           outputs: contract.outputs.map((item) => item.label),
           counts: counts.get(node.id) || emptyPortCounts(),
           vertical,
           impact,
+          params: (live?.studio_layer2?.params || []).map((item) => item.label),
+          dim: Boolean(reviewFilter && state !== reviewFilter),
           onOpenLayer: () => onOpenLayer(node.id),
         },
+        hidden: Boolean(reviewFilter && state !== reviewFilter),
       }
     })
     const grid = [
@@ -211,7 +219,7 @@ export function Canvas({
       }
     })
     return { nodes: placed, edges }
-  }, [contextIds, creator, onOpenLayer, preview, selectedId, vertical, visible])
+  }, [contextIds, creator, onOpenLayer, preview, reviewFilter, selectedId, vertical, visible])
 
   const [nodes, setNodes, onNodesChange] = useNodesState<CanvasNode>([])
   useEffect(() => { setNodes(elements.nodes) }, [elements.nodes, setNodes])
@@ -278,8 +286,8 @@ export function Canvas({
           <h3>{node.label}</h3>
           <p>{node.description}</p>
           {state === 'unresolved'
-            ? <div className="need-chip">需求：访问你审核过的公开来源并获取最新内容</div>
-            : <div className="approach-chip">做法：AI内容处理 可信</div>}
+            ? <div className="need-chip">需求：{node.resolution?.needed_capability || node.description}</div>
+            : <div className="approach-chip">做法：{node.studio_layer2?.step_name || node.resolution?.capability?.label || '已有做法'}</div>}
         </article>
       })}
     </div>
@@ -303,7 +311,7 @@ export function Canvas({
             </header>
             <h3>{node.label}</h3>
             <p>{node.description}</p>
-            {state !== 'unresolved' ? <div className="approach-chip">做法：AI内容处理 · 可信</div> : null}
+            {state !== 'unresolved' ? <div className="approach-chip">做法：{node.studio_layer2?.step_name || node.resolution?.capability?.label || '已有做法'}</div> : null}
           </article>
         </div>
       })}

@@ -236,6 +236,15 @@ export type TrialRunResult = {
   fetch: { fetched_at: string; feeds: TrialFeed[]; warnings: string[] }
   items: TrialItem[]
   digest: TrialDigest
+  package?: {
+    filename: string
+    url: string
+    release_id: string
+    signature_verified: boolean
+    unpack?: { consumer: string; activation_allowed: boolean; status: string }
+  }
+  runtime?: { id: string; cartridge?: { id: string; name: string; version: string } }
+  run?: { run_id?: string; status?: string }
 }
 
 export const fetchTrialSources = (feedUrl?: string) =>
@@ -246,6 +255,98 @@ export const fetchTrialSources = (feedUrl?: string) =>
 export const composeTrialDigest = (items: TrialItem[]) =>
   api<{ digest: TrialDigest }>('/api/creator/trial-run/compose', {
     method: 'POST', body: JSON.stringify({ items }), timeoutMs: 120_000,
+  })
+
+export type StudioCartridge = {
+  id: string
+  name: string
+  version: string
+  source?: string
+  inputs: Array<{ id: string; label: string; type: string; required?: boolean; default?: unknown }>
+}
+
+export type StudioRunJob = {
+  schema: 'cartridgeflow.studio_run_job.v1'
+  run_id: string
+  cartridge_id: string
+  label: string
+  status: string
+  current_state: string
+  created_at?: string
+  updated_at?: string
+  active?: boolean
+  project_id?: string
+  cartridge_version?: string
+  approved?: boolean
+  inputs?: Record<string, unknown>
+  delivery?: {
+    result?: string
+    value?: string
+    summary?: string
+    date?: string
+    result_items?: Array<{ title?: string; url?: string; summary?: string } | string>
+    source_url?: string[]
+    approved?: boolean
+  }
+  error?: { message?: string; cause_chain?: Array<{ message?: string }> }
+  progress: {
+    status: string
+    percent: number
+    current_label: string
+    steps: Array<{ id: string; label: string; status: string }>
+  }
+}
+
+export type StudioRuntimeStatus = {
+  schema: 'cartridgeflow.studio_run_desk.v1'
+  available: boolean
+  runtime: 'studio'
+  cartridges: StudioCartridge[]
+  jobs: StudioRunJob[]
+}
+
+export const fetchStudioRuntime = (query: { project_id?: string; cartridge_id?: string } = {}) => {
+  const params = new URLSearchParams()
+  if (query.project_id) params.set('project_id', query.project_id)
+  if (query.cartridge_id) params.set('cartridge_id', query.cartridge_id)
+  const suffix = params.toString() ? `?${params}` : ''
+  return api<StudioRuntimeStatus>(`/api/studio/runtime${suffix}`, { timeoutMs: 8_000 })
+}
+
+export const installStudioPackage = (filename: string) =>
+  api<{ filename: string; url: string; signature_verified: boolean; cartridge: StudioCartridge }>(
+    '/api/studio/runtime/install-package',
+    { method: 'POST', body: JSON.stringify({ filename }), timeoutMs: 60_000 },
+  )
+
+export const enqueueStudioJob = (body: { cartridge_id: string; inputs: Record<string, unknown>; label?: string; project_id?: string }) =>
+  api<StudioRunJob>('/api/studio/runtime/jobs', {
+    method: 'POST', body: JSON.stringify(body), timeoutMs: 30_000,
+  })
+
+export const approveStudioJob = (runId: string, approved = true) =>
+  api<StudioRunJob>(`/api/studio/runtime/jobs/${encodeURIComponent(runId)}/approve`, {
+    method: 'POST', body: JSON.stringify({ approved }), timeoutMs: 8_000,
+  })
+
+export const fetchStudioJob = (runId: string) =>
+  api<StudioRunJob>(`/api/studio/runtime/jobs/${encodeURIComponent(runId)}`, { timeoutMs: 8_000 })
+
+export const installDailyBrief = () =>
+  api<{ filename: string; url: string; signature_verified: boolean; cartridge: { id: string; name: string; version: string } }>(
+    '/api/studio/runtime/install-daily-brief',
+    { method: 'POST', body: JSON.stringify({}), timeoutMs: 60_000 },
+  )
+
+export const runStudioCartridge = (cartridgeId: string, inputs: Record<string, unknown>) =>
+  api<{ run_id: string; status: string; delivery?: { result?: string; value?: string; summary?: string } }>(
+    '/api/studio/runtime/run',
+    { method: 'POST', body: JSON.stringify({ cartridge_id: cartridgeId, inputs }), timeoutMs: 180_000 },
+  )
+
+export const runDailyBriefRelease = (feedUrl?: string) =>
+  api<TrialRunResult>('/api/studio/runtime/run-daily-brief', {
+    method: 'POST', body: JSON.stringify({ feed_url: feedUrl || null }), timeoutMs: 180_000,
   })
 
 export const proposeCreatorNodeValues = (sessionId: string, body: unknown) =>
@@ -287,6 +388,22 @@ export const resolveCreatorCapabilities = (sessionId: string, expectedRevision: 
 export const rejectCreatorCapability = (sessionId: string, nodeId: string, expectedRevision: number) =>
   api<{ creator: CreatorProjection }>(`${sessionRoute(sessionId)}/nodes/${encodeURIComponent(nodeId)}/reject-capability`, {
     method: 'POST', body: JSON.stringify({ expected_revision: expectedRevision }),
+  })
+
+export const saveStudioLayer2 = (sessionId: string, nodeId: string, expectedRevision: number, layer: Record<string, unknown>) =>
+  api<{ creator: CreatorProjection }>(`${sessionRoute(sessionId)}/nodes/${encodeURIComponent(nodeId)}/studio-layer2`, {
+    method: 'PUT', body: JSON.stringify({ expected_revision: expectedRevision, layer }),
+  })
+
+export const proveStudioLayer2 = (sessionId: string, nodeId: string, expectedRevision: number, mode: string, inputs: Record<string, unknown>) =>
+  api<{ creator: CreatorProjection; proof: Record<string, unknown> }>(
+    `${sessionRoute(sessionId)}/nodes/${encodeURIComponent(nodeId)}/studio-layer2/prove`,
+    { method: 'POST', body: JSON.stringify({ expected_revision: expectedRevision, mode, inputs }), timeoutMs: 60_000 },
+  )
+
+export const publishStudioLayer2 = (sessionId: string, nodeId: string, expectedRevision: number) =>
+  api<{ creator: CreatorProjection }>(`${sessionRoute(sessionId)}/nodes/${encodeURIComponent(nodeId)}/studio-layer2/publish`, {
+    method: 'POST', body: JSON.stringify({ expected_revision: expectedRevision, layer: {} }),
   })
 
 export const setCreatorExperience = (

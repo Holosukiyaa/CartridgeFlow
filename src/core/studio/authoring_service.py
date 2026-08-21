@@ -24,6 +24,23 @@ from core.protocol.trusted_node_recipes import (
     validate_node_values,
     validate_preset,
 )
+from core.studio.studio_layer2 import merge_layer2, normalize_layer2, now_stamp, project_runtime_protocol, source_digest
+import re
+
+
+def _short_project_name(raw: str) -> str:
+    text = " ".join(raw.split()).strip()
+    if not text:
+        return "未命名项目"
+    if len(text) <= 16:
+        return text
+    brief = re.search(r"((?:中文\s*)?(?:AI\s*)?日报)", text, flags=re.I)
+    if brief:
+        return " ".join(brief.group(1).split())
+    named = re.findall(r"([\u4e00-\u9fa5A-Za-z0-9]{2,8}(?:周报|简报|采集|汇总|报告|助手))", text)
+    if named:
+        return sorted(named, key=len)[0]
+    return text.replace("我想做一份", "").split("：")[0][:16]
 from core.protocol.capability_cartridges import (
     CapabilityCartridgeError,
     SEMANTIC_RECIPE_SCHEMA,
@@ -927,6 +944,95 @@ class AuthoringSessionStore:
             self._write(self._path(session_id), state)
             return self.creator_projection(state)
 
+    def set_studio_layer2(self, session_id: str, node_id: str, payload: dict, *, expected_revision: int) -> dict:
+        with self._lock:
+            state = self.get(session_id)
+            self._require_revision(state, expected_revision)
+            label = self._node_label(state, node_id)
+            existing = (state.get("studio_layer2") or {}).get(node_id)
+            layer = merge_layer2(node_id, label, payload, existing)
+            layer["saved_at"] = now_stamp()
+            layer["proof"]["source_digest"] = source_digest(layer)
+            state.setdefault("studio_layer2", {})[node_id] = layer
+            self._write(self._path(session_id), state)
+            return self.creator_projection(state)
+
+    def record_studio_proof(self, session_id: str, node_id: str, proof: dict, *, expected_revision: int) -> dict:
+        with self._lock:
+            state = self.get(session_id)
+            self._require_revision(state, expected_revision)
+            label = self._node_label(state, node_id)
+            current = normalize_layer2(node_id, label, (state.get("studio_layer2") or {}).get(node_id))
+            merged = dict(current["proof"])
+            if proof.get("success"):
+                merged["success"] = True
+                merged["success_run_id"] = str(proof.get("success_run_id") or merged.get("success_run_id") or "")
+            if proof.get("safe_fail"):
+                merged["safe_fail"] = True
+                merged["failure_run_id"] = str(proof.get("failure_run_id") or merged.get("failure_run_id") or "")
+            if proof.get("fingerprint"):
+                merged["fingerprint"] = str(proof["fingerprint"])
+            if proof.get("source_digest"):
+                merged["source_digest"] = str(proof["source_digest"])
+            current["proof"] = merged
+            if not current["proof"].get("source_digest"):
+                current["proof"]["source_digest"] = source_digest(current)
+            current["saved_at"] = now_stamp()
+            state.setdefault("studio_layer2", {})[node_id] = current
+            self._write(self._path(session_id), state)
+            return self.creator_projection(state)
+
+    def publish_studio_layer2(self, session_id: str, node_id: str, *, expected_revision: int) -> dict:
+        with self._lock:
+            state = self.get(session_id)
+            self._require_revision(state, expected_revision)
+            label = self._node_label(state, node_id)
+            current = normalize_layer2(node_id, label, (state.get("studio_layer2") or {}).get(node_id))
+            proof = current.get("proof") or {}
+            if not (proof.get("success") and proof.get("safe_fail")):
+                raise AuthoringServiceError(
+                    "STUDIO_LAYER2_PROOF_REQUIRED",
+                    "还没有成功 + 失败证据",
+                    status=409,
+                )
+            if proof.get("source_digest") and proof["source_digest"] != source_digest(current):
+                raise AuthoringServiceError(
+                    "STUDIO_LAYER2_PROOF_STALE",
+                    "源码变化时证明已失效，必须重跑两次",
+                    status=409,
+                )
+            if not current.get("internal_steps") or len(current["internal_steps"]) < 2:
+                raise AuthoringServiceError("STUDIO_LAYER2_STRUCTURE_INCOMPLETE", "结构不完整", status=409)
+            current["published"] = True
+            current["saved_at"] = now_stamp()
+            state.setdefault("studio_layer2", {})[node_id] = current
+            frozen = {step["step_id"] for snapshot in self._active_freezes(state) for step in snapshot["frozen_steps"]}
+            if node_id not in frozen:
+                try:
+                    compiled = compile_instance(state["head"])
+                    snapshot = freeze_snapshot(
+                        state["head"],
+                        [{"step_id": node_id, "semantic_digest": _semantic_digest(state["head"], node_id)}],
+                        {"id": compiled["id"], "kind": "compile", "digest": compiled["digest"]},
+                        "creator",
+                        f"发布内部做法：{label}",
+                    )
+                    state.setdefault("freezes", []).append(snapshot)
+                except TuningProtocolError:
+                    pass
+            self._write(self._path(session_id), state)
+            return self.creator_projection(state)
+
+    def _node_label(self, state: dict, node_id: str) -> str:
+        recipe = state.get("semantic_recipe") or state.get("trusted_recipe") or {}
+        for node in recipe.get("nodes") or []:
+            if node.get("id") == node_id:
+                return str(node.get("creator_label") or node.get("label") or node_id)
+        for step in state["head"]["blueprint"]["steps"]:
+            if step["id"] == node_id:
+                return str(step.get("intent") or node_id)
+        raise AuthoringServiceError("AUTHORING_STEP_UNKNOWN", "The target Creator node was not found.", status=404)
+
     def confirm_materialization(self, session_id: str, *, expected_revision: int, author: str, summary: str) -> dict:
         """Record Developer approval of one exact frozen trusted-recipe candidate."""
         with self._lock:
@@ -997,6 +1103,24 @@ class AuthoringSessionStore:
             for node in trusted["nodes"]:
                 node["values"] = deepcopy(head["bindings"].get(node["id"], {}))
             projection["trusted_recipe"] = trusted
+        layers = {}
+        stored = state.get("studio_layer2") or {}
+        recipe = projection.get("trusted_recipe") or {}
+        for node in recipe.get("nodes") or []:
+            label = str(node.get("label") or node["id"])
+            layer = normalize_layer2(node["id"], label, stored.get(node["id"]))
+            node["studio_layer2"] = layer
+            if layer.get("published") and node.get("resolution", {}).get("status") == "unresolved":
+                node["resolution"] = {**(node.get("resolution") or {}), "status": "resolved", "studio_published": True}
+            layers[node["id"]] = layer
+        projection["studio_runtime"] = project_runtime_protocol(layers)
+        projection["short_name"] = _short_project_name(str(projection.get("project_name") or projection.get("intent") or ""))
+        if projection.get("capability_resolution") and recipe.get("nodes"):
+            projection["capability_resolution"] = {
+                **projection["capability_resolution"],
+                "resolved": sum(1 for node in recipe["nodes"] if (node.get("resolution") or {}).get("status") == "resolved"),
+                "unresolved": sum(1 for node in recipe["nodes"] if (node.get("resolution") or {}).get("status") == "unresolved"),
+            }
         return projection
 
     @staticmethod
@@ -1110,10 +1234,13 @@ class AuthoringSessionStore:
             findings.append({"code": "DESIGN_MAPPING_MISSING", "severity": "blocked", "message": "A template step has no Developer mapping."})
         if state.get("trusted_recipe") and any(not isinstance(mappings.get(step_id), dict) for step_id in mapping_ids):
             findings.append({"code": "DESIGN_EXECUTABLE_MAPPING_MISSING", "severity": "blocked", "message": "A trusted recipe step has no executable Developer snapshot."})
+        layers = state.get("studio_layer2") or {}
         if state.get("semantic_recipe"):
             publications = state.get("capability_publications") or {}
             reviews = state.get("capability_reviews") or {}
             for step in head["blueprint"]["steps"]:
+                if (layers.get(step["id"]) or {}).get("published"):
+                    continue
                 publication = publications.get(step["id"])
                 if not isinstance(publication, dict):
                     findings.append({"code": "DESIGN_CAPABILITY_UNRESOLVED", "severity": "blocked", "step_id": step["id"], "message": "This semantic node still needs a trusted capability cartridge."})
@@ -1131,7 +1258,7 @@ class AuthoringSessionStore:
                                 "message": "Choose how this step is shown and map every required field.",
                             })
         for step in head["blueprint"]["steps"]:
-            if step["id"] not in frozen:
+            if step["id"] not in frozen and not (layers.get(step["id"]) or {}).get("published"):
                 findings.append({"code": "DESIGN_STEP_UNFROZEN", "severity": "blocked", "step_id": step["id"], "message": "This design step is not frozen."})
         if not head["blueprint"]["source_references"] and not state.get("trusted_recipe") and not state.get("semantic_recipe"):
             findings.append({"code": "DESIGN_SOURCE_MISSING", "severity": "blocked", "message": "At least one declared source or source role is required."})

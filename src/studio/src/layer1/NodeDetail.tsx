@@ -149,13 +149,17 @@ export function NodeDetail({
       <section className="block">
         <strong>{copy.currentApproach}</strong>
         {unresolved ? <div className="capability is-gap"><span>待补齐 是方案的一部分，不是报错；需要进入第二层选定做法后才能继续确认。</span></div> : null}
-        <Button onClick={() => onOpenLayer(node.id)}><Puzzle size={14} />打开第二层 · 补齐</Button>
+        <Button onClick={() => onOpenLayer(node.id)}><Puzzle size={14} />{unresolved ? '打开第二层 · 补齐' : '查看或替换这一步的内部做法'}</Button>
         <p className="fill-label">回填后</p>
         <div className="capability">
           <span>{node.label}<em>{trust}</em></span>
           <button type="button" className="ghost-link" onClick={() => onOpenLayer(node.id)}><Puzzle size={12} />{copy.inspectLayer2}</button>
         </div>
       </section>
+      {node.studio_layer2?.params?.length ? <section className="block">
+        <strong>使用者参数</strong>
+        <p className="muted">{node.studio_layer2.params.map((item) => `${item.label}${item.required ? '（必填）' : ''}`).join('、')}</p>
+      </section> : null}
       <section className="block">
         <strong>交接</strong>
         <p className="muted">{contract.inputs.length ? null : copy.contractEmptyIn}</p>

@@ -26,6 +26,7 @@ export type StageContext = {
   onChoose: (intent: string) => void
   onSkip: () => void
   onRetry: () => void
+  onOpenGap?: (nodeId: string) => void
 }
 
 function EmptyCanvas({ stage }: { stage: StageId }) {
@@ -92,7 +93,7 @@ function DirectionsStage({ goal, possibilities, onChoose, onSkip }: StageContext
   </>
 }
 
-function PackageStage({ creator, packageResult, packageError, runnerDelivery, busy }: StageContext) {
+function PackageStage({ creator, packageResult, packageError, runnerDelivery, busy, onOpenGap }: StageContext) {
   if (!creator) return null
   const blockers = creator.trusted_recipe.nodes.filter((node) => nodeReviewState(creator, node) === 'unresolved')
   const heading = packageError
@@ -119,10 +120,9 @@ function PackageStage({ creator, packageResult, packageError, runnerDelivery, bu
     <div className="pack-scroll">
       <strong>{packageError || heading}</strong>
       <p className="pack-body">{copy.package.notReadyBody}</p>
-      {blockers.length ? <ul>{blockers.map((node, index) => <li key={node.id}><em>{String(index + 1).padStart(2, '0')}</em>待补齐</li>)}</ul> : body ? <p className="pack-body">{body}</p> : null}
-      <p className="pack-body">{copy.package.trustBody.replace('不要在创作空间里绕过确认。', '已安装到本机 Runner 可以放入真实样例')}</p>
+      {blockers.length ? <ul>{blockers.map((node, index) => <li key={node.id}><em>{String(index + 1).padStart(2, '0')}</em><button type="button" className="runtime-text-link" onClick={() => onOpenGap?.(node.id)}>{node.label}</button></li>)}</ul> : body ? <p className="pack-body">{body}</p> : null}
     </div>
-    {packageResult ? <a className="pack-runner" href={packageResult.url} download={packageResult.filename}>{copy.downloadPackage}</a> : <button type="button" className="pack-runner">打开 Runner</button>}
+    {packageResult ? <p className="pack-body">发行包已签发。下载和运行都在运行台里。</p> : null}
   </div>
 }
 

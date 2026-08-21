@@ -1,3 +1,46 @@
+export interface StudioLayer2Param {
+  id: string
+  label: string
+  value_type: string
+  required?: boolean
+  default?: unknown
+}
+
+export interface StudioLayer2Field {
+  id: string
+  label: string
+  kind: string
+  source: string
+}
+
+export interface StudioLayer2Proof {
+  success?: boolean
+  safe_fail?: boolean
+  success_run_id?: string
+  failure_run_id?: string
+  fingerprint?: string
+  source_digest?: string
+}
+
+export interface StudioLayer2 {
+  schema?: string
+  node_id?: string
+  step_name: string
+  params: StudioLayer2Param[]
+  fields: StudioLayer2Field[]
+  template: string
+  preview: string
+  panel_name: string
+  deliver: string
+  tools: string[]
+  handoff_in: string
+  handoff_out: string
+  internal_steps: string[]
+  published?: boolean
+  proof: StudioLayer2Proof
+  saved_at?: string
+}
+
 export interface CreatorFieldContract {
   id: string
   label: string
@@ -25,6 +68,7 @@ export interface CreatorRecipeNode {
       description: string
     }
   }
+  studio_layer2?: StudioLayer2
   experience?: {
     status: 'available' | 'unavailable'
     reason?: string
@@ -62,10 +106,12 @@ export interface CreatorProposal {
 export interface CreatorProjection {
   project_id: string
   project_name?: string
+  short_name?: string
   session_id: string
   revision: number
   experience_revision?: number
   intent: string
+  studio_runtime?: { params: StudioLayer2Param[]; fields: StudioLayer2Field[]; template?: string }
   trusted_recipe: {
     id: string
     goal: string
@@ -142,6 +188,8 @@ export interface CreatorPackage {
   filename: string
   url: string
   signature_verified: boolean
+  fingerprint?: string
+  issued_at?: string
 }
 
 export interface CreatorLlmProvider {

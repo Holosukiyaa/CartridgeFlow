@@ -81,6 +81,7 @@ export function useWorkspace(projectId: string) {
       packageResult,
       packageRevision,
       layer2Flows,
+      runtimeInputs: restored?.runtimeInputs || {},
     }
     writeSnapshot(projectId, snapshot)
     if (!hydratedRef.current) return
@@ -338,7 +339,7 @@ export function useWorkspace(projectId: string) {
   }
 
   const buildPackage = async () => {
-    if (!creator) return
+    if (!creator) return null
     setBusy(true)
     setPackageError('')
     try {
@@ -346,8 +347,13 @@ export function useWorkspace(projectId: string) {
       setPackageResult(result)
       setPackageRevision(creator.revision)
       setRunnerDelivery(null)
+      return result
     } catch (reason) {
-      setPackageError(reason instanceof ApiError ? copy.packageBlocked : copy.packageFail)
+      const message = reason instanceof ApiError
+        ? (reason.message && reason.message !== 'Creator service is unavailable.' ? reason.message : copy.packageBlocked)
+        : copy.packageFail
+      setPackageError(message)
+      throw new Error(message)
     } finally { setBusy(false) }
   }
 
@@ -461,12 +467,13 @@ export function useWorkspace(projectId: string) {
     aiStatus,
     packageResult,
     packageError,
+    buildPackage,
     runnerDelivery,
     syncLabel: busy ? copy.processing : syncLabel,
     guidance,
     stats,
     showDetail: Boolean(detailOpen && selectedNode && creator),
-    projectName: creator?.project_name || creator?.intent || copy.unnamedProject,
+    projectName: creator?.short_name || creator?.project_name || creator?.intent || copy.unnamedProject,
     connectionLabel: aiStatus.has_key ? (aiStatus.model || copy.connected) : copy.disconnected,
     connected: aiStatus.has_key,
     setInput: (value: string) => { setInput(value); setError('') },

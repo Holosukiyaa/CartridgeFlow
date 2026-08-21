@@ -1,0 +1,152 @@
+[
+  {
+    "id": "studio.project-name",
+    "ok": false,
+    "detail": "顶栏项目名=\"我想做一份每天早上生成的中文 AI 日报：从我审核过的公开来源获取最新内容，筛选重要信息，生成简报，并在交付前让我确认。\"，用户能否一眼认出这是哪份方案"
+  },
+  {
+    "id": "studio.nextbar",
+    "ok": true,
+    "detail": "下一步条显示: 补齐 / 获取已审核来源的最新内容"
+  },
+  {
+    "id": "studio.open-runtime",
+    "ok": true,
+    "detail": "下一步条是否有「打开运行台」"
+  },
+  {
+    "id": "studio.pack-card",
+    "ok": true,
+    "detail": "画布打包卡文案: "
+  },
+  {
+    "id": "runtime.bind-current",
+    "ok": true,
+    "detail": "运行台是否绑定当前方案且标明未签发"
+  },
+  {
+    "id": "runtime.inputs.sources",
+    "ok": true,
+    "detail": "是否有来源列表输入"
+  },
+  {
+    "id": "runtime.inputs.date",
+    "ok": true,
+    "detail": "是否有运行日期输入"
+  },
+  {
+    "id": "runtime.inputs.persist-typing",
+    "ok": true,
+    "detail": "来源列表能否输入，当前值长度=37"
+  },
+  {
+    "id": "runtime.start.enabled",
+    "ok": false,
+    "detail": "开始运行 disabled=true。用户填完来源后仍不能跑当前方案"
+  },
+  {
+    "id": "runtime.start.force-click",
+    "ok": true,
+    "detail": "强制点开始运行后是否出现运行层: 0（未签发时应拒绝且给原因，而不是没反应或误跑别的卡带）"
+  },
+  {
+    "id": "runtime.issue.enabled",
+    "ok": true,
+    "detail": "签发发行包 disabled=true，缺口文案是否让用户知道下一步去哪补"
+  },
+  {
+    "id": "runtime.download",
+    "ok": true,
+    "detail": "未签发时下载入口数量=0（应没有可点的下载，或明确不可用）"
+  },
+  {
+    "id": "runtime.queue.current-job",
+    "ok": true,
+    "detail": "队列条目=0。用户刚打开自己的方案，队列应与当前方案相关，而不是空白或别人的任务混在一起"
+  },
+  {
+    "id": "runtime.history.belongs-to-current",
+    "ok": true,
+    "detail": "历史 14 条。若标题都是「中文 AI 日报」但当前方案未签发，用户会以为是自己刚跑的"
+  },
+  {
+    "id": "runtime.history.widgets",
+    "ok": true,
+    "detail": "展开历史字段: 日期 2026-08-20 要点 # 今日 AI 日报 日期：2026 年 8 月 20 日 --- ## 今日要点 - 德州一名学生举报了一次“流氓 AI”黑客攻击尝试 - Google 与 Marvell 签署 120 亿美元 AI 芯片协议，联合开发 TPU - 约克郡口音难倒 AI 全科医生接待员，患者纷纷挂断电话 - AI agent 建议安装恶意软件包，一名工程师险些照做 - 美国共和党向 AI 公司发出严厉警告 "
+  },
+  {
+    "id": "runtime.history.confirm-persists",
+    "ok": false,
+    "detail": "已确认勾选 before=false afterClick=true reopen=false。用户勾了是否还在、有没有写回运行结果"
+  },
+  {
+    "id": "runtime.view-result",
+    "ok": true,
+    "detail": "查看结果后运行层 visible=1 文案=运行完成 中文 AI 日报 · complete 交付日报 100% 日期 2026-08-20 要点 # 今日 AI 日报 日期：2026 年 8 月 20 日 --- ## 今日要点 - 德州一名学生举报了一次“流氓 AI”黑客攻击尝试 - Google 与 Marvell 签署 120 亿美元 AI 芯片协议，联合开发 TPU - 约"
+  },
+  {
+    "id": "runtime.blocker.background",
+    "ok": false,
+    "detail": "完成态是否还提供转到后台: 0"
+  },
+  {
+    "id": "runtime.blocker.close",
+    "ok": true,
+    "detail": "关闭运行层后是否消失"
+  },
+  {
+    "id": "runtime.toast",
+    "ok": true,
+    "detail": "当前 toast 数量=0（没有正在跑的任务时不应出现；有后台完成时应能点查看结果）"
+  },
+  {
+    "id": "runtime.esc",
+    "ok": true,
+    "detail": "Esc 能否关掉运行台，画布是否还在"
+  },
+  {
+    "id": "runtime.inputs.survive-reopen",
+    "ok": false,
+    "detail": "关掉再打开后，刚才输入的来源还在吗: \"\""
+  },
+  {
+    "id": "runtime.overlay-close",
+    "ok": true,
+    "detail": "点遮罩能否关闭。用户是否会误触关掉正在填的参数"
+  },
+  {
+    "id": "l2.open",
+    "ok": true,
+    "detail": "从详情打开第二层 visible=1"
+  },
+  {
+    "id": "l2.result-fields-static",
+    "ok": true,
+    "detail": "结果字段是可编辑的真实配置，还是写死的展示列表"
+  },
+  {
+    "id": "l2.add-field",
+    "ok": false,
+    "detail": "点添加字段后字段数=4（原 4）。用户能否真的加字段"
+  },
+  {
+    "id": "l2.prove-is-live",
+    "ok": false,
+    "detail": "证明区如果是写死的成功/失败卡片，用户点了并不能真的跑样本"
+  },
+  {
+    "id": "l2.save-node",
+    "ok": false,
+    "detail": "保存节点按钮存在=0，无 onClick 则点了没反应"
+  },
+  {
+    "id": "l2.publish",
+    "ok": true,
+    "detail": "发布入口=2"
+  },
+  {
+    "id": "runtime.mobile.issue-visible",
+    "ok": false,
+    "detail": "窄屏下签发/开始运行是否被裁切，三栏是否变成用户能扫完的一列"
+  }
+]

@@ -9,18 +9,21 @@ import { ResourcePool } from './ResourcePool.tsx'
 import { NarrowTabs, NextBar, ProjectMenu, Shell, WorkspaceHeader } from './Shell.tsx'
 import { StageLayer } from './stages.tsx'
 import { Steward } from './Steward.tsx'
-import { TrialRun } from './TrialRun.tsx'
+import { RunBlocker, RuntimeDesk, RuntimeToasts } from './RuntimeDesk.tsx'
 import { useWorkspace } from './useWorkspace.ts'
+import type { ReviewState } from './model.ts'
 
 export function WorkspaceApp({ projectId }: { projectId: string }) {
   const workspace = useWorkspace(projectId)
-  const [trialOpen, setTrialOpen] = useState(false)
+  const [runtimeOpen, setRuntimeOpen] = useState(false)
+  const [reviewFilter, setReviewFilter] = useState<ReviewState | ''>('')
   const showSteward = Boolean(workspace.creator && (workspace.stewardOpen || (workspace.narrow && workspace.tab === 'steward')))
 
   useEffect(() => {
     const visual = new URLSearchParams(window.location.search).get('visual')
     if (visual === 'frame2') workspace.setConnectOpen(true)
     if (visual === 'frame3') workspace.setSettingsOpen(true)
+    if (new URLSearchParams(window.location.search).get('runtime') === '1') setRuntimeOpen(true)
   }, [])
   useEffect(() => {
     const visual = new URLSearchParams(window.location.search).get('visual')
@@ -34,7 +37,8 @@ export function WorkspaceApp({ projectId }: { projectId: string }) {
     <Shell
       narrow={workspace.narrow}
       header={<WorkspaceHeader
-        projectName={workspace.narrow && /日报/.test(workspace.projectName) ? '中文AI日报' : workspace.projectName}
+        projectName={workspace.projectName}
+        section={runtimeOpen ? copy.runtimeDesk : workspace.layer2Node ? copy.layer2Kicker : undefined}
         projectMenu={workspace.projectMenuOpen ? <ProjectMenu projectId={projectId} projects={workspace.projects} /> : null}
         syncLabel={workspace.syncLabel}
         connected={workspace.connected}
@@ -53,12 +57,31 @@ export function WorkspaceApp({ projectId }: { projectId: string }) {
         stats={workspace.stats}
         narrow={workspace.narrow}
         stewardOn={workspace.stewardOpen}
-        onAction={workspace.runPrimaryAction}
-        onTrialRun={workspace.creator ? () => setTrialOpen(true) : undefined}
+        onAction={() => {
+          if (workspace.guidance.action === 'download' || workspace.guidance.action === 'runner') {
+            workspace.closeLayer2()
+            setRuntimeOpen(true)
+            return
+          }
+          if (workspace.guidance.action === 'open-node' && workspace.guidance.nodeId) {
+            const node = workspace.creator?.trusted_recipe.nodes.find((item) => item.id === workspace.guidance.nodeId)
+            if (node?.resolution?.status === 'unresolved') {
+              workspace.openLayer2(workspace.guidance.nodeId)
+              return
+            }
+          }
+          workspace.runPrimaryAction()
+        }}
+        onTrialRun={() => {
+          workspace.closeLayer2()
+          setRuntimeOpen(true)
+        }}
         onToggleSteward={workspace.creator ? () => {
           if (workspace.narrow) workspace.setTab('steward')
           else workspace.setStewardOpen((open) => !open)
         } : undefined}
+        reviewFilter={reviewFilter}
+        onFilterReview={setReviewFilter}
       />}
       tabs={<NarrowTabs tab={workspace.tab} onTab={workspace.setTab} />}
     >
@@ -92,6 +115,7 @@ export function WorkspaceApp({ projectId }: { projectId: string }) {
               onOpenLayer={workspace.openLayer2}
               onApplyPreview={() => void workspace.applyRecipePreview()}
               onRejectPreview={workspace.rejectRecipePreview}
+              reviewFilter={reviewFilter}
             />
             <StageLayer
               creator={workspace.creator}
@@ -111,6 +135,7 @@ export function WorkspaceApp({ projectId }: { projectId: string }) {
               onChoose={workspace.chooseDirection}
               onSkip={workspace.skipDirections}
               onRetry={workspace.retryDiscover}
+              onOpenGap={(nodeId) => workspace.openLayer2(nodeId)}
             />
             {workspace.loading ? <div className="loading">{copy.loadingProject}</div> : null}
           </div>
@@ -139,8 +164,24 @@ export function WorkspaceApp({ projectId }: { projectId: string }) {
       onClose={workspace.closeLayer2}
       onPublished={(nodeId) => void workspace.finishLayer2(nodeId, true)}
       onOpened={workspace.rememberLayer2}
-      onTrialRun={() => setTrialOpen(true)}
+      onCreator={workspace.saveCreator}
+      onOpenResources={() => {
+        workspace.closeLayer2()
+        workspace.setSettingsOpen(true)
+      }}
     /> : null}
-    {trialOpen ? <TrialRun onClose={() => setTrialOpen(false)} /> : null}
+    {runtimeOpen ? <RuntimeDesk
+      creator={workspace.creator}
+      packageResult={workspace.packageResult}
+      onClose={() => setRuntimeOpen(false)}
+      onPackage={() => workspace.buildPackage()}
+      onOpenGap={(nodeId) => {
+        setRuntimeOpen(false)
+        workspace.openLayer2(nodeId)
+      }}
+      onToggleSteward={() => workspace.setStewardOpen(true)}
+    /> : null}
+    <RunBlocker />
+    <RuntimeToasts />
   </>
 }

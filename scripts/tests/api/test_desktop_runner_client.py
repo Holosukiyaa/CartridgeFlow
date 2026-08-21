@@ -57,6 +57,25 @@ class DesktopRunnerClientTests(unittest.TestCase):
             self.assertIn(b"signed-package", captured["body"])
             self.assertIn("multipart/form-data", captured["content_type"])
 
+    def test_run_posts_inputs_to_the_shell_core(self):
+        captured = {}
+
+        def respond(request, **_kwargs):
+            captured["url"] = request.full_url
+            captured["body"] = json.loads(request.data.decode("utf-8"))
+            return _Response(json.dumps({
+                "ok": True,
+                "run": {"run_id": "a" * 32, "status": "completed", "cartridge_id": "studio.daily-brief", "delivery": {"primary_output": "brief", "value": "日报正文"}},
+                "progress": {"status": "completed", "percent": 100},
+            }).encode("utf-8"))
+
+        with patch("backend.desktop_runner.urlopen", side_effect=respond):
+            result = DesktopRunnerClient().run({"sources": "条目"})
+        self.assertEqual("completed", result["status"])
+        self.assertEqual("日报正文", result["delivery"]["value"])
+        self.assertEqual({"inputs": {"sources": "条目"}}, captured["body"])
+        self.assertTrue(captured["url"].endswith("/api/run"))
+
     def test_rejects_non_loopback_runner_urls(self):
         with self.assertRaises(ValueError):
             DesktopRunnerClient("https://runner.example.test")

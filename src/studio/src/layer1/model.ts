@@ -35,6 +35,7 @@ export type WorkspaceSnapshot = {
   packageResult: CreatorPackage | null
   packageRevision: number | null
   layer2Flows: Record<string, string>
+  runtimeInputs: Record<string, string>
 }
 
 export type GuidanceInput = {
@@ -172,5 +173,6 @@ export function emptyWorkspaceSnapshot(): WorkspaceSnapshot {
     packageResult: null,
     packageRevision: null,
     layer2Flows: {},
+    runtimeInputs: {},
   }
 }

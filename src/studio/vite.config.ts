@@ -8,7 +8,7 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': { target: apiTarget, changeOrigin: true },
+      '/api': { target: apiTarget, changeOrigin: true, timeout: 300_000, proxyTimeout: 300_000 },
       '/packages': { target: apiTarget, changeOrigin: true },
       '/artifacts': { target: apiTarget, changeOrigin: true },
     },

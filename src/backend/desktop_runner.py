@@ -110,6 +110,36 @@ class DesktopRunnerClient:
             },
         }
 
+    def patch_settings(self, patch: dict) -> dict:
+        return self._json_request(Request(
+            f"{self.base_url}/api/settings",
+            data=json.dumps(patch).encode("utf-8"),
+            method="PUT",
+            headers={"Content-Type": "application/json", "Accept": "application/json"},
+        ), timeout=max(self.timeout, 5.0))
+
+    def run(self, inputs: dict | None = None) -> dict:
+        payload = self._json_request(Request(
+            f"{self.base_url}/api/run",
+            data=json.dumps({"inputs": inputs or {}}).encode("utf-8"),
+            method="POST",
+            headers={"Content-Type": "application/json", "Accept": "application/json"},
+        ), timeout=180.0)
+        if payload.get("ok") is not True:
+            raise DesktopRunnerError("DESKTOP_RUNNER_RUN_REJECTED", str(payload.get("error") or "Desktop Runner rejected the run."), status=409)
+        run = payload.get("run") if isinstance(payload.get("run"), dict) else {}
+        progress = payload.get("progress") if isinstance(payload.get("progress"), dict) else {}
+        return {
+            "schema": "cartridgeflow.desktop_runner_run.v1",
+            "run_id": str(run.get("run_id") or ""),
+            "status": str(run.get("status") or ""),
+            "cartridge_id": str(run.get("cartridge_id") or ""),
+            "delivery": run.get("delivery") if isinstance(run.get("delivery"), dict) else None,
+            "error": run.get("error") if isinstance(run.get("error"), dict) else None,
+            "progress": progress,
+            "run": run,
+        }
+
     def _json_request(self, request: Request, *, timeout: float | None = None) -> dict:
         try:
             with urlopen(request, timeout=timeout or self.timeout) as response:

@@ -37,6 +37,7 @@ export function WorkspaceHeader({
   onToggleSteward,
   stewardOn,
   onToggleProjectMenu,
+  section,
 }: {
   projectName: string
   projectMenu: ReactNode
@@ -48,6 +49,7 @@ export function WorkspaceHeader({
   onToggleSteward?: () => void
   stewardOn?: boolean
   onToggleProjectMenu: () => void
+  section?: string
 }) {
   return <header className="topbar">
     <strong className="brand-name">{copy.brand}</strong>
@@ -56,6 +58,10 @@ export function WorkspaceHeader({
       {projectName}
       <ChevronDown size={13} />
     </button>
+    {section ? <>
+      <span className="brand-slash">/</span>
+      <span className="topbar-section">{section}</span>
+    </> : null}
     {projectMenu}
     <span className="topbar-spacer" />
     <div className="topbar-meta">
@@ -82,6 +88,8 @@ export function NextBar({
   onAction,
   onToggleSteward,
   onTrialRun,
+  reviewFilter,
+  onFilterReview,
 }: {
   guidance: Guidance
   stats: ReviewCounts | null
@@ -90,6 +98,8 @@ export function NextBar({
   onAction: () => void
   onToggleSteward?: () => void
   onTrialRun?: () => void
+  reviewFilter?: ReviewState | ''
+  onFilterReview?: (state: ReviewState | '') => void
 }) {
   const chip = guidance.stage === 'complete-step' ? guidance.title.replace(/^补齐「/, '').replace(/」$/, '') : ''
   return <div className="nextbar">
@@ -102,9 +112,9 @@ export function NextBar({
       </> : <span className="next-title">{guidance.title}</span>}
     </div>
     {stats ? <div className="next-stats" aria-label="审核状态统计">
-      {(['confirmed', 'review', 'unresolved'] as ReviewState[]).map((state) => <span key={state} className={state === 'confirmed' ? 'is-ok' : state === 'review' ? 'is-review' : 'is-gap'}>
+      {(['confirmed', 'review', 'unresolved'] as ReviewState[]).map((state) => <button type="button" key={state} className={cx(state === 'confirmed' ? 'is-ok' : state === 'review' ? 'is-review' : 'is-gap', reviewFilter === state && 'is-on')} onClick={() => onFilterReview?.(reviewFilter === state ? '' : state)}>
         {statusCopy(state)} <b>{stats[state]}</b>
-      </span>)}
+      </button>)}
     </div> : null}
     {onToggleSteward ? <>
       <span className="next-split" />

@@ -232,6 +232,7 @@ export function RuntimeDesk({
   const [busy, setBusy] = useState(false)
   const [inputs, setInputs] = useState<Record<string, string>>({})
   const [boundId, setBoundId] = useState('')
+  const [recordsOpen, setRecordsOpen] = useState(false)
   const [openHistory, setOpenHistory] = useState('')
   const [inputsReady, setInputsReady] = useState(false)
   const fields = useMemo(() => {
@@ -361,7 +362,7 @@ export function RuntimeDesk({
       <header className="runtime-desk-bar">
         <div className="runtime-desk-title">
           <strong>试运行</strong>
-          <span>试运行、排队与历史</span>
+          <span>按当前方案验证输入与交付</span>
         </div>
         <div className="runtime-bind">
           <span>绑定卡带</span>
@@ -369,14 +370,23 @@ export function RuntimeDesk({
           {cartridge ? <em>v{cartridge.version}</em> : null}
           <i className={signed ? 'is-ok' : 'is-gap'}>{signed ? '已签发' : '未签发'}</i>
         </div>
+        <Button
+          variant="ghost"
+          aria-expanded={recordsOpen}
+          aria-controls="runtime-queue runtime-history"
+          onClick={() => setRecordsOpen((open) => !open)}
+        >
+          试运行记录 {queue.length + history.length}
+          {recordsOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        </Button>
         {onToggleSteward ? <button type="button" className="btn-steward" onClick={() => { onClose(); onToggleSteward() }}><Bot size={11} />{copy.steward}</button> : null}
         <Button variant="icon" aria-label="关闭试运行" onClick={onClose}><X size={14} /></Button>
       </header>
       {error ? <p className="alert runtime-alert" role="alert">{error}</p> : null}
       <div className="runtime-desk-cols">
-        <section className="runtime-col is-run" aria-label="试运行">
+        <section className="runtime-col is-run" aria-label="试运行" style={recordsOpen ? undefined : { gridColumn: '1 / -1' }}>
           <h3>试运行</h3>
-          <div className="runtime-col-body">
+          <div className="runtime-col-body" style={recordsOpen ? undefined : { width: 'min(100%, 520px)', margin: '0 auto' }}>
             <div className="runtime-cart">
               <small>当前卡带</small>
               <strong title={rawName}>{cartridge?.name || title}</strong>
@@ -431,75 +441,77 @@ export function RuntimeDesk({
             </div>
           </div>
         </section>
-        <section className="runtime-col is-queue" aria-label="队列">
-          <div className="runtime-col-head">
-            <div>
-              <h3>队列</h3>
-              <small>关掉页面，试运行任务仍会继续</small>
+        {recordsOpen ? <>
+          <section id="runtime-queue" className="runtime-col is-queue" aria-label="队列">
+            <div className="runtime-col-head">
+              <div>
+                <h3>队列</h3>
+                <small>关掉页面，试运行任务仍会继续</small>
+              </div>
+              <em>{runningCount} 试运行中</em>
             </div>
-            <em>{runningCount} 试运行中</em>
-          </div>
-          <div className="runtime-col-body is-list">
-            {queue.length ? queue.map((job) => (
-              <button type="button" key={job.run_id} className="runtime-queue-item" onClick={() => setBlockingRun(job.run_id)}>
-                <div className="runtime-queue-top">
-                  <div>
-                    <strong>{jobTitle(job, cartridges)}</strong>
-                    <div className="runtime-queue-meta">
-                      <span>{shortRunId(job.run_id)}</span>
-                      <i className={job.status === 'running' ? 'is-run' : 'is-wait'}>{statusLabel(job.status)}</i>
+            <div className="runtime-col-body is-list">
+              {queue.length ? queue.map((job) => (
+                <button type="button" key={job.run_id} className="runtime-queue-item" onClick={() => setBlockingRun(job.run_id)}>
+                  <div className="runtime-queue-top">
+                    <div>
+                      <strong>{jobTitle(job, cartridges)}</strong>
+                      <div className="runtime-queue-meta">
+                        <span>{shortRunId(job.run_id)}</span>
+                        <i className={job.status === 'running' ? 'is-run' : 'is-wait'}>{statusLabel(job.status)}</i>
+                      </div>
+                    </div>
+                    <div className="runtime-queue-time">
+                      <span>{clock(job.created_at)}</span>
+                      <b>{job.status === 'queued' || job.status === 'created' ? '—' : durationLabel(job)}</b>
                     </div>
                   </div>
-                  <div className="runtime-queue-time">
-                    <span>{clock(job.created_at)}</span>
-                    <b>{job.status === 'queued' || job.status === 'created' ? '—' : durationLabel(job)}</b>
-                  </div>
-                </div>
-                <MiniBar job={job} />
-              </button>
-            )) : <div className="runtime-blank">
-              <i className="runtime-blank-mark" aria-hidden="true" />
-              <strong>还没有排队的任务</strong>
-              <span>开始试运行后会出现在这里。关掉页面也不会停，完成后会提示你。</span>
-            </div>}
-          </div>
-        </section>
-        <section className="runtime-col is-history" aria-label="历史">
-          <div className="runtime-col-head">
-            <h3>历史</h3>
-            <span>{history.length} 条</span>
-          </div>
-          <div className="runtime-col-body is-list">
-            {history.length ? history.map((job) => {
-              const open = openHistory === job.run_id
-              const ok = job.status === 'completed'
-              return <div key={job.run_id} className="runtime-history-item">
-                <button type="button" onClick={() => setOpenHistory(open ? '' : job.run_id)}>
-                  {ok ? <CheckCircle2 size={16} className="is-ok" /> : <XCircle size={16} className="is-bad" />}
-                  <div>
-                    <strong>{jobTitle(job, cartridges)}</strong>
-                    <small>{stamp(job.updated_at || job.created_at)}</small>
-                  </div>
-                  <div className="runtime-history-side">
-                    <b>{durationLabel(job)}</b>
-                    <span>{shortRunId(job.run_id, 'RUN')}</span>
-                  </div>
-                  {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                  <MiniBar job={job} />
                 </button>
-                {open ? <div className="runtime-history-body">
-                  <ResultWidgets fields={resultFields} job={job} template={creator?.studio_runtime?.template} />
-                  {job.status === 'failed' ? <p className="hint">{jobErrorText(job)}</p> : null}
-                  {job.status === 'failed' && (cartridge || signed) ? <button type="button" className="runtime-text-link" onClick={() => void startRuntimeJob((cartridge || bindCartridge(cartridges, boundId, creator?.project_id))!.id, job.inputs || runPayload(inputs, specs), cartridge?.name || title, creator?.project_id)}>重跑</button> : null}
-                  <button type="button" className="runtime-text-link" onClick={() => setBlockingRun(job.run_id)}>查看结果</button>
-                </div> : null}
-              </div>
-            }) : <div className="runtime-blank">
-              <i className="runtime-blank-mark" aria-hidden="true" />
-              <strong>还没有试运行记录</strong>
-              <span>跑完的任务会留在这里，可展开查看第二层字段对应的结果。</span>
-            </div>}
-          </div>
-        </section>
+              )) : <div className="runtime-blank">
+                <i className="runtime-blank-mark" aria-hidden="true" />
+                <strong>还没有排队的任务</strong>
+                <span>开始试运行后会出现在这里。关掉页面也不会停，完成后会提示你。</span>
+              </div>}
+            </div>
+          </section>
+          <section id="runtime-history" className="runtime-col is-history" aria-label="历史">
+            <div className="runtime-col-head">
+              <h3>历史</h3>
+              <span>{history.length} 条</span>
+            </div>
+            <div className="runtime-col-body is-list">
+              {history.length ? history.map((job) => {
+                const open = openHistory === job.run_id
+                const ok = job.status === 'completed'
+                return <div key={job.run_id} className="runtime-history-item">
+                  <button type="button" onClick={() => setOpenHistory(open ? '' : job.run_id)}>
+                    {ok ? <CheckCircle2 size={16} className="is-ok" /> : <XCircle size={16} className="is-bad" />}
+                    <div>
+                      <strong>{jobTitle(job, cartridges)}</strong>
+                      <small>{stamp(job.updated_at || job.created_at)}</small>
+                    </div>
+                    <div className="runtime-history-side">
+                      <b>{durationLabel(job)}</b>
+                      <span>{shortRunId(job.run_id, 'RUN')}</span>
+                    </div>
+                    {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                  </button>
+                  {open ? <div className="runtime-history-body">
+                    <ResultWidgets fields={resultFields} job={job} template={creator?.studio_runtime?.template} />
+                    {job.status === 'failed' ? <p className="hint">{jobErrorText(job)}</p> : null}
+                    {job.status === 'failed' && (cartridge || signed) ? <button type="button" className="runtime-text-link" onClick={() => void startRuntimeJob((cartridge || bindCartridge(cartridges, boundId, creator?.project_id))!.id, job.inputs || runPayload(inputs, specs), cartridge?.name || title, creator?.project_id)}>重跑</button> : null}
+                    <button type="button" className="runtime-text-link" onClick={() => setBlockingRun(job.run_id)}>查看结果</button>
+                  </div> : null}
+                </div>
+              }) : <div className="runtime-blank">
+                <i className="runtime-blank-mark" aria-hidden="true" />
+                <strong>还没有试运行记录</strong>
+                <span>跑完的任务会留在这里，可展开查看第二层字段对应的结果。</span>
+              </div>}
+            </div>
+          </section>
+        </> : null}
       </div>
     </div>
   </div>

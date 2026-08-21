@@ -4,20 +4,32 @@ import {
   acceptCreatorProposal,
   ApiError,
   confirmCreatorNode,
+  discoverCreatorSources,
   fetchCreatorSession,
+  inspectCreatorSource,
   previewCreatorProposal,
   proposeCreatorNodeValues,
   refineCreatorNodeWithAi,
   rejectCreatorCapability,
   rejectCreatorProposal,
+  setCreatorExperience,
   type CreatorProjection,
   type CreatorProposal,
   type CreatorRecipeNode,
+  type CreatorSourceCandidate,
 } from '../api/client.ts'
 import { copy } from '../copy.ts'
 import { Button, StatusBadge } from '../ui/index.ts'
 import { stepContract } from './graph.ts'
 import { nodeReviewState, requiredFieldsEmpty, trustCopy } from './model.ts'
+
+type CreatorSourceReference = { id: string; name?: string; remote_url?: string; rss_url?: string }
+type SourceInspection = Awaited<ReturnType<typeof inspectCreatorSource>>
+type ExperienceDraft = { component_id: string; field_sources: Record<string, string> }
+
+function slotDraft(slot: NonNullable<CreatorRecipeNode['experience']>['slots'][number]): ExperienceDraft {
+  return { component_id: slot.selected_component_id, field_sources: { ...slot.field_sources } }
+}
 
 export function NodeDetail({
   creator,
@@ -45,6 +57,11 @@ export function NodeDetail({
   const [proposal, setProposal] = useState<CreatorProposal | null>(() => creator.pending_proposals.find((item) => item.changes.some((change) => change.target_id === node.id)) || null)
   const [impact, setImpact] = useState('')
   const [working, setWorking] = useState(false)
+  const [sourceCandidates, setSourceCandidates] = useState<CreatorSourceCandidate[]>([])
+  const [sourceUrl, setSourceUrl] = useState('')
+  const [inspection, setInspection] = useState<SourceInspection | null>(null)
+  const [sourceError, setSourceError] = useState('')
+  const [experienceDrafts, setExperienceDrafts] = useState<Record<string, ExperienceDraft>>({})
   const state = nodeReviewState(creator, node)
   const unresolved = state === 'unresolved'
   const changed = JSON.stringify(values) !== JSON.stringify(node.values)
@@ -54,12 +71,24 @@ export function NodeDetail({
   const capability = node.resolution?.capability
   const trust = trustCopy(capability?.trust_scope)
   const contract = stepContract(creator, node)
+  const experienceSlots = node.experience?.slots || []
+  const creatorSources = ((creator as CreatorProjection & { sources?: CreatorSourceReference[] }).sources || []).filter((source) => source.remote_url || source.rss_url)
+  const sourceContextAvailable = Boolean(unresolved || creatorSources.length || experienceSlots.some((slot) => slot.sources.length))
+  const experienceDirty = experienceSlots.some((slot) => {
+    const draft = experienceDrafts[slot.id]
+    return Boolean(draft && (draft.component_id !== slot.selected_component_id || JSON.stringify(draft.field_sources) !== JSON.stringify(slot.field_sources)))
+  })
 
   useEffect(() => {
     setValues(node.values)
     setPrompt('')
     setProposal(creator.pending_proposals.find((item) => item.changes.some((change) => change.target_id === node.id)) || null)
     setImpact('')
+    setSourceCandidates([])
+    setInspection(null)
+    setSourceError('')
+    setExperienceDrafts(Object.fromEntries(experienceSlots.map((slot) => [slot.id, slotDraft(slot)])))
+    setSourceUrl(creatorSources[0]?.remote_url || creatorSources[0]?.rss_url || '')
   }, [creator.pending_proposals, node.id, node.values])
 
   const fail = (error: unknown) => {
@@ -133,6 +162,60 @@ export function NodeDetail({
     } catch (error) { fail(error) } finally { setWorking(false) }
   }
 
+  const discoverSources = async () => {
+    setWorking(true)
+    setSourceError('')
+    try {
+      const request = node.resolution?.needed_capability || node.description || node.label
+      const result = await discoverCreatorSources(creator.session_id, request)
+      setSourceCandidates(result.candidates)
+      const firstUrl = result.candidates.find((candidate) => candidate.remote_url || candidate.rss_url)
+      if (!sourceUrl && firstUrl) setSourceUrl(firstUrl.remote_url || firstUrl.rss_url)
+    } catch (error) {
+      setSourceError(error instanceof Error ? error.message : '来源发现失败')
+      fail(error)
+    } finally { setWorking(false) }
+  }
+
+  const inspectSource = async (url = sourceUrl) => {
+    const target = url.trim()
+    if (!target) return
+    setWorking(true)
+    setSourceError('')
+    try {
+      const result = await inspectCreatorSource(target)
+      setInspection(result)
+      setSourceUrl(target)
+    } catch (error) {
+      setSourceError(error instanceof Error ? error.message : '来源检查失败')
+      fail(error)
+    } finally { setWorking(false) }
+  }
+
+  const updateExperienceDraft = (slotId: string, next: Partial<ExperienceDraft>) => {
+    setExperienceDrafts((current) => {
+      const previous = current[slotId] || { component_id: '', field_sources: {} }
+      return { ...current, [slotId]: { ...previous, ...next } }
+    })
+  }
+
+  const saveExperience = async (slotId: string) => {
+    const slot = experienceSlots.find((item) => item.id === slotId)
+    const draft = experienceDrafts[slotId]
+    if (!slot || !draft?.component_id) return
+    setWorking(true)
+    try {
+      const result = await setCreatorExperience(creator.session_id, node.id, {
+        expected_revision: creator.revision,
+        expected_experience_revision: creator.experience_revision ?? 0,
+        slot_id: slot.id,
+        component_id: draft.component_id,
+        field_sources: Object.fromEntries(Object.entries(draft.field_sources).filter(([, sourceId]) => sourceId)),
+      })
+      onCreatorChange(result.creator)
+    } catch (error) { fail(error) } finally { setWorking(false) }
+  }
+
   const confirm = async () => {
     setWorking(true)
     try {
@@ -170,6 +253,64 @@ export function NodeDetail({
           </div>
         </> : null}
       </section>
+      {sourceContextAvailable ? <section className="block">
+        <strong>来源检查</strong>
+        <div className="fields">
+          <label>来源 URL<input list={`node-sources-${node.id}`} value={sourceUrl} disabled={isBusy} onChange={(event) => setSourceUrl(event.currentTarget.value)} /></label>
+          <datalist id={`node-sources-${node.id}`}>
+            {[...creatorSources, ...sourceCandidates].flatMap((source) => [source.remote_url, source.rss_url]).filter(Boolean).map((url) => <option value={url} key={url} />)}
+          </datalist>
+        </div>
+        <div className="answers">
+          <Button variant="ghost" disabled={isBusy} onClick={() => void discoverSources()}>发现来源</Button>
+          <Button disabled={isBusy || !sourceUrl.trim()} onClick={() => void inspectSource()}>检查来源</Button>
+        </div>
+        {creatorSources.length ? <div className="fields">
+          {creatorSources.map((source) => {
+            const url = source.remote_url || source.rss_url || ''
+            return <button type="button" className="ghost-link" key={source.id} disabled={isBusy || !url} onClick={() => void inspectSource(url)}>{source.name || source.id}</button>
+          })}
+        </div> : null}
+        {sourceCandidates.length ? <div className="fields">
+          {sourceCandidates.map((candidate) => {
+            const url = candidate.remote_url || candidate.rss_url
+            return <button type="button" className="ghost-link" key={candidate.id} disabled={isBusy || !url} onClick={() => void inspectSource(url)}>{candidate.name}</button>
+          })}
+        </div> : null}
+        {sourceError ? <p className="muted">{sourceError}</p> : null}
+        {inspection ? <div className="capability">
+          <span>状态 <em>{inspection.status}</em></span>
+          <span>类型 <em>{inspection.content_type}</em></span>
+          <span>样本 <em>{inspection.sample || '无样本'}</em></span>
+        </div> : null}
+      </section> : null}
+      {experienceSlots.length ? <section className="block">
+        <strong>结果呈现</strong>
+        {experienceSlots.map((slot) => {
+          const draft = experienceDrafts[slot.id] || slotDraft(slot)
+          const selected = slot.components.find((component) => component.id === draft.component_id)
+          const mappingReady = Boolean(selected?.available && selected.fields.every((field) => !field.required || field.compatible_source_ids.includes(draft.field_sources[field.id] || '')))
+          return <div className="capability" key={slot.id}>
+            <label>{slot.label}<select value={draft.component_id} disabled={isBusy} onChange={(event) => {
+              const component = slot.components.find((item) => item.id === event.currentTarget.value)
+              const fieldSources = Object.fromEntries((component?.fields || []).map((field) => [field.id, draft.field_sources[field.id] || field.compatible_source_ids[0] || '']))
+              updateExperienceDraft(slot.id, { component_id: event.currentTarget.value, field_sources: fieldSources })
+            }}>
+              <option value="">选择组件</option>
+              {slot.components.map((component) => <option value={component.id} key={component.id} disabled={!component.available}>{component.label}</option>)}
+            </select></label>
+            {selected?.fields.map((field) => {
+              const sourceIds = [...new Set([...(field.compatible_source_ids || []), draft.field_sources[field.id]].filter(Boolean))]
+              return <label key={field.id}>{field.label}{field.required ? ' *' : ''}<select value={draft.field_sources[field.id] || ''} disabled={isBusy} onChange={(event) => updateExperienceDraft(slot.id, { field_sources: { ...draft.field_sources, [field.id]: event.currentTarget.value } })}>
+                <option value="">选择字段来源</option>
+                {sourceIds.map((sourceId) => <option value={sourceId} key={sourceId}>{slot.sources.find((source) => source.id === sourceId)?.label || sourceId}</option>)}
+              </select></label>
+            })}
+            <Button variant="ghost" disabled={isBusy || !mappingReady} onClick={() => void saveExperience(slot.id)}>保存呈现</Button>
+            <em>{slot.status === 'configured' ? '已配置' : '需要配置'}</em>
+          </div>
+        })}
+      </section> : null}
       {node.studio_layer2?.params?.length ? <section className="block">
         <strong>使用者参数</strong>
         <p className="muted">{node.studio_layer2.params.map((item) => `${item.label}${item.required ? '（必填）' : ''}`).join('、')}</p>
@@ -218,7 +359,7 @@ export function NodeDetail({
     </div>
     <footer className="detail-actions">
       <Button variant="ghost" onClick={onClose}>{copy.deferConfirm}</Button>
-      <Button disabled={isBusy || state === 'confirmed' || changed || unresolved || requiredFieldsEmpty(node, values)} onClick={() => void confirm()}>
+      <Button disabled={isBusy || state === 'confirmed' || changed || experienceDirty || unresolved || requiredFieldsEmpty(node, values)} onClick={() => void confirm()}>
         {nextNode ? copy.confirmNext : copy.confirmNode} <ChevronRight />
       </Button>
     </footer>

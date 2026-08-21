@@ -111,12 +111,52 @@ test.describe('click inventory', () => {
   })
 })
 
-test('empty hub creates a draft only after the user asks', async ({ page }) => {
-  await page.route('**/api/creator/projects', (route) => route.fulfill({ json: { projects: [] } }))
+test('empty hub creates a draft with a new project identity only after the user asks', async ({ page }) => {
+  const draftUuid = '7b27fe6d-2f91-4e46-b9ee-74e604debec9'
+  const draftProject = `project.${draftUuid}`
+  const requestedProjectIds: string[] = []
+  await page.addInitScript((uuid) => {
+    Object.defineProperty(crypto, 'randomUUID', { configurable: true, value: () => uuid })
+  }, draftUuid)
+  await page.route(/^https?:\/\/[^/]+\/api\//, async (route) => {
+    const request = route.request()
+    const url = new URL(request.url())
+    if (url.pathname === '/api/creator/projects') {
+      await route.fulfill({ json: { projects: [] } })
+      return
+    }
+    if (url.pathname === '/api/settings') {
+      await route.fulfill({ json: { provider: '', has_key: false, base_url: '', model: '' } })
+      return
+    }
+    if (url.pathname === '/api/creator/desktop-runner') {
+      await route.fulfill({ json: { schema: 'cartridgeflow.desktop_runner_status.v1', available: false, url: '', version: '', busy: false, cartridge: null } })
+      return
+    }
+    const projectPath = url.pathname.match(/^\/api\/creator\/projects\/([^/]+)(\/workspace)?$/)
+    if (projectPath) {
+      const requestedProjectId = decodeURIComponent(projectPath[1])
+      requestedProjectIds.push(requestedProjectId)
+      if (projectPath[2] === '/workspace') {
+        await route.fulfill({ json: { workspace: null } })
+        return
+      }
+      await route.fulfill({ json: { creator: null } })
+      return
+    }
+    await route.fulfill({ status: 404, json: { detail: 'Unexpected mocked API request.' } })
+  })
+
   await page.goto('/studio', { waitUntil: 'domcontentloaded' })
   await expect(page.getByRole('dialog', { name: '还没有项目' })).toBeVisible()
+  await expect(page).toHaveURL(/\/studio$/)
   await page.getByRole('button', { name: '新建项目' }).click()
-  await expect(page).toHaveURL(/\/projects\/project\.[^/]+\/studio$/)
+  await expect(page).toHaveURL(new RegExp(`/projects/${draftProject.replaceAll('.', '\\.')}/studio$`))
+  await expect(page.locator('.topbar')).toBeVisible()
+  await expect.poll(() => requestedProjectIds.length).toBeGreaterThanOrEqual(2)
+  expect(requestedProjectIds.every((projectId) => projectId === draftProject)).toBe(true)
+  expect(requestedProjectIds).not.toContain(project)
+  expect(await page.evaluate(() => localStorage.getItem('cartridgeflow.studio-project'))).toBe(draftProject)
 })
 
 test('workspace save surfaces revision conflicts', async ({ page }) => {

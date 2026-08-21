@@ -101,9 +101,7 @@ export function Layer2Overlay({
   onCreator?: (next: CreatorProjection) => void
   onOpenResources?: () => void
 }) {
-  const visual = new URLSearchParams(window.location.search).get('visual')
-  const startStage: Layer2StageId = visual === 'frame5' ? 'prove' : 'flow'
-  const [stage, setStage] = useState<Layer2StageId>(startStage)
+  const [stage, setStage] = useState<Layer2StageId>('flow')
   const [inspectorTab, setInspectorTab] = useState<'approach' | 'handoff' | 'params'>('approach')
   const [selected, setSelected] = useState<'main' | 'tool' | 'start' | 'end' | string>('main')
   const [layer, setLayer] = useState<StudioLayer2>(() => emptyLayer(node))
@@ -145,10 +143,6 @@ export function Layer2Overlay({
     }).catch(() => setReusable([]))
   }, [])
   useEffect(() => {
-    if (visual === 'frame4' || visual === 'frame5') {
-      setDraft('ready')
-      return
-    }
     if (flowId) {
       setDraft('ready')
       onOpened(node.id, flowId)
@@ -167,7 +161,7 @@ export function Layer2Overlay({
       setDraft('ready')
     }).catch(() => { if (live) { setDraft('failed'); setError('内部做法还没有保存，可以先在画布上搭步骤。') } })
     return () => { live = false }
-  }, [flowId, goal, node.id, node.label, onOpened, visual])
+  }, [flowId, goal, node.id, node.label, onOpened])
 
   const persist = async (next = layer, extra: Partial<StudioLayer2> = {}) => {
     const body: Record<string, unknown> = { ...next, ...extra }
@@ -235,7 +229,7 @@ export function Layer2Overlay({
   }
 
   const filteredReusable = reusable.filter((item) => !search || item.name.includes(search))
-  const columns = stage !== 'flow'
+  const stageIndex = L2_STAGES.findIndex((item) => item.id === stage)
   const selectedToolLabel = layer.tools.length ? `调用本机工具（已选 ${layer.tools.length} 项）` : '调用本机工具'
 
   return <div className="layer2-backdrop" role="presentation">
@@ -280,15 +274,15 @@ export function Layer2Overlay({
 
       <nav className="layer2-stages" aria-label="能力制作阶段">
         {L2_STAGES.map((item, index) => (
-          <button key={item.id} type="button" className={cx(stage === item.id && 'is-on', (item.id === 'flow' ? columns : item.id === 'result' ? stage === 'prove' || stage === 'publish' : false) && 'is-done')} onClick={() => setStage(item.id)}>
-            {item.id === 'flow' && columns ? <Check size={14} /> : stage !== 'flow' ? <em>{index + 1}</em> : null}
-            {stage === 'flow' ? `${index + 1}. ${item.label}` : item.label}
+          <button key={item.id} type="button" className={cx(stage === item.id && 'is-on', index < stageIndex && 'is-done')} onClick={() => setStage(item.id)}>
+            {index < stageIndex ? <Check size={14} /> : <em>{index + 1}</em>}
+            {item.label}
           </button>
         ))}
       </nav>
 
-      {columns ? <div className="layer2-columns">
-        <ResultColumn
+      {stage !== 'flow' ? <div className="layer2-columns" style={{ gridTemplateColumns: 'minmax(0, 1fr)' }}>
+        {stage === 'result' ? <ResultColumn
           layer={layer}
           onChange={setLayer}
           onSave={() => void persist()}
@@ -299,8 +293,8 @@ export function Layer2Overlay({
             setLayer(next)
             void persist(next)
           }}
-        />
-        <ProveColumn
+        /> : null}
+        {stage === 'prove' ? <ProveColumn
           layer={layer}
           proving={proving}
           note={proveNote}
@@ -308,8 +302,8 @@ export function Layer2Overlay({
           prodLevel={prodLevel}
           onProdLevel={setProdLevel}
           onProve={() => void prove()}
-        />
-        <PublishColumn
+        /> : null}
+        {stage === 'publish' ? <PublishColumn
           name={layer.step_name}
           description={goal}
           published={Boolean(layer.published)}
@@ -321,7 +315,7 @@ export function Layer2Overlay({
           onAdvanced={() => setPublishAdvanced(true)}
           onName={(value) => setLayer((current) => ({ ...current, step_name: value }))}
           onPublish={() => void publish()}
-        />
+        /> : null}
       </div> : <div className="layer2-body">
         <aside className="l2-palette">
           <strong>这一步可以怎么做</strong>
@@ -419,7 +413,7 @@ export function Layer2Overlay({
       </div>}
 
       <footer className="layer2-foot">
-        {columns ? <>
+        {stage !== 'flow' ? <>
           <span className={hasPath ? 'l2-foot-ok' : 'l2-foot-wait'}>{hasPath ? '结构完整' : '结构不完整'}</span>
           <span className={proof.success && proof.safe_fail ? 'l2-foot-ok' : 'l2-foot-wait'}>{proof.success && proof.safe_fail ? '验证成功与失败均通过' : '验证尚未完成'}</span>
         </> : <>

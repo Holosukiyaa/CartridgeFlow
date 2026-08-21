@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { copy } from '../copy.ts'
-import { visualFrame } from '../visualFixture.ts'
+import { Alert, Button, Dialog, Field, TextInput } from '../ui/index.ts'
 import { ConnectDialog } from './ConnectDialog.tsx'
 import { Canvas } from './Canvas.tsx'
 import { NodeDetail } from './NodeDetail.tsx'
@@ -17,21 +17,12 @@ export function WorkspaceApp({ projectId }: { projectId: string }) {
   const workspace = useWorkspace(projectId)
   const [runtimeOpen, setRuntimeOpen] = useState(false)
   const [reviewFilter, setReviewFilter] = useState<ReviewState | ''>('')
+  const [projectAction, setProjectAction] = useState<{ kind: 'rename' | 'delete'; name: string } | null>(null)
   const showSteward = Boolean(workspace.creator && (workspace.stewardOpen || (workspace.narrow && workspace.tab === 'steward')))
 
   useEffect(() => {
-    const visual = new URLSearchParams(window.location.search).get('visual')
-    if (visual === 'frame2') workspace.setConnectOpen(true)
-    if (visual === 'frame3') workspace.setSettingsOpen(true)
     if (new URLSearchParams(window.location.search).get('runtime') === '1') setRuntimeOpen(true)
   }, [])
-  useEffect(() => {
-    const visual = new URLSearchParams(window.location.search).get('visual')
-    if ((visual === 'frame4' || visual === 'frame5') && workspace.creator) {
-      const gap = workspace.creator.trusted_recipe.nodes.find((node) => node.resolution?.status === 'unresolved')
-      if (gap) workspace.openLayer2(gap.id)
-    }
-  }, [workspace.creator])
 
   return <>
     <Shell
@@ -39,10 +30,16 @@ export function WorkspaceApp({ projectId }: { projectId: string }) {
       header={<WorkspaceHeader
         projectName={workspace.projectName}
         section={runtimeOpen ? copy.runtimeDesk : workspace.layer2Node ? copy.layer2Kicker : undefined}
-        projectMenu={workspace.projectMenuOpen ? <ProjectMenu projectId={projectId} projects={workspace.projects} /> : null}
+        projectMenu={workspace.projectMenuOpen ? <ProjectMenu
+          projectId={projectId}
+          projects={workspace.projects}
+          onNew={workspace.startNewProject}
+          onRename={(name) => setProjectAction({ kind: 'rename', name })}
+          onDelete={(name) => setProjectAction({ kind: 'delete', name })}
+        /> : null}
         syncLabel={workspace.syncLabel}
         connected={workspace.connected}
-        connectionLabel={visualFrame() === 'frame2' ? '共创AI未连接' : workspace.connectionLabel}
+        connectionLabel={workspace.connectionLabel}
         onConnect={() => workspace.setConnectOpen(true)}
         onOpenSettings={() => workspace.setSettingsOpen(true)}
         onToggleSteward={workspace.creator ? () => {
@@ -56,7 +53,6 @@ export function WorkspaceApp({ projectId }: { projectId: string }) {
         guidance={workspace.guidance}
         stats={workspace.stats}
         narrow={workspace.narrow}
-        stewardOn={workspace.stewardOpen}
         onAction={() => {
           if (workspace.guidance.action === 'download' || workspace.guidance.action === 'runner') {
             workspace.closeLayer2()
@@ -72,14 +68,6 @@ export function WorkspaceApp({ projectId }: { projectId: string }) {
           }
           workspace.runPrimaryAction()
         }}
-        onTrialRun={() => {
-          workspace.closeLayer2()
-          setRuntimeOpen(true)
-        }}
-        onToggleSteward={workspace.creator ? () => {
-          if (workspace.narrow) workspace.setTab('steward')
-          else workspace.setStewardOpen((open) => !open)
-        } : undefined}
         reviewFilter={reviewFilter}
         onFilterReview={setReviewFilter}
       />}
@@ -157,6 +145,16 @@ export function WorkspaceApp({ projectId }: { projectId: string }) {
     </Shell>
     {workspace.connectOpen ? <ConnectDialog current={workspace.aiStatus} onConnect={workspace.connect} onClose={() => workspace.setConnectOpen(false)} /> : null}
     {workspace.settingsOpen ? <ResourcePool onClose={() => workspace.setSettingsOpen(false)} /> : null}
+    {projectAction?.kind === 'rename' ? <RenameProjectDialog
+      name={projectAction.name}
+      onClose={() => setProjectAction(null)}
+      onRename={workspace.renameProject}
+    /> : null}
+    {projectAction?.kind === 'delete' ? <DeleteProjectDialog
+      name={projectAction.name}
+      onClose={() => setProjectAction(null)}
+      onDelete={workspace.deleteProject}
+    /> : null}
     {workspace.layer2Node && workspace.creator ? <Layer2Overlay
       creator={workspace.creator}
       node={workspace.layer2Node}
@@ -184,4 +182,68 @@ export function WorkspaceApp({ projectId }: { projectId: string }) {
     <RunBlocker />
     <RuntimeToasts />
   </>
+}
+
+function RenameProjectDialog({
+  name,
+  onClose,
+  onRename,
+}: {
+  name: string
+  onClose: () => void
+  onRename: (name: string) => Promise<void>
+}) {
+  const [value, setValue] = useState(name)
+  const [working, setWorking] = useState(false)
+  const [error, setError] = useState('')
+  const submit = async (event: FormEvent) => {
+    event.preventDefault()
+    if (!value.trim() || working) return
+    setWorking(true)
+    setError('')
+    try {
+      await onRename(value.trim())
+      onClose()
+    } catch {
+      setError(copy.projectActionFail)
+      setWorking(false)
+    }
+  }
+  return <Dialog title={copy.renameProjectTitle} locked={working} onClose={onClose}>
+    <form onSubmit={submit}>
+      <Field label={copy.projectName}><TextInput autoFocus maxLength={16} value={value} disabled={working} onChange={(event) => setValue(event.currentTarget.value)} /></Field>
+      {error ? <Alert>{error}</Alert> : null}
+      <div className="dialog-foot"><span /><Button variant="ghost" disabled={working} onClick={onClose}>{copy.cancel}</Button><Button type="submit" disabled={working || !value.trim()}>{copy.renameProject}</Button></div>
+    </form>
+  </Dialog>
+}
+
+function DeleteProjectDialog({
+  name,
+  onClose,
+  onDelete,
+}: {
+  name: string
+  onClose: () => void
+  onDelete: () => Promise<void>
+}) {
+  const [working, setWorking] = useState(false)
+  const [error, setError] = useState('')
+  const remove = async () => {
+    if (working) return
+    setWorking(true)
+    setError('')
+    try {
+      await onDelete()
+    } catch {
+      setError(copy.projectActionFail)
+      setWorking(false)
+    }
+  }
+  return <Dialog title={copy.deleteProjectTitle} description={`${name} · ${copy.deleteProjectHint}`} locked={working} onClose={onClose}>
+    <form onSubmit={(event) => { event.preventDefault(); void remove() }}>
+      {error ? <Alert>{error}</Alert> : null}
+      <div className="dialog-foot"><span /><Button autoFocus variant="ghost" disabled={working} onClick={onClose}>{copy.cancel}</Button><Button type="submit" disabled={working}>{copy.confirmDeleteProject}</Button></div>
+    </form>
+  </Dialog>
 }

@@ -3,7 +3,6 @@ import { Loader2 } from 'lucide-react'
 import { ApiError } from '../api/client.ts'
 import { LLM_PRESETS } from '../config.ts'
 import { copy } from '../copy.ts'
-import { visualFrame } from '../visualFixture.ts'
 import { Alert, Button, Dialog, Field, SegmentedControl, TextInput } from '../ui/index.ts'
 
 export function ConnectDialog({
@@ -45,7 +44,7 @@ export function ConnectDialog({
     }
   }
 
-  return <Dialog title={copy.connectTitle} description={copy.connectHint} locked={working} align={visualFrame() === 'frame2' ? 'start' : 'center'} onClose={onClose}>
+  return <Dialog title={copy.connectTitle} description={copy.connectHint} locked={working} align="center" onClose={onClose}>
     <form onSubmit={submit}>
       <SegmentedControl label={copy.provider} value={presetId} options={LLM_PRESETS} disabled={working} onChange={choose} />
       <Field label={copy.baseUrl}><TextInput value={baseUrl} disabled={working} onChange={(event) => setBaseUrl(event.currentTarget.value)} /></Field>

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ApiError,
+  deleteCreatorProject,
   composeCreatorRecipe,
   connectCreatorAi,
   deliverCreatorProject,
@@ -10,6 +11,7 @@ import {
   fetchCreatorWorkspace,
   fetchDesktopRunnerStatus,
   listCreatorProjects,
+  renameCreatorProject,
   fetchCreatorSession,
   packageCreatorProject,
   previewCreatorRecompose,
@@ -27,9 +29,8 @@ import {
 } from '../api/client.ts'
 import { COMPOSE_INPUT_ID, MIN_GOAL_LENGTH, NARROW_QUERY, RUNNER_FALLBACK_URL, SAVE_DEBOUNCE_MS, type ShellTabId } from '../config.ts'
 import { copy } from '../copy.ts'
-import { FRAME1_ERROR, FRAME1_MESSAGES, FRAME1_PREVIEW, FRAME2_CLARIFY, FRAME2_DIRECTIONS, visualFrame } from '../visualFixture.ts'
 import { clearWorkshopReturn, nextUnconfirmed, resolveGuidance, reviewCounts, workshopReturnFromLocation, type WorkspaceSnapshot } from './model.ts'
-import { readSnapshot, writeSnapshot } from './persistence.ts'
+import { createDraftProjectId, projectStudioPath, readSnapshot, rememberProjectId, writeSnapshot } from './persistence.ts'
 import type { StewardMessage, StewardScope } from './Steward.tsx'
 import { useMedia } from './useMedia.ts'
 
@@ -44,7 +45,7 @@ export function useWorkspace(projectId: string) {
   const [messages, setMessages] = useState<StewardMessage[]>(restored?.messages || [])
   const [recipePreview, setRecipePreview] = useState<CreatorRecipePreview | null>(null)
   const [stewardScope, setStewardScope] = useState<StewardScope>('recipe')
-  const [stewardOpen, setStewardOpen] = useState(true)
+  const [stewardOpen, setStewardOpen] = useState(false)
   const [contextIds, setContextIds] = useState<string[]>([])
   const [layer2Flows, setLayer2Flows] = useState<Record<string, string>>(restored?.layer2Flows || {})
   const [error, setError] = useState('')
@@ -69,6 +70,11 @@ export function useWorkspace(projectId: string) {
   const revisionRef = useRef(0)
   const hydratedRef = useRef(false)
   const narrow = useMedia(NARROW_QUERY)
+  const refreshProjects = useCallback(async () => {
+    const result = await listCreatorProjects()
+    setProjects(result.projects)
+    return result.projects
+  }, [])
 
   useEffect(() => {
     const snapshot: WorkspaceSnapshot = {
@@ -85,18 +91,15 @@ export function useWorkspace(projectId: string) {
     }
     writeSnapshot(projectId, snapshot)
     if (!hydratedRef.current) return
-    if (visualFrame()) {
-      setSyncLabel('草稿已保存')
-      return
-    }
     setSyncLabel('正在保存草稿')
     const timer = window.setTimeout(() => {
+      if (!hydratedRef.current) return
       saveCreatorWorkspace(projectId, snapshot, revisionRef.current)
         .then(({ workspace }) => {
           revisionRef.current = workspace.revision
           setSyncLabel('草稿已保存')
         })
-        .catch(() => setSyncLabel('同步失败'))
+        .catch((reason) => setSyncLabel(reason instanceof ApiError && reason.code.includes('REVISION_CONFLICT') ? 'REVISION_CONFLICT' : '同步失败'))
     }, SAVE_DEBOUNCE_MS)
     return () => window.clearTimeout(timer)
   }, [clarification, goal, layer2Flows, messages, packageResult, packageRevision, possibilities, projectId, selectedId])
@@ -120,15 +123,7 @@ export function useWorkspace(projectId: string) {
           if (recovered.layer2Flows) setLayer2Flows(recovered.layer2Flows)
         }
         if (!value) {
-          if (visualFrame() === 'frame2') {
-            setGoal('我想做一份每天早上生成的中文AI日报')
-            setClarification(FRAME2_CLARIFY)
-            setPossibilities(FRAME2_DIRECTIONS)
-            setConnectOpen(true)
-            setSyncLabel('草稿已保存')
-          } else {
-            setSyncLabel('等待连接 AI')
-          }
+          setSyncLabel('等待连接 AI')
           return
         }
         const returned = workshopReturnFromLocation()
@@ -167,14 +162,7 @@ export function useWorkspace(projectId: string) {
           setPackageRevision(null)
           setRunnerDelivery(null)
         }
-        setSyncLabel(visualFrame() ? '草稿已保存' : returned.published ? copy.returnedFromWorkshop : '草稿已保存')
-        if (visualFrame() === 'frame1') {
-          setMessages(FRAME1_MESSAGES)
-          setRecipePreview(FRAME1_PREVIEW)
-          setError(FRAME1_ERROR)
-          setReturnedFromWorkshop(true)
-          setStewardOpen(true)
-        }
+        setSyncLabel(returned.published ? copy.returnedFromWorkshop : '草稿已保存')
       })
       .catch(() => setSyncLabel('草稿读取失败'))
       .finally(() => { if (active) setLoading(false) })
@@ -182,16 +170,10 @@ export function useWorkspace(projectId: string) {
   }, [projectId, restored])
 
   useEffect(() => {
-    listCreatorProjects().then((result) => setProjects(result.projects)).catch(() => null)
-  }, [projectId, creator?.revision])
+    void refreshProjects().catch(() => null)
+  }, [projectId, creator?.revision, refreshProjects])
 
   useEffect(() => {
-    if (visualFrame() === 'frame2') {
-      setAiStatus({ provider: '', has_key: false, base_url: '', model: '' })
-      connectedRef.current = false
-      fetchDesktopRunnerStatus().then(setRunnerStatus).catch(() => null)
-      return
-    }
     fetchCreatorAiStatus().then((status) => {
       setAiStatus(status)
       connectedRef.current = status.has_key
@@ -216,6 +198,49 @@ export function useWorkspace(projectId: string) {
     setPackageError('')
     setRunnerDelivery(null)
     setSyncLabel('草稿已保存')
+  }
+
+  const startNewProject = () => {
+    const nextProjectId = createDraftProjectId()
+    rememberProjectId(nextProjectId)
+    window.location.assign(projectStudioPath(nextProjectId))
+  }
+
+  const renameProject = async (name: string) => {
+    const normalized = name.trim()
+    if (!normalized) return
+    setBusy(true)
+    setError('')
+    try {
+      const result = await renameCreatorProject(projectId, normalized)
+      saveCreator(result.creator)
+      void refreshProjects().catch(() => null)
+      setProjectMenuOpen(false)
+    } catch {
+      setError(copy.projectActionFail)
+      throw new Error(copy.projectActionFail)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const deleteProject = async () => {
+    setBusy(true)
+    setError('')
+    hydratedRef.current = false
+    try {
+      await deleteCreatorProject(projectId)
+      const remaining = await refreshProjects().catch(() => projects.filter((project) => project.project_id !== projectId))
+      const nextProjectId = remaining.find((project) => project.project_id !== projectId)?.project_id || ''
+      rememberProjectId(nextProjectId)
+      window.location.assign(nextProjectId ? projectStudioPath(nextProjectId) : '/studio')
+    } catch {
+      hydratedRef.current = true
+      setError(copy.projectActionFail)
+      throw new Error(copy.projectActionFail)
+    } finally {
+      setBusy(false)
+    }
   }
 
   const requireModel = () => { setConnectOpen(true) }
@@ -259,7 +284,7 @@ export function useWorkspace(projectId: string) {
       saveCreator(result.creator)
       setGoal(result.creator.intent)
       setSelectedId(result.creator.trusted_recipe.nodes[0]?.id || '')
-      setStewardOpen(true)
+      setStewardOpen(false)
       pushMessage('assistant', '第一版大纲已经在画布上。继续说哪里不对，或点拼图进入某一步的内部做法。')
     } catch (reason) {
       if (reason instanceof ApiError && reason.code.includes('MODEL_UNBOUND')) return requireModel()
@@ -464,6 +489,9 @@ export function useWorkspace(projectId: string) {
     narrow,
     projectMenuOpen,
     projects,
+    startNewProject,
+    renameProject,
+    deleteProject,
     aiStatus,
     packageResult,
     packageError,
@@ -473,7 +501,7 @@ export function useWorkspace(projectId: string) {
     guidance,
     stats,
     showDetail: Boolean(detailOpen && selectedNode && creator),
-    projectName: creator?.short_name || creator?.project_name || creator?.intent || copy.unnamedProject,
+    projectName: creator?.short_name || creator?.project_name || creator?.intent || projects.find((project) => project.project_id === projectId)?.name || copy.unnamedProject,
     connectionLabel: aiStatus.has_key ? (aiStatus.model || copy.connected) : copy.disconnected,
     connected: aiStatus.has_key,
     setInput: (value: string) => { setInput(value); setError('') },

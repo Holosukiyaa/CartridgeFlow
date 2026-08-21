@@ -4,8 +4,6 @@ export const MIN_GOAL_LENGTH = 3
 export const WORKSPACE_SNAPSHOT_VERSION = 1 as const
 export const RUNNER_FALLBACK_URL = 'http://127.0.0.1:18990/'
 export const SAVE_DEBOUNCE_MS = 700
-export const SAMPLE_PROJECT_ID = 'project.1ec8b174-01cf-4fc5-bc57-ac9867516497'
-
 export type LlmPreset = {
   id: string
   label: string

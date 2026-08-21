@@ -15,7 +15,6 @@ import {
   type CreatorToolResource,
 } from '../api/client.ts'
 import { AUTHORING_PROVIDER_ID, LLM_PRESETS, TOOL_KINDS } from '../config.ts'
-import { visualFrame } from '../visualFixture.ts'
 import { copy } from '../copy.ts'
 import { Alert, Button, Dialog, Field, SegmentedControl, TextInput, cx } from '../ui/index.ts'
 
@@ -29,8 +28,8 @@ export function ResourcePool({ onClose }: { onClose: () => void }) {
   const [resources, setResources] = useState<CreatorStudioResources | null>(null)
   const [error, setError] = useState('')
   const [working, setWorking] = useState(false)
-  const [addingApi, setAddingApi] = useState(visualFrame() === 'frame3')
-  const [addingTool, setAddingTool] = useState(visualFrame() === 'frame3')
+  const [addingApi, setAddingApi] = useState(false)
+  const [addingTool, setAddingTool] = useState(false)
 
   const reload = async () => {
     const [nextProviders, nextResources] = await Promise.all([listCreatorLlmProviders(), fetchCreatorStudioResources()])

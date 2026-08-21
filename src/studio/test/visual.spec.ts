@@ -11,11 +11,11 @@ const studio = `/projects/${project}/studio`
 type Frame = { id: string; width: number; height: number; url: string }
 
 const frames: Frame[] = [
-  { id: 'frame1', width: 1459, height: 900, url: `${studio}?visual=frame1` },
-  { id: 'frame2', width: 1543, height: 906, url: `/projects/project.visual-empty/studio?visual=frame2` },
-  { id: 'frame3', width: 1543, height: 900, url: `${studio}?visual=frame3` },
-  { id: 'frame4', width: 1543, height: 900, url: `${studio}?visual=frame4` },
-  { id: 'frame5', width: 1543, height: 900, url: `${studio}?visual=frame5` },
+  { id: 'frame1', width: 1459, height: 900, url: studio },
+  { id: 'frame2', width: 1543, height: 906, url: '/projects/project.visual-empty/studio' },
+  { id: 'frame3', width: 1543, height: 900, url: studio },
+  { id: 'frame4', width: 1543, height: 900, url: studio },
+  { id: 'frame5', width: 1543, height: 900, url: studio },
   { id: 'frame6', width: 390, height: 844, url: studio },
 ]
 
@@ -43,11 +43,23 @@ for (const frame of frames) {
     await page.goto(frame.url, { waitUntil: 'domcontentloaded' })
     await page.waitForSelector('.topbar', { timeout: 15_000 })
     await page.waitForTimeout(800)
-    if (frame.id === 'frame4' || frame.id === 'frame5') {
-      await page.waitForSelector('.layer2', { timeout: 15_000 })
+    if (frame.id === 'frame1') {
+      await page.locator('button.btn-steward').click()
+      await page.waitForSelector('.steward')
+    }
+    if (frame.id === 'frame2') {
+      await page.locator('button.connection').click()
+      await page.waitForSelector('.dialog')
     }
     if (frame.id === 'frame3') {
-      await page.waitForSelector('.dialog.is-wide, .pool-grid', { timeout: 15_000 })
+      await page.getByRole('button', { name: '本机资源' }).click()
+      await page.getByRole('button', { name: '添加接口' }).first().click()
+      await page.getByRole('button', { name: '添加工具' }).first().click()
+    }
+    if (frame.id === 'frame4' || frame.id === 'frame5') {
+      await page.locator('.creator-node.is-unresolved .node-layer').first().click()
+      await page.waitForSelector('.layer2', { timeout: 15_000 })
+      if (frame.id === 'frame5') await page.getByRole('button', { name: /结果长什么样/ }).click()
     }
     const shot = path.join(root, 'diff', `${frame.id}-actual.png`)
     const baseline = path.join(root, 'baselines', `${frame.id}.png`)

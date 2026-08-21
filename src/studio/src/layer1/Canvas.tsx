@@ -12,7 +12,6 @@ import {
 import { Minus, Plus, Puzzle } from 'lucide-react'
 import type { CreatorProjection, CreatorRecipeNode, CreatorRecipePreview } from '../api/types.ts'
 import { LAYOUT_KEY, RELATION_KIND_FILTERS } from '../config.ts'
-import { visualFrame } from '../visualFixture.ts'
 import { copy } from '../copy.ts'
 import { StatusBadge, cx, useTheme } from '../ui/index.ts'
 import {
@@ -240,58 +239,6 @@ export function Canvas({
   }
 
   if (!creator) return null
-  if (!vertical && visualFrame() === 'frame1') {
-    const grid = [
-      { x: 24, y: 56 }, { x: 216, y: 56 }, { x: 408, y: 56 }, { x: 600, y: 56 },
-      { x: 216, y: 280 }, { x: 408, y: 280 }, { x: 600, y: 280 },
-    ]
-    return <div className="static-graph">
-      <div className="relation-filters static-filters">
-        {RELATION_KIND_FILTERS.map((item) => <button
-          key={item.id}
-          type="button"
-          className={cx('relation-chip', `is-${item.id}`, 'is-on')}
-        >{kindLabel(item.id)}</button>)}
-        {preview ? <>
-          <span className="preview-copy">{copy.previewOnCanvas}</span>
-          <button type="button" onClick={onRejectPreview}>{copy.stewardReject}</button>
-          <button type="button" className="is-apply" onClick={onApplyPreview}>{copy.stewardApply}</button>
-        </> : null}
-      </div>
-      <svg className="static-edges" width="800" height="460" aria-hidden="true">
-        <path d="M192 126 H216" stroke="#8b8ba8" strokeWidth="1.5" fill="none" />
-        <path d="M384 126 H408" stroke="#8b8ba8" strokeWidth="1.5" fill="none" />
-        <path d="M576 126 H600" stroke="#8b8ba8" strokeWidth="1.5" fill="none" />
-        <path d="M300 196 V280" stroke="#3b82f6" strokeWidth="1.5" fill="none" />
-        <path d="M300 196 H492 V280" stroke="#3b82f6" strokeWidth="1.5" fill="none" />
-        <path d="M384 350 H408" stroke="#8b8ba8" strokeWidth="1.5" fill="none" />
-        <path d="M576 350 H600" stroke="#8b8ba8" strokeWidth="1.5" fill="none" />
-      </svg>
-      {creator.trusted_recipe.nodes.map((node, index) => {
-        const state = nodeReviewState(creator, node)
-        const point = grid[index] || { x: 18, y: 56 }
-        return <article
-          key={node.id}
-          className={`creator-node is-${state}${selectedId === node.id ? ' is-selected' : ''}`}
-          style={{ left: point.x, top: point.y }}
-          onClick={() => onSelect(node.id)}
-        >
-          <header>
-            <span className="order">{String(index + 1).padStart(2, '0')}</span>
-            <span className="node-head-actions">
-              <StatusBadge state={state} />
-              <button type="button" className="node-layer" aria-label={copy.openLayer2} onClick={(event) => { event.stopPropagation(); onOpenLayer(node.id) }}><Puzzle size={14} /></button>
-            </span>
-          </header>
-          <h3>{node.label}</h3>
-          <p>{node.description}</p>
-          {state === 'unresolved'
-            ? <div className="need-chip">需求：{node.resolution?.needed_capability || node.description}</div>
-            : <div className="approach-chip">做法：{node.studio_layer2?.step_name || node.resolution?.capability?.label || '已有做法'}</div>}
-        </article>
-      })}
-    </div>
-  }
   if (vertical) {
     return <div className="mobile-wrap">
     <div className="mobile-list">

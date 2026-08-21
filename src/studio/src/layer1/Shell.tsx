@@ -1,4 +1,4 @@
-import { Bot, ChevronDown, Moon, Settings, Sun } from 'lucide-react'
+import { Bot, ChevronDown, Moon, Pencil, Plus, Settings, Sun, Trash2 } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { SHELL_TABS, type ShellTabId } from '../config.ts'
 import { copy } from '../copy.ts'
@@ -86,18 +86,13 @@ export function NextBar({
   stats,
   narrow,
   onAction,
-  onToggleSteward,
-  onTrialRun,
   reviewFilter,
   onFilterReview,
 }: {
   guidance: Guidance
   stats: ReviewCounts | null
-  stewardOn?: boolean
   narrow?: boolean
   onAction: () => void
-  onToggleSteward?: () => void
-  onTrialRun?: () => void
   reviewFilter?: ReviewState | ''
   onFilterReview?: (state: ReviewState | '') => void
 }) {
@@ -116,11 +111,6 @@ export function NextBar({
         {statusCopy(state)} <b>{stats[state]}</b>
       </button>)}
     </div> : null}
-    {onToggleSteward ? <>
-      <span className="next-split" />
-      <button type="button" className="btn-next-steward" onClick={onToggleSteward}><Bot size={10} />{copy.steward}</button>
-    </> : null}
-    {onTrialRun ? <Button variant="ghost" onClick={onTrialRun}>{copy.trialRun}</Button> : null}
     {guidance.showAction ? <Button onClick={onAction}>{guidance.actionLabel}</Button> : null}
   </div>
 }
@@ -142,14 +132,32 @@ function ThemeToggle() {
 export function ProjectMenu({
   projectId,
   projects,
+  onNew,
+  onRename,
+  onDelete,
 }: {
   projectId: string
   projects: Array<{ project_id: string; name: string; revision: number }>
+  onNew: () => void
+  onRename: (name: string) => void
+  onDelete: (name: string) => void
 }) {
   return <div className="project-menu">
     {projects.map((project) => <a className={project.project_id === projectId ? 'is-current' : ''} href={`/projects/${encodeURIComponent(project.project_id)}/studio`} key={project.project_id}>
-      <span>{project.name}</span>
+      <span>{shortProjectName(project.name)}</span>
       <small>v{project.revision}</small>
     </a>)}
+    <div className="dialog-foot">
+      <Button variant="ghost" onClick={onNew}><Plus size={13} />{copy.newProject}</Button>
+      {projects.some((project) => project.project_id === projectId) ? <>
+        <Button variant="icon" aria-label={copy.renameProject} title={copy.renameProject} onClick={() => onRename(projects.find((project) => project.project_id === projectId)?.name || '')}><Pencil size={13} /></Button>
+        <Button variant="icon" aria-label={copy.deleteProject} title={copy.deleteProject} onClick={() => onDelete(projects.find((project) => project.project_id === projectId)?.name || '')}><Trash2 size={13} /></Button>
+      </> : null}
+    </div>
   </div>
+}
+
+function shortProjectName(name: string) {
+  const compact = name.trim()
+  return compact.length > 16 ? `${compact.slice(0, 16)}…` : compact
 }

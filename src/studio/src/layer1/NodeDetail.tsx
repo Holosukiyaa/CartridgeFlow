@@ -73,11 +73,16 @@ export function NodeDetail({
   const contract = stepContract(creator, node)
   const experienceSlots = node.experience?.slots || []
   const creatorSources = ((creator as CreatorProjection & { sources?: CreatorSourceReference[] }).sources || []).filter((source) => source.remote_url || source.rss_url)
-  const sourceContextAvailable = Boolean(unresolved || creatorSources.length || experienceSlots.some((slot) => slot.sources.length))
+  const sourceContextAvailable = Boolean(node.resolution?.needed_capability?.trim() || unresolved || creatorSources.length || experienceSlots.some((slot) => slot.sources.length))
   const experienceDirty = experienceSlots.some((slot) => {
     const draft = experienceDrafts[slot.id]
     return Boolean(draft && (draft.component_id !== slot.selected_component_id || JSON.stringify(draft.field_sources) !== JSON.stringify(slot.field_sources)))
   })
+
+  const close = () => {
+    if ((changed || experienceDirty) && !window.confirm('有未保存的字段修改，确定放弃并离开吗？')) return
+    onClose()
+  }
 
   useEffect(() => {
     setValues(node.values)
@@ -234,7 +239,7 @@ export function NodeDetail({
       </div>
       <div className="detail-head-actions">
         <Button variant="icon" aria-label={copy.openLayer2} title={copy.openLayer2} onClick={() => onOpenLayer(node.id)}><Puzzle size={14} /></Button>
-        <Button variant="icon" aria-label={copy.close} onClick={onClose}><X size={14} /></Button>
+        <Button variant="icon" aria-label={copy.close} onClick={close}><X size={14} /></Button>
       </div>
     </header>
     <div className="detail-body">
@@ -358,7 +363,7 @@ export function NodeDetail({
       </section>
     </div>
     <footer className="detail-actions">
-      <Button variant="ghost" onClick={onClose}>{copy.deferConfirm}</Button>
+      <Button variant="ghost" onClick={close}>{copy.deferConfirm}</Button>
       <Button disabled={isBusy || state === 'confirmed' || changed || experienceDirty || unresolved || requiredFieldsEmpty(node, values)} onClick={() => void confirm()}>
         {nextNode ? copy.confirmNext : copy.confirmNode} <ChevronRight />
       </Button>

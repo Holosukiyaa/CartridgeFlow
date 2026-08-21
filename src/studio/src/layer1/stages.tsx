@@ -3,7 +3,6 @@ import { ChevronRight, Sparkles } from 'lucide-react'
 import type { CreatorRunnerDelivery } from '../api/client.ts'
 import type { CreatorClarification, CreatorPackage, CreatorPossibility, CreatorProjection } from '../api/types.ts'
 import { COMPOSE_INPUT_ID, MIN_GOAL_LENGTH } from '../config.ts'
-import { visualFrame } from '../visualFixture.ts'
 import { copy } from '../copy.ts'
 import { Button, Card, ComposeBar, EmptyHint, GoalChip } from '../ui/index.ts'
 import { nodeReviewState, type StageId } from './model.ts'
@@ -98,16 +97,18 @@ function PackageStage({ creator, packageResult, packageError, runnerDelivery, bu
   const blockers = creator.trusted_recipe.nodes.filter((node) => nodeReviewState(creator, node) === 'unresolved')
   const heading = packageError
     ? copy.package.fail
-    : runnerDelivery?.status === 'trust_required'
-      ? copy.package.trust
-      : runnerDelivery
-        ? copy.package.installed
-        : packageResult
-          ? copy.package.signed
-          : busy
-            ? copy.package.packing
-            : copy.package.notReady
-  const body = blockers.length
+    : blockers.length
+      ? copy.package.notReady
+      : runnerDelivery?.status === 'trust_required'
+        ? copy.package.trust
+        : runnerDelivery
+          ? copy.package.installed
+          : packageResult
+            ? copy.package.signed
+            : busy
+              ? copy.package.packing
+              : copy.package.notReady
+  const body = packageError || blockers.length || busy
     ? null
     : runnerDelivery?.status === 'trust_required'
       ? copy.package.trustBody
@@ -119,10 +120,8 @@ function PackageStage({ creator, packageResult, packageError, runnerDelivery, bu
   return <div className="pack-inner" role={packageError ? 'alert' : undefined}>
     <div className="pack-scroll">
       <strong>{packageError || heading}</strong>
-      <p className="pack-body">{copy.package.notReadyBody}</p>
       {blockers.length ? <ul>{blockers.map((node, index) => <li key={node.id}><em>{String(index + 1).padStart(2, '0')}</em><button type="button" className="runtime-text-link" onClick={() => onOpenGap?.(node.id)}>{node.label}</button></li>)}</ul> : body ? <p className="pack-body">{body}</p> : null}
     </div>
-    {packageResult ? <p className="pack-body">发行包已签发。下载和运行都在运行台里。</p> : null}
   </div>
 }
 
@@ -133,46 +132,6 @@ const beforeRecipe: Partial<Record<StageId, (ctx: StageContext) => ReactNode>> =
 }
 
 export function StageLayer(ctx: StageContext) {
-  if (visualFrame() === 'frame2') {
-    const clarification = ctx.clarification
-    return <div className="stage-layer is-packed">
-      <EmptyCanvas stage="connect-ai" />
-      <div className="packed-mid">
-        <ComposeBar
-          id={COMPOSE_INPUT_ID}
-          value={ctx.input || '生成一份用户调研报告大纲'}
-          placeholder={copy.composePlaceholder}
-          submitLabel={copy.composeSubmit}
-          minLength={0}
-          onChange={ctx.onInput}
-          onSubmit={ctx.onSubmit}
-        />
-        <p className="packed-goal"><b>目标</b> 我想做一份每天早上生成的中文AI日报：从我审核过的公开来源获取最新内容，筛选重要信息，生成简报，并在交付前让我确认。</p>
-        {clarification ? <article className="card packed-clarify">
-          <small>{copy.clarifyKicker}</small>
-          <h2>{clarification.question}</h2>
-          <p>为何重要：{clarification.why_it_matters}</p>
-          <div className="answers">{clarification.suggested_answers.map((answer) => <Button variant="ghost" key={answer} onClick={() => ctx.onClarify(answer)}>{answer}</Button>)}</div>
-          <ComposeBar value={ctx.input} placeholder={copy.clarifyPlaceholder} submitLabel={copy.clarifySubmit} minLength={0} onChange={ctx.onInput} onSubmit={ctx.onSubmit} />
-        </article> : null}
-      </div>
-      <div className="packed-bottom">
-        {ctx.possibilities.map((item) => <article className="direction" key={item.id}>
-          <h3>{item.title}</h3>
-          <p><b>{copy.outcome}</b> {item.outcome}</p>
-          <p><b>{copy.whyItFits}</b> {item.why_it_fits}</p>
-          <div className="answers">
-            <Button variant="soft" onClick={() => ctx.onChoose(item.recipe.intent)}>{copy.chooseDirection}</Button>
-            <Button variant="skip" onClick={ctx.onSkip}>{copy.skipDirections}</Button>
-          </div>
-        </article>)}
-      </div>
-      <aside className="packed-side">
-        <GeneratingStage />
-        <FailStage {...{ ...ctx, error: '没能给出可比较的方向，暂时无法生成新方向，请稍后重试', goal: ctx.goal }} />
-      </aside>
-    </div>
-  }
   if (ctx.creator) {
     return <div className="stage-layer is-docked"><div className="pack-corner"><PackageStage {...ctx} /></div></div>
   }

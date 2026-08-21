@@ -379,7 +379,7 @@ export function RuntimeDesk({
           试运行记录 {queue.length + history.length}
           {recordsOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
         </Button>
-        {onToggleSteward ? <button type="button" className="btn-steward" onClick={() => { onClose(); onToggleSteward() }}><Bot size={11} />{copy.steward}</button> : null}
+        {onToggleSteward ? <Button variant="icon" aria-label="对话管家" onClick={() => { onClose(); onToggleSteward() }}><Bot size={14} /></Button> : null}
         <Button variant="icon" aria-label="关闭试运行" onClick={onClose}><X size={14} /></Button>
       </header>
       {error ? <p className="alert runtime-alert" role="alert">{error}</p> : null}
@@ -404,7 +404,6 @@ export function RuntimeDesk({
                   kind={field.kind}
                   value={inputs[field.id] || ''}
                   disabled={busy}
-                  placeholder={field.kind === 'textarea' ? '每行一个来源，例如 https://example.com/ai.rss' : undefined}
                   onChange={(value) => setInputs((current) => ({ ...current, [field.id]: value }))}
                 />
               </label>

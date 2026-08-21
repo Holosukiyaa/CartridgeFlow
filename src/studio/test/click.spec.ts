@@ -20,7 +20,7 @@ test.describe('click inventory', () => {
     const connect = page.getByRole('dialog', { name: '连接共创 AI' })
     await expect(connect).toBeVisible()
     await connect.getByRole('button', { name: '取消' }).click()
-    await page.locator('button.btn-steward').click()
+    await page.getByRole('button', { name: '对话管家' }).click()
     await page.getByRole('button', { name: '开始补齐' }).click()
   })
 

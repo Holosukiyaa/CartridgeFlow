@@ -8,6 +8,7 @@ import {
   previewCreatorProposal,
   proposeCreatorNodeValues,
   refineCreatorNodeWithAi,
+  rejectCreatorCapability,
   rejectCreatorProposal,
   type CreatorProjection,
   type CreatorProposal,
@@ -50,7 +51,8 @@ export function NodeDetail({
   const index = creator.trusted_recipe.nodes.findIndex((item) => item.id === node.id)
   const nextNode = creator.trusted_recipe.nodes[index + 1]
   const isBusy = busy || working
-  const trust = trustCopy(node.resolution?.capability?.trust_scope)
+  const capability = node.resolution?.capability
+  const trust = trustCopy(capability?.trust_scope)
   const contract = stepContract(creator, node)
 
   useEffect(() => {
@@ -122,6 +124,15 @@ export function NodeDetail({
     } catch (error) { fail(error) } finally { setWorking(false) }
   }
 
+  const rejectCapability = async () => {
+    if (!capability) return
+    setWorking(true)
+    try {
+      const result = await rejectCreatorCapability(creator.session_id, node.id, creator.revision)
+      onCreatorChange(result.creator)
+    } catch (error) { fail(error) } finally { setWorking(false) }
+  }
+
   const confirm = async () => {
     setWorking(true)
     try {
@@ -144,17 +155,20 @@ export function NodeDetail({
       </div>
     </header>
     <div className="detail-body">
-      {returned ? <p className="return-note">{copy.returnedFromWorkshop}</p> : null}
+      {returned && !unresolved ? <p className="return-note">{copy.returnedFromWorkshop}</p> : null}
       <section className="block"><strong>{copy.nodeGoal}</strong><p>{node.description}</p></section>
       <section className="block">
         <strong>{copy.currentApproach}</strong>
         {unresolved ? <div className="capability is-gap"><span>待补齐 是方案的一部分，不是报错；需要进入第二层选定做法后才能继续确认。</span></div> : null}
         <Button onClick={() => onOpenLayer(node.id)}><Puzzle size={14} />{unresolved ? '打开第二层 · 补齐' : '查看或替换这一步的内部做法'}</Button>
-        <p className="fill-label">回填后</p>
-        <div className="capability">
-          <span>{node.label}<em>{trust}</em></span>
-          <button type="button" className="ghost-link" onClick={() => onOpenLayer(node.id)}><Puzzle size={12} />{copy.inspectLayer2}</button>
-        </div>
+        {!unresolved && capability ? <>
+          <p className="fill-label">回填后</p>
+          <div className="capability">
+            <span>{capability.label}<em>{trust} · v{capability.revision}</em></span>
+            <button type="button" className="ghost-link" onClick={() => onOpenLayer(node.id)}><Puzzle size={12} />{copy.inspectLayer2}</button>
+            <button type="button" className="ghost-link" disabled={isBusy} onClick={() => void rejectCapability()}>退回这个做法</button>
+          </div>
+        </> : null}
       </section>
       {node.studio_layer2?.params?.length ? <section className="block">
         <strong>使用者参数</strong>

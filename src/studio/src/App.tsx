@@ -17,7 +17,7 @@ export default function App() {
   const [projectId, setProjectId] = useState(locationProjectId)
   const [loadingProjects, setLoadingProjects] = useState(!projectId)
   const [projectLoadError, setProjectLoadError] = useState('')
-  const isCapabilities = window.location.pathname.startsWith('/capabilities')
+  const isCapabilities = window.location.pathname.split('/').some((segment) => segment === 'capabilities')
   const capabilitiesBackPath = locationProjectId ? projectStudioPath(locationProjectId) : '/studio'
 
   useEffect(() => {

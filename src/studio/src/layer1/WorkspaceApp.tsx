@@ -181,7 +181,42 @@ export function WorkspaceApp({ projectId }: { projectId: string }) {
     /> : null}
     <RunBlocker />
     <RuntimeToasts />
+    {workspace.syncIssue ? <SyncRecoveryDialog
+      kind={workspace.syncIssue}
+      working={workspace.syncWorking}
+      onRetry={() => void workspace.retrySync()}
+      onReload={() => void workspace.reloadServerDraft()}
+    /> : null}
   </>
+}
+
+function SyncRecoveryDialog({
+  kind,
+  working,
+  onRetry,
+  onReload,
+}: {
+  kind: 'load' | 'save' | 'conflict'
+  working: boolean
+  onRetry: () => void
+  onReload: () => void
+}) {
+  const conflict = kind === 'conflict'
+  const title = conflict ? '草稿版本冲突' : kind === 'load' ? '草稿读取失败' : '草稿同步失败'
+  const description = conflict
+    ? '服务端草稿已更新。加载服务端会替换当前本机内容；保留本机重试会用当前本机草稿再次保存。'
+    : kind === 'load'
+      ? '未能从服务端读取这个草稿。'
+      : '本机草稿仍然保留，但尚未同步到服务端。'
+  return <Dialog title={title} description={description} locked onClose={() => undefined}>
+    <form onSubmit={(event) => { event.preventDefault(); onRetry() }}>
+      <div className="dialog-foot">
+        <span />
+        {conflict ? <Button variant="ghost" disabled={working} onClick={onReload}>加载服务端草稿</Button> : null}
+        <Button type="submit" disabled={working}>{conflict ? '保留本机草稿并重试' : kind === 'load' ? '重新读取' : '重新同步'}</Button>
+      </div>
+    </form>
+  </Dialog>
 }
 
 function RenameProjectDialog({

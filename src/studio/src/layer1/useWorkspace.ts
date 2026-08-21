@@ -34,6 +34,11 @@ import { createDraftProjectId, projectStudioPath, readSnapshot, rememberProjectI
 import type { StewardMessage, StewardScope } from './Steward.tsx'
 import { useMedia } from './useMedia.ts'
 
+type SyncIssue =
+  | { kind: 'load' }
+  | { kind: 'save'; snapshot: WorkspaceSnapshot; expectedRevision: number }
+  | { kind: 'conflict'; snapshot: WorkspaceSnapshot }
+
 export function useWorkspace(projectId: string) {
   const restored = useMemo(() => readSnapshot(projectId), [projectId])
   const [creator, setCreator] = useState<CreatorProjection | null>(null)
@@ -66,10 +71,53 @@ export function useWorkspace(projectId: string) {
   const [runnerStatus, setRunnerStatus] = useState<DesktopRunnerStatus | null>(null)
   const [runnerDelivery, setRunnerDelivery] = useState<CreatorRunnerDelivery | null>(null)
   const [syncLabel, setSyncLabel] = useState('尚未开始')
+  const [syncIssue, setSyncIssue] = useState<SyncIssue | null>(null)
+  const [syncWorking, setSyncWorking] = useState(false)
+  const [loadAttempt, setLoadAttempt] = useState(0)
   const connectedRef = useRef<boolean | null>(false)
   const revisionRef = useRef(0)
+  const saveRequestRef = useRef(0)
   const hydratedRef = useRef(false)
+  const syncIssueRef = useRef<SyncIssue | null>(null)
+  const runtimeInputsRef = useRef(restored?.runtimeInputs || {})
   const narrow = useMedia(NARROW_QUERY)
+  const updateSyncIssue = useCallback((issue: SyncIssue | null) => {
+    syncIssueRef.current = issue
+    setSyncIssue(issue)
+  }, [])
+  const applySnapshot = useCallback((snapshot: WorkspaceSnapshot) => {
+    setGoal(snapshot.goal)
+    setClarification(snapshot.clarification)
+    setPossibilities(snapshot.possibilities)
+    setSelectedId(snapshot.selectedId)
+    setPackageResult(snapshot.packageResult)
+    setPackageRevision(snapshot.packageRevision)
+    setMessages(snapshot.messages || [])
+    setLayer2Flows(snapshot.layer2Flows || {})
+    runtimeInputsRef.current = snapshot.runtimeInputs || {}
+  }, [])
+  const saveSnapshot = useCallback(async (snapshot: WorkspaceSnapshot, expectedRevision: number) => {
+    const requestId = ++saveRequestRef.current
+    setSyncLabel('正在保存草稿')
+    try {
+      const { workspace } = await saveCreatorWorkspace(projectId, snapshot, expectedRevision)
+      revisionRef.current = workspace.revision
+      if (requestId !== saveRequestRef.current) return true
+      updateSyncIssue(null)
+      setSyncLabel('草稿已保存')
+      return true
+    } catch (reason) {
+      if (requestId !== saveRequestRef.current) return false
+      if (reason instanceof ApiError && reason.code.includes('REVISION_CONFLICT')) {
+        updateSyncIssue({ kind: 'conflict', snapshot })
+        setSyncLabel('REVISION_CONFLICT')
+      } else {
+        updateSyncIssue({ kind: 'save', snapshot, expectedRevision })
+        setSyncLabel('同步失败')
+      }
+      return false
+    }
+  }, [projectId, updateSyncIssue])
   const refreshProjects = useCallback(async () => {
     const result = await listCreatorProjects()
     setProjects(result.projects)
@@ -87,22 +135,17 @@ export function useWorkspace(projectId: string) {
       packageResult,
       packageRevision,
       layer2Flows,
-      runtimeInputs: restored?.runtimeInputs || {},
+      runtimeInputs: runtimeInputsRef.current,
     }
     writeSnapshot(projectId, snapshot)
     if (!hydratedRef.current) return
     setSyncLabel('正在保存草稿')
     const timer = window.setTimeout(() => {
       if (!hydratedRef.current) return
-      saveCreatorWorkspace(projectId, snapshot, revisionRef.current)
-        .then(({ workspace }) => {
-          revisionRef.current = workspace.revision
-          setSyncLabel('草稿已保存')
-        })
-        .catch((reason) => setSyncLabel(reason instanceof ApiError && reason.code.includes('REVISION_CONFLICT') ? 'REVISION_CONFLICT' : '同步失败'))
+      void saveSnapshot(snapshot, revisionRef.current)
     }, SAVE_DEBOUNCE_MS)
     return () => window.clearTimeout(timer)
-  }, [clarification, goal, layer2Flows, messages, packageResult, packageRevision, possibilities, projectId, selectedId])
+  }, [clarification, goal, layer2Flows, messages, packageResult, packageRevision, possibilities, projectId, saveSnapshot, selectedId])
 
   useEffect(() => {
     let active = true
@@ -112,16 +155,7 @@ export function useWorkspace(projectId: string) {
         const recovered = workspace?.snapshot || restored
         revisionRef.current = workspace?.revision || 0
         hydratedRef.current = true
-        if (recovered) {
-          setGoal(recovered.goal)
-          setClarification(recovered.clarification)
-          setPossibilities(recovered.possibilities)
-          setSelectedId(recovered.selectedId)
-          setPackageResult(recovered.packageResult)
-          setPackageRevision(recovered.packageRevision)
-          if (recovered.messages?.length) setMessages(recovered.messages)
-          if (recovered.layer2Flows) setLayer2Flows(recovered.layer2Flows)
-        }
+        if (recovered) applySnapshot(recovered)
         if (!value) {
           setSyncLabel('等待连接 AI')
           return
@@ -164,10 +198,14 @@ export function useWorkspace(projectId: string) {
         }
         setSyncLabel(returned.published ? copy.returnedFromWorkshop : '草稿已保存')
       })
-      .catch(() => setSyncLabel('草稿读取失败'))
+      .catch(() => {
+        if (!active) return
+        updateSyncIssue({ kind: 'load' })
+        setSyncLabel('草稿读取失败')
+      })
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false }
-  }, [projectId, restored])
+  }, [applySnapshot, loadAttempt, projectId, restored, updateSyncIssue])
 
   useEffect(() => {
     void refreshProjects().catch(() => null)
@@ -177,7 +215,7 @@ export function useWorkspace(projectId: string) {
     fetchCreatorAiStatus().then((status) => {
       setAiStatus(status)
       connectedRef.current = status.has_key
-      if (!status.has_key) setSyncLabel('等待连接 AI')
+      if (!status.has_key && !syncIssueRef.current) setSyncLabel('等待连接 AI')
     }).catch(() => null)
     fetchDesktopRunnerStatus().then(setRunnerStatus).catch(() => null)
   }, [])
@@ -442,6 +480,53 @@ export function useWorkspace(projectId: string) {
     setTab('canvas')
   }
 
+  const retrySync = async () => {
+    if (!syncIssue || syncWorking) return
+    if (syncIssue.kind === 'load') {
+      updateSyncIssue(null)
+      setLoading(true)
+      setLoadAttempt((current) => current + 1)
+      return
+    }
+    setSyncWorking(true)
+    try {
+      if (syncIssue.kind === 'save') {
+        await saveSnapshot(syncIssue.snapshot, syncIssue.expectedRevision)
+        return
+      }
+      setSyncLabel('正在确认服务端版本')
+      try {
+        const { workspace } = await fetchCreatorWorkspace<WorkspaceSnapshot>(projectId)
+        await saveSnapshot(syncIssue.snapshot, workspace?.revision || 0)
+      } catch {
+        setSyncLabel('同步失败')
+      }
+    } finally {
+      setSyncWorking(false)
+    }
+  }
+
+  const reloadServerDraft = async () => {
+    if (syncIssue?.kind !== 'conflict' || syncWorking) return
+    setSyncWorking(true)
+    setSyncLabel('正在读取服务端草稿')
+    try {
+      const { workspace } = await fetchCreatorWorkspace<WorkspaceSnapshot>(projectId)
+      if (!workspace) {
+        setSyncLabel('草稿读取失败')
+        return
+      }
+      revisionRef.current = workspace.revision
+      applySnapshot(workspace.snapshot)
+      updateSyncIssue(null)
+      setSyncLabel('已加载服务端草稿')
+    } catch {
+      setSyncLabel('草稿读取失败')
+    } finally {
+      setSyncWorking(false)
+    }
+  }
+
   const runPrimaryAction = () => {
     if (guidance.action === 'connect') return requireModel()
     if (guidance.action === 'compose') {
@@ -498,6 +583,10 @@ export function useWorkspace(projectId: string) {
     buildPackage,
     runnerDelivery,
     syncLabel: busy ? copy.processing : syncLabel,
+    syncIssue: syncIssue?.kind || null,
+    syncWorking,
+    retrySync,
+    reloadServerDraft,
     guidance,
     stats,
     showDetail: Boolean(detailOpen && selectedNode && creator),

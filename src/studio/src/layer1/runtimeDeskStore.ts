@@ -33,7 +33,7 @@ function startPolling() {
           const version = next.cartridge_version ? ` · v${next.cartridge_version}` : ''
           toast = {
             id: next.run_id,
-            title: next.status === 'completed' ? '运行已完成' : '没有跑完',
+            title: next.status === 'completed' ? '试运行已完成' : '试运行没有跑完',
             detail: next.status === 'completed'
               ? `${next.label || next.cartridge_id}${version}`
               : String(next.error?.cause_chain?.[0]?.message || next.error?.message || next.label || next.status),

@@ -31,13 +31,6 @@ import {
   subscribeRuntimeDesk,
 } from './runtimeDeskStore.ts'
 
-const RESULT_FIELDS = [
-  { name: '日期', kind: '文本', source: '运行输入.date' },
-  { name: '要点', kind: '列表', source: '结果.result_items' },
-  { name: '来源链接', kind: '链接', source: '结果.source_url' },
-  { name: '已确认', kind: '是/否', source: '结果.approved' },
-]
-
 type WidgetKind = 'text' | 'textarea' | 'date' | 'url' | 'boolean'
 type ExperienceField = { id: string; label: string; kind: string; source: string }
 type InputSpec = { id: string; label: string; required: boolean; kind: WidgetKind }
@@ -45,13 +38,7 @@ type InputSpec = { id: string; label: string; required: boolean; kind: WidgetKin
 function compactTitle(raw: string) {
   const text = raw.replace(/\s+/g, ' ').trim()
   if (!text) return copy.unnamedProject
-  if (text.length <= 16) return text
-  const brief = text.match(/((?:中文\s*)?(?:AI\s*)?日报)/i)
-  if (brief) return brief[1].replace(/\s+/g, ' ').trim()
-  const named = [...text.matchAll(/([\u4e00-\u9fa5A-Za-z0-9]{2,8}(?:周报|简报|采集|汇总|报告|助手))/g)].map((item) => item[1])
-  if (named.length) return named.sort((a, b) => a.length - b.length)[0]
-  const cut = text.replace(/^我想做一份/, '').split(/[：:]/)[0].trim()
-  return (cut || text).slice(0, 16)
+  return text.slice(0, 16)
 }
 
 function presentationFields(creator: CreatorProjection | null): ExperienceField[] {
@@ -69,8 +56,7 @@ function presentationFields(creator: CreatorProjection | null): ExperienceField[
       }
     }
   }
-  if (fields.length) return fields
-  return RESULT_FIELDS.map((field) => ({ id: field.source, label: field.name, kind: field.kind, source: field.source }))
+  return fields
 }
 
 function widgetKind(field: { id?: string; label?: string; type?: string; kind?: string; source?: string; value_type?: string }): WidgetKind {
@@ -115,7 +101,7 @@ function inputSpecs(cartridge: StudioCartridge | null, creator: CreatorProjectio
     const id = field.source.replace(/^运行输入\./, '') || field.id
     addSpec(specs, {
       id,
-      label: id === 'date' || field.label === '日期' ? '运行日期' : field.label,
+      label: id === 'date' || field.label === '日期' ? '试运行日期' : field.label,
       required: false,
       kind: widgetKind(field),
     })
@@ -192,7 +178,7 @@ function durationLabel(job: StudioRunJob) {
 }
 
 function statusLabel(status: string) {
-  if (status === 'running') return '运行中'
+  if (status === 'running') return '试运行中'
   if (status === 'created' || status === 'queued') return '排队中'
   if (status === 'paused' || status === 'paused_waiting_user') return '等待中'
   if (status === 'completed') return '已完成'
@@ -292,7 +278,7 @@ export function RuntimeDesk({
           }
         }
       } catch (reason) {
-        setError(reason instanceof Error ? reason.message : '运行台没有就绪')
+        setError(reason instanceof Error ? reason.message : '试运行没有就绪')
       }
     })()
   }, [packageResult?.filename, creator?.project_id])
@@ -335,12 +321,12 @@ export function RuntimeDesk({
         }
       }
       if (!current) {
-        setError('当前方案还没有签发成可运行的卡带。')
+        setError('当前方案还没有签发成可试运行的卡带。')
         return
       }
       await startRuntimeJob(current.id, runPayload(inputs, specs), current.name || title, creator?.project_id)
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : '没有加入运行队列')
+      setError(reason instanceof Error ? reason.message : '没有加入试运行队列')
     } finally {
       setBusy(false)
     }
@@ -371,11 +357,11 @@ export function RuntimeDesk({
   }
 
   return <div className="overlay runtime-popup" role="presentation" onClick={onClose}>
-    <div className="runtime-desk" role="dialog" aria-modal="true" aria-label={copy.runtimeDesk} onClick={(event) => event.stopPropagation()}>
+    <div className="runtime-desk" role="dialog" aria-modal="true" aria-label="试运行" onClick={(event) => event.stopPropagation()}>
       <header className="runtime-desk-bar">
         <div className="runtime-desk-title">
-          <strong>{copy.runtimeDesk}</strong>
-          <span>运行、排队与历史</span>
+          <strong>试运行</strong>
+          <span>试运行、排队与历史</span>
         </div>
         <div className="runtime-bind">
           <span>绑定卡带</span>
@@ -384,12 +370,12 @@ export function RuntimeDesk({
           <i className={signed ? 'is-ok' : 'is-gap'}>{signed ? '已签发' : '未签发'}</i>
         </div>
         {onToggleSteward ? <button type="button" className="btn-steward" onClick={() => { onClose(); onToggleSteward() }}><Bot size={11} />{copy.steward}</button> : null}
-        <Button variant="icon" aria-label="关闭运行台" onClick={onClose}><X size={14} /></Button>
+        <Button variant="icon" aria-label="关闭试运行" onClick={onClose}><X size={14} /></Button>
       </header>
       {error ? <p className="alert runtime-alert" role="alert">{error}</p> : null}
       <div className="runtime-desk-cols">
-        <section className="runtime-col is-run" aria-label="运行">
-          <h3>运行</h3>
+        <section className="runtime-col is-run" aria-label="试运行">
+          <h3>试运行</h3>
           <div className="runtime-col-body">
             <div className="runtime-cart">
               <small>当前卡带</small>
@@ -414,9 +400,9 @@ export function RuntimeDesk({
               </label>
             ))}
             <button type="button" className="runtime-start" disabled={busy || !signed} onClick={() => void runCurrent()}>
-              <Play size={14} fill="currentColor" /> 开始运行
+              <Play size={14} fill="currentColor" /> 开始试运行
             </button>
-            {!signed ? <p className="runtime-start-hint">先签发发行包，才会按当前方案开始运行。{gaps[0] ? <button type="button" className="runtime-text-link" onClick={() => onOpenGap?.(gaps[0].id)}>去补齐</button> : null}</p> : null}
+            {!signed ? <p className="runtime-start-hint">先签发发行包，才会按当前方案开始试运行。{gaps[0] ? <button type="button" className="runtime-text-link" onClick={() => onOpenGap?.(gaps[0].id)}>去补齐</button> : null}</p> : null}
             {gaps.length ? <div className="runtime-gap">
               <b>还有 {gaps.length} 步待补齐，暂时不能签发</b>
               <ol>{gaps.map((node) => <li key={node.id}><button type="button" onClick={() => onOpenGap?.(node.id)}>{node.label}</button></li>)}</ol>
@@ -436,7 +422,7 @@ export function RuntimeDesk({
               </> : <>
                 <div className="runtime-pack-card is-empty">
                   <div><Package size={13} /><b>还没有签发当前方案</b></div>
-                  <span>签发后可以下载给客户，也可以在这里直接运行。</span>
+                  <span>签发后可以下载给客户，也可以在这里直接试运行。</span>
                 </div>
                 <button type="button" className="runtime-download" disabled={busy || !creator || gaps.length > 0} onClick={() => void issuePackage()}>
                   {busy ? copy.package.packing : '签发发行包'}
@@ -449,9 +435,9 @@ export function RuntimeDesk({
           <div className="runtime-col-head">
             <div>
               <h3>队列</h3>
-              <small>关掉页面任务仍在后台运行</small>
+              <small>关掉页面，试运行任务仍会继续</small>
             </div>
-            <em>{runningCount} 运行中</em>
+            <em>{runningCount} 试运行中</em>
           </div>
           <div className="runtime-col-body is-list">
             {queue.length ? queue.map((job) => (
@@ -474,7 +460,7 @@ export function RuntimeDesk({
             )) : <div className="runtime-blank">
               <i className="runtime-blank-mark" aria-hidden="true" />
               <strong>还没有排队的任务</strong>
-              <span>开始运行后会出现在这里。关掉运行台也不会停，完成后会提示你。</span>
+              <span>开始试运行后会出现在这里。关掉页面也不会停，完成后会提示你。</span>
             </div>}
           </div>
         </section>
@@ -509,7 +495,7 @@ export function RuntimeDesk({
               </div>
             }) : <div className="runtime-blank">
               <i className="runtime-blank-mark" aria-hidden="true" />
-              <strong>还没有运行记录</strong>
+              <strong>还没有试运行记录</strong>
               <span>跑完的任务会留在这里，可展开查看第二层字段对应的结果。</span>
             </div>}
           </div>
@@ -598,18 +584,13 @@ function jobErrorText(job: StudioRunJob) {
 function ResultWidgets({ fields, job, template = '列表' }: { fields: ExperienceField[]; job: StudioRunJob; template?: string }) {
   if (!fields.length) {
     const text = deliveryText(job)
-    return <div className="runtime-result-widgets"><p className="hint">还没有交付内容</p>{text ? <pre>{text.replace(/\*\*/g, '')}</pre> : null}</div>
+    return <div className="runtime-result-widgets"><p className="hint">尚未配置结果展示字段</p>{text ? <pre>{text.replace(/\*\*/g, '')}</pre> : null}</div>
   }
-  const extras = fields.filter((field) => !RESULT_FIELDS.some((item) => item.name === field.label || item.source === field.source))
-  const items = [
-    ...RESULT_FIELDS.map((field) => ({ id: field.source, label: field.name, kind: field.kind, source: field.source })),
-    ...extras,
-  ]
   const points = resultItems(job)
   const urls = resultUrls(job)
   const date = resultDate(job)
   return <div className={cx('runtime-result-widgets', template === '数据面板' && 'is-grid')}>
-    {items.map((field) => {
+    {fields.map((field) => {
       const kind = widgetKind(field)
       if (kind === 'boolean') {
         const checked = Boolean(job.approved || job.delivery?.approved)
@@ -653,22 +634,22 @@ export function RunBlocker() {
   const job = desk.jobs.find((item) => item.run_id === desk.blockingRunId)
   if (!job) return null
   const done = job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled'
-  return <div className="run-blocker" role="alertdialog" aria-label={done ? '运行结果' : '正在运行'} aria-modal="true">
+  return <div className="run-blocker" role="alertdialog" aria-label={done ? '试运行结果' : '正在试运行'} aria-modal="true">
     <div className="runtime-layer">
       <header>
         <div>
-          <h2>{done ? (job.status === 'completed' ? '运行完成' : '运行结束') : '正在运行'}</h2>
+          <h2>{done ? (job.status === 'completed' ? '试运行完成' : '试运行结束') : '正在试运行'}</h2>
           <p>{job.label || job.cartridge_id} · {job.progress.current_label || statusLabel(job.status)}</p>
         </div>
-        <Button variant="icon" aria-label={done ? '关闭运行层' : '最小化运行层'} onClick={() => setBlockingRun(null)}><X size={14} /></Button>
+        <Button variant="icon" aria-label={done ? '关闭试运行层' : '最小化试运行层'} onClick={() => setBlockingRun(null)}><X size={14} /></Button>
       </header>
       <div className="runtime-layer-body">
         <MiniBar job={job} />
-        <div className="runtime-progress-track" aria-label="运行进度">
+        <div className="runtime-progress-track" aria-label="试运行进度">
           <span style={{ width: `${Math.max(4, job.progress.percent)}%` }} />
         </div>
         <p className="runtime-layer-percent">{job.progress.percent}%</p>
-        {done && job.status === 'completed' ? <ResultWidgets fields={RESULT_FIELDS.map((field) => ({ id: field.source, label: field.name, kind: field.kind, source: field.source }))} job={job} /> : null}
+        {done && job.status === 'completed' ? <ResultWidgets fields={[]} job={job} /> : null}
         {done && job.status !== 'completed' ? <pre className="runtime-fail">{jobErrorText(job)}</pre> : null}
       </div>
       <div className="dialog-foot">
